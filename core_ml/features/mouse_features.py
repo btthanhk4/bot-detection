@@ -1,7 +1,10 @@
 """
-Mouse Dynamics Feature Extraction Module
+Mouse Dynamics Feature Extraction Module (Optimized v2)
+=======================================================
 Inspired by DELBOT-Mouse (https://github.com/chrisgdt/DELBOT-Mouse)
-Provides both sequential tensor extraction for LSTM and statistical summary features for tabular classifiers.
+Added 6 new discriminative features:
+  - curvature_mean/std, time_regularity, velocity_autocorrelation,
+    acceleration_zero_crossing_rate, movement_efficiency
 """
 
 import math
@@ -13,6 +16,7 @@ def compute_statistical_features(records: list) -> dict:
     """
     Extract comprehensive statistical motion features from a list of mouse points.
     Each record: {'time': int, 'x': float, 'y': float, 'type': str, ...}
+    Returns dict with 20 features (14 original + 6 new).
     """
     if not records or len(records) < 3:
         return {
@@ -30,6 +34,13 @@ def compute_statistical_features(records: list) -> dict:
             "direction_changes_y": 0,
             "jerk_mean": 0.0,
             "angular_entropy": 0.0,
+            # New features
+            "curvature_mean": 0.0,
+            "curvature_std": 0.0,
+            "time_regularity": 0.0,
+            "velocity_autocorrelation": 0.0,
+            "accel_zero_crossing_rate": 0.0,
+            "movement_efficiency": 0.0,
         }
 
     times = [r.get("time", 0) for r in records]
@@ -91,6 +102,59 @@ def compute_statistical_features(records: list) -> dict:
     else:
         entropy = 0.0
 
+    # ========== NEW FEATURES ==========
+
+    # 1. Curvature: angle change / distance at each point (3-point formula)
+    curvatures = []
+    for i in range(1, len(angles)):
+        angle_diff = abs(angles[i] - angles[i - 1])
+        if angle_diff > math.pi:
+            angle_diff = 2 * math.pi - angle_diff
+        # Normalize by segment length
+        seg_dist = math.sqrt(dxs[i]**2 + dys[i]**2) if i < len(dxs) else 1e-6
+        curvature = angle_diff / (seg_dist + 1e-6)
+        curvatures.append(curvature)
+
+    curvature_mean = float(np.mean(curvatures)) if curvatures else 0.0
+    curvature_std = float(np.std(curvatures)) if curvatures else 0.0
+
+    # 2. Time regularity: std(dt)/mean(dt) — bots have very regular timing
+    dts_ms = [(times[i] - times[i-1]) for i in range(1, len(times))]
+    dts_ms = [d for d in dts_ms if d > 0]
+    if dts_ms and np.mean(dts_ms) > 0:
+        time_regularity = float(np.std(dts_ms) / (np.mean(dts_ms) + 1e-9))
+    else:
+        time_regularity = 0.0
+
+    # 3. Velocity autocorrelation (lag-1): bots tend to have autocorr ≈ 1.0
+    if len(speeds) > 2:
+        s_mean = np.mean(speeds_arr)
+        s_std = np.std(speeds_arr)
+        if s_std > 1e-6:
+            autocov = np.mean((speeds_arr[:-1] - s_mean) * (speeds_arr[1:] - s_mean))
+            velocity_autocorrelation = float(autocov / (s_std**2))
+        else:
+            velocity_autocorrelation = 1.0  # constant speed → perfect autocorrelation
+    else:
+        velocity_autocorrelation = 0.0
+
+    # 4. Acceleration zero-crossing rate: how often acceleration changes sign
+    if len(accels) > 1:
+        accel_signs = np.sign(np.diff(speeds_arr))
+        zero_crossings = sum(1 for i in range(1, len(accel_signs)) if accel_signs[i] * accel_signs[i-1] < 0)
+        accel_zero_crossing_rate = float(zero_crossings / (len(accel_signs) + 1e-9))
+    else:
+        accel_zero_crossing_rate = 0.0
+
+    # 5. Movement efficiency: combines spatial efficiency with temporal efficiency
+    active_time = sum(dt for dt, s in zip(dts, speeds) if s > 0.01)
+    if total_dist > 1e-6 and active_time > 0:
+        spatial_eff = net_dist / total_dist
+        temporal_eff = active_time / (sum(dts) + 1e-9)
+        movement_efficiency = float(spatial_eff * temporal_eff)
+    else:
+        movement_efficiency = 0.0
+
     return {
         "point_count": len(records),
         "duration_ms": duration,
@@ -106,6 +170,13 @@ def compute_statistical_features(records: list) -> dict:
         "direction_changes_y": dir_changes_y,
         "jerk_mean": jerk_mean,
         "angular_entropy": float(entropy),
+        # New features
+        "curvature_mean": curvature_mean,
+        "curvature_std": curvature_std,
+        "time_regularity": time_regularity,
+        "velocity_autocorrelation": velocity_autocorrelation,
+        "accel_zero_crossing_rate": accel_zero_crossing_rate,
+        "movement_efficiency": movement_efficiency,
     }
 
 
@@ -121,13 +192,25 @@ def extract_sequential_chunks(chunks: list, chunk_size: int = 24, n_features: in
     valid_chunks = []
     for c in chunks:
         if len(c) == chunk_size:
-            valid_chunks.append(c)
+            # Verify feature dimension
+            row_len = len(c[0]) if c and isinstance(c[0], (list, tuple)) else 0
+            if row_len >= n_features:
+                # Truncate extra features if needed
+                valid_chunks.append([row[:n_features] for row in c])
+            elif row_len > 0:
+                # Pad features with 0
+                valid_chunks.append([list(row) + [0.0] * (n_features - row_len) for row in c])
+            else:
+                valid_chunks.append(c)
         elif len(c) > chunk_size:
             valid_chunks.append(c[:chunk_size])
         else:
             # Pad with zeros if shorter
             padded = list(c) + [[0.0] * n_features] * (chunk_size - len(c))
             valid_chunks.append(padded)
+
+    if not valid_chunks:
+        return torch.zeros((0, chunk_size, n_features), dtype=torch.float32)
 
     tensor = torch.tensor(valid_chunks, dtype=torch.float32)
     # Clip extreme values for numerical stability

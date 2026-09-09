@@ -1,6 +1,12 @@
 """
-Multi-Modal Ensemble Bot Detector
-Fuses DELBOT-Mouse Behavioral LSTM, Tabular Environment XGBoost, and BotD Heuristic Rules.
+Multi-Modal Ensemble Bot Detector (v2)
+=======================================
+Fuses DELBOT-Mouse Behavioral BiLSTM, Tabular Environment XGBoost, and BotD Heuristic Rules.
+Improvements:
+  - Confidence-based adaptive weighting (higher confidence → higher weight)
+  - Improved data sufficiency scoring
+  - 6 new mouse features integrated into tabular vector
+  - Better threshold calibration
 """
 
 import numpy as np
@@ -27,6 +33,10 @@ class EnsembleBotDetector:
         self.w_heuristic = w_heuristic
         self.threshold = threshold
 
+    def _compute_confidence_weight(self, score: float) -> float:
+        """Higher confidence (further from 0.5) → higher weight."""
+        return abs(score - 0.5) * 2.0 + 0.3  # min weight = 0.3
+
     def predict(self, telemetry_payload: dict) -> dict:
         """
         Takes raw telemetry JSON payload from collector and outputs unified decision.
@@ -44,10 +54,12 @@ class EnsembleBotDetector:
         detectors = botd.get("detectors", {})
 
         # Immediate hard rule triggers (100% confidence bot flags)
+        critical_flags = []
         if detectors.get("webdriver", False):
-            reasons.append("Critical: Webdriver automation flag confirmed")
+            critical_flags.append("Critical: Webdriver automation flag confirmed")
         if detectors.get("distinctiveProperties", False):
-            reasons.append("Critical: Automation framework signature detected")
+            critical_flags.append("Critical: Automation framework signature detected")
+        reasons.extend(critical_flags)
 
         # 2. Behavioral LSTM evaluation
         chunks_tensor = extract_sequential_chunks(chunks)
@@ -57,15 +69,21 @@ class EnsembleBotDetector:
             if lstm_score > 0.70:
                 reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
         else:
-            # If user hasn't moved mouse yet, use mouse stats or default
+            # If user hasn't moved mouse enough, use mouse stats
             stats = compute_statistical_features(records)
-            if stats["straightness"] > 0.98 and stats["point_count"] > 5:
-                lstm_score = 0.85
-                reasons.append("Unnaturally straight mouse trajectory")
+            if stats["point_count"] > 5:
+                if stats["straightness"] > 0.98:
+                    lstm_score = 0.80
+                    reasons.append("Unnaturally straight mouse trajectory")
+                elif stats["time_regularity"] < 0.1 and stats["point_count"] > 10:
+                    lstm_score = 0.75
+                    reasons.append("Suspiciously regular timing between mouse events")
+                else:
+                    lstm_score = 0.50  # neutral
             else:
                 lstm_score = 0.50  # neutral
 
-        # 3. Tabular model evaluation
+        # 3. Tabular model evaluation (with 6 new features)
         env_vec = extract_env_vector(fingerprint, botd)
         mouse_stats = compute_statistical_features(records)
         mouse_stat_vec = np.array(
@@ -81,35 +99,48 @@ class EnsembleBotDetector:
                 float(mouse_stats["direction_changes_y"]),
                 mouse_stats["jerk_mean"],
                 mouse_stats["angular_entropy"],
+                # 6 new features
+                mouse_stats["curvature_mean"],
+                mouse_stats["curvature_std"],
+                mouse_stats["time_regularity"],
+                mouse_stats["velocity_autocorrelation"],
+                mouse_stats["accel_zero_crossing_rate"],
+                mouse_stats["movement_efficiency"],
             ],
             dtype=np.float32,
         )
         combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
         tabular_score = self.tabular_model.predict_proba(combined_tabular_vec)
 
-        # 4. Weighted Fusion
-        # Adjust weights dynamically if mouse data is insufficient
+        # 4. Confidence-Based Adaptive Weighted Fusion
         if not has_enough_mouse_data:
+            # Without sufficient mouse data, rely on env + heuristics
             w_h = 0.45
             w_t = 0.55
             w_l = 0.0
         else:
-            w_l = self.w_lstm
-            w_t = self.w_tabular
-            w_h = self.w_heuristic
+            # Base weights adjusted by confidence
+            conf_lstm = self._compute_confidence_weight(lstm_score)
+            conf_tab = self._compute_confidence_weight(tabular_score)
+            conf_heur = self._compute_confidence_weight(heuristic_score)
+
+            w_l = self.w_lstm * conf_lstm
+            w_t = self.w_tabular * conf_tab
+            w_h = self.w_heuristic * conf_heur
 
         total_w = w_l + w_t + w_h
         final_proba = (w_l * lstm_score + w_t * tabular_score + w_h * heuristic_score) / total_w
 
         # If critical hard rule triggered, elevate probability to >= 0.95
-        if detectors.get("webdriver", False) or detectors.get("distinctiveProperties", False):
+        if critical_flags:
             final_proba = max(final_proba, 0.96)
 
         is_bot = final_proba >= self.threshold
 
+        # Calibrated verdict thresholds
         if final_proba >= 0.75:
             verdict = "BOT"
-        elif final_proba >= 0.45:
+        elif final_proba >= 0.40:
             verdict = "SUSPECT"
         else:
             verdict = "HUMAN"
@@ -128,5 +159,10 @@ class EnsembleBotDetector:
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,
                 "mouse_points": len(records),
+                "weights_used": {
+                    "w_lstm": round(w_l / total_w, 3) if total_w > 0 else 0,
+                    "w_tabular": round(w_t / total_w, 3) if total_w > 0 else 0,
+                    "w_heuristic": round(w_h / total_w, 3) if total_w > 0 else 0,
+                },
             },
         }
