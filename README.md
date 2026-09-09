@@ -1,161 +1,185 @@
 # Bot Detection Core: Multi-Modal Bot & Click Fraud Detection System
 
-> **Khóa luận tốt nghiệp (2026):** Phát hiện gian lận click có tổ chức bằng mạng nơ-ron đồ thị (Graph Neural Networks).  
-> **Tác giả:** Thành (`btthanhk4`) | **GVHD:** Thầy Mai.
+> **Khóa luận tốt nghiệp (2026):** Xây dựng mô hình phân biệt bot và người truy cập trang web  
+> **Tác giả:** Thành (`btthanhk4`) | **GVHD:** Thầy Mai  
+> **Dataset:** [Web Bot Detection Dataset (M4D-ITI)](https://m4d.iti.gr/web-bot-detection-dataset/)
 
-Hệ thống phát hiện bot và gian lận click quảng cáo đa phương thức kết hợp sức mạnh từ 3 công nghệ:
-1. **[FingerprintJS](https://github.com/fingerprintjs/fingerprintjs):** Thu thập ~40 đặc trưng phần cứng/trình duyệt, sinh mã định danh thiết bị duy nhất (`visitorId`).
-2. **[BotD](https://github.com/fingerprintjs/BotD):** Bộ kiểm tra 12+ luật heuristic client-side (webdriver, headless indicators, plugin/language/platform inconsistencies).
-3. **[DELBOT-Mouse](https://github.com/chrisgdt/DELBOT-Mouse):** Trích xuất động học quỹ đạo chuột (vận tốc, gia tốc, độ giật, độ cong) và phân loại bằng **mạng nơ-ron hồi quy LSTM**.
-4. **[Graph Neural Networks (PyTorch Geometric)](https://github.com/pyg-team/pytorch_geometric):** Mô hình hóa đồ thị quan hệ không thuần nhất (*Device – IP – Session – Target*) nhằm bóc gỡ các mạng lưới botnet/click farm phối hợp quy mô lớn.
+## Tổng quan
 
----
+Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp sức mạnh từ 3 công nghệ mã nguồn mở và mạng nơ-ron đồ thị:
 
-## 1. Kiến trúc Hệ thống
-
-```
-+-----------------------------------------------------------------------------------+
-| 1. Client-Side Collector SDK (collector/)                                         |
-|    - FingerprintJS (Canvas, WebGL, Audio, Concurrency, Screen, Visitor ID)        |
-|    - BotD Heuristics (Webdriver, Virtual GPU, Headless UA, Inconsistencies)       |
-|    - DELBOT Mouse Tracker (x, y, dx, dy, speed, accel, 24-point chunks)           |
-+------------------------------------------+----------------------------------------+
-                                           | Telemetry Payload (JSON)
-                                           v
-+-----------------------------------------------------------------------------------+
-| 2. API Inference Server (api_service/ - FastAPI)                                  |
-|    - Endpoint POST /api/v1/detect   : Real-time inference (< 10ms latency)        |
-|    - Endpoint POST /api/v1/telemetry: Asynchronous beacon telemetry ingestion     |
-|    - Endpoint GET  /api/v1/graph/stats: Graph topology & fraud ring indicators    |
-+------------------------------------------+----------------------------------------+
-                                           | Feature Extraction
-                                           v
-+-----------------------------------------------------------------------------------+
-| 3. Multi-Modal Machine Learning Core (core_ml/)                                   |
-|    ├── Branch A: Behavioral LSTM (Mouse Trajectory 24-point Sequential Chunks)    |
-|    ├── Branch B: Tabular XGBoost (Hardware Fingerprint + Motion Stats + BotD)     |
-|    ├── Fusion  : Multi-Modal Weighted Ensemble + Hard Heuristic Overrides         |
-|    └── Branch C: HeteroClickFraudGNN (Device - IP - Session - Target Graph)       |
-+-----------------------------------------------------------------------------------+
-```
+| # | Công nghệ | Vai trò | Nguồn |
+|---|-----------|---------|-------|
+| 1 | **FingerprintJS** | Thu thập ~40 đặc trưng phần cứng/trình duyệt | [GitHub](https://github.com/fingerprintjs/fingerprintjs) |
+| 2 | **BotD** | 12+ luật heuristic client-side (webdriver, headless, inconsistencies) | [GitHub](https://github.com/fingerprintjs/BotD) |
+| 3 | **DELBOT-Mouse** | Phân tích quỹ đạo chuột bằng BiLSTM + Temporal Attention | [GitHub](https://github.com/chrisgdt/DELBOT-Mouse) |
+| 4 | **PyTorch Geometric** | Phát hiện botnet phối hợp qua đồ thị Device–IP–Session | [GitHub](https://github.com/pyg-team/pytorch_geometric) |
 
 ---
 
-## 2. Cấu trúc Repository
+## Kiến trúc hệ thống
+
+```
+┌──────────────────────────────────────────────────┐
+│              DATA COLLECTION (collector/)          │
+│  FingerprintJS  │  BotD Heuristics  │  Mouse SDK  │
+└────────┬────────┴──────────┬────────┴──────┬──────┘
+         │     Telemetry JSON Payload        │
+         ▼                                   ▼
+┌──────────────────────────────────────────────────┐
+│           FEATURE EXTRACTION (core_ml/features/)  │
+│  Mouse Kinematics (8 dims/step + 17 stats)       │
+│  Environment + BotD Fingerprint (26 dims)        │
+│  Total: 43-dimensional feature vector            │
+└────────┬────────────────────────────┬────────────┘
+         │                            │
+┌────────▼────────┐    ┌──────────────▼──────────────┐
+│ BiLSTM + Attn   │    │  XGBoost (300 trees, d=6)   │
+│ (sequence model)│    │  (tabular aggregate model)   │
+└────────┬────────┘    └──────────────┬──────────────┘
+         │                            │
+┌────────▼────────────────────────────▼──────────────┐
+│    ENSEMBLE — Confidence-based Adaptive Fusion      │
+│    + BotD Heuristic Override                        │
+│    → Verdict: HUMAN / SUSPECT / BOT                 │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Cấu trúc Repository
 
 ```
 bot-detection-core/
-├── collector/                      # Bộ thu thập tín hiệu phía Client
+├── collector/                       # Client-side SDK thu thập tín hiệu
 │   ├── src/
-│   │   ├── fingerprint.js         # Thu thập ~40 đặc trưng & hash visitorId
-│   │   ├── botd.js                # 12 luật heuristic phát hiện tự động hóa
-│   │   ├── mouse.js               # Theo dõi chuột & cắt chunk 24 điểm theo DELBOT
-│   │   └── index.js               # Unified Collector SDK chính
-│   ├── dist/
-│   │   └── bot-collector.js       # Standalone bundle nhúng trực tiếp vào Web
-│   └── package.json
+│   │   ├── fingerprint.js          # Thu thập ~40 đặc trưng & hash visitorId
+│   │   ├── botd.js                 # 12 luật heuristic phát hiện bot
+│   │   ├── mouse.js                # Mouse tracker + kinematic features
+│   │   └── index.js                # Unified Collector SDK
+│   └── dist/
+│       └── bot-collector.js        # Standalone bundle nhúng vào web
 │
-├── core_ml/                        # Phân hệ Học máy & Xử lý Dữ liệu
+├── core_ml/                         # ML Core — Models & Pipeline
 │   ├── dataset/
-│   │   └── loader.py              # Loader nạp dataset thật & sinh dữ liệu giả lập
+│   │   └── loader.py               # Parser M4D dataset + synthetic generator
 │   ├── features/
-│   │   ├── mouse_features.py      # Trích xuất tensor chuỗi (LSTM) & thống kê (Tabular)
-│   │   ├── env_features.py        # Vector hóa dấu vân tay & BotD flags
-│   │   └── graph_builder.py       # Xây dựng Heterogeneous Graph (Device - IP - Session)
+│   │   ├── env_features.py         # Environment/fingerprint vector (26 dims)
+│   │   ├── mouse_features.py       # Mouse dynamics stats + chunks (17 + 8 dims)
+│   │   └── graph_builder.py        # Heterogeneous graph construction
 │   ├── models/
-│   │   ├── behavioral_lstm.py     # Mô hình PyTorch LSTM phân tích chuyển động chuột
-│   │   ├── tabular_classifier.py  # Mô hình XGBoost phân loại đặc trưng môi trường
-│   │   ├── ensemble.py            # Mô hình kết hợp (Multi-modal Ensemble)
-│   │   └── gnn_detector.py        # Mô hình HeteroClickFraudGNN (PyTorch Geometric)
-│   ├── weights/                   # Lưu trữ checkpoint mô hình đã huấn luyện (.pt, .joblib)
-│   └── train.py                   # Script huấn luyện toàn bộ các mô hình
+│   │   ├── behavioral_lstm.py      # BiLSTM + TemporalAttention (v2)
+│   │   ├── tabular_classifier.py   # XGBoost + StandardScaler (v2)
+│   │   ├── gnn_detector.py         # HeteroConv GNN + Residual (v2)
+│   │   └── ensemble.py             # Confidence-based weighted fusion (v2)
+│   ├── experiments/
+│   │   └── run_all.py              # 9 thí nghiệm đánh giá toàn diện
+│   ├── train.py                    # Training pipeline (v2)
+│   └── weights/                    # Model weights (.pt, .joblib)
 │
-├── api_service/                    # Dịch vụ API phục vụ dự đoán thời gian thực
-│   └── main.py                    # FastAPI server
+├── api_service/
+│   └── main.py                     # FastAPI inference server
 │
-├── simulator/                      # Công cụ sinh traffic giả lập & benchmark
-│   └── run_simulation.py          # Benchmark kiểm tra độ chính xác API & Playwright
+├── simulator/
+│   └── run_simulation.py           # Bot traffic simulator & benchmark
 │
+├── EXPERIMENT_REPORT.md            # Báo cáo thí nghiệm chi tiết
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 3. Cài đặt & Sử dụng
+## Kết quả chính
 
-### 3.1. Cài đặt môi trường Python
+### Training v2 (600 samples: 200 real M4D + 400 synthetic)
+
+| Model | Val AUC-ROC | Val F1 | Val FPR |
+|-------|-------------|--------|---------|
+| **XGBoost (43 features)** | **0.9995** | **0.9773** | **0.0000** |
+| BiLSTM (mouse chunks) | 0.8240 | 0.6752 | — |
+| GNN (graph) | Loss=0.35 | — | — |
+
+**Top 5 Feature Importance (XGBoost):**
+1. `direction_changes_y` — Số lần đổi hướng theo trục Y
+2. `direction_changes_x` — Số lần đổi hướng theo trục X
+3. `std_speed` — Độ biến thiên tốc độ
+4. `fonts_count` — Số font phát hiện (fingerprint)
+5. `time_regularity` — **Feature mới v2** — std(dt)/mean(dt)
+
+### 9 Thí nghiệm đánh giá
+
+| # | Thí nghiệm | Kết quả chính |
+|---|-------------|---------------|
+| E1 | Baseline Comparison | ML **+33.1% AUC** so với rule-based |
+| E2 | Concept Drift | ⚠️ Train moderate → Recall=**0%** trên advanced bot |
+| E3 | Feature Ablation | Mouse dynamics alone = AUC **1.0** |
+| E4 | Class Imbalance | Robust đến 1:10 (AUC=**0.97**) |
+| E5 | Early Detection | Chỉ cần **5 mouse points** → AUC=**0.99** |
+| E6 | Inference Latency | XGBoost **<1ms**, BiLSTM **<2ms** |
+| E7 | ROC/FPR Analysis | Optimal threshold=**0.3**: FPR=0, TPR=1 |
+| E8 | Short Sessions | Hoạt động tốt mọi độ dài |
+| E9 | Power User Test | **0% False Positive** trên power users |
+
+> Chi tiết đầy đủ: [EXPERIMENT_REPORT.md](EXPERIMENT_REPORT.md)
+
+---
+
+## Cài đặt & Sử dụng
+
+### 1. Cài đặt môi trường
+
 ```bash
 cd bot-detection-core
 pip install -r requirements.txt
 ```
 
-### 3.2. Huấn luyện Mô hình
-Huấn luyện cả 3 nhánh mô hình (LSTM, XGBoost, HeteroGNN) và lưu checkpoint vào thư mục `core_ml/weights/`:
-```bash
-python -m core_ml.train
-```
-*Kết quả huấn luyện trên dữ liệu mô phỏng:*
-* **ROC-AUC:** `1.0000`
-* **F1-Score:** `1.0000`
-* **Behavioral LSTM Loss:** giảm từ `0.0901` xuống `0.0115` qua 15 epochs.
-* **HeteroGNN Loss:** giảm từ `0.1781` xuống `0.0017` qua 25 epochs.
+### 2. Huấn luyện mô hình
 
-### 3.3. Khởi chạy API Server
+```bash
+python -u -m core_ml.train
+```
+
+Kết quả huấn luyện v2:
+- **XGBoost:** Val AUC=0.9995 | Test AUC=1.0000
+- **BiLSTM:** 30 epochs, Early Stopping, CosineAnnealing LR
+- **GNN:** 25 epochs, Loss 0.59→0.35
+- Weights saved to `core_ml/weights/`
+
+### 3. Chạy toàn bộ thí nghiệm
+
+```bash
+python -u -m core_ml.experiments.run_all
+```
+
+Kết quả JSON: `core_ml/experiment_results.json`
+
+### 4. Khởi chạy API Server
+
 ```bash
 uvicorn api_service.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-Kiểm tra endpoint Swagger docs tại: `http://127.0.0.1:8000/docs`.
 
-### 3.4. Chạy Benchmark / Kiểm thử Giả lập
+Swagger docs: `http://127.0.0.1:8000/docs`
+
+### 5. Chạy Benchmark
+
 ```bash
-# Gửi 20 mẫu Human và 20 mẫu Bot (Naive, Moderate, Advanced) lên API server
 python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:8000/api/v1/detect --samples 20
 ```
 
 ---
 
-## 4. Hướng dẫn Tích hợp vào Website Silkmoon (hoặc Web bất kỳ)
+## API Endpoints
 
-### Cách 1: Nhúng trực tiếp file Script (Đơn giản nhất)
-1. Copy file [collector/dist/bot-collector.js](collector/dist/bot-collector.js) vào thư mục `frontend/public/` của web.
-2. Thêm vào thẻ `<head>` của `index.html`:
-```html
-<script src="/bot-collector.js"></script>
-<script>
-  window.addEventListener('DOMContentLoaded', async () => {
-    if (window.BotCollector) {
-      const collector = new window.BotCollector({
-        endpointUrl: 'http://<IP_SERVER_CUA_BAN>:8000/api/v1/telemetry',
-        detectUrl: 'http://<IP_SERVER_CUA_BAN>:8000/api/v1/detect',
-        autoSendInterval: 5000 // Tự động gửi heartbeat mỗi 5 giây
-      });
-      await collector.init();
-    }
-  });
-</script>
-```
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/` | Health check + model status |
+| `POST` | `/api/v1/detect` | Real-time bot classification |
+| `POST` | `/api/v1/telemetry` | Asynchronous telemetry ingestion |
+| `GET` | `/api/v1/graph/stats` | Graph topology & fraud ring indicators |
 
-### Cách 2: Tích hợp vào React Component
-```jsx
-import { useEffect } from 'react';
-import { BotCollector } from '../path/to/collector/src/index.js';
-
-export function useBotProtection() {
-  useEffect(() => {
-    const collector = new BotCollector({
-      endpointUrl: 'https://api-bot.yourdomain.com/api/v1/telemetry',
-      detectUrl: 'https://api-bot.yourdomain.com/api/v1/detect',
-    });
-    collector.init();
-    return () => collector.destroy();
-  }, []);
-}
-```
-
----
-
-## 5. Kết quả Đầu ra Phân loại Mẫu từ API
+### Ví dụ Response từ `/api/v1/detect`
 
 ```json
 {
@@ -174,9 +198,63 @@ export function useBotProtection() {
     "has_enough_mouse_data": true,
     "mouse_points": 31
   },
-  "latency_ms": 3.42,
-  "client_ip": "127.0.0.1",
-  "sessionId": "sess_894102",
-  "visitorId": "fp_2319"
+  "latency_ms": 3.42
 }
 ```
+
+---
+
+## Tích hợp vào Website
+
+### Cách 1: Nhúng Script trực tiếp
+
+```html
+<script src="/bot-collector.js"></script>
+<script>
+  window.addEventListener('DOMContentLoaded', async () => {
+    if (window.BotCollector) {
+      const collector = new window.BotCollector({
+        endpointUrl: 'https://<API_URL>/api/v1/telemetry',
+        detectUrl: 'https://<API_URL>/api/v1/detect',
+        autoSendInterval: 5000
+      });
+      await collector.init();
+    }
+  });
+</script>
+```
+
+### Cách 2: React Hook
+
+```jsx
+import { useEffect } from 'react';
+import { BotCollector } from '../path/to/collector/src/index.js';
+
+export function useBotProtection() {
+  useEffect(() => {
+    const collector = new BotCollector({
+      endpointUrl: 'https://api-bot.yourdomain.com/api/v1/telemetry',
+      detectUrl: 'https://api-bot.yourdomain.com/api/v1/detect',
+    });
+    collector.init();
+    return () => collector.destroy();
+  }, []);
+}
+```
+
+---
+
+## Tài liệu tham khảo
+
+1. [FingerprintJS](https://github.com/fingerprintjs/fingerprintjs) — Browser fingerprinting library
+2. [BotD](https://github.com/fingerprintjs/BotD) — Bot detection heuristics
+3. [DELBOT-Mouse](https://github.com/chrisgdt/DELBOT-Mouse) — Mouse trajectory analysis
+4. [Web Bot Detection Dataset (M4D-ITI)](https://m4d.iti.gr/web-bot-detection-dataset/)
+5. [FP-Inconsistent (arXiv:2406.07647)](https://arxiv.org/pdf/2406.07647) — Fingerprint consistency checking
+6. [Server-side Bot Feature Taxonomy](https://consensus.app/papers/a-taxonomy-and-feature-set-for-serverside-identification-smutz/d55322076b41592796803df678eb9ea5/)
+
+---
+
+## License
+
+Dự án này được phát triển phục vụ mục đích học thuật (khóa luận tốt nghiệp).
