@@ -1,0 +1,13 @@
+torch>=2.3.0
+torch_geometric>=2.8.0
+xgboost>=3.0.0
+scikit-learn>=1.4.0
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.13.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.9.0
+requests>=2.32.0
+playwright>=1.45.0
+joblib>=1.4.0

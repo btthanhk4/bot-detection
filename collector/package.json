@@ -1,0 +1,19 @@
+{
+  "name": "@bot-detection/collector",
+  "version": "1.0.0",
+  "description": "Unified client-side bot detection telemetry collector combining FingerprintJS, BotD, and DELBOT-Mouse",
+  "main": "dist/bot-collector.js",
+  "module": "src/index.js",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "keywords": [
+    "bot-detection",
+    "click-fraud",
+    "fingerprintjs",
+    "botd",
+    "mouse-dynamics"
+  ],
+  "author": "Thanh (btthanhk4)",
+  "license": "MIT"
+}
