@@ -97,8 +97,8 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     result = ensemble_detector.predict(data)
     latency_ms = round((time.perf_counter() - start_t) * 1000, 2)
 
-    # Ingest into graph builder
-    graph_builder.add_telemetry_event(data, ip_address=client_ip, is_bot_ground_truth=1 if result["is_bot"] else 0)
+    # Ingest into graph builder (label=-1 unknown, not the model's own prediction)
+    graph_builder.add_telemetry_event(data, ip_address=client_ip, is_bot_ground_truth=None)
 
     result["latency_ms"] = latency_ms
     result["client_ip"] = client_ip

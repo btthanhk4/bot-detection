@@ -11,12 +11,14 @@ export class MouseRecorder {
     this.chunkSize = options.chunkSize || 24;
     this.records = [];
     this.chunks = [];
+    this.scrollEvents = [];  // separate scroll tracking
     this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.isListening = false;
     this.handleMouseMove = this.handleMouseMove.bind(this);
     this.handleMouseDown = this.handleMouseDown.bind(this);
     this.handleMouseUp = this.handleMouseUp.bind(this);
     this.handleClick = this.handleClick.bind(this);
+    this.handleWheel = this.handleWheel.bind(this);
   }
 
   start() {
@@ -26,6 +28,7 @@ export class MouseRecorder {
     window.addEventListener('mousedown', this.handleMouseDown, { passive: true });
     window.addEventListener('mouseup', this.handleMouseUp, { passive: true });
     window.addEventListener('click', this.handleClick, { passive: true });
+    window.addEventListener('wheel', this.handleWheel, { passive: true });
   }
 
   stop() {
@@ -35,11 +38,13 @@ export class MouseRecorder {
     window.removeEventListener('mousedown', this.handleMouseDown);
     window.removeEventListener('mouseup', this.handleMouseUp);
     window.removeEventListener('click', this.handleClick);
+    window.removeEventListener('wheel', this.handleWheel);
   }
 
   clear() {
     this.records = [];
     this.chunks = [];
+    this.scrollEvents = [];
   }
 
   recordPoint(type, clientX, clientY) {
@@ -73,9 +78,8 @@ export class MouseRecorder {
       speedY = dy / (timeDiff / 1000);
       speed = distance / (timeDiff / 1000);
 
-      const dtPrev = prev.timeDiff || 1;
-      accelX = (speedX - prev.speedX) / (timeDiff / 1000);
-      accelY = (speedY - prev.speedY) / (timeDiff / 1000);
+      accelX = (speedX - (prev.speedX || 0)) / (timeDiff / 1000);
+      accelY = (speedY - (prev.speedY || 0)) / (timeDiff / 1000);
       accel = Math.sqrt(accelX * accelX + accelY * accelY);
     }
 
@@ -97,8 +101,9 @@ export class MouseRecorder {
     };
 
     this.records.push(record);
-    if (this.records.length > this.maxRecords) {
-      this.records.shift();
+    // Efficient truncation: splice from front in batch instead of shift() one-by-one
+    if (this.records.length > this.maxRecords + 50) {
+      this.records = this.records.slice(-this.maxRecords);
     }
   }
 
@@ -116,6 +121,20 @@ export class MouseRecorder {
 
   handleClick(e) {
     this.recordPoint('click', e.clientX, e.clientY);
+  }
+
+  handleWheel(e) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const time = Math.round(now - this.startTime);
+    this.scrollEvents.push({
+      time,
+      deltaY: e.deltaY,
+      deltaX: e.deltaX,
+    });
+    // Keep last 200 scroll events
+    if (this.scrollEvents.length > 200) {
+      this.scrollEvents = this.scrollEvents.slice(-200);
+    }
   }
 
   /**
@@ -186,6 +205,7 @@ export class MouseRecorder {
       records: this.records.slice(-100), // last 100 points
       chunks: this.getChunks(this.chunkSize),
       stats: this.getStats(),
+      scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
     };
   }
 }

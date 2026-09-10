@@ -41,14 +41,14 @@ def parse_movement_notation(notation: str) -> list:
                 except ValueError:
                     continue
 
-                # Estimate timestamp based on distance (natural human mouse dynamics)
+                # Deterministic timestamp estimation based on distance
+                # (Fitts's law-inspired: larger movements take more time)
                 if records:
                     dx = x - last_x
                     dy = y - last_y
                     dist = math.sqrt(dx * dx + dy * dy)
-                    # Fitts's law-inspired timing: larger movements take more time
-                    # Base interval ~8-16ms (60-120Hz), scaled by distance
-                    base_dt = random.uniform(8, 16)
+                    # Fixed base interval ~12ms (83Hz), scaled by distance
+                    base_dt = 12.0
                     dist_factor = min(dist / 50.0, 5.0)  # cap at 5x
                     dt = base_dt * (1.0 + dist_factor * 0.5)
                     t += max(1, int(dt))
@@ -86,6 +86,7 @@ def parse_movement_notation(notation: str) -> list:
 def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots"):
     """
     Loads real mouse movement sessions from web_bot_detection_dataset.
+    Loads BOTH Phase 1 and Phase 2 data for maximum coverage.
     
     Args:
         dataset_root: Path to web_bot_detection_dataset (e.g., Tuần 3/repos/web_bot_detection_dataset)
@@ -94,58 +95,75 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
     Returns:
         list of (records, label) tuples, where label is 0 (human) or 1 (bot)
     """
-    phase1_data = os.path.join(dataset_root, "phase1", "data", "mouse_movements", scenario)
-    phase1_ann_train = os.path.join(dataset_root, "phase1", "annotations", scenario, "train")
-    phase1_ann_test = os.path.join(dataset_root, "phase1", "annotations", scenario, "test")
-
-    # Parse annotation files
-    label_map = {}
-    for ann_file in [phase1_ann_train, phase1_ann_test]:
-        if os.path.exists(ann_file):
-            with open(ann_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    parts = line.split()
-                    if len(parts) == 2:
-                        session_id, label_str = parts
-                        if label_str == "human":
-                            label_map[session_id] = 0
-                        else:
-                            label_map[session_id] = 1  # moderate_bot, advanced_bot
-
-    # Load sessions
     sessions = []
-    if os.path.isdir(phase1_data):
-        for session_id in os.listdir(phase1_data):
-            session_dir = os.path.join(phase1_data, session_id)
-            if not os.path.isdir(session_dir):
-                continue
 
-            json_path = os.path.join(session_dir, "mouse_movements.json")
-            if not os.path.exists(json_path):
-                continue
+    # Load from both Phase 1 and Phase 2
+    for phase in ["phase1", "phase2"]:
+        phase_data = os.path.join(dataset_root, phase, "data", "mouse_movements", scenario)
+        phase_ann_train = os.path.join(dataset_root, phase, "annotations", scenario, "train")
+        phase_ann_test = os.path.join(dataset_root, phase, "annotations", scenario, "test")
 
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+        # Parse annotation files
+        label_map = {}
+        for ann_file in [phase_ann_train, phase_ann_test]:
+            if os.path.isfile(ann_file):
+                with open(ann_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) == 2:
+                            session_id, label_str = parts
+                            if label_str == "human":
+                                label_map[session_id] = 0
+                            else:
+                                label_map[session_id] = 1  # moderate_bot, advanced_bot
+            elif os.path.isdir(ann_file):
+                # Handle case where annotation path is a directory
+                for fname in os.listdir(ann_file):
+                    fpath = os.path.join(ann_file, fname)
+                    if os.path.isfile(fpath):
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            for line in f:
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                parts = line.split()
+                                if len(parts) == 2:
+                                    session_id, label_str = parts
+                                    label_map[session_id] = 0 if label_str == "human" else 1
 
-                notation = data.get("total_behaviour", "")
-                if not notation:
+        # Load sessions from this phase
+        if os.path.isdir(phase_data):
+            for session_id in os.listdir(phase_data):
+                session_dir = os.path.join(phase_data, session_id)
+                if not os.path.isdir(session_dir):
                     continue
 
-                records = parse_movement_notation(notation)
-                if len(records) < 10:
+                json_path = os.path.join(session_dir, "mouse_movements.json")
+                if not os.path.exists(json_path):
                     continue
 
-                label = label_map.get(session_id, -1)
-                if label == -1:
-                    continue  # skip sessions without known labels
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
 
-                sessions.append((records, label))
-            except (json.JSONDecodeError, Exception):
-                continue
+                    notation = data.get("total_behaviour", "")
+                    if not notation:
+                        continue
+
+                    records = parse_movement_notation(notation)
+                    if len(records) < 10:
+                        continue
+
+                    label = label_map.get(session_id, -1)
+                    if label == -1:
+                        continue  # skip sessions without known labels
+
+                    sessions.append((records, label))
+                except (json.JSONDecodeError, Exception):
+                    continue
 
     return sessions
 

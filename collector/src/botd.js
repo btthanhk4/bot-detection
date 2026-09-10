@@ -13,7 +13,7 @@ export function runBotDetectors(components = {}) {
   const reasons = [];
 
   // 1. WebDriver detector (Selenium, Puppeteer, Playwright default)
-  detectors.webdriver = !!(nav.webdriver || doc.documentElement.getAttribute('webdriver'));
+  detectors.webdriver = !!(nav.webdriver || doc.documentElement?.getAttribute?.('webdriver'));
   if (detectors.webdriver) reasons.push('navigator.webdriver is true');
 
   // 2. Distinctive automation properties
@@ -32,13 +32,17 @@ export function runBotDetectors(components = {}) {
       break;
     }
   }
-  // Check for chromedriver cdc_ prefix in window or document
-  for (const key of Object.keys(win)) {
-    if (key.startsWith('cdc_') || key.startsWith('$cdc_')) {
-      foundDistinctive = true;
-      reasons.push(`Chromedriver artifact found: ${key}`);
-      break;
+  // 4. Automation-specific global variables (e.g., cdc_ from ChromeDriver)
+  try {
+    for (const key of Object.keys(win)) {
+      if (key.startsWith('cdc_') || key.startsWith('$cdc_')) {
+        detectors.chromeDriverGlobal = true;
+        reasons.push(`ChromeDriver global detected: ${key}`);
+        break;
+      }
     }
+  } catch (e) {
+    // Object.keys(window) may throw SecurityError in some environments
   }
   detectors.distinctiveProperties = foundDistinctive;
 
@@ -120,10 +124,29 @@ export function runBotDetectors(components = {}) {
   detectors.headlessUa = /headlesschrome/i.test(nav.userAgent || '');
   if (detectors.headlessUa) reasons.push('User-Agent explicitly declares HeadlessChrome');
 
-  // Calculate Heuristic Score
+  // Calculate Weighted Heuristic Score
+  // High-confidence detectors get higher weight than noisy ones
+  const detectorWeights = {
+    webdriver: 5.0,
+    distinctiveProperties: 5.0,
+    chromeDriverGlobal: 4.0,
+    headlessUa: 4.0,
+    virtualGpu: 3.0,
+    windowSize: 2.5,
+    hasProcess: 3.0,
+    documentKeys: 3.0,
+    platformMismatch: 2.0,
+    pluginsInconsistency: 2.0,
+    languagesInconsistency: 1.5,
+    errorTrace: 1.5,
+    evalLength: 1.0,  // noisy, low weight
+  };
+
   const keys = Object.keys(detectors);
   const flagged = keys.filter((k) => detectors[k]);
-  const heuristicScore = keys.length ? flagged.length / keys.length : 0;
+  const totalWeight = keys.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
+  const flaggedWeight = flagged.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
+  const heuristicScore = totalWeight > 0 ? flaggedWeight / totalWeight : 0;
   const isBotHeuristic = flagged.length > 0;
 
   return {

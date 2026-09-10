@@ -34,6 +34,11 @@ FEATURE_NAMES = [
     "has_canvas",
     "is_virtual_concurrency",
     "is_desktop_chrome_zero_plugins",
+    # New FP-Inconsistent checks (v2)
+    "touch_desktop_mismatch",
+    "low_screen_resolution",
+    "no_audio_support",
+    "low_font_count",
 ]
 
 
@@ -88,6 +93,20 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
     ua = str(fp.get("userAgent", "")).lower()
     is_desktop_chrome_zero_plugins = 1.0 if ("chrome" in ua and "mobile" not in ua and p_len == 0) else 0.0
 
+    # New FP-Inconsistent checks
+    # Touch points on desktop device (touch > 0 but UA is desktop)
+    is_mobile_ua = any(k in ua for k in ["mobile", "android", "iphone", "ipad"])
+    touch_desktop_mismatch = 1.0 if (touch > 0 and not is_mobile_ua) else 0.0
+
+    # Unusually low screen resolution (common in headless/VM environments)
+    low_screen_resolution = 1.0 if (sw <= 800 and sh <= 600) else 0.0
+
+    # No audio support (common in headless Chrome)
+    no_audio_support = 1.0 if (not has_audio) else 0.0
+
+    # Very low font count (headless environments have few fonts)
+    low_font_count = 1.0 if (fonts < 5 and fonts > 0) else (1.0 if fonts == 0 else 0.0)
+
     features = [
         h_score,
         flagged_cnt,
@@ -115,6 +134,11 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
         has_canvas,
         is_virtual_concurrency,
         is_desktop_chrome_zero_plugins,
+        # New features
+        touch_desktop_mismatch,
+        low_screen_resolution,
+        no_audio_support,
+        low_font_count,
     ]
 
     return np.array(features, dtype=np.float32)

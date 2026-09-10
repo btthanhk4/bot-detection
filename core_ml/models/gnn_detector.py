@@ -29,7 +29,7 @@ class HeteroClickFraudGNN(nn.Module):
     def __init__(self, in_dims: dict = None, hidden_dim: int = 64, out_dim: int = 2, num_layers: int = 2):
         super().__init__()
         self.in_dims = in_dims or {
-            "device": 26,
+            "device": 30,  # Updated: 26 original + 4 new FP-Inconsistent checks
             "ip": 3,
             "session": 7,
             "target": 2,

@@ -50,6 +50,8 @@ MOUSE_STAT_FEATURES = [
     "jerk_mean", "angular_entropy",
     "curvature_mean", "curvature_std", "time_regularity",
     "velocity_autocorrelation", "accel_zero_crossing_rate", "movement_efficiency",
+    # Additional features (v2.1)
+    "click_to_move_ratio", "speed_skewness", "idle_time_ratio",
 ]
 
 RESULTS = {}

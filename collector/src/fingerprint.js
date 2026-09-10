@@ -80,7 +80,11 @@ async function getAudioFingerprint() {
     comp.connect(ctx.destination);
     osc.start(0);
 
-    const renderedBuffer = await ctx.startRendering();
+    // Timeout after 3 seconds to prevent hanging on some devices
+    const renderedBuffer = await Promise.race([
+      ctx.startRendering(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('audio_timeout')), 3000)),
+    ]);
     let sum = 0;
     const channelData = renderedBuffer.getChannelData(0);
     for (let i = 4500; i < 5000; i++) {
@@ -88,7 +92,7 @@ async function getAudioFingerprint() {
     }
     return sum.toString();
   } catch (e) {
-    return 'error';
+    return e.message === 'audio_timeout' ? 'timeout' : 'error';
   }
 }
 
@@ -171,7 +175,7 @@ export async function getFingerprintComponents() {
     fontsList: fonts,
   };
 
-  // Generate deterministic visitorId hash
+  // Generate deterministic visitorId hash (high-entropy: 16 components)
   const rawId = [
     components.userAgent,
     components.platform,
@@ -183,6 +187,12 @@ export async function getFingerprintComponents() {
     components.canvasHash,
     components.webglVendor,
     components.webglRenderer,
+    components.audioHash,
+    components.fontsCount,
+    components.language,
+    components.pluginsLength,
+    components.maxTouchPoints,
+    components.pixelRatio,
   ].join('###');
 
   const visitorId = fnv1a(rawId);

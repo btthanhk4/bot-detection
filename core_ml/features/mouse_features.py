@@ -18,7 +18,11 @@ def compute_statistical_features(records: list) -> dict:
     Each record: {'time': int, 'x': float, 'y': float, 'type': str, ...}
     Returns dict with 20 features (14 original + 6 new).
     """
-    if not records or len(records) < 3:
+    # Filter to move events only — click/scroll events at same position
+    # create artificial speed=0 entries that corrupt kinematic features
+    move_records = [r for r in records if r.get("type", "move") == "move"]
+
+    if not move_records or len(move_records) < 3:
         return {
             "point_count": len(records),
             "duration_ms": 0.0,
@@ -41,11 +45,15 @@ def compute_statistical_features(records: list) -> dict:
             "velocity_autocorrelation": 0.0,
             "accel_zero_crossing_rate": 0.0,
             "movement_efficiency": 0.0,
+            # Additional discriminative features (v2.1)
+            "click_to_move_ratio": 0.0,
+            "speed_skewness": 0.0,
+            "idle_time_ratio": 0.0,
         }
 
-    times = [r.get("time", 0) for r in records]
-    xs = [r.get("x", 0.0) for r in records]
-    ys = [r.get("y", 0.0) for r in records]
+    times = [r.get("time", 0) for r in move_records]
+    xs = [r.get("x", 0.0) for r in move_records]
+    ys = [r.get("y", 0.0) for r in move_records]
 
     duration = max(1.0, float(times[-1] - times[0]))
 
@@ -155,6 +163,28 @@ def compute_statistical_features(records: list) -> dict:
     else:
         movement_efficiency = 0.0
 
+    # 6. Click-to-move ratio: bots click frequently relative to movement
+    click_count = sum(1 for r in records if r.get("type") == "click")
+    move_count = len(move_records)
+    click_to_move_ratio = float(click_count / (move_count + 1e-9))
+
+    # 7. Speed distribution skewness: humans have right-skewed speed (many slow, few fast)
+    if len(speeds) > 3:
+        s_mean = float(np.mean(speeds_arr))
+        s_std = float(np.std(speeds_arr))
+        if s_std > 1e-6:
+            speed_skewness = float(np.mean(((speeds_arr - s_mean) / s_std) ** 3))
+        else:
+            speed_skewness = 0.0
+    else:
+        speed_skewness = 0.0
+
+    # 8. Idle time ratio: fraction of session spent idle (no movement > 500ms)
+    idle_threshold_s = 0.5  # 500ms
+    idle_time = sum(dt for dt in dts if dt > idle_threshold_s)
+    total_time = sum(dts) if dts else 1e-9
+    idle_time_ratio = float(idle_time / (total_time + 1e-9))
+
     return {
         "point_count": len(records),
         "duration_ms": duration,
@@ -177,6 +207,10 @@ def compute_statistical_features(records: list) -> dict:
         "velocity_autocorrelation": velocity_autocorrelation,
         "accel_zero_crossing_rate": accel_zero_crossing_rate,
         "movement_efficiency": movement_efficiency,
+        # Additional discriminative features (v2.1)
+        "click_to_move_ratio": click_to_move_ratio,
+        "speed_skewness": speed_skewness,
+        "idle_time_ratio": idle_time_ratio,
     }
 
 

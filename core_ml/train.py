@@ -56,6 +56,8 @@ MOUSE_STAT_FEATURE_NAMES = [
     "curvature_mean", "curvature_std", "time_regularity",
     "velocity_autocorrelation", "accel_zero_crossing_rate",
     "movement_efficiency",
+    # Additional features (v2.1)
+    "click_to_move_ratio", "speed_skewness", "idle_time_ratio",
 ]
 
 
@@ -291,7 +293,12 @@ def main():
                 all_chunk_labels.append(label)
 
         # Graph event
-        ip = f"192.168.1.{random.randint(1, 10) if label == 1 else random.randint(20, 100)}"
+        # IP assignment: overlapping ranges to avoid label leakage
+        # Bots have higher probability of sharing same IP (simulates botnet)
+        if label == 1:
+            ip = f"192.168.1.{random.choice([random.randint(1, 50)] * 3 + [random.randint(1, 100)])}"  # bots cluster on fewer IPs
+        else:
+            ip = f"192.168.1.{random.randint(1, 100)}"  # humans spread across all IPs
         graph_builder.add_telemetry_event(t, ip_address=ip, is_bot_ground_truth=label)
 
     X_tab = np.array(X_tab_list, dtype=np.float32)

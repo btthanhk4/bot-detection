@@ -95,6 +95,20 @@ class ClickFraudGraphBuilder:
             self.session_labels.append(is_bot_ground_truth if is_bot_ground_truth is not None else -1)
         else:
             sess_idx = self.session_map[session_id]
+            # Update session features with new mouse data (merge events)
+            new_records = mouse.get("records", [])
+            if new_records:
+                m_stats = compute_statistical_features(new_records)
+                updated_feat = np.array([
+                    m_stats["mean_speed"],
+                    m_stats["max_speed"],
+                    m_stats["straightness"],
+                    m_stats["pause_ratio"],
+                    m_stats["angular_entropy"],
+                    float(botd.get("heuristicScore", 0.0)),
+                    float(self.session_features[sess_idx][6] + len(new_records)),  # accumulate point count
+                ], dtype=np.float32)
+                self.session_features[sess_idx] = updated_feat
 
         # 5. Connect Edges (directed towards session for aggregation)
         self.edges_device_session.append((dev_idx, sess_idx))
@@ -108,7 +122,7 @@ class ClickFraudGraphBuilder:
         Exports graph data as pure PyTorch tensors for GNN training/inference.
         Works independently even without torch_geometric installed!
         """
-        x_device = torch.tensor(np.array(self.device_features, dtype=np.float32)) if self.device_features else torch.empty((0, 26))
+        x_device = torch.tensor(np.array(self.device_features, dtype=np.float32)) if self.device_features else torch.empty((0, 30))
         x_ip = torch.tensor(np.array(self.ip_features, dtype=np.float32)) if self.ip_features else torch.empty((0, 3))
         x_session = torch.tensor(np.array(self.session_features, dtype=np.float32)) if self.session_features else torch.empty((0, 7))
         x_target = torch.tensor(np.array(self.target_features, dtype=np.float32)) if self.target_features else torch.empty((0, 2))

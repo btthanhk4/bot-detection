@@ -48,6 +48,9 @@ class EnsembleBotDetector:
         records = mouse.get("records", [])
         chunks = mouse.get("chunks", [])
 
+        # Compute mouse stats ONCE — reused for both fallback logic and tabular vector
+        mouse_stats = compute_statistical_features(records)
+
         # 1. BotD Heuristics evaluation
         heuristic_score = float(botd.get("heuristicScore", 0.0))
         reasons = list(botd.get("reasons", []))
@@ -69,13 +72,12 @@ class EnsembleBotDetector:
             if lstm_score > 0.70:
                 reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
         else:
-            # If user hasn't moved mouse enough, use mouse stats
-            stats = compute_statistical_features(records)
-            if stats["point_count"] > 5:
-                if stats["straightness"] > 0.98:
+            # If user hasn't moved mouse enough, use precomputed mouse stats
+            if mouse_stats["point_count"] > 5:
+                if mouse_stats["straightness"] > 0.98:
                     lstm_score = 0.80
                     reasons.append("Unnaturally straight mouse trajectory")
-                elif stats["time_regularity"] < 0.1 and stats["point_count"] > 10:
+                elif mouse_stats["time_regularity"] < 0.05 and mouse_stats["point_count"] > 10:
                     lstm_score = 0.75
                     reasons.append("Suspiciously regular timing between mouse events")
                 else:
@@ -85,7 +87,7 @@ class EnsembleBotDetector:
 
         # 3. Tabular model evaluation (with 6 new features)
         env_vec = extract_env_vector(fingerprint, botd)
-        mouse_stats = compute_statistical_features(records)
+        # Reuse precomputed mouse_stats (no duplicate call)
         mouse_stat_vec = np.array(
             [
                 mouse_stats["mean_speed"],
@@ -106,6 +108,10 @@ class EnsembleBotDetector:
                 mouse_stats["velocity_autocorrelation"],
                 mouse_stats["accel_zero_crossing_rate"],
                 mouse_stats["movement_efficiency"],
+                # 3 additional features (v2.1)
+                mouse_stats["click_to_move_ratio"],
+                mouse_stats["speed_skewness"],
+                mouse_stats["idle_time_ratio"],
             ],
             dtype=np.float32,
         )
