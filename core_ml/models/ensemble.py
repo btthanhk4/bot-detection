@@ -97,10 +97,15 @@ class EnsembleBotDetector:
 
         # 4. Confidence-Based Adaptive Weighted Fusion
         if not has_enough_mouse_data:
-            # Without sufficient mouse data, rely on env + heuristics
-            w_h = 0.45
-            w_t = 0.55
-            w_l = 0.0
+            # Without full 24-point chunks, check if partial mouse trajectory exists
+            if mouse_stats.get("move_point_count", 0) >= 5:
+                w_l = 0.15 * self._compute_confidence_weight(lstm_score)
+                w_t = 0.50 * self._compute_confidence_weight(tabular_score)
+                w_h = 0.35 * self._compute_confidence_weight(heuristic_score)
+            else:
+                w_h = 0.45
+                w_t = 0.55
+                w_l = 0.0
         else:
             # Base weights adjusted by confidence
             conf_lstm = self._compute_confidence_weight(lstm_score)

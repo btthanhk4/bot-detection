@@ -33,6 +33,7 @@ export function runBotDetectors(components = {}) {
     }
   }
   // 4. Automation-specific global variables (e.g., cdc_ from ChromeDriver)
+  detectors.chromeDriverGlobal = false;
   try {
     for (const key of Object.keys(win)) {
       if (key.startsWith('cdc_') || key.startsWith('$cdc_')) {

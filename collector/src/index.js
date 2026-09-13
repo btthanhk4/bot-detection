@@ -102,6 +102,15 @@ export class BotCollector {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) {
+        return {
+          is_bot: this.cachedBotd?.isBot || false,
+          bot_probability: this.cachedBotd?.heuristicScore || 0,
+          fallback: true,
+          status: res.status,
+          error: `HTTP ${res.status}`,
+        };
+      }
       return await res.json();
     } catch (e) {
       return {
