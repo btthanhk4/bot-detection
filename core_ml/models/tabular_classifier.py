@@ -145,10 +145,14 @@ class TabularBotClassifier:
 
     def load(self, path: str) -> bool:
         if os.path.exists(path):
-            data = joblib.load(path)
-            self.model = data["model"]
-            self.scaler = data.get("scaler", StandardScaler())
-            self.is_fitted = data["fitted"]
-            self.feature_names = data.get("features", [])
-            return True
+            try:
+                data = joblib.load(path)
+                self.model = data["model"]
+                self.scaler = data.get("scaler", StandardScaler())
+                self.is_fitted = data.get("fitted", False)
+                self.feature_names = data.get("features", [])
+                return True
+            except Exception:
+                self.is_fitted = False
+                return False
         return False

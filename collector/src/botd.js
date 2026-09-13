@@ -106,9 +106,23 @@ export function runBotDetectors(components = {}) {
   }
   detectors.evalLength = evalLengthAnomaly;
 
-  // 10. Document Element Keys check
+  // 10. Document Element Keys & Attributes check
+  let hasDocAttr = false;
+  try {
+    if (doc.documentElement && typeof doc.documentElement.getAttributeNames === 'function') {
+      const attrNames = doc.documentElement.getAttributeNames();
+      hasDocAttr = attrNames.some((k) => /selenium|webdriver|driver/i.test(k));
+    } else if (doc.documentElement && doc.documentElement.attributes) {
+      for (let i = 0; i < doc.documentElement.attributes.length; i++) {
+        if (/selenium|webdriver|driver/i.test(doc.documentElement.attributes[i].name)) {
+          hasDocAttr = true;
+          break;
+        }
+      }
+    }
+  } catch (e) {}
   const docKeys = Object.keys(doc.documentElement || {});
-  detectors.documentKeys = docKeys.some((k) => /selenium|webdriver|driver/i.test(k));
+  detectors.documentKeys = hasDocAttr || docKeys.some((k) => /selenium|webdriver|driver/i.test(k));
   if (detectors.documentKeys) reasons.push('Automation attributes on documentElement');
 
   // 11. User-Agent vs Platform Inconsistency (FP-Inconsistent paper inspired)

@@ -101,7 +101,10 @@ async function getAudioFingerprint() {
 
 // Installed font detection (heuristic probe)
 function getFontList() {
-  if (typeof document === 'undefined' || !document.body) return [];
+  if (typeof document === 'undefined') return [];
+  const container = document.body || document.documentElement;
+  if (!container) return [];
+
   const baseFonts = ['monospace', 'sans-serif', 'serif'];
   const testFonts = [
     'Arial', 'Verdana', 'Times New Roman', 'Courier New',
@@ -109,13 +112,14 @@ function getFontList() {
     'Segoe UI', 'Roboto', 'Helvetica', 'Ubuntu', 'Consolas'
   ];
 
+  const span = document.createElement('span');
+  span.style.fontSize = '72px';
+  span.innerHTML = 'mmmmmmmmmmlli';
+  span.style.position = 'absolute';
+  span.style.left = '-9999px';
+
   try {
-    const span = document.createElement('span');
-    span.style.fontSize = '72px';
-    span.innerHTML = 'mmmmmmmmmmlli';
-    span.style.position = 'absolute';
-    span.style.left = '-9999px';
-    document.body.appendChild(span);
+    container.appendChild(span);
 
     const baseWidths = {};
     for (const base of baseFonts) {
@@ -133,10 +137,13 @@ function getFontList() {
         }
       }
     }
-    document.body.removeChild(span);
     return detected;
   } catch (e) {
     return [];
+  } finally {
+    if (span.parentNode === container) {
+      container.removeChild(span);
+    }
   }
 }
 

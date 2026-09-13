@@ -177,7 +177,10 @@ class MouseTrajectoryLSTM(nn.Module):
 
     def load_weights(self, path: str, device: str = "cpu"):
         if os.path.exists(path):
-            self.load_state_dict(torch.load(path, map_location=device, weights_only=True))
-            self.eval()
-            return True
+            try:
+                self.load_state_dict(torch.load(path, map_location=device, weights_only=True))
+                self.eval()
+                return True
+            except Exception:
+                return False
         return False

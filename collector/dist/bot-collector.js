@@ -108,7 +108,10 @@
   
   // Installed font detection (heuristic probe)
   function getFontList() {
-    if (typeof document === 'undefined' || !document.body) return [];
+    if (typeof document === 'undefined') return [];
+    const container = document.body || document.documentElement;
+    if (!container) return [];
+  
     const baseFonts = ['monospace', 'sans-serif', 'serif'];
     const testFonts = [
       'Arial', 'Verdana', 'Times New Roman', 'Courier New',
@@ -116,13 +119,14 @@
       'Segoe UI', 'Roboto', 'Helvetica', 'Ubuntu', 'Consolas'
     ];
   
+    const span = document.createElement('span');
+    span.style.fontSize = '72px';
+    span.innerHTML = 'mmmmmmmmmmlli';
+    span.style.position = 'absolute';
+    span.style.left = '-9999px';
+  
     try {
-      const span = document.createElement('span');
-      span.style.fontSize = '72px';
-      span.innerHTML = 'mmmmmmmmmmlli';
-      span.style.position = 'absolute';
-      span.style.left = '-9999px';
-      document.body.appendChild(span);
+      container.appendChild(span);
   
       const baseWidths = {};
       for (const base of baseFonts) {
@@ -140,10 +144,13 @@
           }
         }
       }
-      document.body.removeChild(span);
       return detected;
     } catch (e) {
       return [];
+    } finally {
+      if (span.parentNode === container) {
+        container.removeChild(span);
+      }
     }
   }
   
@@ -322,9 +329,23 @@
     }
     detectors.evalLength = evalLengthAnomaly;
   
-    // 10. Document Element Keys check
+    // 10. Document Element Keys & Attributes check
+    let hasDocAttr = false;
+    try {
+      if (doc.documentElement && typeof doc.documentElement.getAttributeNames === 'function') {
+        const attrNames = doc.documentElement.getAttributeNames();
+        hasDocAttr = attrNames.some((k) => /selenium|webdriver|driver/i.test(k));
+      } else if (doc.documentElement && doc.documentElement.attributes) {
+        for (let i = 0; i < doc.documentElement.attributes.length; i++) {
+          if (/selenium|webdriver|driver/i.test(doc.documentElement.attributes[i].name)) {
+            hasDocAttr = true;
+            break;
+          }
+        }
+      }
+    } catch (e) {}
     const docKeys = Object.keys(doc.documentElement || {});
-    detectors.documentKeys = docKeys.some((k) => /selenium|webdriver|driver/i.test(k));
+    detectors.documentKeys = hasDocAttr || docKeys.some((k) => /selenium|webdriver|driver/i.test(k));
     if (detectors.documentKeys) reasons.push('Automation attributes on documentElement');
   
     // 11. User-Agent vs Platform Inconsistency (FP-Inconsistent paper inspired)
