@@ -41,6 +41,8 @@ Thumbs.db
 # Model checkpoints & dataset caches (large binaries)
 *.tar.gz
 *.zip
-core_ml/weights/*.pt
-core_ml/weights/*.joblib
+# Allow trained production model weights (< 1MB)
+!core_ml/weights/behavioral_lstm.pt
+!core_ml/weights/gnn_model.pt
+!core_ml/weights/tabular_model.joblib
 !core_ml/weights/.gitkeep
