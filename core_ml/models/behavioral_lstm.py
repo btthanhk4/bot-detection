@@ -151,6 +151,8 @@ class MouseTrajectoryLSTM(nn.Module):
             return 0.5
 
         self.eval()
+        device = next(self.parameters()).device
+        chunks_tensor = chunks_tensor.to(device)
         with torch.no_grad():
             preds = self.forward(chunks_tensor).squeeze(-1)  # (n_chunks,)
 

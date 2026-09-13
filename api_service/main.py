@@ -11,6 +11,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from api_service.config import settings
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
@@ -18,22 +19,22 @@ from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.models.gnn_detector import HeteroClickFraudGNN
 
 app = FastAPI(
-    title="Silkmoon Bot & Fraud Detection Core API",
+    title=settings.PROJECT_NAME,
     description="Multi-Modal Bot Detection combining FingerprintJS, BotD, DELBOT-Mouse, and Graph Neural Networks",
-    version="1.0.0",
+    version=settings.VERSION,
 )
 
 # Enable CORS for local development and cloud deployments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Global model holders
-weights_dir = os.path.join(os.path.dirname(__file__), "..", "core_ml", "weights")
+weights_dir = settings.WEIGHTS_DIR
 lstm_weights_path = os.path.join(weights_dir, "behavioral_lstm.pt")
 tabular_weights_path = os.path.join(weights_dir, "tabular_model.joblib")
 gnn_weights_path = os.path.join(weights_dir, "gnn_model.pt")
@@ -47,8 +48,12 @@ tabular_model.load(tabular_weights_path)
 gnn_model = HeteroClickFraudGNN()
 gnn_model.load_model(gnn_weights_path)
 
-ensemble_detector = EnsembleBotDetector(lstm_model=lstm_model, tabular_model=tabular_model)
-graph_builder = ClickFraudGraphBuilder()
+ensemble_detector = EnsembleBotDetector(
+    lstm_model=lstm_model,
+    tabular_model=tabular_model,
+    threshold=settings.THRESHOLD,
+)
+graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
 # In-memory telemetry log buffer (last 500 requests)
 telemetry_buffer: List[Dict[str, Any]] = []
@@ -171,7 +176,7 @@ async def receive_telemetry(payload: TelemetryPayload, request: Request):
     data["received_at"] = int(time.time() * 1000)
 
     telemetry_buffer.append(data)
-    if len(telemetry_buffer) > 1000:
+    if len(telemetry_buffer) > settings.MAX_BUFFER_SIZE:
         telemetry_buffer.pop(0)
 
     # Auto-add to evolving graph

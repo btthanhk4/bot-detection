@@ -54,7 +54,8 @@ class EnsembleBotDetector:
         mouse_stats = compute_statistical_features(records)
 
         # 1. BotD Heuristics evaluation
-        heuristic_score = float(botd.get("heuristicScore") or 0.0)
+        raw_h_score = float(botd.get("heuristicScore") or 0.0)
+        heuristic_score = max(0.0, min(1.0, raw_h_score))
         raw_reasons = botd.get("reasons")
         reasons = list(raw_reasons) if (raw_reasons and isinstance(raw_reasons, list)) else []
         detectors = botd.get("detectors") if isinstance(botd.get("detectors"), dict) else {}
@@ -117,6 +118,7 @@ class EnsembleBotDetector:
         if critical_flags:
             final_proba = max(final_proba, 0.96)
 
+        final_proba = max(0.0, min(1.0, float(final_proba)))
         is_bot = final_proba >= self.threshold
 
         # Calibrated verdict thresholds

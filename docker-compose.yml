@@ -1,0 +1,20 @@
+services:
+  bot-detection-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bot-detection-api
+    ports:
+      - "8000:8000"
+    environment:
+      - BOT_API_HOST=0.0.0.0
+      - BOT_API_PORT=8000
+      - BOT_API_WORKERS=4
+      - BOT_CORS_ORIGINS=*
+      - BOT_DECISION_THRESHOLD=0.50
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

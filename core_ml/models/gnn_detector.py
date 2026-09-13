@@ -145,6 +145,9 @@ class HeteroClickFraudGNN(nn.Module):
 
     def predict_session_probabilities(self, x_dict: dict, edge_index_dict: dict) -> torch.Tensor:
         self.eval()
+        device = next(self.parameters()).device
+        x_dict = {k: v.to(device) for k, v in x_dict.items()}
+        edge_index_dict = {k: v.to(device) for k, v in edge_index_dict.items()}
         with torch.no_grad():
             logits = self.forward(x_dict, edge_index_dict)
             if logits.size(0) == 0:
