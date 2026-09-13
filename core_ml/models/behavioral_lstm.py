@@ -152,7 +152,7 @@ class MouseTrajectoryLSTM(nn.Module):
 
         self.eval()
         device = next(self.parameters()).device
-        chunks_tensor = chunks_tensor.to(device)
+        chunks_tensor = torch.nan_to_num(chunks_tensor.to(device), nan=0.0, posinf=100.0, neginf=-100.0)
         with torch.no_grad():
             preds = self.forward(chunks_tensor).squeeze(-1)  # (n_chunks,)
 
@@ -161,7 +161,8 @@ class MouseTrajectoryLSTM(nn.Module):
 
             # Weighted aggregation: higher confidence predictions get more weight
             weights = torch.abs(preds - 0.5) * 2.0 + 0.1  # min weight 0.1
-            weighted_mean = float((preds * weights).sum() / weights.sum())
+            w_sum = float(weights.sum())
+            weighted_mean = float((preds * weights).sum() / w_sum) if w_sum > 1e-6 else 0.5
 
             # Use p75 only as a strong bot signal override
             # Prevents edge case where low p75 overrides a high weighted_mean

@@ -68,13 +68,21 @@ class TestEnvFeatures:
         assert not np.isinf(vec).any()
 
     def test_extract_env_vector_none_safe(self):
-        vec1 = extract_env_vector(None, None)
-        assert vec1.shape == (len(ENV_FEATURE_NAMES),)
-        assert not np.isnan(vec1).any()
+        vec_none = extract_env_vector(None, None)
+        assert len(vec_none) == len(ENV_FEATURE_NAMES)
+        assert not np.isnan(vec_none).any()
 
-        vec2 = extract_env_vector({}, {})
-        assert vec2.shape == (len(ENV_FEATURE_NAMES),)
-        assert not np.isnan(vec2).any()
+        vec_empty = extract_env_vector({}, {})
+        assert len(vec_empty) == len(ENV_FEATURE_NAMES)
+        assert not np.isnan(vec_empty).any()
+
+    def test_env_features_array_resolution(self):
+        # Supports array/tuple format [width, height]
+        fp_arr = {"screenResolution": [2560, 1440]}
+        vec = extract_env_vector(fp_arr, {})
+        # screen_width is at index 18, screen_height at 19
+        assert vec[18] == 2560.0
+        assert vec[19] == 1440.0
 
         # Malformed nested types
         vec3 = extract_env_vector({"hardwareConcurrency": "not_a_num"}, {"detectors": None})
@@ -161,3 +169,16 @@ class TestMouseFeatures:
         ]
         tensor = extract_sequential_chunks(excessive_chunks)
         assert tensor.shape[0] == 50
+
+    def test_mouse_features_out_of_order_timestamps(self):
+        # Out of order timestamps should be chronologically sorted automatically
+        unordered_records = [
+            {"time": 300, "x": 0.3, "y": 0.3, "type": "move"},
+            {"time": 100, "x": 0.1, "y": 0.1, "type": "move"},
+            {"time": 200, "x": 0.2, "y": 0.2, "type": "move"},
+            {"time": 400, "x": 0.4, "y": 0.4, "type": "move"},
+        ]
+        stats = compute_statistical_features(unordered_records)
+        assert stats["duration_ms"] == 300.0  # 400 - 100
+        assert stats["mean_speed"] > 0
+        assert not np.isnan(stats["mean_speed"])

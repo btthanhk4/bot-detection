@@ -2,6 +2,7 @@
 Unit tests for core ML models and multi-modal ensemble.
 """
 
+import math
 import os
 import numpy as np
 import pytest
@@ -13,6 +14,7 @@ from core_ml.models.gnn_detector import HeteroClickFraudGNN
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
+from core_ml.features.graph_builder import SESSION_FEATURE_DIM
 
 
 class TestTabularClassifier:
@@ -94,6 +96,19 @@ class TestHeteroGNN:
         assert probs.shape == (4,)
         assert ((probs >= 0.0) & (probs <= 1.0)).all()
 
+    def test_gnn_missing_keys_resilience(self):
+        gnn = HeteroClickFraudGNN(hidden_dim=32, num_layers=2)
+        # x_dict missing 'target' and 'ip' keys completely
+        partial_x_dict = {
+            "device": torch.randn(2, len(ENV_FEATURE_NAMES)),
+            "session": torch.randn(2, SESSION_FEATURE_DIM),
+        }
+        # edge_dict is empty
+        empty_edge_dict = {}
+        logits = gnn(partial_x_dict, empty_edge_dict)
+        assert logits.shape == (2, 2)
+        assert not torch.isnan(logits).any()
+
 
 class TestEnsembleDetector:
     def test_ensemble_decisions(self):
@@ -120,3 +135,24 @@ class TestEnsembleDetector:
         assert "is_bot" in res_empty
         assert "bot_probability" in res_empty
         assert "breakdown" in res_empty
+
+    def test_ensemble_corrupted_payload_resilience(self):
+        ensemble = EnsembleBotDetector()
+        corrupted_payload = {
+            "botd": {"heuristicScore": "invalid_string_not_float", "detectors": None},
+            "fingerprint": {"screenResolution": None, "hardwareConcurrency": "NaN"},
+            "mouse": {
+                "records": [
+                    {"time": "bad_time", "x": None, "y": float("nan"), "type": "move"},
+                    {"time": 100, "x": float("inf"), "y": -float("inf"), "type": "move"},
+                ],
+                "chunks": [
+                    [[float("nan")] * 8] * 24
+                ]
+            }
+        }
+        res = ensemble.predict(corrupted_payload)
+        assert isinstance(res, dict)
+        assert not math.isnan(res["bot_probability"])
+        assert 0.0 <= res["bot_probability"] <= 1.0
+        assert res["verdict"] in ("HUMAN", "BOT", "SUSPECT")

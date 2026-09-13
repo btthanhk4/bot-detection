@@ -101,14 +101,16 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
     p_len = safe_float(fp.get("pluginsLength"), 0.0)
     touch = safe_float(fp.get("maxTouchPoints"), 0.0)
 
-    # Screen resolution parsing
+    # Screen resolution parsing (supports "1920x1080", [1920, 1080], etc.)
     res_val = fp.get("screenResolution")
-    res_str = str(res_val) if res_val and isinstance(res_val, str) else "1920x1080"
-    try:
-        parts = res_str.split("x")
+    if isinstance(res_val, (list, tuple)) and len(res_val) >= 2:
+        sw = safe_float(res_val[0], 1920.0)
+        sh = safe_float(res_val[1], 1080.0)
+    elif isinstance(res_val, str) and "x" in res_val:
+        parts = res_val.split("x")
         sw = safe_float(parts[0], 1920.0) if len(parts) > 0 else 1920.0
         sh = safe_float(parts[1], 1080.0) if len(parts) > 1 else 1080.0
-    except Exception:
+    else:
         sw, sh = 1920.0, 1080.0
     s_ratio = float(sw / sh) if sh > 0 else 1.777
 

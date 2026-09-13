@@ -82,9 +82,9 @@ class ClickFraudGraphBuilder:
             if not isinstance(telemetry, dict):
                 telemetry = {}
 
-            session_id = str(telemetry.get("sessionId") or f"sess_{len(self.session_map)}")
-            visitor_id = str(telemetry.get("visitorId") or f"dev_{len(self.device_map)}")
-            page_url = str(telemetry.get("pageUrl") or "/")
+            session_id = str(telemetry.get("sessionId") or f"sess_{len(self.session_map)}")[:128]
+            visitor_id = str(telemetry.get("visitorId") or f"dev_{len(self.device_map)}")[:128]
+            page_url = str(telemetry.get("pageUrl") or "/")[:500]
             fingerprint = telemetry.get("fingerprint") or {}
             botd = telemetry.get("botd") or {}
             mouse = telemetry.get("mouse") or {}
@@ -116,7 +116,7 @@ class ClickFraudGraphBuilder:
                 dev_idx = self.device_map[visitor_id]
 
             # 2. IP Node (with deterministic hashing)
-            ip_str = str(ip_address or "127.0.0.1")
+            ip_str = str(ip_address or "127.0.0.1")[:64]
             if ip_str not in self.ip_map:
                 ip_idx = len(self.ip_map)
                 self.ip_map[ip_str] = ip_idx

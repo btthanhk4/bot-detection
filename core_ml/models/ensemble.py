@@ -54,7 +54,10 @@ class EnsembleBotDetector:
         mouse_stats = compute_statistical_features(records)
 
         # 1. BotD Heuristics evaluation
-        raw_h_score = float(botd.get("heuristicScore") or 0.0)
+        try:
+            raw_h_score = float(botd.get("heuristicScore") or 0.0)
+        except (ValueError, TypeError):
+            raw_h_score = 0.0
         heuristic_score = max(0.0, min(1.0, raw_h_score))
         raw_reasons = botd.get("reasons")
         reasons = list(raw_reasons) if (raw_reasons and isinstance(raw_reasons, list)) else []
@@ -116,8 +119,13 @@ class EnsembleBotDetector:
             w_t = self.w_tabular * conf_tab
             w_h = self.w_heuristic * conf_heur
 
+        # Clean scores against NaN
+        lstm_score = float(np.nan_to_num(lstm_score, nan=0.5))
+        tabular_score = float(np.nan_to_num(tabular_score, nan=0.5))
+        heuristic_score = float(np.nan_to_num(heuristic_score, nan=0.0))
+
         total_w = w_l + w_t + w_h
-        final_proba = (w_l * lstm_score + w_t * tabular_score + w_h * heuristic_score) / total_w
+        final_proba = (w_l * lstm_score + w_t * tabular_score + w_h * heuristic_score) / total_w if total_w > 1e-6 else 0.5
 
         # If critical hard rule triggered, elevate probability to >= 0.95
         if critical_flags:

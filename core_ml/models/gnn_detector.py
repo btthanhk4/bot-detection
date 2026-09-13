@@ -92,14 +92,36 @@ class HeteroClickFraudGNN(nn.Module):
         edge_index_dict: {edge_type_tuple: tensor of shape (2, E)}
         Returns: Logits for session nodes of shape (N_session, out_dim)
         """
-        # Step 1: Project each node type to hidden dimension
+        # Determine target device
+        device = "cpu"
+        for val in x_dict.values():
+            if isinstance(val, torch.Tensor) and val.numel() > 0:
+                device = val.device
+                break
+
+        # Step 1: Project each node type to hidden dimension (guaranteeing all node types exist)
         h_dict = {}
-        for node_type, x in x_dict.items():
-            if x.size(0) > 0 and node_type in self.input_projections:
-                h_dict[node_type] = self.input_projections[node_type](x)
+        for node_type, dim in self.in_dims.items():
+            x = x_dict.get(node_type)
+            if x is not None and isinstance(x, torch.Tensor) and x.size(0) > 0 and node_type in self.input_projections:
+                h_dict[node_type] = self.input_projections[node_type](x.to(device))
             else:
-                device = x.device if x.numel() > 0 else "cpu"
-                h_dict[node_type] = torch.zeros((x.size(0), self.hidden_dim), device=device)
+                n_nodes = x.size(0) if (x is not None and isinstance(x, torch.Tensor)) else 0
+                h_dict[node_type] = torch.zeros((n_nodes, self.hidden_dim), device=device)
+
+        # Ensure all expected edge types exist in edge_index_dict
+        safe_edge_index_dict = {}
+        expected_edges = [
+            ("device", "operates", "session"),
+            ("ip", "originates", "session"),
+            ("target", "targeted_by", "session"),
+        ]
+        for edge_t in expected_edges:
+            edge_idx = edge_index_dict.get(edge_t)
+            if edge_idx is not None and isinstance(edge_idx, torch.Tensor) and edge_idx.dim() == 2:
+                safe_edge_index_dict[edge_t] = edge_idx.to(device)
+            else:
+                safe_edge_index_dict[edge_t] = torch.empty((2, 0), dtype=torch.long, device=device)
 
         # Step 2: Message Passing with residual connections
         if HAS_PYG and self.convs is not None:
@@ -107,7 +129,7 @@ class HeteroClickFraudGNN(nn.Module):
                 # Save residuals
                 h_residual = {k: v.clone() for k, v in h_dict.items()}
 
-                out_dict = conv(h_dict, edge_index_dict)
+                out_dict = conv(h_dict, safe_edge_index_dict)
                 for k, v in out_dict.items():
                     # Apply LayerNorm
                     if k in self.layer_norms[layer_idx]:
@@ -126,7 +148,7 @@ class HeteroClickFraudGNN(nn.Module):
                 (("ip", "originates", "session"), "ip"),
                 (("target", "targeted_by", "session"), "target"),
             ]:
-                edge_idx = edge_index_dict.get(edge_type_key)
+                edge_idx = safe_edge_index_dict.get(edge_type_key)
                 if edge_idx is not None and edge_idx.numel() > 0 and h_session.size(0) > 0:
                     h_src = h_dict.get(src_type, torch.empty((0, self.hidden_dim)))
                     src_nodes, dst_nodes = edge_idx[0], edge_idx[1]

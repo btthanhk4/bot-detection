@@ -443,8 +443,8 @@
       const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
       const safeX = (typeof clientX === 'number' && Number.isFinite(clientX)) ? clientX : 0;
       const safeY = (typeof clientY === 'number' && Number.isFinite(clientY)) ? clientY : 0;
-      const normX = Number((safeX / w).toFixed(5));
-      const normY = Number((safeY / h).toFixed(5));
+      const normX = Math.max(0, Math.min(1, Number((safeX / w).toFixed(5))));
+      const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
   
       const prev = this.records.length > 0 ? this.records[this.records.length - 1] : null;
   
@@ -544,12 +544,17 @@
     }
   
     handleTouchEnd(e) {
-      const last = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-      const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
-      const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
-      const x = last ? last.x * w : 0;
-      const y = last ? last.y * h : 0;
-      this.recordPoint('up', x, y);
+      const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
+      if (touch) {
+        this.recordPoint('up', touch.clientX, touch.clientY);
+      } else {
+        const last = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+        const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
+        const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
+        const x = last ? last.x * w : 0;
+        const y = last ? last.y * h : 0;
+        this.recordPoint('up', x, y);
+      }
     }
   
     /**

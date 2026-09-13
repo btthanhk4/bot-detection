@@ -89,6 +89,9 @@ def compute_statistical_features(records: list) -> dict:
     if not valid_records:
         return _get_empty_stats(point_count=len(valid_records))
 
+    # Ensure chronological order in case of asynchronous network/browser event arrival
+    valid_records.sort(key=lambda r: r["time"])
+
     move_records = [r for r in valid_records if r["type"] == "move"]
     if len(move_records) < 3:
         return _get_empty_stats(point_count=len(valid_records), move_count=len(move_records))
