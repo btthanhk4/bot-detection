@@ -62,6 +62,9 @@ class ClickFraudGraphBuilder:
         self.edges_device_session = []
         self.edges_session_ip = []
         self.edges_session_target = []
+        self._edge_set_dev_sess = set()
+        self._edge_set_ip_sess = set()
+        self._edge_set_tgt_sess = set()
         self.session_labels = []  # 0=Human, 1=Bot
 
     def _build_session_feature(self, mouse_stats: dict, botd: dict, record_count: int) -> np.ndarray:
@@ -105,6 +108,9 @@ class ClickFraudGraphBuilder:
                 self.edges_device_session.clear()
                 self.edges_session_ip.clear()
                 self.edges_session_target.clear()
+                self._edge_set_dev_sess.clear()
+                self._edge_set_ip_sess.clear()
+                self._edge_set_tgt_sess.clear()
 
             # 1. Device Node
             if visitor_id not in self.device_map:
@@ -154,10 +160,21 @@ class ClickFraudGraphBuilder:
                     sess_feat = self._build_session_feature(m_stats, botd, prev_count + len(records))
                     self.session_features[sess_idx] = sess_feat
 
-            # 5. Connect Edges
-            self.edges_device_session.append((dev_idx, sess_idx))
-            self.edges_session_ip.append((ip_idx, sess_idx))
-            self.edges_session_target.append((tgt_idx, sess_idx))
+            # 5. Connect Edges (deduplicated across recurring heartbeats)
+            edge_dev = (dev_idx, sess_idx)
+            if edge_dev not in self._edge_set_dev_sess:
+                self._edge_set_dev_sess.add(edge_dev)
+                self.edges_device_session.append(edge_dev)
+
+            edge_ip = (ip_idx, sess_idx)
+            if edge_ip not in self._edge_set_ip_sess:
+                self._edge_set_ip_sess.add(edge_ip)
+                self.edges_session_ip.append(edge_ip)
+
+            edge_tgt = (tgt_idx, sess_idx)
+            if edge_tgt not in self._edge_set_tgt_sess:
+                self._edge_set_tgt_sess.add(edge_tgt)
+                self.edges_session_target.append(edge_tgt)
 
             return sess_idx
 

@@ -83,3 +83,24 @@ class TestGraphBuilder:
         idx = builder.add_telemetry_event(None)
         assert idx == 0
         assert len(builder.session_map) == 1
+
+    def test_edge_deduplication_on_repeated_heartbeats(self):
+        builder = ClickFraudGraphBuilder(max_sessions=100)
+        # Send 10 repeated heartbeats for the EXACT SAME session, device, and IP
+        ev = {
+            "sessionId": "sess_recurring_heartbeat",
+            "visitorId": "dev_same",
+            "pageUrl": "/dashboard",
+            "fingerprint": {},
+            "botd": {},
+            "mouse": {"records": []},
+        }
+        for _ in range(10):
+            builder.add_telemetry_event(ev, ip_address="10.0.0.99")
+
+        # Session count must be 1
+        assert len(builder.session_map) == 1
+        # Edges MUST be deduplicated: exactly 1 edge per relation type, not 10!
+        assert len(builder.edges_device_session) == 1
+        assert len(builder.edges_session_ip) == 1
+        assert len(builder.edges_session_target) == 1

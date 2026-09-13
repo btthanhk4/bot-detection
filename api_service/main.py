@@ -4,6 +4,7 @@ Serves real-time bot detection inference using the trained Multi-Modal Ensemble
 and provides endpoints for telemetry ingestion & graph analysis.
 """
 
+import json
 import os
 import time
 from typing import Optional, Dict, Any, List
@@ -203,9 +204,10 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
 
 
 @app.post("/api/v1/telemetry")
-async def receive_telemetry(payload: TelemetryPayload, request: Request):
+async def receive_telemetry(request: Request):
     """
     Asynchronous telemetry ingestion endpoint (e.g. from navigator.sendBeacon).
+    Accepts application/json, text/plain (beacons), and raw JSON payloads.
     """
     client_ip = get_client_ip(request)
     if not check_rate_limit(client_ip):
@@ -214,7 +216,20 @@ async def receive_telemetry(payload: TelemetryPayload, request: Request):
             detail="Rate limit exceeded.",
             headers={"Retry-After": "60"},
         )
-    data = payload.model_dump()
+
+    # Robust parsing supporting application/json, text/plain (sendBeacon), or raw bytes
+    try:
+        data = await request.json()
+    except Exception:
+        try:
+            body_bytes = await request.body()
+            data = json.loads(body_bytes.decode("utf-8", errors="ignore")) if body_bytes else {}
+        except Exception:
+            data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
 

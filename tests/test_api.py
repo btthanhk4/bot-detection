@@ -100,6 +100,20 @@ def test_telemetry_async_ingestion(client):
     assert data["recorded"] is True
 
 
+def test_telemetry_beacon_text_plain_ingestion(client):
+    # Tests navigator.sendBeacon fallback where Content-Type is text/plain
+    raw_json = '{"sessionId": "sess_beacon_text_plain", "action": "leave", "mouse": {"records": []}}'
+    res = client.post(
+        "/api/v1/telemetry",
+        content=raw_json.encode("utf-8"),
+        headers={"Content-Type": "text/plain;charset=UTF-8"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "success"
+    assert data["recorded"] is True
+
+
 def test_graph_stats(client):
     res = client.get("/api/v1/graph/stats")
     assert res.status_code == 200

@@ -708,7 +708,8 @@
       const body = JSON.stringify(payload);
   
       if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-        const success = navigator.sendBeacon(this.endpointUrl, body);
+        const blob = new Blob([body], { type: 'application/json' });
+        const success = navigator.sendBeacon(this.endpointUrl, blob);
         if (success) return true;
       }
   
