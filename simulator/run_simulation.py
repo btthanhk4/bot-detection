@@ -4,6 +4,7 @@ Generates both API-level simulated traffic and real browser Playwright traffic
 to evaluate the multi-modal bot detection model.
 """
 
+import os
 import argparse
 import sys
 import time
@@ -13,6 +14,8 @@ try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core_ml.dataset.loader import generate_synthetic_telemetry
 

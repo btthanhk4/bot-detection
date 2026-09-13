@@ -93,6 +93,12 @@ class ClickFraudGraphBuilder:
             # Memory control: If session capacity exceeded, reset or prune oldest
             if len(self.session_map) >= self.max_sessions and session_id not in self.session_map:
                 # Clear graph cache for long-running service to prevent memory leak
+                self.device_map.clear()
+                self.device_features.clear()
+                self.ip_map.clear()
+                self.ip_features.clear()
+                self.target_map.clear()
+                self.target_features.clear()
                 self.session_map.clear()
                 self.session_features.clear()
                 self.session_labels.clear()
@@ -208,3 +214,18 @@ class ClickFraudGraphBuilder:
             return data
         except ImportError:
             return self.to_torch_tensors()
+
+    def get_stats(self) -> dict:
+        """Thread-safe snapshot of graph topology statistics."""
+        with self._lock:
+            device_cnt = len(self.device_map)
+            ip_cnt = len(self.ip_map)
+            session_cnt = len(self.session_map)
+            edges_cnt = len(self.edges_device_session) + len(self.edges_session_ip) + len(self.edges_session_target)
+            return {
+                "device_count": device_cnt,
+                "ip_count": ip_cnt,
+                "session_count": session_cnt,
+                "edges_count": edges_cnt,
+                "suspected_coordinated_rings": 1 if (session_cnt > 10 and device_cnt < session_cnt * 0.3) else 0,
+            }

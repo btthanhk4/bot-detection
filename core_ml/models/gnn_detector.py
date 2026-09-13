@@ -10,9 +10,13 @@ Improvements:
 """
 
 import os
+import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Filter known PyG warning about star-topology destination nodes (device, ip, target are sources)
+warnings.filterwarnings("ignore", message=".*There exist node types.*representations do not get updated.*")
 
 try:
     from torch_geometric.nn import HeteroConv, SAGEConv, GATConv
@@ -57,11 +61,13 @@ class HeteroClickFraudGNN(nn.Module):
             self.convs = nn.ModuleList()
             self.layer_norms = nn.ModuleList()
             for layer_idx in range(num_layers):
-                conv = HeteroConv({
-                    ("device", "operates", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
-                    ("ip", "originates", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
-                    ("target", "targeted_by", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
-                }, aggr="sum")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", UserWarning)
+                    conv = HeteroConv({
+                        ("device", "operates", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
+                        ("ip", "originates", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
+                        ("target", "targeted_by", "session"): SAGEConv((hidden_dim, hidden_dim), hidden_dim),
+                    }, aggr="sum")
                 self.convs.append(conv)
                 # Per-node-type layer norms
                 ln_dict = nn.ModuleDict({

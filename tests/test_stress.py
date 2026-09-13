@@ -4,9 +4,14 @@ Simulates concurrent production traffic against the FastAPI API service.
 Measures latency percentiles (P50, P95, P99), error rate, and throughput.
 """
 
+import os
+import sys
 import time
 import statistics
 from concurrent.futures import ThreadPoolExecutor
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from fastapi.testclient import TestClient
 from api_service.main import app
 from core_ml.dataset.loader import generate_synthetic_telemetry

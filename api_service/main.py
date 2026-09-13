@@ -80,8 +80,12 @@ def check_rate_limit(client_ip: str) -> bool:
             return False
         valid_ts.append(now)
         _rate_limit_records[client_ip] = valid_ts
-        if len(_rate_limit_records) > 20000:
-            _rate_limit_records.clear()
+        if len(_rate_limit_records) > 10000:
+            stale_keys = [k for k, v in _rate_limit_records.items() if not v or v[-1] <= cutoff]
+            for k in stale_keys:
+                del _rate_limit_records[k]
+            if len(_rate_limit_records) > 10000:
+                _rate_limit_records.clear()
         return True
 
 
@@ -116,6 +120,7 @@ def get_client_ip(request: Request) -> str:
 
 @app.get("/")
 def index():
+    stats = graph_builder.get_stats()
     return {
         "status": "online",
         "service": "Bot Detection Core",
@@ -125,9 +130,9 @@ def index():
             "hetero_gnn": "ready",
         },
         "graph_node_counts": {
-            "devices": len(graph_builder.device_map),
-            "ips": len(graph_builder.ip_map),
-            "sessions": len(graph_builder.session_map),
+            "devices": stats["device_count"],
+            "ips": stats["ip_count"],
+            "sessions": stats["session_count"],
         },
     }
 
@@ -230,16 +235,4 @@ def get_graph_stats():
     """
     Returns graph topology statistics and fraud ring indicators.
     """
-    device_cnt = len(graph_builder.device_map)
-    ip_cnt = len(graph_builder.ip_map)
-    session_cnt = len(graph_builder.session_map)
-
-    # Detect devices using multiple IPs (IP rotation / proxy anomaly)
-    # or IPs hosting an unusually large number of distinct devices (device farm)
-    return {
-        "device_count": device_cnt,
-        "ip_count": ip_cnt,
-        "session_count": session_cnt,
-        "edges_count": len(graph_builder.edges_device_session) + len(graph_builder.edges_session_ip),
-        "suspected_coordinated_rings": 1 if (session_cnt > 10 and device_cnt < session_cnt * 0.3) else 0,
-    }
+    return graph_builder.get_stats()
