@@ -170,3 +170,10 @@ def test_rate_limiter_blocks_excessive_traffic(client):
         assert "retry-after" in r4.headers
     finally:
         settings.RATE_LIMIT_PER_MINUTE = orig_limit
+
+
+def test_get_bot_collector_sdk(client):
+    res = client.get("/bot-collector.js")
+    assert res.status_code == 200
+    assert "application/javascript" in res.headers["content-type"]
+    assert "BotCollector" in res.text

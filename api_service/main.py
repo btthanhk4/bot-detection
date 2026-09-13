@@ -9,6 +9,7 @@ import os
 import time
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -251,3 +252,20 @@ def get_graph_stats():
     Returns graph topology statistics and fraud ring indicators.
     """
     return graph_builder.get_stats()
+
+
+@app.get("/bot-collector.js")
+def get_bot_collector_sdk():
+    """
+    Serves the pre-compiled BotCollector standalone UMD bundle for proxy injection.
+    """
+    dist_path = os.path.join(os.path.dirname(__file__), "..", "collector", "dist", "bot-collector.js")
+    dist_path = os.path.abspath(dist_path)
+    if os.path.exists(dist_path):
+        return FileResponse(
+            dist_path,
+            media_type="application/javascript",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
+
