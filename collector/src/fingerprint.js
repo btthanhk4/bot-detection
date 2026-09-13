@@ -17,6 +17,7 @@ export function fnv1a(str) {
 // Canvas fingerprinting
 function getCanvasFingerprint() {
   try {
+    if (typeof document === 'undefined') return 'unsupported';
     const canvas = document.createElement('canvas');
     canvas.width = 240;
     canvas.height = 60;
@@ -42,6 +43,7 @@ function getCanvasFingerprint() {
 // WebGL fingerprinting (Renderer & Vendor)
 function getWebGLFingerprint() {
   try {
+    if (typeof document === 'undefined') return { vendor: 'unsupported', renderer: 'unsupported' };
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
     if (!gl) return { vendor: 'unsupported', renderer: 'unsupported' };
@@ -61,7 +63,8 @@ function getWebGLFingerprint() {
 // Audio fingerprinting via OfflineAudioContext
 async function getAudioFingerprint() {
   try {
-    const AudioCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const win = typeof window !== 'undefined' ? window : {};
+    const AudioCtx = win.OfflineAudioContext || win.webkitOfflineAudioContext;
     if (!AudioCtx) return 'unsupported';
 
     const ctx = new AudioCtx(1, 44100, 44100);
@@ -98,6 +101,7 @@ async function getAudioFingerprint() {
 
 // Installed font detection (heuristic probe)
 function getFontList() {
+  if (typeof document === 'undefined' || !document.body) return [];
   const baseFonts = ['monospace', 'sans-serif', 'serif'];
   const testFonts = [
     'Arial', 'Verdana', 'Times New Roman', 'Courier New',
@@ -140,6 +144,7 @@ function getFontList() {
  * Collect complete hardware & browser environment components
  */
 export async function getFingerprintComponents() {
+  const win = typeof window !== 'undefined' ? window : {};
   const nav = typeof navigator !== 'undefined' ? navigator : {};
   const scr = typeof screen !== 'undefined' ? screen : {};
   const webgl = getWebGLFingerprint();
@@ -158,13 +163,13 @@ export async function getFingerprintComponents() {
     screenResolution: `${scr.width || 0}x${scr.height || 0}`,
     availableScreenResolution: `${scr.availWidth || 0}x${scr.availHeight || 0}`,
     colorDepth: scr.colorDepth || 0,
-    pixelRatio: window.devicePixelRatio || 1,
+    pixelRatio: win.devicePixelRatio || 1,
     timezoneOffset: new Date().getTimezoneOffset(),
-    timezone: Intl?.DateTimeFormat?.().resolvedOptions?.().timeZone || '',
-    sessionStorage: typeof window.sessionStorage !== 'undefined',
-    localStorage: typeof window.localStorage !== 'undefined',
-    indexedDb: typeof window.indexedDB !== 'undefined',
-    openDatabase: typeof window.openDatabase !== 'undefined',
+    timezone: (typeof Intl !== 'undefined' && Intl?.DateTimeFormat?.().resolvedOptions?.().timeZone) || '',
+    sessionStorage: typeof win.sessionStorage !== 'undefined',
+    localStorage: typeof win.localStorage !== 'undefined',
+    indexedDb: typeof win.indexedDB !== 'undefined',
+    openDatabase: typeof win.openDatabase !== 'undefined',
     pluginsLength: nav.plugins ? nav.plugins.length : 0,
     doNotTrack: nav.doNotTrack || 'unknown',
     webglVendor: webgl.vendor,

@@ -84,7 +84,7 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
             preds = lstm_model(batch_x)
-            bce_loss = criterion(preds.squeeze(), batch_y)
+            bce_loss = criterion(preds.squeeze(-1), batch_y)
             reg_loss = lstm_model.get_regularization_loss()
             loss = bce_loss + reg_loss
             loss.backward()
@@ -98,7 +98,7 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
         # Validation
         lstm_model.eval()
         with torch.no_grad():
-            val_preds = lstm_model(X_val).squeeze()
+            val_preds = lstm_model(X_val).squeeze(-1)
             val_loss = criterion(val_preds, y_val).item()
         lstm_model.train()
 

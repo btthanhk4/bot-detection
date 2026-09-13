@@ -85,7 +85,7 @@ def compute_statistical_features(records: list) -> dict:
             continue
 
     if not valid_records:
-        return _get_empty_stats(point_count=len(records))
+        return _get_empty_stats(point_count=len(valid_records))
 
     move_records = [r for r in valid_records if r["type"] == "move"]
     if len(move_records) < 3:

@@ -1,0 +1,122 @@
+"""
+Unit tests for core ML models and multi-modal ensemble.
+"""
+
+import os
+import numpy as np
+import pytest
+import torch
+
+from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+from core_ml.models.gnn_detector import HeteroClickFraudGNN
+from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
+
+
+class TestTabularClassifier:
+    def test_fit_and_predict(self):
+        clf = TabularBotClassifier(n_estimators=10, max_depth=3)
+        n_features = len(ENV_FEATURE_NAMES) + len(STATISTICAL_FEATURE_NAMES)
+        X = np.random.randn(50, n_features).astype(np.float32)
+        y = np.random.randint(0, 2, size=50)
+
+        clf.fit(X, y)
+        assert clf.is_fitted
+
+        # Single predict
+        p = clf.predict_proba(X[0])
+        assert 0.0 <= p <= 1.0
+
+        # Batch predict
+        probas = clf.predict_batch(X[:5])
+        assert len(probas) == 5
+        assert ((probas >= 0.0) & (probas <= 1.0)).all()
+
+    def test_unfitted_fallback(self):
+        clf = TabularBotClassifier()
+        assert not clf.is_fitted
+        p = clf.predict_proba(np.zeros(50))
+        assert 0.0 <= p <= 1.0
+        assert clf.predict_proba(None) == 0.5
+
+    def test_dimension_mismatch_resilience(self):
+        clf = TabularBotClassifier(n_estimators=5)
+        X_train = np.random.randn(20, 50).astype(np.float32)
+        y_train = np.random.randint(0, 2, size=20)
+        clf.fit(X_train, y_train)
+
+        # Fewer features (padding should trigger)
+        p_short = clf.predict_proba(np.random.randn(30))
+        assert 0.0 <= p_short <= 1.0
+
+        # More features (truncation should trigger)
+        p_long = clf.predict_proba(np.random.randn(70))
+        assert 0.0 <= p_long <= 1.0
+
+
+class TestBehavioralLSTM:
+    def test_forward_and_predict_session(self):
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=32, num_layers=2)
+        batch = torch.randn(4, 24, 8)
+        out = model(batch)
+        assert out.shape == (4, 1)
+        assert ((out >= 0.0) & (out <= 1.0)).all()
+
+        # predict_session_proba
+        proba = model.predict_session_proba(batch)
+        assert 0.0 <= proba <= 1.0
+
+        # Empty chunks
+        assert model.predict_session_proba(None) == 0.5
+        assert model.predict_session_proba(torch.zeros(0, 24, 8)) == 0.5
+
+
+class TestHeteroGNN:
+    def test_gnn_forward(self):
+        gnn = HeteroClickFraudGNN(hidden_dim=32)
+        x_dict = {
+            "device": torch.randn(2, len(ENV_FEATURE_NAMES)),
+            "ip": torch.randn(3, 3),
+            "session": torch.randn(4, len(STATISTICAL_FEATURE_NAMES) + 2),
+            "target": torch.randn(1, 2),
+        }
+        edge_index_dict = {
+            ("device", "operates", "session"): torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
+            ("ip", "originates", "session"): torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
+            ("target", "targeted_by", "session"): torch.tensor([[0, 0], [0, 1]], dtype=torch.long),
+        }
+        logits = gnn(x_dict, edge_index_dict)
+        assert logits.shape == (4, 2)
+
+        probs = gnn.predict_session_probabilities(x_dict, edge_index_dict)
+        assert probs.shape == (4,)
+        assert ((probs >= 0.0) & (probs <= 1.0)).all()
+
+
+class TestEnsembleDetector:
+    def test_ensemble_decisions(self):
+        ensemble = EnsembleBotDetector()
+
+        # 1. Obvious bot payload (webdriver = True)
+        bot_payload = {
+            "fingerprint": {"hardwareConcurrency": 1, "deviceMemory": 2},
+            "botd": {
+                "heuristicScore": 0.85,
+                "detectors": {"webdriver": True, "headlessUa": True},
+                "reasons": ["navigator.webdriver is true"],
+            },
+            "mouse": {"records": []},
+        }
+        res_bot = ensemble.predict(bot_payload)
+        assert res_bot["is_bot"] is True
+        assert res_bot["bot_probability"] >= 0.75
+        assert res_bot["verdict"] == "BOT"
+
+        # 2. None / empty payload (graceful degradation)
+        res_empty = ensemble.predict(None)
+        assert isinstance(res_empty, dict)
+        assert "is_bot" in res_empty
+        assert "bot_probability" in res_empty
+        assert "breakdown" in res_empty

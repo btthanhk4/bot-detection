@@ -66,6 +66,23 @@ class TelemetryPayload(BaseModel):
     mouse: Optional[Dict[str, Any]] = None
 
 
+def get_client_ip(request: Request) -> str:
+    """
+    Extract real client IP address, honoring reverse proxy headers
+    (Cloudflare, Nginx, AWS ALB, Traefik, Docker).
+    """
+    cf_ip = request.headers.get("CF-Connecting-IP")
+    if cf_ip:
+        return cf_ip.strip()
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    x_real = request.headers.get("X-Real-IP")
+    if x_real:
+        return x_real.strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+
 @app.get("/")
 def index():
     return {
@@ -84,13 +101,28 @@ def index():
     }
 
 
+@app.get("/health")
+@app.get("/healthz")
+def health_check():
+    """Standard health check endpoint for load balancers and container orchestrators."""
+    return {
+        "status": "healthy",
+        "timestamp": int(time.time() * 1000),
+        "models_loaded": {
+            "tabular": tabular_model.is_fitted,
+            "lstm": True,
+            "gnn": True,
+        }
+    }
+
+
 @app.post("/api/v1/detect")
 async def detect_bot(payload: TelemetryPayload, request: Request):
     """
     Real-time bot classification endpoint.
     Fuses mouse dynamics, environment fingerprint, and heuristic checks.
     """
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = get_client_ip(request)
     data = payload.model_dump()
 
     start_t = time.perf_counter()
@@ -133,7 +165,7 @@ async def receive_telemetry(payload: TelemetryPayload, request: Request):
     """
     Asynchronous telemetry ingestion endpoint (e.g. from navigator.sendBeacon).
     """
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = get_client_ip(request)
     data = payload.model_dump()
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)

@@ -51,8 +51,8 @@ export class MouseRecorder {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const time = Math.round(now - this.startTime);
 
-    const w = window.innerWidth || 1920;
-    const h = window.innerHeight || 1080;
+    const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
+    const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
     const normX = Number((clientX / w).toFixed(5));
     const normY = Number((clientY / h).toFixed(5));
 
