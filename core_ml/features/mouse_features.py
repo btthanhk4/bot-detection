@@ -64,7 +64,9 @@ def compute_statistical_features(records: list) -> dict:
     if not records or not isinstance(records, list):
         return _get_empty_stats()
 
-    # Clean and filter valid records (robust against None, strings, missing fields)
+    # Defensive cap to prevent CPU exhaustion DoS attacks
+    if len(records) > 500:
+        records = records[-500:]
     valid_records = []
     for r in records:
         if not isinstance(r, dict):
@@ -297,6 +299,10 @@ def extract_sequential_chunks(chunks: list, chunk_size: int = 24, n_features: in
     """
     if not chunks or not isinstance(chunks, list):
         return torch.zeros((0, chunk_size, n_features), dtype=torch.float32)
+
+    # Defensive cap to prevent GPU/RAM memory exhaustion
+    if len(chunks) > 50:
+        chunks = chunks[-50:]
 
     valid_chunks = []
     for c in chunks:

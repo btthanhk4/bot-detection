@@ -55,8 +55,34 @@ ensemble_detector = EnsembleBotDetector(
 )
 graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
-# In-memory telemetry log buffer (last 500 requests)
-telemetry_buffer: List[Dict[str, Any]] = []
+import collections
+import threading
+
+# Thread-safe in-memory ring buffer for recent telemetry events
+telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
+
+# Sliding-window rate limiter per client IP
+_rate_limit_lock = threading.Lock()
+_rate_limit_records = collections.defaultdict(list)
+
+
+def check_rate_limit(client_ip: str) -> bool:
+    """Returns True if within rate limit, False if rate limit exceeded."""
+    if settings.RATE_LIMIT_PER_MINUTE <= 0:
+        return True
+    now = time.time()
+    cutoff = now - 60.0
+    with _rate_limit_lock:
+        timestamps = _rate_limit_records[client_ip]
+        valid_ts = [t for t in timestamps if t > cutoff]
+        if len(valid_ts) >= settings.RATE_LIMIT_PER_MINUTE:
+            _rate_limit_records[client_ip] = valid_ts
+            return False
+        valid_ts.append(now)
+        _rate_limit_records[client_ip] = valid_ts
+        if len(_rate_limit_records) > 20000:
+            _rate_limit_records.clear()
+        return True
 
 
 class TelemetryPayload(BaseModel):
@@ -128,6 +154,12 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     Fuses mouse dynamics, environment fingerprint, and heuristic checks.
     """
     client_ip = get_client_ip(request)
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Too many requests from this IP.",
+            headers={"Retry-After": "60"},
+        )
     data = payload.model_dump()
 
     start_t = time.perf_counter()
@@ -171,13 +203,18 @@ async def receive_telemetry(payload: TelemetryPayload, request: Request):
     Asynchronous telemetry ingestion endpoint (e.g. from navigator.sendBeacon).
     """
     client_ip = get_client_ip(request)
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded.",
+            headers={"Retry-After": "60"},
+        )
     data = payload.model_dump()
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
 
+    # Thread-safe ring buffer auto-evicts oldest item when maxlen reached
     telemetry_buffer.append(data)
-    if len(telemetry_buffer) > settings.MAX_BUFFER_SIZE:
-        telemetry_buffer.pop(0)
 
     # Auto-add to evolving graph
     try:

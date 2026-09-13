@@ -15,6 +15,7 @@ Features:
 """
 
 import hashlib
+import threading
 import numpy as np
 import torch
 from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
@@ -45,6 +46,7 @@ def _deterministic_hash_feature(text: str, modulo: int = 1000) -> float:
 class ClickFraudGraphBuilder:
     def __init__(self, max_sessions: int = 10000):
         self.max_sessions = max_sessions
+        self._lock = threading.Lock()
 
         self.device_map = {}   # visitorId -> node_idx
         self.ip_map = {}       # ip_address -> node_idx
@@ -74,119 +76,123 @@ class ClickFraudGraphBuilder:
         """
         Ingest a single telemetry event into the evolving graph structure.
         Safe against None payloads, malformed structures, and memory overflow.
+        Thread-safe under concurrent requests.
         """
-        if not isinstance(telemetry, dict):
-            telemetry = {}
+        with self._lock:
+            if not isinstance(telemetry, dict):
+                telemetry = {}
 
-        session_id = str(telemetry.get("sessionId") or f"sess_{len(self.session_map)}")
-        visitor_id = str(telemetry.get("visitorId") or f"dev_{len(self.device_map)}")
-        page_url = str(telemetry.get("pageUrl") or "/")
-        fingerprint = telemetry.get("fingerprint") or {}
-        botd = telemetry.get("botd") or {}
-        mouse = telemetry.get("mouse") or {}
-        records = mouse.get("records") or [] if isinstance(mouse, dict) else []
+            session_id = str(telemetry.get("sessionId") or f"sess_{len(self.session_map)}")
+            visitor_id = str(telemetry.get("visitorId") or f"dev_{len(self.device_map)}")
+            page_url = str(telemetry.get("pageUrl") or "/")
+            fingerprint = telemetry.get("fingerprint") or {}
+            botd = telemetry.get("botd") or {}
+            mouse = telemetry.get("mouse") or {}
+            records = mouse.get("records") or [] if isinstance(mouse, dict) else []
 
-        # Memory control: If session capacity exceeded, reset or prune oldest
-        if len(self.session_map) >= self.max_sessions and session_id not in self.session_map:
-            # Clear graph cache for long-running service to prevent memory leak
-            self.session_map.clear()
-            self.session_features.clear()
-            self.session_labels.clear()
-            self.edges_device_session.clear()
-            self.edges_session_ip.clear()
-            self.edges_session_target.clear()
+            # Memory control: If session capacity exceeded, reset or prune oldest
+            if len(self.session_map) >= self.max_sessions and session_id not in self.session_map:
+                # Clear graph cache for long-running service to prevent memory leak
+                self.session_map.clear()
+                self.session_features.clear()
+                self.session_labels.clear()
+                self.edges_device_session.clear()
+                self.edges_session_ip.clear()
+                self.edges_session_target.clear()
 
-        # 1. Device Node
-        if visitor_id not in self.device_map:
-            dev_idx = len(self.device_map)
-            self.device_map[visitor_id] = dev_idx
-            dev_feat = extract_env_vector(fingerprint, botd)
-            self.device_features.append(dev_feat)
-        else:
-            dev_idx = self.device_map[visitor_id]
+            # 1. Device Node
+            if visitor_id not in self.device_map:
+                dev_idx = len(self.device_map)
+                self.device_map[visitor_id] = dev_idx
+                dev_feat = extract_env_vector(fingerprint, botd)
+                self.device_features.append(dev_feat)
+            else:
+                dev_idx = self.device_map[visitor_id]
 
-        # 2. IP Node (with deterministic hashing)
-        ip_str = str(ip_address or "127.0.0.1")
-        if ip_str not in self.ip_map:
-            ip_idx = len(self.ip_map)
-            self.ip_map[ip_str] = ip_idx
-            is_private = 1.0 if ip_str.startswith(("127.", "192.168.", "10.")) else 0.0
-            ip_feat = np.array([_deterministic_hash_feature(ip_str), is_private, 1.0], dtype=np.float32)
-            self.ip_features.append(ip_feat)
-        else:
-            ip_idx = self.ip_map[ip_str]
-            self.ip_features[ip_idx][2] += 1.0  # increment request count
+            # 2. IP Node (with deterministic hashing)
+            ip_str = str(ip_address or "127.0.0.1")
+            if ip_str not in self.ip_map:
+                ip_idx = len(self.ip_map)
+                self.ip_map[ip_str] = ip_idx
+                is_private = 1.0 if ip_str.startswith(("127.", "192.168.", "10.")) else 0.0
+                ip_feat = np.array([_deterministic_hash_feature(ip_str), is_private, 1.0], dtype=np.float32)
+                self.ip_features.append(ip_feat)
+            else:
+                ip_idx = self.ip_map[ip_str]
+                self.ip_features[ip_idx][2] += 1.0  # increment request count
 
-        # 3. Target Node (URL / Ad, deterministic hashing)
-        if page_url not in self.target_map:
-            tgt_idx = len(self.target_map)
-            self.target_map[page_url] = tgt_idx
-            tgt_feat = np.array([_deterministic_hash_feature(page_url), 1.0], dtype=np.float32)
-            self.target_features.append(tgt_feat)
-        else:
-            tgt_idx = self.target_map[page_url]
-            self.target_features[tgt_idx][1] += 1.0
+            # 3. Target Node (URL / Ad, deterministic hashing)
+            if page_url not in self.target_map:
+                tgt_idx = len(self.target_map)
+                self.target_map[page_url] = tgt_idx
+                tgt_feat = np.array([_deterministic_hash_feature(page_url), 1.0], dtype=np.float32)
+                self.target_features.append(tgt_feat)
+            else:
+                tgt_idx = self.target_map[page_url]
+                self.target_features[tgt_idx][1] += 1.0
 
-        # 4. Session Node
-        if session_id not in self.session_map:
-            sess_idx = len(self.session_map)
-            self.session_map[session_id] = sess_idx
-            m_stats = compute_statistical_features(records)
-            sess_feat = self._build_session_feature(m_stats, botd, len(records))
-            self.session_features.append(sess_feat)
-            self.session_labels.append(is_bot_ground_truth if is_bot_ground_truth is not None else -1)
-        else:
-            sess_idx = self.session_map[session_id]
-            # Update session features with new mouse data
-            if records:
+            # 4. Session Node
+            if session_id not in self.session_map:
+                sess_idx = len(self.session_map)
+                self.session_map[session_id] = sess_idx
                 m_stats = compute_statistical_features(records)
-                prev_count = self.session_features[sess_idx][-1] if self.session_features[sess_idx].size > 0 else 0
-                sess_feat = self._build_session_feature(m_stats, botd, prev_count + len(records))
-                self.session_features[sess_idx] = sess_feat
+                sess_feat = self._build_session_feature(m_stats, botd, len(records))
+                self.session_features.append(sess_feat)
+                self.session_labels.append(is_bot_ground_truth if is_bot_ground_truth is not None else -1)
+            else:
+                sess_idx = self.session_map[session_id]
+                # Update session features with new mouse data
+                if records:
+                    m_stats = compute_statistical_features(records)
+                    prev_count = self.session_features[sess_idx][-1] if self.session_features[sess_idx].size > 0 else 0
+                    sess_feat = self._build_session_feature(m_stats, botd, prev_count + len(records))
+                    self.session_features[sess_idx] = sess_feat
 
-        # 5. Connect Edges
-        self.edges_device_session.append((dev_idx, sess_idx))
-        self.edges_session_ip.append((ip_idx, sess_idx))
-        self.edges_session_target.append((tgt_idx, sess_idx))
+            # 5. Connect Edges
+            self.edges_device_session.append((dev_idx, sess_idx))
+            self.edges_session_ip.append((ip_idx, sess_idx))
+            self.edges_session_target.append((tgt_idx, sess_idx))
 
-        return sess_idx
+            return sess_idx
 
     def to_torch_tensors(self):
         """
         Exports graph data as pure PyTorch tensors for GNN training/inference.
         Works independently even without torch_geometric installed.
+        Thread-safe.
         """
-        x_device = torch.tensor(np.array(self.device_features, dtype=np.float32)) if self.device_features else torch.empty((0, len(ENV_FEATURE_NAMES)))
-        x_ip = torch.tensor(np.array(self.ip_features, dtype=np.float32)) if self.ip_features else torch.empty((0, IP_FEATURE_DIM))
-        x_session = torch.tensor(np.array(self.session_features, dtype=np.float32)) if self.session_features else torch.empty((0, SESSION_FEATURE_DIM))
-        x_target = torch.tensor(np.array(self.target_features, dtype=np.float32)) if self.target_features else torch.empty((0, TARGET_FEATURE_DIM))
+        with self._lock:
+            x_device = torch.tensor(np.array(self.device_features, dtype=np.float32)) if self.device_features else torch.empty((0, len(ENV_FEATURE_NAMES)))
+            x_ip = torch.tensor(np.array(self.ip_features, dtype=np.float32)) if self.ip_features else torch.empty((0, IP_FEATURE_DIM))
+            x_session = torch.tensor(np.array(self.session_features, dtype=np.float32)) if self.session_features else torch.empty((0, SESSION_FEATURE_DIM))
+            x_target = torch.tensor(np.array(self.target_features, dtype=np.float32)) if self.target_features else torch.empty((0, TARGET_FEATURE_DIM))
 
-        edge_dev_sess = torch.tensor(self.edges_device_session, dtype=torch.long).t().contiguous() if self.edges_device_session else torch.empty((2, 0), dtype=torch.long)
-        edge_ip_sess = torch.tensor(self.edges_session_ip, dtype=torch.long).t().contiguous() if self.edges_session_ip else torch.empty((2, 0), dtype=torch.long)
-        edge_tgt_sess = torch.tensor(self.edges_session_target, dtype=torch.long).t().contiguous() if self.edges_session_target else torch.empty((2, 0), dtype=torch.long)
+            edge_dev_sess = torch.tensor(self.edges_device_session, dtype=torch.long).t().contiguous() if self.edges_device_session else torch.empty((2, 0), dtype=torch.long)
+            edge_ip_sess = torch.tensor(self.edges_session_ip, dtype=torch.long).t().contiguous() if self.edges_session_ip else torch.empty((2, 0), dtype=torch.long)
+            edge_tgt_sess = torch.tensor(self.edges_session_target, dtype=torch.long).t().contiguous() if self.edges_session_target else torch.empty((2, 0), dtype=torch.long)
 
-        y_session = torch.tensor(self.session_labels, dtype=torch.long) if self.session_labels else torch.empty(0, dtype=torch.long)
+            y_session = torch.tensor(self.session_labels, dtype=torch.long) if self.session_labels else torch.empty(0, dtype=torch.long)
 
-        return {
-            "x_dict": {
-                "device": x_device,
-                "ip": x_ip,
-                "session": x_session,
-                "target": x_target,
-            },
-            "edge_index_dict": {
-                ("device", "operates", "session"): edge_dev_sess,
-                ("ip", "originates", "session"): edge_ip_sess,
-                ("target", "targeted_by", "session"): edge_tgt_sess,
-            },
-            "y_session": y_session,
-            "node_counts": {
-                "device": len(self.device_map),
-                "ip": len(self.ip_map),
-                "session": len(self.session_map),
-                "target": len(self.target_map),
-            },
-        }
+            return {
+                "x_dict": {
+                    "device": x_device,
+                    "ip": x_ip,
+                    "session": x_session,
+                    "target": x_target,
+                },
+                "edge_index_dict": {
+                    ("device", "operates", "session"): edge_dev_sess,
+                    ("ip", "originates", "session"): edge_ip_sess,
+                    ("target", "targeted_by", "session"): edge_tgt_sess,
+                },
+                "y_session": y_session,
+                "node_counts": {
+                    "device": len(self.device_map),
+                    "ip": len(self.ip_map),
+                    "session": len(self.session_map),
+                    "target": len(self.target_map),
+                },
+            }
 
     def to_pyg_hetero_data(self):
         """Exports directly to torch_geometric.data.HeteroData if PyG is available."""

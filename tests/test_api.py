@@ -127,3 +127,32 @@ def test_reverse_proxy_ip_forwarding(client):
     )
     assert res2.status_code == 200
     assert res2.json()["client_ip"] == "198.51.100.42"
+
+
+def test_rate_limiter_blocks_excessive_traffic(client):
+    from api_service.config import settings
+    orig_limit = settings.RATE_LIMIT_PER_MINUTE
+    settings.RATE_LIMIT_PER_MINUTE = 3  # temporarily set low limit for test
+
+    test_ip = "192.0.2.99"
+    try:
+        # First 3 requests succeed
+        for i in range(3):
+            r = client.post(
+                "/api/v1/detect",
+                json={"sessionId": f"sess_rl_{i}"},
+                headers={"CF-Connecting-IP": test_ip},
+            )
+            assert r.status_code == 200
+
+        # 4th request must be blocked with HTTP 429 Too Many Requests
+        r4 = client.post(
+            "/api/v1/detect",
+            json={"sessionId": "sess_rl_blocked"},
+            headers={"CF-Connecting-IP": test_ip},
+        )
+        assert r4.status_code == 429
+        assert "Rate limit exceeded" in r4.json()["detail"]
+        assert "retry-after" in r4.headers
+    finally:
+        settings.RATE_LIMIT_PER_MINUTE = orig_limit

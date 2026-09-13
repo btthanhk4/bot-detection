@@ -144,3 +144,20 @@ class TestMouseFeatures:
         short_chunk = [[[0.1, 0.1, 0.5, 0.5, 0.7, 1.2, 0.014, 0.016] for _ in range(10)]]
         padded_tensor = extract_sequential_chunks(short_chunk, chunk_size=24, n_features=8)
         assert padded_tensor.shape == (1, 24, 8)
+
+    def test_dos_defensive_caps(self):
+        # 1. 2,000 points sent by adversarial caller capped to 500
+        excessive_records = [
+            {"time": i * 10, "x": 0.1 + (i % 10) * 0.01, "y": 0.2 + (i % 5) * 0.01, "type": "move"}
+            for i in range(2000)
+        ]
+        stats = compute_statistical_features(excessive_records)
+        assert stats["point_count"] == 500
+
+        # 2. 200 chunks sent by caller capped to 50
+        excessive_chunks = [
+            [[0.01, 0.01, 0.5, 0.5, 0.7, 1.2, 0.014, 0.016] for _ in range(24)]
+            for _ in range(200)
+        ]
+        tensor = extract_sequential_chunks(excessive_chunks)
+        assert tensor.shape[0] == 50

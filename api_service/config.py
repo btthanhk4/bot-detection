@@ -32,9 +32,10 @@ class Settings:
     # Classification Thresholds
     THRESHOLD: float = float(os.getenv("BOT_DECISION_THRESHOLD", "0.50"))
 
-    # Capacity limits
+    # Capacity limits & Protection
     MAX_BUFFER_SIZE: int = int(os.getenv("BOT_MAX_TELEMETRY_BUFFER", "1000"))
     MAX_GRAPH_SESSIONS: int = int(os.getenv("BOT_MAX_GRAPH_SESSIONS", "10000"))
+    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("BOT_RATE_LIMIT_PER_MINUTE", "240"))
 
 
 settings = Settings()

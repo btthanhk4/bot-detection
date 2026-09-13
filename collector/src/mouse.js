@@ -19,6 +19,9 @@ export class MouseRecorder {
     this.handleMouseUp = this.handleMouseUp.bind(this);
     this.handleClick = this.handleClick.bind(this);
     this.handleWheel = this.handleWheel.bind(this);
+    this.handleTouchStart = this.handleTouchStart.bind(this);
+    this.handleTouchMove = this.handleTouchMove.bind(this);
+    this.handleTouchEnd = this.handleTouchEnd.bind(this);
   }
 
   start() {
@@ -29,6 +32,9 @@ export class MouseRecorder {
     window.addEventListener('mouseup', this.handleMouseUp, { passive: true });
     window.addEventListener('click', this.handleClick, { passive: true });
     window.addEventListener('wheel', this.handleWheel, { passive: true });
+    window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
+    window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
   }
 
   stop() {
@@ -39,6 +45,9 @@ export class MouseRecorder {
     window.removeEventListener('mouseup', this.handleMouseUp);
     window.removeEventListener('click', this.handleClick);
     window.removeEventListener('wheel', this.handleWheel);
+    window.removeEventListener('touchstart', this.handleTouchStart);
+    window.removeEventListener('touchmove', this.handleTouchMove);
+    window.removeEventListener('touchend', this.handleTouchEnd);
   }
 
   clear() {
@@ -53,8 +62,10 @@ export class MouseRecorder {
 
     const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
     const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
-    const normX = Number((clientX / w).toFixed(5));
-    const normY = Number((clientY / h).toFixed(5));
+    const safeX = (typeof clientX === 'number' && Number.isFinite(clientX)) ? clientX : 0;
+    const safeY = (typeof clientY === 'number' && Number.isFinite(clientY)) ? clientY : 0;
+    const normX = Number((safeX / w).toFixed(5));
+    const normY = Number((safeY / h).toFixed(5));
 
     const prev = this.records.length > 0 ? this.records[this.records.length - 1] : null;
 
@@ -81,6 +92,10 @@ export class MouseRecorder {
       accelX = (speedX - (prev.speedX || 0)) / (timeDiff / 1000);
       accelY = (speedY - (prev.speedY || 0)) / (timeDiff / 1000);
       accel = Math.sqrt(accelX * accelX + accelY * accelY);
+
+      accelX = Number.isFinite(accelX) ? accelX : 0;
+      accelY = Number.isFinite(accelY) ? accelY : 0;
+      accel = Number.isFinite(accel) ? accel : 0;
     }
 
     const record = {
@@ -135,6 +150,27 @@ export class MouseRecorder {
     if (this.scrollEvents.length > 200) {
       this.scrollEvents = this.scrollEvents.slice(-200);
     }
+  }
+
+  handleTouchStart(e) {
+    if (e.touches && e.touches[0]) {
+      this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }
+
+  handleTouchMove(e) {
+    if (e.touches && e.touches[0]) {
+      this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }
+
+  handleTouchEnd(e) {
+    const last = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+    const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
+    const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
+    const x = last ? last.x * w : 0;
+    const y = last ? last.y * h : 0;
+    this.recordPoint('up', x, y);
   }
 
   /**
