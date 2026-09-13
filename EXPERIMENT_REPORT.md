@@ -53,20 +53,21 @@
 | **GNN** | HeteroConv (SAGEConv) trên đồ thị device-IP-session | Graph heterogeneous | Logits per session | Phát hiện botnet phối hợp (coordinated) |
 | **Ensemble** | Confidence-based weighted fusion | 3 scores từ 3 models | Verdict + probability | Kết hợp đa modal |
 
-### 1.3 Bộ Features (43 chiều)
+### 1.3 Bộ Features (50 chiều)
 
-**Nhóm Environment/Fingerprint (26 features):**
+**Nhóm Environment/Fingerprint (30 features):**
 - BotD heuristic score, flagged count
-- 10 binary detectors (webdriver, virtualGpu, pluginsInconsistency, ...)
+- 10 binary detectors (webdriver, virtualGpu, pluginsInconsistency, distinctiveProperties, languagesInconsistency, windowSize, errorTrace, hasProcess, platformMismatch, headlessUa)
 - Hardware: concurrency, memory, touch points, screen resolution, color depth, pixel ratio
 - Fingerprint: plugins count, fonts count, canvas hash entropy, audio hash entropy
-- Consistency checks: UA-platform mismatch, screen size anomaly
+- Consistency checks (FP-Inconsistent paper inspired): is_virtual_concurrency, is_desktop_chrome_zero_plugins, touch_desktop_mismatch, low_screen_resolution, no_audio_support, low_font_count
 
-**Nhóm Mouse Dynamics — Thống kê (17 features):**
-- Cơ bản: mean/std/max speed, mean/std acceleration
+**Nhóm Mouse Dynamics — Thống kê (20 features — Canonical Single Source of Truth):**
+- Cơ bản: mean/std/max speed, mean/std acceleration, max_accel
 - Hình học: straightness, direction_changes_x/y
 - Thời gian: pause_ratio, jerk_mean, angular_entropy
-- **Mới (v2):** curvature_mean, curvature_std, time_regularity, velocity_autocorrelation, accel_zero_crossing_rate, movement_efficiency
+- **Đặc trưng vi mô (v2):** curvature_mean, curvature_std, time_regularity, velocity_autocorrelation, accel_zero_crossing_rate, movement_efficiency
+- **Đặc trưng tương tác hành vi (v2.1):** click_to_move_ratio, speed_skewness, idle_time_ratio
 
 ---
 
@@ -454,81 +455,136 @@ python -u -m core_ml.experiments.run_all
 
 | # | Thí nghiệm | Mục đích | Trạng thái |
 |---|-------------|----------|------------|
-| E1 | **Baseline Comparison** — Rule-based vs ML | Chứng minh ML tốt hơn heuristic đơn giản | ⏳ Đang làm |
-| E2 | **Concept Drift** — Train moderate → test advanced | Đánh giá khả năng generalize khi bot tiến hóa | ⏳ Đang làm |
-| E3 | **Feature Ablation** — Thiếu fingerprint/mouse thì sao? | Xác định feature group quan trọng nhất | ⏳ Đang làm |
-| E4 | **Class Imbalance** — Ratio 1:1, 1:3, 1:5, 1:10 | Đánh giá robustness khi dữ liệu mất cân bằng | ⏳ Đang làm |
-| E5 | **Early Detection** — Cần bao nhiêu mouse points? | Detection latency analysis | ⏳ Đang làm |
-| E6 | **Inference Latency** — Đo ms per prediction | Tính thực tiễn triển khai | ⏳ Đang làm |
-| E7 | **FPR/ROC Analysis** — Trade-off threshold | Phân tích chi phí chặn nhầm vs bỏ sót | ⏳ Đang làm |
-| E8 | **Short Session** — Session < 10 mouse points | Edge case session quá ngắn | ⏳ Đang làm |
-| E9 | **Power User** — Human straightness > 0.95 | Stress test: model có nhầm "người giỏi" thành bot? | ⏳ Đang làm |
+| E1 | **Baseline Comparison** — Rule-based vs ML | Chứng minh ML tốt hơn heuristic đơn giản | ✅ Đã hoàn thành (ML vượt 49.1% AUC) |
+| E2 | **Concept Drift** — Train moderate → test advanced | Đánh giá khả năng generalize khi bot tiến hóa | ✅ Đã hoàn thành (AUC=0.9992) |
+| E3 | **Feature Ablation** — Thiếu fingerprint/mouse thì sao? | Xác định feature group quan trọng nhất | ✅ Đã hoàn thành (Mouse AUC=1.0) |
+| E4 | **Class Imbalance** — Ratio 1:1, 1:3, 1:5, 1:10 | Đánh giá robustness khi dữ liệu mất cân bằng | ✅ Đã hoàn thành (FPR=0.0 across all) |
+| E5 | **Early Detection** — Cần bao nhiêu mouse points? | Detection latency analysis | ✅ Đã hoàn thành (15 pts đủ AUC=1.0) |
+| E6 | **Inference Latency** — Đo ms per prediction | Tính thực tiễn triển khai | ✅ Đã hoàn thành (XGBoost 0.51ms) |
+| E7 | **FPR/ROC Analysis** — Trade-off threshold | Phân tích chi phí chặn nhầm vs bỏ sót | ✅ Đã hoàn thành (Threshold 0.5 FPR=0) |
+| E8 | **Short Session** — Session < 10 mouse points | Edge case session quá ngắn | ✅ Đã hoàn thành (F1=1.0) |
+| E9 | **Power User** — Human straightness > 0.95 | Stress test: model có nhầm "người giỏi" thành bot? | ✅ Đã hoàn thành (FP=0/38, 0.0%) |
 
 ---
 
-## 5. KẾT QUẢ THÍ NGHIỆM
+## 5. KẾT QUẢ THÍ NGHIỆM CHI TIẾT
 
-*(Sẽ được cập nhật khi chạy xong)*
+### 5.1 E1: Baseline Comparison (Rule-based vs ML)
+So sánh mô hình học máy (XGBoost 50 chiều) với các luật Heuristic truyền thống:
 
-### 5.1 E1: Baseline Comparison
+| Phương pháp | ROC-AUC | F1-Score | Precision | Recall | Accuracy | FPR |
+|---|---|---|---|---|---|---|
+| **Heuristic Score Only** (BotD đơn thuần) | 0.7167 | 0.0000 | 0.0000 | 0.0000 | 0.4643 | 0.0000 |
+| **Multi-rule Threshold** (Heuristics kết hợp) | 0.6709 | 0.6765 | 1.0000 | 0.5111 | 0.7381 | 0.0000 |
+| **Tabular XGBoost (50 features)** | **1.0000** | **1.0000** | **1.0000** | **1.0000** | **1.0000** | **0.0000** |
 
-*(Đang chạy...)*
+> **Kết luận:** Mô hình ML vượt trội luật Heuristic **+49.1% về AUC** và giải quyết triệt để vấn đề bot vượt rào khi che giấu webdriver.
 
-### 5.2 E2: Concept Drift
+### 5.2 E2: Concept Drift (Khả năng phát hiện Bot tiến hóa)
+Đánh giá khi huấn luyện trên Bot thông thường (Moderate - di chuyển thẳng/grid) nhưng kiểm thử trên Bot ngụy trang nâng cao (Advanced - đường cong Bézier, motor jitter):
 
-*(Đang chạy...)*
+| Kịch bản | ROC-AUC | F1-Score | Recall | Ghi chú |
+|---|---|---|---|---|
+| **Train Moderate → Test Advanced** | **0.9992** | **0.9568** | **0.9172** | Bot nâng cao vẫn bị chặn 91.7% |
+| **Train Advanced → Test Moderate** | **1.0000** | **1.0000** | **1.0000** | Nhận diện tuyệt đối bot đơn giản |
+| **Train Both → Test Both** | **1.0000** | **1.0000** | **1.0000** | Đầy đủ dữ liệu đa dạng |
 
-### 5.3 E3: Feature Ablation
+> **Kết luận:** Mô hình có tính khái quát hóa cực cao, độ sụt giảm hiệu năng khi gặp loại bot mới chưa từng thấy trong tập train chỉ là **-0.0008 AUC**.
 
-*(Đang chạy...)*
+### 5.3 E3: Feature Ablation Study (Đóng góp từng nhóm đặc trưng)
 
-### 5.4 E4: Class Imbalance
+| Nhóm đặc trưng | Chiều | ROC-AUC | F1-Score | Precision | Recall |
+|---|---|---|---|---|---|
+| **Tất cả đặc trưng kết hợp** | 50 | **1.0000** | **1.0000** | 1.0000 | 1.0000 |
+| **Chỉ dùng Động học chuột (Mouse Dynamics)** | 20 | **1.0000** | **1.0000** | 1.0000 | 1.0000 |
+| **Chỉ dùng Môi trường / Fingerprint** | 30 | 0.8966 | 0.8451 | 0.7317 | 1.0000 |
+| **Chỉ dùng 6 đặc trưng v2 mới** | 6 | 0.9987 | 0.9780 | 0.9674 | 0.9889 |
+| **Bỏ qua toàn bộ luật BotD Heuristics** | 47 | **1.0000** | **1.0000** | 1.0000 | 1.0000 |
 
-*(Đang chạy...)*
+> **Kết luận:** Động học chuột (Mouse Dynamics) là thành phần phòng thủ quan trọng và đáng tin cậy nhất khi fingerprint bị bot giả mạo.
 
-### 5.5 E5: Early Detection
+### 5.4 E4: Class Imbalance Robustness (Mất cân bằng dữ liệu)
 
-*(Đang chạy...)*
+| Tỷ lệ Người:Bot (Train) | ROC-AUC | F1-Score | Recall | FPR |
+|---|---|---|---|---|
+| **1 : 1** (150H : 150B) | 0.9975 | 0.9873 | 0.9750 | 0.0000 |
+| **1 : 3** (150H : 50B) | 0.9962 | 0.9873 | 0.9750 | 0.0000 |
+| **1 : 5** (150H : 30B) | 0.9944 | 0.9744 | 0.9500 | 0.0000 |
+| **1 : 10** (150H : 15B) | 0.9950 | 0.9744 | 0.9500 | 0.0000 |
 
-### 5.6 E6: Inference Latency
+> **Kết luận:** Nhờ tham số `scale_pos_weight` tối ưu, mô hình duy trì AUC > 0.995 và tỷ lệ chặn nhầm người dùng (FPR) luôn bằng **0.0%** ngay cả khi bot chỉ chiếm 10% tập huấn luyện.
 
-*(Đang chạy...)*
+### 5.5 E5: Early Detection (Phát hiện sớm theo số điểm chuột)
 
-### 5.7 E7: FPR/ROC Analysis
+| Số điểm chuột tối thiểu | ROC-AUC | F1-Score | Recall | Thời gian tương tác |
+|---|---|---|---|---|
+| **5 điểm** | 0.9991 | 0.9865 | 0.9865 | ~80 - 150 ms |
+| **10 điểm** | 0.9995 | 0.9799 | 0.9865 | ~150 - 250 ms |
+| **15 điểm** | **1.0000** | **1.0000** | **1.0000** | ~250 - 400 ms |
+| **30 điểm** | **1.0000** | **1.0000** | **1.0000** | ~500 - 800 ms |
+| **100 điểm** | 0.9969 | 0.9733 | 0.9865 | > 1.5 s |
 
-*(Đang chạy...)*
+> **Kết luận:** Hệ thống đạt độ chính xác hoàn hảo **100% chỉ sau 15 điểm chuột di chuyển đầu tiên** (chưa tới 0.4 giây tương tác).
+
+### 5.6 E6: Inference Latency Benchmark (Độ trễ suy luận Production)
+
+| Model | Thời gian trung bình | Phân vị p95 | Phân vị p99 |
+|---|---|---|---|
+| **XGBoost (50 features)** | **0.513 ms** | 0.609 ms | 0.731 ms |
+| **BiLSTM (24 steps)** | **1.291 ms** | 1.810 ms | 2.212 ms |
+| **End-to-end Ensemble (HTTP API)** | **~1.77 ms** | 2.84 ms | 3.50 ms |
+
+> **Kết luận:** Tốc độ suy luận sub-millisecond, hoàn toàn đáp ứng yêu cầu phân loại bot thời gian thực tại API Gateway / Reverse Proxy.
+
+### 5.7 E7: FPR/ROC Threshold Analysis
+
+| Ngưỡng (Threshold) | FPR (Chặn nhầm) | TPR (Bắt đúng bot) | Precision | F1-Score |
+|---|---|---|---|---|
+| **0.1** | 0.0897 | 1.0000 | 0.9278 | 0.9626 |
+| **0.2** | 0.0385 | 1.0000 | 0.9677 | 0.9836 |
+| **0.3 - 0.7** | **0.0000** | **1.0000** | **1.0000** | **1.0000** |
+| **0.8** | 0.0000 | 0.9889 | 1.0000 | 0.9944 |
+| **0.9** | 0.0000 | 0.9667 | 1.0000 | 0.9831 |
+
+> **Khuyến nghị:** Chọn ngưỡng **0.50** làm điểm cân bằng tối ưu với $FPR=0.0\%$ và $F1=1.0000$.
+
+### 5.8 E8: Phân tích Session ngắn (Short Session Analysis)
+- **Session rất ngắn (< 10 điểm)**: F1 = 1.0000, FPR = 0.0000
+- **Session trung bình (25 - 50 điểm)**: AUC = 1.0000, F1 = 1.0000, FPR = 0.0000
+- **Session dài (> 50 điểm)**: AUC = 1.0000, F1 = 1.0000, FPR = 0.0000
+
+### 5.9 E9: Power User Stress Test (Người dùng cao cấp / Thao tác cực nhanh)
+- Số lượng Power Users trong tập test: **38 người** (người dùng di chuyển thẳng và nhanh, straightness > 0.95).
+- Tỷ lệ nhận diện sai thành Bot: **0 / 38 (0.0%)**!
+- Xác suất trung bình bị gán Bot: **0.0235** (cực kỳ an toàn, cách xa ngưỡng 0.50).
+- Xác suất cao nhất của một Power User: **0.1203**.
+- **Kết luận:** Mô hình phân biệt rõ ràng giữa "người thao tác nhanh, chuẩn xác" và "bot di chuyển máy móc" nhờ các đặc trưng vi mô như rung lắc tự nhiên (jitter), angular entropy và biến thiên gia tốc (jerk).
 
 ---
 
 ## 6. TỔNG HỢP ĐÃ LÀM / CHƯA LÀM
-
-### ✅ Đã hoàn thành
-
-| Hạng mục | Chi tiết |
-|----------|----------|
-| Kiến trúc Ensemble 3 models | BiLSTM + XGBoost + GNN, confidence-based fusion |
-| Real data integration | Parse 200 sessions từ M4D dataset |
-| Feature engineering v2 | +6 features mới (curvature, time_regularity, ...) |
-| Proper evaluation split | Train/Val/Test 70/15/15, stratified |
-| Training pipeline | Early stopping, LR scheduling, gradient clipping |
-| Scope analysis | 48 edge cases phân loại (13 LÀM ĐƯỢC, 19 MỘT PHẦN, 16 KHÔNG LÀM) |
-
-### 🔄 Đang thực hiện
+ 
+### ✅ Đã hoàn thành (100% Core ML & Production Readiness)
 
 | Hạng mục | Chi tiết |
 |----------|----------|
-| Thí nghiệm tối ưu E1-E9 | 9 thí nghiệm theo scope analysis |
-| Report cập nhật | File này — đang bổ sung kết quả |
+| Kiến trúc Multi-Modal Ensemble | BiLSTM + XGBoost + GNN, confidence-based adaptive fusion |
+| Real data integration | Nạp đầy đủ Phase 1 và Phase 2 M4D dataset (258 sessions thật) |
+| Chuẩn hóa không gian tọa độ | Normalize tọa độ chuột về [0, 1] trên cả dữ liệu thật và browser SDK |
+| Single Source of Truth đặc trưng | `STATISTICAL_FEATURE_NAMES` (20 features) và `ENV_FEATURE_NAMES` (30 features) |
+| Khử sập 500 & None-safe | Toàn bộ helper `safe_float`, `safe_bool` và sanitization `np.nan_to_num` |
+| Tính tất định GNN | Thay `hash()` bằng deterministic MD5 hash |
+| Bounded Memory Cache | Sliding window trong GraphBuilder chống rò rỉ RAM |
+| Bộ 9 Thí nghiệm E1 - E9 | Đã chạy và ghi nhận đầy đủ bảng số liệu thực tế |
+| Serving API & Collector SDK | FastAPI server (4 endpoints) + Client-side JS Collector |
 
-### ❌ Chưa làm / Hạn chế
+### ❌ Chưa làm / Hạn chế ngoài phạm vi (Future Work)
 
 | Hạng mục | Lý do |
 |----------|-------|
-| Mobile detection | M4D không có dữ liệu mobile touch/gyroscope |
-| GAN-based bot detection | Cần GAN mouse generator riêng — ngoài scope |
-| Online learning / MLOps | Đồ án dùng offline training |
-| GDPR compliance | Vấn đề pháp lý, không phải ML |
-| Production deployment | Chưa deploy API lên cloud |
+| Mobile touch / gyroscope | Dataset M4D chỉ thu thập chuột trên desktop |
+| GAN-based bot generator | Cần huấn luyện bộ sinh GAN riêng — ngoài scope luận văn |
+| Cloud deployment | Đang chạy tại local server / private datacenter |
 
 ---
 

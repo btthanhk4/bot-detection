@@ -20,6 +20,9 @@ try:
 except ImportError:
     HAS_PYG = False
 
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.graph_builder import SESSION_FEATURE_DIM, IP_FEATURE_DIM, TARGET_FEATURE_DIM
+
 
 class HeteroClickFraudGNN(nn.Module):
     """
@@ -29,10 +32,10 @@ class HeteroClickFraudGNN(nn.Module):
     def __init__(self, in_dims: dict = None, hidden_dim: int = 64, out_dim: int = 2, num_layers: int = 2):
         super().__init__()
         self.in_dims = in_dims or {
-            "device": 30,  # Updated: 26 original + 4 new FP-Inconsistent checks
-            "ip": 3,
-            "session": 7,
-            "target": 2,
+            "device": len(ENV_FEATURE_NAMES),
+            "ip": IP_FEATURE_DIM,
+            "session": SESSION_FEATURE_DIM,
+            "target": TARGET_FEATURE_DIM,
         }
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim

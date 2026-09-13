@@ -1,10 +1,13 @@
 """
-Mouse Dynamics Feature Extraction Module (Optimized v2)
-=======================================================
+Mouse Dynamics Feature Extraction Module (Production-Ready v3)
+===============================================================
 Inspired by DELBOT-Mouse (https://github.com/chrisgdt/DELBOT-Mouse)
-Added 6 new discriminative features:
-  - curvature_mean/std, time_regularity, velocity_autocorrelation,
+Single Source of Truth for Mouse Statistical Motion Features.
+Features:
+  - 14 core kinematic features (speed, accel, jerk, straightness, etc.)
+  - 6 discriminative features: curvature, time_regularity, velocity_autocorrelation,
     acceleration_zero_crossing_rate, movement_efficiency
+  - Resilient input handling (None-safe, coordinate auto-normalization)
 """
 
 import math
@@ -12,48 +15,95 @@ import numpy as np
 import torch
 
 
+# Single Source of Truth for Mouse Statistical Features
+STATISTICAL_FEATURE_NAMES = [
+    "mean_speed",
+    "std_speed",
+    "max_speed",
+    "mean_accel",
+    "std_accel",
+    "straightness",
+    "pause_ratio",
+    "direction_changes_x",
+    "direction_changes_y",
+    "jerk_mean",
+    "angular_entropy",
+    # Discriminative motion features (v2)
+    "curvature_mean",
+    "curvature_std",
+    "time_regularity",
+    "velocity_autocorrelation",
+    "accel_zero_crossing_rate",
+    "movement_efficiency",
+    # Behavioral patterns (v2.1)
+    "click_to_move_ratio",
+    "speed_skewness",
+    "idle_time_ratio",
+]
+
+
+def _get_empty_stats(point_count: int = 0, move_count: int = 0) -> dict:
+    stats = {k: 0.0 for k in STATISTICAL_FEATURE_NAMES}
+    stats.update({
+        "point_count": point_count,
+        "move_point_count": move_count,
+        "duration_ms": 0.0,
+        "straightness": 1.0,
+        "max_accel": 0.0,
+    })
+    return stats
+
+
 def compute_statistical_features(records: list) -> dict:
     """
     Extract comprehensive statistical motion features from a list of mouse points.
-    Each record: {'time': int, 'x': float, 'y': float, 'type': str, ...}
-    Returns dict with 20 features (14 original + 6 new).
+    Each record: {'time': int|float, 'x': float, 'y': float, 'type': str, ...}
+    Returns dict with 20 features (STATISTICAL_FEATURE_NAMES) plus point_count metadata.
+    Auto-normalizes coordinates if raw pixel coordinates (> 1.0) are detected.
     """
-    # Filter to move events only — click/scroll events at same position
-    # create artificial speed=0 entries that corrupt kinematic features
-    move_records = [r for r in records if r.get("type", "move") == "move"]
+    if not records or not isinstance(records, list):
+        return _get_empty_stats()
 
-    if not move_records or len(move_records) < 3:
-        return {
-            "point_count": len(records),
-            "duration_ms": 0.0,
-            "mean_speed": 0.0,
-            "std_speed": 0.0,
-            "max_speed": 0.0,
-            "mean_accel": 0.0,
-            "std_accel": 0.0,
-            "max_accel": 0.0,
-            "straightness": 1.0,
-            "pause_ratio": 0.0,
-            "direction_changes_x": 0,
-            "direction_changes_y": 0,
-            "jerk_mean": 0.0,
-            "angular_entropy": 0.0,
-            # New features
-            "curvature_mean": 0.0,
-            "curvature_std": 0.0,
-            "time_regularity": 0.0,
-            "velocity_autocorrelation": 0.0,
-            "accel_zero_crossing_rate": 0.0,
-            "movement_efficiency": 0.0,
-            # Additional discriminative features (v2.1)
-            "click_to_move_ratio": 0.0,
-            "speed_skewness": 0.0,
-            "idle_time_ratio": 0.0,
-        }
+    # Clean and filter valid records (robust against None, strings, missing fields)
+    valid_records = []
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        rx = r.get("x")
+        ry = r.get("y")
+        rt = r.get("time")
+        if rx is None or ry is None or rt is None:
+            continue
+        try:
+            valid_records.append({
+                "time": float(rt),
+                "x": float(rx),
+                "y": float(ry),
+                "type": str(r.get("type", "move")),
+            })
+        except (ValueError, TypeError):
+            continue
 
-    times = [r.get("time", 0) for r in move_records]
-    xs = [r.get("x", 0.0) for r in move_records]
-    ys = [r.get("y", 0.0) for r in move_records]
+    if not valid_records:
+        return _get_empty_stats(point_count=len(records))
+
+    move_records = [r for r in valid_records if r["type"] == "move"]
+    if len(move_records) < 3:
+        return _get_empty_stats(point_count=len(valid_records), move_count=len(move_records))
+
+    times = [r["time"] for r in move_records]
+    xs = [r["x"] for r in move_records]
+    ys = [r["y"] for r in move_records]
+
+    # Coordinate auto-normalization:
+    # If coordinates are in pixel space (> 1.0), normalize to [0, 1] screen coordinates
+    max_x = max(xs) if xs else 1.0
+    max_y = max(ys) if ys else 1.0
+    if max_x > 1.0 or max_y > 1.0:
+        scale_w = max(1920.0, max_x)
+        scale_h = max(1080.0, max_y)
+        xs = [x / scale_w for x in xs]
+        ys = [y / scale_h for y in ys]
 
     duration = max(1.0, float(times[-1] - times[0]))
 
@@ -62,7 +112,7 @@ def compute_statistical_features(records: list) -> dict:
     speeds, accels = [], []
     angles = []
 
-    for i in range(1, len(records)):
+    for i in range(1, len(move_records)):
         dt = max(0.001, (times[i] - times[i - 1]) / 1000.0)  # in seconds
         dx = xs[i] - xs[i - 1]
         dy = ys[i] - ys[i - 1]
@@ -99,8 +149,8 @@ def compute_statistical_features(records: list) -> dict:
     dir_changes_y = sum(1 for i in range(1, len(dys)) if dys[i] * dys[i - 1] < 0)
 
     # Jerk (rate of change of acceleration)
-    jerks = [abs(accels[i] - accels[i - 1]) / dts[i] for i in range(1, len(accels))] if len(accels) > 1 else [0.0]
-    jerk_mean = float(np.mean(jerks))
+    jerks = [abs(accels[i] - accels[i - 1]) / dts[i + 1] for i in range(1, len(accels)) if i + 1 < len(dts)] if len(accels) > 1 else [0.0]
+    jerk_mean = float(np.mean(jerks)) if jerks else 0.0
 
     # Angular entropy (humans have varied curvature; simple bots move in straight lines/grid)
     if len(angles) > 4:
@@ -118,7 +168,6 @@ def compute_statistical_features(records: list) -> dict:
         angle_diff = abs(angles[i] - angles[i - 1])
         if angle_diff > math.pi:
             angle_diff = 2 * math.pi - angle_diff
-        # Normalize by segment length
         seg_dist = math.sqrt(dxs[i]**2 + dys[i]**2) if i < len(dxs) else 1e-6
         curvature = angle_diff / (seg_dist + 1e-6)
         curvatures.append(curvature)
@@ -136,10 +185,10 @@ def compute_statistical_features(records: list) -> dict:
 
     # 3. Velocity autocorrelation (lag-1): bots tend to have autocorr ≈ 1.0
     if len(speeds) > 2:
-        s_mean = np.mean(speeds_arr)
-        s_std = np.std(speeds_arr)
+        s_mean = float(np.mean(speeds_arr))
+        s_std = float(np.std(speeds_arr))
         if s_std > 1e-6:
-            autocov = np.mean((speeds_arr[:-1] - s_mean) * (speeds_arr[1:] - s_mean))
+            autocov = float(np.mean((speeds_arr[:-1] - s_mean) * (speeds_arr[1:] - s_mean)))
             velocity_autocorrelation = float(autocov / (s_std**2))
         else:
             velocity_autocorrelation = 1.0  # constant speed → perfect autocorrelation
@@ -164,7 +213,7 @@ def compute_statistical_features(records: list) -> dict:
         movement_efficiency = 0.0
 
     # 6. Click-to-move ratio: bots click frequently relative to movement
-    click_count = sum(1 for r in records if r.get("type") == "click")
+    click_count = sum(1 for r in valid_records if r.get("type") == "click")
     move_count = len(move_records)
     click_to_move_ratio = float(click_count / (move_count + 1e-9))
 
@@ -186,7 +235,8 @@ def compute_statistical_features(records: list) -> dict:
     idle_time_ratio = float(idle_time / (total_time + 1e-9))
 
     return {
-        "point_count": len(records),
+        "point_count": len(valid_records),
+        "move_point_count": len(move_records),
         "duration_ms": duration,
         "mean_speed": float(np.mean(speeds_arr)),
         "std_speed": float(np.std(speeds_arr)),
@@ -200,53 +250,85 @@ def compute_statistical_features(records: list) -> dict:
         "direction_changes_y": dir_changes_y,
         "jerk_mean": jerk_mean,
         "angular_entropy": float(entropy),
-        # New features
+        # Discriminative motion features (v2)
         "curvature_mean": curvature_mean,
         "curvature_std": curvature_std,
         "time_regularity": time_regularity,
         "velocity_autocorrelation": velocity_autocorrelation,
         "accel_zero_crossing_rate": accel_zero_crossing_rate,
         "movement_efficiency": movement_efficiency,
-        # Additional discriminative features (v2.1)
+        # Behavioral patterns (v2.1)
         "click_to_move_ratio": click_to_move_ratio,
         "speed_skewness": speed_skewness,
         "idle_time_ratio": idle_time_ratio,
     }
 
 
+def extract_mouse_stat_vector(records_or_stats) -> np.ndarray:
+    """
+    Extract ordered float32 feature vector of length 20 from raw records or stats dict.
+    Guarantees consistent feature ordering across all models and modules.
+    Safe against None, NaN, and Inf.
+    """
+    if records_or_stats is None:
+        return np.zeros(len(STATISTICAL_FEATURE_NAMES), dtype=np.float32)
+    if isinstance(records_or_stats, list):
+        stats = compute_statistical_features(records_or_stats)
+    elif isinstance(records_or_stats, dict):
+        stats = records_or_stats
+    else:
+        return np.zeros(len(STATISTICAL_FEATURE_NAMES), dtype=np.float32)
+
+    vec = []
+    for k in STATISTICAL_FEATURE_NAMES:
+        val = stats.get(k, 0.0)
+        if val is None or math.isnan(val) or math.isinf(val):
+            vec.append(0.0)
+        else:
+            vec.append(float(val))
+    return np.array(vec, dtype=np.float32)
+
+
 def extract_sequential_chunks(chunks: list, chunk_size: int = 24, n_features: int = 8) -> torch.Tensor:
     """
-    Converts raw chunk arrays (from collector) into PyTorch float tensor of shape (batch_size, seq_len=24, n_features=8).
+    Converts raw chunk arrays into PyTorch float tensor of shape (batch_size, seq_len=24, n_features=8).
     Features per point: [dx, dy, speedX, speedY, speed, accel, distance, timeDiff]
+    Resilient to malformed rows, non-numeric values, None entries, and irregular lengths.
     """
-    if not chunks:
-        # Return dummy empty tensor
+    if not chunks or not isinstance(chunks, list):
         return torch.zeros((0, chunk_size, n_features), dtype=torch.float32)
 
     valid_chunks = []
     for c in chunks:
-        if len(c) == chunk_size:
-            # Verify feature dimension
-            row_len = len(c[0]) if c and isinstance(c[0], (list, tuple)) else 0
-            if row_len >= n_features:
-                # Truncate extra features if needed
-                valid_chunks.append([row[:n_features] for row in c])
-            elif row_len > 0:
-                # Pad features with 0
-                valid_chunks.append([list(row) + [0.0] * (n_features - row_len) for row in c])
-            else:
-                valid_chunks.append(c)
-        elif len(c) > chunk_size:
-            valid_chunks.append(c[:chunk_size])
-        else:
-            # Pad with zeros if shorter
-            padded = list(c) + [[0.0] * n_features] * (chunk_size - len(c))
+        if not isinstance(c, (list, tuple)):
+            continue
+        cleaned_rows = []
+        for row in c:
+            if not isinstance(row, (list, tuple)):
+                cleaned_rows.append([0.0] * n_features)
+                continue
+            cleaned_row = []
+            for val in row[:n_features]:
+                try:
+                    fval = float(val) if val is not None else 0.0
+                    cleaned_row.append(0.0 if (math.isnan(fval) or math.isinf(fval)) else fval)
+                except (ValueError, TypeError):
+                    cleaned_row.append(0.0)
+            if len(cleaned_row) < n_features:
+                cleaned_row.extend([0.0] * (n_features - len(cleaned_row)))
+            cleaned_rows.append(cleaned_row)
+
+        if len(cleaned_rows) == chunk_size:
+            valid_chunks.append(cleaned_rows)
+        elif len(cleaned_rows) > chunk_size:
+            valid_chunks.append(cleaned_rows[:chunk_size])
+        elif len(cleaned_rows) > 0:
+            padded = list(cleaned_rows) + [[0.0] * n_features] * (chunk_size - len(cleaned_rows))
             valid_chunks.append(padded)
 
     if not valid_chunks:
         return torch.zeros((0, chunk_size, n_features), dtype=torch.float32)
 
     tensor = torch.tensor(valid_chunks, dtype=torch.float32)
-    # Clip extreme values for numerical stability
     tensor = torch.clamp(tensor, -100.0, 100.0)
     return tensor

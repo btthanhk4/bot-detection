@@ -94,11 +94,31 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     data = payload.model_dump()
 
     start_t = time.perf_counter()
-    result = ensemble_detector.predict(data)
+    try:
+        result = ensemble_detector.predict(data)
+    except Exception as e:
+        result = {
+            "is_bot": False,
+            "verdict": "SUSPECT",
+            "bot_probability": 0.50,
+            "confidence": 0.0,
+            "reasons": [f"Server processing fallback: {type(e).__name__}"],
+            "breakdown": {
+                "behavioral_lstm_score": 0.5,
+                "tabular_score": 0.5,
+                "heuristic_score": 0.0,
+                "has_enough_mouse_data": False,
+                "mouse_points": 0,
+            },
+        }
+
     latency_ms = round((time.perf_counter() - start_t) * 1000, 2)
 
     # Ingest into graph builder (label=-1 unknown, not the model's own prediction)
-    graph_builder.add_telemetry_event(data, ip_address=client_ip, is_bot_ground_truth=None)
+    try:
+        graph_builder.add_telemetry_event(data, ip_address=client_ip, is_bot_ground_truth=None)
+    except Exception:
+        pass
 
     result["latency_ms"] = latency_ms
     result["client_ip"] = client_ip
@@ -123,7 +143,10 @@ async def receive_telemetry(payload: TelemetryPayload, request: Request):
         telemetry_buffer.pop(0)
 
     # Auto-add to evolving graph
-    graph_builder.add_telemetry_event(data, ip_address=client_ip)
+    try:
+        graph_builder.add_telemetry_event(data, ip_address=client_ip)
+    except Exception:
+        pass
 
     return {"status": "success", "recorded": True}
 

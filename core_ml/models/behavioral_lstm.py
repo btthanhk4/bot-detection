@@ -161,11 +161,12 @@ class MouseTrajectoryLSTM(nn.Module):
             weights = torch.abs(preds - 0.5) * 2.0 + 0.1  # min weight 0.1
             weighted_mean = float((preds * weights).sum() / weights.sum())
 
-            # Also compute 75th percentile for catching bot bursts
+            # Use p75 only as a strong bot signal override
+            # Prevents edge case where low p75 overrides a high weighted_mean
             p75 = float(torch.quantile(preds, 0.75).item())
-
-            # Take the more extreme prediction
-            return max(weighted_mean, p75) if p75 > 0.5 else min(weighted_mean, p75)
+            if p75 > 0.7:
+                return max(weighted_mean, p75)
+            return weighted_mean
 
     def save_weights(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)

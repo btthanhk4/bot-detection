@@ -1,7 +1,9 @@
 """
-Dataset Loader & Synthetic Telemetry Generator (Optimized v2)
+Dataset Loader & Synthetic Telemetry Generator (Optimized v3)
 =============================================================
-- Loads REAL mouse trajectories from web_bot_detection_dataset (phase1/phase2)
+- Loads REAL mouse trajectories from web_bot_detection_dataset
+  * Phase 1: folder-per-session format with estimated timestamps
+  * Phase 2: MongoDB JSON-lines format with REAL browser timestamps
 - Parses the [m(x,y)][c(l)] notation format into structured records
 - Provides advanced synthetic generator with Bézier bot evasion patterns
 - Sliding window chunking for LSTM input preparation
@@ -80,90 +82,314 @@ def parse_movement_notation(notation: str) -> list:
                 "type": "scroll"
             })
 
+    if records:
+        max_x = max((r["x"] for r in records), default=1.0)
+        max_y = max((r["y"] for r in records), default=1.0)
+        if max_x > 1.0 or max_y > 1.0:
+            scale_w = max(1920.0, max_x)
+            scale_h = max(1080.0, max_y)
+            for r in records:
+                r["x"] = round(r["x"] / scale_w, 5)
+                r["y"] = round(r["y"] / scale_h, 5)
+
     return records
 
 
-def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots"):
+def parse_phase2_record(record: dict) -> list:
+    """
+    Parse a Phase 2 MongoDB-exported record into structured mouse records.
+    Phase 2 records have:
+      - mousemove_total_behaviour: M4D notation string [m(x,y)][c(l)]...
+      - mousemove_times: comma-separated REAL browser timestamps (epoch ms)
+      - mousemove_client_height_width: viewport sizes [(h,w)]...
+    
+    Normalizes coordinates to [0.0, 1.0] using the actual browser client dimensions.
+    """
+    notation = record.get("mousemove_total_behaviour", "")
+    times_str = record.get("mousemove_times", "")
+    
+    if not notation:
+        return []
+
+    # Extract client viewport width and height
+    hw_str = record.get("mousemove_client_height_width", "")
+    view_w, view_h = 1920.0, 1080.0
+    if hw_str:
+        hw_matches = re.findall(r'\((\d+),\s*(\d+)\)', hw_str)
+        if hw_matches:
+            try:
+                view_h = max(100.0, float(hw_matches[0][0]))
+                view_w = max(100.0, float(hw_matches[0][1]))
+            except Exception:
+                view_w, view_h = 1920.0, 1080.0
+    
+    # Parse actions from M4D notation
+    pattern = re.compile(r'\[([a-z]+)\(([^)]*)\)\]')
+    actions = pattern.findall(notation)
+    
+    # Parse real timestamps (comma-separated epoch milliseconds)
+    timestamps = []
+    if times_str:
+        timestamps = [int(t.strip()) for t in times_str.split(',') if t.strip().isdigit()]
+    
+    has_real_timestamps = len(timestamps) > 0
+    
+    records = []
+    event_idx = 0  # Index into timestamps (1:1 with ALL events, not just moves)
+    last_x, last_y = 0.0, 0.0
+    last_time = timestamps[0] if timestamps else 0
+    
+    for action, args in actions:
+        # Consume real timestamp for this event (all event types share the same timestamp array)
+        if has_real_timestamps and event_idx < len(timestamps):
+            t = timestamps[event_idx]
+            event_idx += 1
+        else:
+            t = None  # Will use fallback below
+        
+        if action == 'm':
+            parts = args.split(',')
+            if len(parts) == 2:
+                try:
+                    x = float(parts[0])
+                    y = float(parts[1])
+                except ValueError:
+                    continue
+                
+                if t is None:
+                    # Fallback to Fitts's law estimation
+                    if records:
+                        dx = x - last_x
+                        dy = y - last_y
+                        dist = math.sqrt(dx * dx + dy * dy)
+                        base_dt = 12.0
+                        dist_factor = min(dist / 50.0, 5.0)
+                        dt = base_dt * (1.0 + dist_factor * 0.5)
+                        last_time += max(1, int(dt))
+                    t = last_time
+                
+                records.append({
+                    "time": t,
+                    "x": x,
+                    "y": y,
+                    "type": "move"
+                })
+                last_x, last_y = x, y
+                last_time = t
+        
+        elif action == 'c':
+            if t is None:
+                t = last_time + random.randint(50, 150)
+            records.append({
+                "time": t,
+                "x": last_x,
+                "y": last_y,
+                "type": "click"
+            })
+            last_time = t
+        
+        elif action == 's':
+            if t is None:
+                t = last_time + random.randint(20, 80)
+            records.append({
+                "time": t,
+                "x": last_x,
+                "y": last_y,
+                "type": "scroll"
+            })
+            last_time = t
+    
+    # Normalize timestamps to relative (start from 0) for consistency
+    if records and has_real_timestamps:
+        t0 = records[0]["time"]
+        for r in records:
+            r["time"] = r["time"] - t0
+
+    # Normalize coordinates to [0.0, 1.0] matching client-side collector
+    if records:
+        for r in records:
+            r["x"] = round(r["x"] / view_w, 5)
+            r["y"] = round(r["y"] / view_h, 5)
+    
+    return records
+
+
+def load_phase2_dataset(dataset_root: str):
+    """
+    Load Phase 2 data from MongoDB-exported JSON lines files.
+    Phase 2 has real browser timestamps and richer data (~220MB).
+    
+    Structure:
+        phase2/data/mouse_movements/humans/mouse_movements_humans.json
+        phase2/data/mouse_movements/bots/mouse_movements_moderate_bots.json
+        phase2/data/mouse_movements/bots/mouse_movements_advanced_bots.json
+        phase2/annotations/humans_and_advanced_bots/humans_and_advanced_bots
+        phase2/annotations/humans_and_moderate_and_advanced_bots/...
+    
+    Returns:
+        list of (records, label) tuples, label: 0=human, 1=bot
+    """
+    sessions = []
+    phase2_root = os.path.join(dataset_root, "phase2")
+    
+    if not os.path.isdir(phase2_root):
+        return sessions
+    
+    # Build label map from Phase 2 annotations
+    # Phase 2 annotation format: "session_id_suffix label"
+    label_map = {}  # session_id -> label (0=human, 1=bot)
+    ann_root = os.path.join(phase2_root, "annotations")
+    if os.path.isdir(ann_root):
+        for scenario_dir in os.listdir(ann_root):
+            scenario_path = os.path.join(ann_root, scenario_dir)
+            if not os.path.isdir(scenario_path):
+                continue
+            for fname in os.listdir(scenario_path):
+                fpath = os.path.join(scenario_path, fname)
+                if os.path.isfile(fpath):
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            parts = line.split()
+                            if len(parts) == 2:
+                                sid, label_str = parts
+                                # Remove suffix like _0, _1, _2 to get base session_id
+                                base_sid = re.sub(r'_\d+$', '', sid)
+                                if "human" in label_str:
+                                    label_map[sid] = 0
+                                    label_map[base_sid] = 0
+                                else:
+                                    label_map[sid] = 1
+                                    label_map[base_sid] = 1
+    
+    # Load data files
+    data_files = [
+        (os.path.join(phase2_root, "data", "mouse_movements", "humans", "mouse_movements_humans.json"), 0),
+        (os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_moderate_bots.json"), 1),
+        (os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_advanced_bots.json"), 1),
+    ]
+    
+    seen_sessions = set()  # Deduplicate by session_id
+    
+    for fpath, default_label in data_files:
+        if not os.path.isfile(fpath):
+            continue
+        
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                for line_num, line in enumerate(f):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    
+                    session_id = record.get("session_id", "")
+                    if not session_id or session_id in seen_sessions:
+                        continue
+                    seen_sessions.add(session_id)
+                    
+                    # Parse mouse records with REAL timestamps
+                    mouse_records = parse_phase2_record(record)
+                    if len(mouse_records) < 10:
+                        continue
+                    
+                    # Cap at 5000 records per session to keep training fast
+                    # (Phase 2 sessions can have 34K+ records)
+                    if len(mouse_records) > 5000:
+                        mouse_records = mouse_records[:5000]
+                    
+                    # Determine label from annotation or fallback to file-based label
+                    label = label_map.get(session_id, default_label)
+                    
+                    sessions.append((mouse_records, label))
+        except Exception as e:
+            print(f"  Warning: Error loading Phase 2 file {os.path.basename(fpath)}: {e}")
+            continue
+    
+    return sessions
+
+
+def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots",
+                      include_phase2: bool = True):
     """
     Loads real mouse movement sessions from web_bot_detection_dataset.
-    Loads BOTH Phase 1 and Phase 2 data for maximum coverage.
+    Loads Phase 1 (folder-per-session) and optionally Phase 2 (JSON lines with real timestamps).
     
     Args:
-        dataset_root: Path to web_bot_detection_dataset (e.g., Tuần 3/repos/web_bot_detection_dataset)
+        dataset_root: Path to web_bot_detection_dataset
         scenario: "humans_and_moderate_bots" or "humans_and_advanced_bots"
+        include_phase2: If True, also load Phase 2 data (with real timestamps)
     
     Returns:
         list of (records, label) tuples, where label is 0 (human) or 1 (bot)
     """
     sessions = []
+    seen_session_ids = set()
 
-    # Load from both Phase 1 and Phase 2
-    for phase in ["phase1", "phase2"]:
-        phase_data = os.path.join(dataset_root, phase, "data", "mouse_movements", scenario)
-        phase_ann_train = os.path.join(dataset_root, phase, "annotations", scenario, "train")
-        phase_ann_test = os.path.join(dataset_root, phase, "annotations", scenario, "test")
+    # ===== Phase 1: folder-per-session format =====
+    phase1_data = os.path.join(dataset_root, "phase1", "data", "mouse_movements", scenario)
+    phase1_ann_train = os.path.join(dataset_root, "phase1", "annotations", scenario, "train")
+    phase1_ann_test = os.path.join(dataset_root, "phase1", "annotations", scenario, "test")
 
-        # Parse annotation files
-        label_map = {}
-        for ann_file in [phase_ann_train, phase_ann_test]:
-            if os.path.isfile(ann_file):
-                with open(ann_file, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        parts = line.split()
-                        if len(parts) == 2:
-                            session_id, label_str = parts
-                            if label_str == "human":
-                                label_map[session_id] = 0
-                            else:
-                                label_map[session_id] = 1  # moderate_bot, advanced_bot
-            elif os.path.isdir(ann_file):
-                # Handle case where annotation path is a directory
-                for fname in os.listdir(ann_file):
-                    fpath = os.path.join(ann_file, fname)
-                    if os.path.isfile(fpath):
-                        with open(fpath, "r", encoding="utf-8") as f:
-                            for line in f:
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                parts = line.split()
-                                if len(parts) == 2:
-                                    session_id, label_str = parts
-                                    label_map[session_id] = 0 if label_str == "human" else 1
-
-        # Load sessions from this phase
-        if os.path.isdir(phase_data):
-            for session_id in os.listdir(phase_data):
-                session_dir = os.path.join(phase_data, session_id)
-                if not os.path.isdir(session_dir):
-                    continue
-
-                json_path = os.path.join(session_dir, "mouse_movements.json")
-                if not os.path.exists(json_path):
-                    continue
-
-                try:
-                    with open(json_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-
-                    notation = data.get("total_behaviour", "")
-                    if not notation:
+    # Parse Phase 1 annotation files
+    label_map = {}
+    for ann_file in [phase1_ann_train, phase1_ann_test]:
+        if os.path.isfile(ann_file):
+            with open(ann_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
                         continue
+                    parts = line.split()
+                    if len(parts) == 2:
+                        session_id, label_str = parts
+                        if label_str == "human":
+                            label_map[session_id] = 0
+                        else:
+                            label_map[session_id] = 1  # moderate_bot, advanced_bot
 
-                    records = parse_movement_notation(notation)
-                    if len(records) < 10:
-                        continue
+    # Load Phase 1 sessions
+    if os.path.isdir(phase1_data):
+        for session_id in os.listdir(phase1_data):
+            session_dir = os.path.join(phase1_data, session_id)
+            if not os.path.isdir(session_dir):
+                continue
 
-                    label = label_map.get(session_id, -1)
-                    if label == -1:
-                        continue  # skip sessions without known labels
+            json_path = os.path.join(session_dir, "mouse_movements.json")
+            if not os.path.exists(json_path):
+                continue
 
-                    sessions.append((records, label))
-                except (json.JSONDecodeError, Exception):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                notation = data.get("total_behaviour", "")
+                if not notation:
                     continue
+
+                records = parse_movement_notation(notation)
+                if len(records) < 10:
+                    continue
+
+                label = label_map.get(session_id, -1)
+                if label == -1:
+                    continue  # skip sessions without known labels
+
+                sessions.append((records, label))
+                seen_session_ids.add(session_id)
+            except (json.JSONDecodeError, Exception):
+                continue
+
+    # ===== Phase 2: MongoDB JSON-lines with REAL timestamps =====
+    if include_phase2:
+        phase2_sessions = load_phase2_dataset(dataset_root)
+        for records, label in phase2_sessions:
+            sessions.append((records, label))
 
     return sessions
 
@@ -172,26 +398,28 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12, n_f
     """
     Convert raw mouse records into LSTM-ready chunks using sliding window.
     Features: [dx, dy, speedX, speedY, speed, accel, distance, timeDiff]
+    Works directly in normalized screen coordinate space [0.0, 1.0].
     """
     # Filter to moves only with positive time diff
     moves = [r for r in records if r.get("type") == "move"]
     if len(moves) < chunk_size + 1:
         return []
 
-    # Normalize coordinates to [0, 1] based on observed range
+    # Ensure coordinates are in normalized screen space [0, 1]
     xs = [r["x"] for r in moves]
     ys = [r["y"] for r in moves]
-    x_range = max(xs) - min(xs) if max(xs) > min(xs) else 1.0
-    y_range = max(ys) - min(ys) if max(ys) > min(ys) else 1.0
-    x_min, y_min = min(xs), min(ys)
+    max_x = max(xs) if xs else 1.0
+    max_y = max(ys) if ys else 1.0
+    scale_w = max(1920.0, max_x) if max_x > 1.0 else 1.0
+    scale_h = max(1080.0, max_y) if max_y > 1.0 else 1.0
 
     # Compute kinematic features
     feature_rows = []
     prev_speed_x, prev_speed_y = 0.0, 0.0
     for i in range(1, len(moves)):
-        dt = max(1, moves[i]["time"] - moves[i-1]["time"]) / 1000.0  # seconds
-        dx = (moves[i]["x"] - moves[i-1]["x"]) / x_range
-        dy = (moves[i]["y"] - moves[i-1]["y"]) / y_range
+        dt = max(0.001, (moves[i]["time"] - moves[i - 1]["time"]) / 1000.0)  # seconds
+        dx = (moves[i]["x"] - moves[i - 1]["x"]) / scale_w
+        dy = (moves[i]["y"] - moves[i - 1]["y"]) / scale_h
         dist = math.sqrt(dx * dx + dy * dy)
         speed_x = dx / dt
         speed_y = dy / dt

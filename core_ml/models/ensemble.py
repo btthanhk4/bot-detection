@@ -11,7 +11,7 @@ Improvements:
 
 import numpy as np
 from core_ml.features.env_features import extract_env_vector
-from core_ml.features.mouse_features import compute_statistical_features, extract_sequential_chunks
+from core_ml.features.mouse_features import compute_statistical_features, extract_sequential_chunks, extract_mouse_stat_vector
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
@@ -40,21 +40,24 @@ class EnsembleBotDetector:
     def predict(self, telemetry_payload: dict) -> dict:
         """
         Takes raw telemetry JSON payload from collector and outputs unified decision.
+        Completely safe against None, empty dicts, missing keys, or malformed data.
         """
-        fingerprint = telemetry_payload.get("fingerprint", {})
-        botd = telemetry_payload.get("botd", {})
-        mouse = telemetry_payload.get("mouse", {})
+        payload = telemetry_payload if isinstance(telemetry_payload, dict) else {}
+        fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
+        botd = payload.get("botd") if isinstance(payload.get("botd"), dict) else {}
+        mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
 
-        records = mouse.get("records", [])
-        chunks = mouse.get("chunks", [])
+        records = mouse.get("records") if isinstance(mouse.get("records"), list) else []
+        chunks = mouse.get("chunks") if isinstance(mouse.get("chunks"), list) else []
 
         # Compute mouse stats ONCE — reused for both fallback logic and tabular vector
         mouse_stats = compute_statistical_features(records)
 
         # 1. BotD Heuristics evaluation
-        heuristic_score = float(botd.get("heuristicScore", 0.0))
-        reasons = list(botd.get("reasons", []))
-        detectors = botd.get("detectors", {})
+        heuristic_score = float(botd.get("heuristicScore") or 0.0)
+        raw_reasons = botd.get("reasons")
+        reasons = list(raw_reasons) if (raw_reasons and isinstance(raw_reasons, list)) else []
+        detectors = botd.get("detectors") if isinstance(botd.get("detectors"), dict) else {}
 
         # Immediate hard rule triggers (100% confidence bot flags)
         critical_flags = []
@@ -73,11 +76,11 @@ class EnsembleBotDetector:
                 reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
         else:
             # If user hasn't moved mouse enough, use precomputed mouse stats
-            if mouse_stats["point_count"] > 5:
-                if mouse_stats["straightness"] > 0.98:
+            if mouse_stats.get("move_point_count", 0) > 5:
+                if mouse_stats.get("straightness", 0.0) > 0.98:
                     lstm_score = 0.80
                     reasons.append("Unnaturally straight mouse trajectory")
-                elif mouse_stats["time_regularity"] < 0.05 and mouse_stats["point_count"] > 10:
+                elif mouse_stats.get("time_regularity", 1.0) < 0.05 and mouse_stats.get("point_count", 0) > 10:
                     lstm_score = 0.75
                     reasons.append("Suspiciously regular timing between mouse events")
                 else:
@@ -85,36 +88,9 @@ class EnsembleBotDetector:
             else:
                 lstm_score = 0.50  # neutral
 
-        # 3. Tabular model evaluation (with 6 new features)
+        # 3. Tabular model evaluation (Canonical single source of truth vector)
         env_vec = extract_env_vector(fingerprint, botd)
-        # Reuse precomputed mouse_stats (no duplicate call)
-        mouse_stat_vec = np.array(
-            [
-                mouse_stats["mean_speed"],
-                mouse_stats["std_speed"],
-                mouse_stats["max_speed"],
-                mouse_stats["mean_accel"],
-                mouse_stats["std_accel"],
-                mouse_stats["straightness"],
-                mouse_stats["pause_ratio"],
-                float(mouse_stats["direction_changes_x"]),
-                float(mouse_stats["direction_changes_y"]),
-                mouse_stats["jerk_mean"],
-                mouse_stats["angular_entropy"],
-                # 6 new features
-                mouse_stats["curvature_mean"],
-                mouse_stats["curvature_std"],
-                mouse_stats["time_regularity"],
-                mouse_stats["velocity_autocorrelation"],
-                mouse_stats["accel_zero_crossing_rate"],
-                mouse_stats["movement_efficiency"],
-                # 3 additional features (v2.1)
-                mouse_stats["click_to_move_ratio"],
-                mouse_stats["speed_skewness"],
-                mouse_stats["idle_time_ratio"],
-            ],
-            dtype=np.float32,
-        )
+        mouse_stat_vec = extract_mouse_stat_vector(mouse_stats)
         combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
         tabular_score = self.tabular_model.predict_proba(combined_tabular_vec)
 

@@ -60,6 +60,8 @@ class TabularBotClassifier:
             X_val_scaled = self.scaler.transform(X_val)
             fit_params["eval_set"] = [(X_val_scaled, y_val)]
             fit_params["verbose"] = False
+            # Enable early stopping only when validation set is provided
+            self.model.set_params(early_stopping_rounds=30)
 
         self.model.fit(X_scaled, y, **fit_params)
         self.is_fitted = True
@@ -70,29 +72,61 @@ class TabularBotClassifier:
         Predict probability of being a BOT for a single sample (1D or 2D array).
         Returns float in [0.0, 1.0].
         """
+        if x_vector is None:
+            return 0.5
+
+        # Clean NaN/Inf for numerical stability
+        x_arr = np.nan_to_num(np.asarray(x_vector, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
+
         if not self.is_fitted:
             # Fallback heuristic: feature 0 is usually heuristic_score, feature 2 is flag_webdriver
-            if x_vector is not None and len(x_vector) > 0:
-                h_score = float(x_vector[0])
-                flag_wd = float(x_vector[2]) if len(x_vector) > 2 else 0.0
+            if len(x_arr) > 0:
+                h_score = float(x_arr[0])
+                flag_wd = float(x_arr[2]) if len(x_arr) > 2 else 0.0
                 return min(1.0, h_score * 0.7 + flag_wd * 0.9)
             return 0.5
 
-        if x_vector.ndim == 1:
-            x_vector = x_vector.reshape(1, -1)
+        if x_arr.ndim == 1:
+            x_arr = x_arr.reshape(1, -1)
 
-        # Apply scaler transform
-        x_scaled = self.scaler.transform(x_vector)
-        probas = self.model.predict_proba(x_scaled)
-        # Probability of class 1 (Bot)
-        return float(probas[0, 1])
+        # Handle dimension mismatch gracefully if feature set evolved
+        expected_dim = getattr(self.scaler, "n_features_in_", x_arr.shape[1])
+        if x_arr.shape[1] != expected_dim:
+            if x_arr.shape[1] < expected_dim:
+                pad = np.zeros((x_arr.shape[0], expected_dim - x_arr.shape[1]), dtype=np.float32)
+                x_arr = np.hstack([x_arr, pad])
+            else:
+                x_arr = x_arr[:, :expected_dim]
+
+        try:
+            x_scaled = self.scaler.transform(x_arr)
+            probas = self.model.predict_proba(x_scaled)
+            return float(probas[0, 1])
+        except Exception:
+            return 0.5
 
     def predict_batch(self, X: np.ndarray) -> np.ndarray:
         """Predict probabilities for multiple samples."""
+        if X is None or len(X) == 0:
+            return np.array([], dtype=np.float32)
+
+        X_arr = np.nan_to_num(np.asarray(X, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
         if not self.is_fitted:
-            return np.full(X.shape[0], 0.5)
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict_proba(X_scaled)[:, 1]
+            return np.full(X_arr.shape[0], 0.5)
+
+        expected_dim = getattr(self.scaler, "n_features_in_", X_arr.shape[1])
+        if X_arr.shape[1] != expected_dim:
+            if X_arr.shape[1] < expected_dim:
+                pad = np.zeros((X_arr.shape[0], expected_dim - X_arr.shape[1]), dtype=np.float32)
+                X_arr = np.hstack([X_arr, pad])
+            else:
+                X_arr = X_arr[:, :expected_dim]
+
+        try:
+            X_scaled = self.scaler.transform(X_arr)
+            return self.model.predict_proba(X_scaled)[:, 1]
+        except Exception:
+            return np.full(X_arr.shape[0], 0.5)
 
     def get_feature_importances(self) -> dict:
         if not self.is_fitted:

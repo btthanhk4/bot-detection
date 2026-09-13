@@ -34,7 +34,12 @@ from core_ml.dataset.loader import (
     records_to_chunks,
 )
 from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
-from core_ml.features.mouse_features import compute_statistical_features, extract_sequential_chunks
+from core_ml.features.mouse_features import (
+    compute_statistical_features,
+    extract_sequential_chunks,
+    extract_mouse_stat_vector,
+    STATISTICAL_FEATURE_NAMES,
+)
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -47,28 +52,13 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 
-MOUSE_STAT_FEATURE_NAMES = [
-    "mean_speed", "std_speed", "max_speed",
-    "mean_accel", "std_accel", "straightness",
-    "pause_ratio", "direction_changes_x", "direction_changes_y",
-    "jerk_mean", "angular_entropy",
-    # New features (v2)
-    "curvature_mean", "curvature_std", "time_regularity",
-    "velocity_autocorrelation", "accel_zero_crossing_rate",
-    "movement_efficiency",
-    # Additional features (v2.1)
-    "click_to_move_ratio", "speed_skewness", "idle_time_ratio",
-]
+MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 
 
 def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.ndarray:
-    """Build combined env + mouse stats feature vector."""
+    """Build combined env + mouse stats feature vector using canonical extractor."""
     env_vec = extract_env_vector(fingerprint, botd)
-    m_stats = compute_statistical_features(records)
-    mouse_stat_vec = np.array(
-        [m_stats[k] for k in MOUSE_STAT_FEATURE_NAMES],
-        dtype=np.float32,
-    )
+    mouse_stat_vec = extract_mouse_stat_vector(records)
     return np.concatenate([env_vec, mouse_stat_vec])
 
 
@@ -210,24 +200,37 @@ def main():
     # ================================================================
     print("\n[PHASE 1] Data Preparation")
 
-    # 1a. Try to load real dataset
+    # 1a. Try to load real dataset (Phase 1 + Phase 2)
     real_data_root = os.path.join(os.path.dirname(__file__), "..", "..", "Tuần 3", "repos", "web_bot_detection_dataset")
     real_sessions = []
     if os.path.isdir(real_data_root):
         print("  Loading real mouse data from web_bot_detection_dataset...")
-        for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
-            sessions = load_real_dataset(real_data_root, scenario=scenario)
+        # Load Phase 2 only once (first scenario) to avoid duplicate sessions
+        for i, scenario in enumerate(["humans_and_moderate_bots", "humans_and_advanced_bots"]):
+            sessions = load_real_dataset(real_data_root, scenario=scenario,
+                                          include_phase2=(i == 0))
             real_sessions.extend(sessions)
-        print(f"  Loaded {len(real_sessions)} real sessions (Human + Bot)")
+        # Deduplicate by comparing record lengths + labels (real data overlap)
+        seen = set()
+        unique_sessions = []
+        for records, label in real_sessions:
+            key = (len(records), label, records[0]["x"] if records else 0)
+            if key not in seen:
+                seen.add(key)
+                unique_sessions.append((records, label))
+        real_sessions = unique_sessions
+        n_real_h = sum(1 for _, l in real_sessions if l == 0)
+        n_real_b = sum(1 for _, l in real_sessions if l == 1)
+        print(f"  Loaded {len(real_sessions)} real sessions ({n_real_h} Human + {n_real_b} Bot)")
     else:
         print("  Real dataset not found. Using synthetic data only.")
 
-    # 1b. Generate synthetic data
+    # 1b. Generate synthetic data (reduced ratio since real data is now larger)
     print("  Generating synthetic training samples...")
     all_telemetries = []
     all_labels = []
 
-    n_synthetic = 200 if real_sessions else 300
+    n_synthetic = 150 if real_sessions else 300
 
     for _ in range(n_synthetic):
         t = generate_synthetic_telemetry(is_bot=False)
@@ -270,7 +273,10 @@ def main():
 
     feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURE_NAMES
 
+    total_samples = len(all_telemetries)
     for idx, (t, label) in enumerate(zip(all_telemetries, all_labels)):
+        if (idx + 1) % 100 == 0 or idx == 0:
+            print(f"  Processing sample {idx+1}/{total_samples}...")
         fp = t.get("fingerprint", {})
         bd = t.get("botd", {})
         mouse = t.get("mouse", {})
@@ -293,12 +299,12 @@ def main():
                 all_chunk_labels.append(label)
 
         # Graph event
-        # IP assignment: overlapping ranges to avoid label leakage
-        # Bots have higher probability of sharing same IP (simulates botnet)
-        if label == 1:
-            ip = f"192.168.1.{random.choice([random.randint(1, 50)] * 3 + [random.randint(1, 100)])}"  # bots cluster on fewer IPs
+        # Realistic network simulation:
+        # Bots may coordinate across proxy IPs (higher request concurrency per IP node)
+        if label == 1 and random.random() < 0.40 and len(graph_builder.ip_map) > 0:
+            ip = random.choice(list(graph_builder.ip_map.keys())[-15:])
         else:
-            ip = f"192.168.1.{random.randint(1, 100)}"  # humans spread across all IPs
+            ip = f"203.0.113.{random.randint(1, 200)}"
         graph_builder.add_telemetry_event(t, ip_address=ip, is_bot_ground_truth=label)
 
     X_tab = np.array(X_tab_list, dtype=np.float32)

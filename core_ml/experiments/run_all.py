@@ -35,7 +35,12 @@ from core_ml.dataset.loader import (
     records_to_chunks,
 )
 from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
-from core_ml.features.mouse_features import compute_statistical_features, extract_sequential_chunks
+from core_ml.features.mouse_features import (
+    compute_statistical_features,
+    extract_sequential_chunks,
+    extract_mouse_stat_vector,
+    STATISTICAL_FEATURE_NAMES,
+)
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
@@ -44,23 +49,14 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-MOUSE_STAT_FEATURES = [
-    "mean_speed", "std_speed", "max_speed", "mean_accel", "std_accel",
-    "straightness", "pause_ratio", "direction_changes_x", "direction_changes_y",
-    "jerk_mean", "angular_entropy",
-    "curvature_mean", "curvature_std", "time_regularity",
-    "velocity_autocorrelation", "accel_zero_crossing_rate", "movement_efficiency",
-    # Additional features (v2.1)
-    "click_to_move_ratio", "speed_skewness", "idle_time_ratio",
-]
+MOUSE_STAT_FEATURES = list(STATISTICAL_FEATURE_NAMES)
 
 RESULTS = {}
 
 
 def build_full_vector(fp, bd, records):
     env_vec = extract_env_vector(fp, bd)
-    m_stats = compute_statistical_features(records)
-    mouse_vec = np.array([m_stats[k] for k in MOUSE_STAT_FEATURES], dtype=np.float32)
+    mouse_vec = extract_mouse_stat_vector(records)
     return np.concatenate([env_vec, mouse_vec])
 
 
@@ -89,12 +85,22 @@ def prepare_data():
     all_labels = []
     all_records = []  # raw records for per-session analysis
 
-    # Real data
+    # Real data (Phase 1 + Phase 2 with deduplication)
     real_sessions = []
     if os.path.isdir(real_root):
-        for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
-            sessions = load_real_dataset(real_root, scenario=scenario)
+        for i, scenario in enumerate(["humans_and_moderate_bots", "humans_and_advanced_bots"]):
+            sessions = load_real_dataset(real_root, scenario=scenario,
+                                          include_phase2=(i == 0))
             real_sessions.extend(sessions)
+        # Deduplicate
+        seen = set()
+        unique_sessions = []
+        for records, label in real_sessions:
+            key = (len(records), label, records[0]["x"] if records else 0)
+            if key not in seen:
+                seen.add(key)
+                unique_sessions.append((records, label))
+        real_sessions = unique_sessions
 
     for records, label in real_sessions:
         chunks = records_to_chunks(records, chunk_size=24, stride=12)
@@ -108,14 +114,14 @@ def prepare_data():
         all_labels.append(label)
         all_records.append(records)
 
-    # Synthetic
-    for _ in range(200):
+    # Synthetic (reduced count since real data is now larger)
+    for _ in range(150):
         t = generate_synthetic_telemetry(is_bot=False)
         all_telemetries.append(t)
         all_labels.append(0)
         all_records.append(t["mouse"]["records"])
 
-    for _ in range(200):
+    for _ in range(150):
         level = random.choice(["naive", "moderate", "advanced"])
         t = generate_synthetic_telemetry(is_bot=True, bot_level=level)
         all_telemetries.append(t)
@@ -135,9 +141,9 @@ def prepare_data():
     return X, y, feature_names, all_records, all_telemetries
 
 
-def load_real_by_scenario(real_root, scenario):
+def load_real_by_scenario(real_root, scenario, include_phase2=True):
     """Load real data for a specific scenario only."""
-    sessions = load_real_dataset(real_root, scenario=scenario)
+    sessions = load_real_dataset(real_root, scenario=scenario, include_phase2=include_phase2)
     X_list, y_list = [], []
     feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURES
     for records, label in sessions:
@@ -147,7 +153,7 @@ def load_real_by_scenario(real_root, scenario):
         X_list.append(vec)
         y_list.append(label)
     if not X_list:
-        return np.empty((0, 43)), np.array([])
+        return np.empty((0, 50)), np.array([])
     X = np.nan_to_num(np.array(X_list, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
     return X, np.array(y_list, dtype=int)
 
@@ -190,7 +196,7 @@ def experiment_baseline(X, y, feature_names):
     model.fit(X_train, y_train, feature_names=feature_names)
     ml_proba = model.predict_batch(X_test)
     ml_metrics = eval_metrics(y_test, ml_proba)
-    print(f"  [ML] XGBoost (43 features):          AUC={ml_metrics['roc_auc']:.4f} | F1={ml_metrics['f1']:.4f}")
+    print(f"  [ML] XGBoost ({len(feature_names)} features):          AUC={ml_metrics['roc_auc']:.4f} | F1={ml_metrics['f1']:.4f}")
 
     improvement = (ml_metrics['roc_auc'] - baseline_rules['roc_auc']) / max(0.001, baseline_rules['roc_auc']) * 100
     print(f"\n  → ML improves over best baseline by {improvement:.1f}% AUC")
@@ -277,11 +283,11 @@ def experiment_feature_ablation(X, y, feature_names):
                        "velocity_autocorrelation", "accel_zero_crossing_rate", "movement_efficiency"]
 
     groups = {
-        "All features (43)": list(range(len(feature_names))),
-        "Only Environment/Fingerprint (26)": [i for i, n in enumerate(feature_names) if n in env_names],
-        "Only Mouse Dynamics (17)": [i for i, n in enumerate(feature_names) if n in mouse_stat_names],
-        "Without v2 features (37)": [i for i, n in enumerate(feature_names) if n not in new_v2_features],
-        "Only v2 new features (6)": [i for i, n in enumerate(feature_names) if n in new_v2_features],
+        f"All features ({len(feature_names)})": list(range(len(feature_names))),
+        f"Only Environment/Fingerprint ({len(env_names)})": [i for i, n in enumerate(feature_names) if n in env_names],
+        f"Only Mouse Dynamics ({len(mouse_stat_names)})": [i for i, n in enumerate(feature_names) if n in mouse_stat_names],
+        f"Without v2 features ({len(feature_names) - len(new_v2_features)})": [i for i, n in enumerate(feature_names) if n not in new_v2_features],
+        f"Only v2 new features ({len(new_v2_features)})": [i for i, n in enumerate(feature_names) if n in new_v2_features],
         "Without BotD heuristics (remove top env)": [i for i, n in enumerate(feature_names) if n not in ["heuristic_score", "flagged_count", "flag_webdriver", "flag_virtualGpu"]],
     }
 
