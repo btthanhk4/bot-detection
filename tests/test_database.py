@@ -211,3 +211,28 @@ def test_save_uses_server_computed_mouse_stats(monkeypatch):
     assert stored["mouse_stats"]["move_point_count"] == 30
     assert stored["mouse_stats"]["chunks_count"] == 1
     assert "avgSpeed" not in stored["mouse_stats"]
+
+
+def test_save_uses_same_rolling_window_as_collector(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+    records = [
+        {"time": i * 20, "x": (i % 100) / 100, "y": 0.2, "type": "move"}
+        for i in range(250)
+    ]
+
+    assert save_detection_result(
+        {"sessionId": "rolling", "visitorId": "visitor", "mouse": {"records": records}},
+        {"verdict": "HUMAN"},
+    )
+    stored = detections.docs["rolling"]
+    assert stored["mouse_points_captured"] == 100
+    assert len(stored["mouse_trajectory"]) == 100

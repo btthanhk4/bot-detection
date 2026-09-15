@@ -179,3 +179,26 @@ class TestEnsembleDetector:
 
         assert result["breakdown"]["has_enough_mouse_data"] is False
         assert result["breakdown"]["behavioral_lstm_score"] == 0.5
+
+    def test_absent_heuristic_flags_do_not_override_strong_ml_evidence(self):
+        class StrongLSTM:
+            def predict_session_proba(self, _chunks):
+                return 0.9
+
+        class StrongTabular:
+            def predict_proba(self, _features):
+                return 0.9
+
+        records = [
+            {"time": i * 20, "x": 0.1 + i * 0.01, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        detector = EnsembleBotDetector(lstm_model=StrongLSTM(), tabular_model=StrongTabular())
+        result = detector.predict({
+            "botd": {"heuristicScore": 0.0, "detectors": {}},
+            "mouse": {"records": records},
+        })
+
+        assert result["verdict"] == "BOT"
+        assert result["bot_probability"] > 0.8
+        assert result["breakdown"]["weights_used"]["w_heuristic"] < 0.1

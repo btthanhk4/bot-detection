@@ -157,13 +157,13 @@ class TestMouseFeatures:
         assert extract_sequential_chunks(malformed_chunk).shape == (0, 24, 8)
 
     def test_dos_defensive_caps(self):
-        # 1. 2,000 points sent by adversarial caller capped to 500
+        # 1. 2,000 points sent by adversarial caller capped to collector window
         excessive_records = [
             {"time": i * 10, "x": 0.1 + (i % 10) * 0.01, "y": 0.2 + (i % 5) * 0.01, "type": "move"}
             for i in range(2000)
         ]
         stats = compute_statistical_features(excessive_records)
-        assert stats["point_count"] == 500
+        assert stats["point_count"] == 100
 
         # Invalid trailing records cannot evict all valid movement before validation.
         valid_then_garbage = excessive_records[:30] + [{"x": None}] * 600

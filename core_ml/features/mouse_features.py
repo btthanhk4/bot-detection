@@ -15,6 +15,9 @@ import numpy as np
 import torch
 
 
+MAX_MOUSE_RECORDS = 100
+
+
 # Single Source of Truth for Mouse Statistical Features
 STATISTICAL_FEATURE_NAMES = [
     "mean_speed",
@@ -54,7 +57,7 @@ def _get_empty_stats(point_count: int = 0, move_count: int = 0) -> dict:
     return stats
 
 
-def sanitize_mouse_records(records: list, max_records: int = 500) -> list:
+def sanitize_mouse_records(records: list, max_records: int = MAX_MOUSE_RECORDS) -> list:
     """Return finite, chronological mouse events with a bounded size."""
     if not isinstance(records, list):
         return []
@@ -101,7 +104,7 @@ def compute_statistical_features(records: list) -> dict:
         return _get_empty_stats()
 
     # Validate before capping so trailing garbage cannot hide valid movement.
-    valid_records = sanitize_mouse_records(records, max_records=500)
+    valid_records = sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
 
     if not valid_records:
         return _get_empty_stats(point_count=len(valid_records))
@@ -289,7 +292,7 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> 
         return []
 
     moves = [
-        record for record in sanitize_mouse_records(records, max_records=500)
+        record for record in sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
         if record["type"] == "move"
     ]
     if len(moves) < chunk_size + 1:

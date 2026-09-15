@@ -45,8 +45,12 @@ class EnsembleBotDetector:
         self.tabular_available = bool(tabular_available)
 
     def _compute_confidence_weight(self, score: float) -> float:
-        """Higher confidence (further from 0.5) → higher weight."""
+        """Weight a calibrated bidirectional model by distance from uncertainty."""
         return abs(score - 0.5) * 2.0 + 0.3  # min weight = 0.3
+
+    def _compute_heuristic_weight(self, score: float) -> float:
+        """Bot rules provide positive evidence; no triggered rule is not human proof."""
+        return 0.3 + max(0.0, min(1.0, score))
 
     def predict(self, telemetry_payload: dict) -> dict:
         """
@@ -123,22 +127,22 @@ class EnsembleBotDetector:
         if not self.lstm_available:
             w_l = 0.0
             w_t = 0.70 * self._compute_confidence_weight(tabular_score) if self.tabular_available else 0.0
-            w_h = 0.30 * self._compute_confidence_weight(heuristic_score)
+            w_h = 0.30 * self._compute_heuristic_weight(heuristic_score)
         elif not has_enough_mouse_data:
             # Without full 24-point chunks, check if partial mouse trajectory exists
             if mouse_stats.get("move_point_count", 0) >= 5:
                 w_l = 0.15 * self._compute_confidence_weight(lstm_score)
                 w_t = 0.50 * self._compute_confidence_weight(tabular_score)
-                w_h = 0.35 * self._compute_confidence_weight(heuristic_score)
+                w_h = 0.35 * self._compute_heuristic_weight(heuristic_score)
             else:
-                w_h = 0.45
-                w_t = 0.55
+                w_h = 0.30 * self._compute_heuristic_weight(heuristic_score)
+                w_t = 0.70 * self._compute_confidence_weight(tabular_score)
                 w_l = 0.0
         else:
             # Base weights adjusted by confidence
             conf_lstm = self._compute_confidence_weight(lstm_score)
             conf_tab = self._compute_confidence_weight(tabular_score)
-            conf_heur = self._compute_confidence_weight(heuristic_score)
+            conf_heur = self._compute_heuristic_weight(heuristic_score)
 
             w_l = self.w_lstm * conf_lstm
             w_t = self.w_tabular * conf_tab

@@ -100,15 +100,19 @@ bot-detection-core/
 
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
-| **XGBoost (50 features)** | **0.9931** | **0.9924** | **0.0000** |
-| BiLSTM (session aggregation) | 0.9962 | 0.9924 | 0.0000 |
+| **XGBoost (50 features)** | **1.0000** | **1.0000** | **0.0000** |
+| BiLSTM (session aggregation) | 1.0000 | 0.9851 | 0.0833 |
+| Production ensemble | 1.0000 | 1.0000 | 0.0000 |
+
+Các số liệu trên được đo trên 90 session test độc lập (24 human, 66 bot). Đây là
+kết quả trên dataset nghiên cứu, không phải cam kết hiệu năng trên traffic production.
 
 **Top 5 Feature Importance (XGBoost):**
 1. `std_speed` — Độ biến thiên tốc độ
-2. `fonts_count` — Số font trình duyệt phát hiện được
-3. `straightness` — Độ thẳng của quỹ đạo
-4. `max_speed` — Tốc độ cực đại
-5. `mean_accel` — Gia tốc trung bình
+2. `angular_entropy` — Entropy hướng di chuyển
+3. `mean_accel` — Gia tốc trung bình
+4. `jerk_mean` — Mức thay đổi gia tốc
+5. `mean_speed` — Tốc độ trung bình
 
 ### 9 Thí nghiệm đánh giá
 
@@ -150,8 +154,8 @@ python -u -m core_ml.train --dataset-root "/path/to/web_bot_detection_dataset"
 ```
 
 Kết quả huấn luyện v2:
-- **XGBoost:** Test AUC=0.9931 | Test F1=0.9924
-- **BiLSTM:** Test AUC=0.9962 | Test F1=0.9924 (aggregated by session)
+- **XGBoost:** Test AUC=1.0000 | Test F1=1.0000
+- **BiLSTM:** Test AUC=1.0000 | Test F1=0.9851 (aggregated by session)
 - **GNN:** not trained; real graph relationships are required to avoid target leakage
 - Weights saved to `core_ml/weights/`
 

@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from pymongo.errors import DuplicateKeyError
 from core_ml.features.mouse_features import (
+    MAX_MOUSE_RECORDS,
     compute_statistical_features,
     records_to_chunks,
     sanitize_mouse_records,
@@ -137,7 +138,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
 
         mouse_data = telemetry.get("mouse") or {}
         records = mouse_data.get("records") or mouse_data.get("trajectory") or []
-        sanitized_records = sanitize_mouse_records(records, max_records=500)
+        sanitized_records = sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
         mouse_stats = compute_statistical_features(sanitized_records)
         mouse_stats["chunks_count"] = len(records_to_chunks(sanitized_records))
         mouse_stats["has_enough_data"] = mouse_stats["chunks_count"] > 0
