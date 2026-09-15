@@ -91,6 +91,9 @@ export class BotCollector {
     }
 
     const mouseData = this.mouseRecorder.exportData();
+    // The API rebuilds canonical chunks from raw records. Sending overlapping
+    // windows can push a mature session beyond the request-size limit.
+    delete mouseData.chunks;
 
     return {
       sessionId: this.sessionId,

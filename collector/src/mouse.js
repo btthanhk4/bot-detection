@@ -11,6 +11,7 @@ export class MouseRecorder {
     this.chunkSize = options.chunkSize || 24;
     this.records = [];
     this.chunks = [];
+    this.lastMoveRecord = null;
     this.scrollEvents = [];  // separate scroll tracking
     this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.isListening = false;
@@ -53,6 +54,7 @@ export class MouseRecorder {
   clear() {
     this.records = [];
     this.chunks = [];
+    this.lastMoveRecord = null;
     this.scrollEvents = [];
     this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
@@ -69,9 +71,7 @@ export class MouseRecorder {
     const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
 
     const previousRecord = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-    const prev = type === 'move'
-      ? [...this.records].reverse().find((record) => record.type === 'move') || null
-      : previousRecord;
+    const prev = type === 'move' ? this.lastMoveRecord : previousRecord;
 
     let timeDiff = 0;
     let dx = 0;
@@ -120,6 +120,7 @@ export class MouseRecorder {
     };
 
     this.records.push(record);
+    if (type === 'move') this.lastMoveRecord = record;
     // Efficient truncation: splice from front in batch instead of shift() one-by-one
     if (this.records.length > this.maxRecords + 50) {
       this.records = this.records.slice(-this.maxRecords);

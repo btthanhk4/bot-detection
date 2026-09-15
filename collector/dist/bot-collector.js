@@ -433,6 +433,7 @@
       this.chunkSize = options.chunkSize || 24;
       this.records = [];
       this.chunks = [];
+      this.lastMoveRecord = null;
       this.scrollEvents = [];  // separate scroll tracking
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
       this.isListening = false;
@@ -475,6 +476,7 @@
     clear() {
       this.records = [];
       this.chunks = [];
+      this.lastMoveRecord = null;
       this.scrollEvents = [];
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
@@ -491,9 +493,7 @@
       const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
 
       const previousRecord = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-      const prev = type === 'move'
-        ? [...this.records].reverse().find((record) => record.type === 'move') || null
-        : previousRecord;
+      const prev = type === 'move' ? this.lastMoveRecord : previousRecord;
 
       let timeDiff = 0;
       let dx = 0;
@@ -542,6 +542,7 @@
       };
 
       this.records.push(record);
+      if (type === 'move') this.lastMoveRecord = record;
       // Efficient truncation: splice from front in batch instead of shift() one-by-one
       if (this.records.length > this.maxRecords + 50) {
         this.records = this.records.slice(-this.maxRecords);
@@ -785,6 +786,9 @@
       }
 
       const mouseData = this.mouseRecorder.exportData();
+      // The API rebuilds canonical chunks from raw records. Sending overlapping
+      // windows can push a mature session beyond the request-size limit.
+      delete mouseData.chunks;
 
       return {
         sessionId: this.sessionId,

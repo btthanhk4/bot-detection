@@ -99,6 +99,34 @@ class TestDatasetLoader:
         py_chunks = records_to_chunks(records, chunk_size=24, stride=12)
         assert np.allclose(js_chunks, py_chunks, rtol=1e-6, atol=1e-8)
 
+    def test_collector_payload_omits_redundant_chunks(self):
+        if not shutil.which("node"):
+            pytest.skip("Node.js is not installed")
+
+        root = Path(__file__).resolve().parents[1]
+        subprocess.run(["node", "build.js"], cwd=root / "collector", check=True, capture_output=True)
+        script = """
+const BotCollector = require('./collector/dist/bot-collector.js');
+const collector = new BotCollector({autoSendInterval: 0});
+collector.cachedFingerprint = {visitorId: 'visitor', components: {}};
+collector.cachedBotd = {};
+collector.mouseRecorder.records = Array.from({length: 500}, (_, i) => ({
+  time: i * 16, x: i / 500, y: i / 1000, type: 'move'
+}));
+collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
+  hasChunks: Object.prototype.hasOwnProperty.call(payload.mouse, 'chunks'),
+  recordCount: payload.mouse.records.length,
+  payloadBytes: Buffer.byteLength(JSON.stringify(payload))
+})));
+"""
+        result = json.loads(subprocess.run(
+            ["node", "-e", script], cwd=root, check=True, capture_output=True, text=True
+        ).stdout)
+
+        assert result["hasChunks"] is False
+        assert result["recordCount"] == 100
+        assert result["payloadBytes"] < 262144
+
     def test_parsers_clamp_negative_coordinates(self):
         records = parse_movement_notation("[m(-50,-20)][m(100,200)]")
         assert all(0.0 <= item["x"] <= 1.0 and 0.0 <= item["y"] <= 1.0 for item in records)
