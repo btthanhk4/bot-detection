@@ -45,8 +45,9 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp s�
 └─────────────────────────────────────────────────────┘
 ```
 
-The GNN is currently trained as an offline fraud-ring experiment. Live API
-verdicts use BiLSTM, XGBoost, and BotD heuristics; they do not include a GNN score.
+The GNN architecture is retained as an offline research component, but no weight is
+shipped because the public mouse dataset has no observed device/IP/target graph.
+Live API verdicts use BiLSTM, XGBoost, and BotD heuristics.
 
 ---
 
@@ -99,16 +100,15 @@ bot-detection-core/
 
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
-| **XGBoost (50 features)** | **0.9972** | **0.9933** | **0.0256** |
-| BiLSTM (mouse chunks) | 0.9815 | 0.9568 | 0.0759 |
-| GNN (graph) | 0.9539 | 0.8936 | 0.1026 |
+| **XGBoost (50 features)** | **0.9931** | **0.9924** | **0.0000** |
+| BiLSTM (session aggregation) | 0.9962 | 0.9924 | 0.0000 |
 
 **Top 5 Feature Importance (XGBoost):**
 1. `std_speed` — Độ biến thiên tốc độ
-2. `jerk_mean` — Mức thay đổi gia tốc
-3. `curvature_std` — Độ biến thiên độ cong
-4. `mean_accel` — Gia tốc trung bình
-5. `straightness` — Độ thẳng của quỹ đạo
+2. `fonts_count` — Số font trình duyệt phát hiện được
+3. `straightness` — Độ thẳng của quỹ đạo
+4. `max_speed` — Tốc độ cực đại
+5. `mean_accel` — Gia tốc trung bình
 
 ### 9 Thí nghiệm đánh giá
 
@@ -124,8 +124,8 @@ bot-detection-core/
 | E8 | Short Sessions | Hoạt động tốt mọi độ dài |
 | E9 | Power User Test | **0% False Positive** trên power users |
 
-> Kết quả hiện hành: [core_ml/experiment_results.json](core_ml/experiment_results.json).
-> [EXPERIMENT_REPORT.md](EXPERIMENT_REPORT.md) được giữ như bản diễn giải lịch sử.
+> `core_ml/experiment_results.json` và `EXPERIMENT_REPORT.md` là artifact lịch sử
+> của pipeline random-split cũ. Cần chạy lại E1-E9 trước khi trích dẫn các kết quả này.
 
 ---
 
@@ -150,9 +150,9 @@ python -u -m core_ml.train --dataset-root "/path/to/web_bot_detection_dataset"
 ```
 
 Kết quả huấn luyện v2:
-- **XGBoost:** Test AUC=0.9972 | Test F1=0.9933
-- **BiLSTM:** Test AUC=0.9815 | Test F1=0.9568
-- **GNN:** Test AUC=0.9539 | Test F1=0.8936
+- **XGBoost:** Test AUC=0.9931 | Test F1=0.9924
+- **BiLSTM:** Test AUC=0.9962 | Test F1=0.9924 (aggregated by session)
+- **GNN:** not trained; real graph relationships are required to avoid target leakage
 - Weights saved to `core_ml/weights/`
 
 ### 3. Chạy toàn bộ thí nghiệm

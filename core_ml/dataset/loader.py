@@ -15,9 +15,20 @@ import os
 import random
 import re
 import hashlib
+from dataclasses import dataclass
 import numpy as np
 
 from core_ml.features.mouse_features import records_to_chunks as _canonical_records_to_chunks
+
+
+@dataclass
+class RealMouseSession:
+    records: list
+    label: int
+    session_id: str
+    source: str
+    split: str
+    scenario: str
 
 
 # ---------- Real Dataset Parser ----------
@@ -216,7 +227,7 @@ def parse_phase2_record(record: dict) -> list:
     return records
 
 
-def load_phase2_dataset(dataset_root: str, scenario: str = None):
+def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: bool = False):
     """
     Load Phase 2 data from MongoDB-exported JSON lines files.
     Phase 2 has real browser timestamps and richer data (~220MB).
@@ -308,7 +319,15 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None):
                     # Determine label from annotation or fallback to file-based label
                     label = label_map.get(session_id, default_label)
                     
-                    sessions.append((mouse_records, label))
+                    session = RealMouseSession(
+                        records=mouse_records,
+                        label=label,
+                        session_id=session_id,
+                        source="phase2",
+                        split="unspecified",
+                        scenario=scenario or "all",
+                    )
+                    sessions.append(session if with_metadata else (mouse_records, label))
         except Exception as e:
             print(f"  Warning: Error loading Phase 2 file {os.path.basename(fpath)}: {e}")
             continue
@@ -317,7 +336,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None):
 
 
 def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots",
-                      include_phase2: bool = True):
+                      include_phase2: bool = True, with_metadata: bool = False):
     """
     Loads real mouse movement sessions from web_bot_detection_dataset.
     Loads Phase 1 (folder-per-session) and optionally Phase 2 (JSON lines with real timestamps).
@@ -340,7 +359,7 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
 
     # Parse Phase 1 annotation files
     label_map = {}
-    for ann_file in [phase1_ann_train, phase1_ann_test]:
+    for split, ann_file in [("train", phase1_ann_train), ("test", phase1_ann_test)]:
         if os.path.isfile(ann_file):
             with open(ann_file, "r", encoding="utf-8") as f:
                 for line in f:
@@ -351,9 +370,9 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                     if len(parts) == 2:
                         session_id, label_str = parts
                         if label_str == "human":
-                            label_map[session_id] = 0
+                            label_map[session_id] = (0, split)
                         else:
-                            label_map[session_id] = 1  # moderate_bot, advanced_bot
+                            label_map[session_id] = (1, split)  # moderate_bot, advanced_bot
 
     # Load Phase 1 sessions
     if os.path.isdir(phase1_data):
@@ -378,31 +397,38 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                 if len(records) < 10:
                     continue
 
-                label = label_map.get(session_id, -1)
-                if label == -1:
+                annotation = label_map.get(session_id)
+                if annotation is None:
                     continue  # skip sessions without known labels
 
-                sessions.append((records, label))
+                label, split = annotation
+                sessions.append(RealMouseSession(
+                    records=records,
+                    label=label,
+                    session_id=session_id,
+                    source="phase1",
+                    split=split,
+                    scenario=scenario,
+                ))
                 seen_session_ids.add(session_id)
             except (json.JSONDecodeError, Exception):
                 continue
 
     # ===== Phase 2: MongoDB JSON-lines with REAL timestamps =====
     if include_phase2:
-        phase2_sessions = load_phase2_dataset(dataset_root, scenario=scenario)
-        for records, label in phase2_sessions:
-            sessions.append((records, label))
+        sessions.extend(load_phase2_dataset(dataset_root, scenario=scenario, with_metadata=True))
 
     unique_sessions = []
     seen_trajectories = set()
-    for records, label in sessions:
-        payload = json.dumps(records, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    for session in sessions:
+        payload = json.dumps(session.records, sort_keys=True, separators=(",", ":")).encode("utf-8")
         signature = hashlib.sha256(payload).digest()
-        key = signature
-        if key not in seen_trajectories:
-            seen_trajectories.add(key)
-            unique_sessions.append((records, label))
-    return unique_sessions
+        if signature not in seen_trajectories:
+            seen_trajectories.add(signature)
+            unique_sessions.append(session)
+    if with_metadata:
+        return unique_sessions
+    return [(session.records, session.label) for session in unique_sessions]
 
 
 def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12, n_features: int = 8) -> list:

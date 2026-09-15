@@ -212,7 +212,7 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert res.status_code == 200
     assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
     assert "sessionSelectionVersion" in res.text
-    assert "models.gnn_offline" in res.text
+    assert "models.tabular && models.lstm" in res.text
     assert "Fallback: generate representative trajectory" not in res.text
 
 

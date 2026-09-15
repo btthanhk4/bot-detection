@@ -23,7 +23,6 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
-from core_ml.models.gnn_detector import HeteroClickFraudGNN
 
 
 class RequestBodyTooLarge(Exception):
@@ -92,16 +91,12 @@ app.add_middleware(
 weights_dir = settings.WEIGHTS_DIR
 lstm_weights_path = os.path.join(weights_dir, "behavioral_lstm.pt")
 tabular_weights_path = os.path.join(weights_dir, "tabular_model.joblib")
-gnn_weights_path = os.path.join(weights_dir, "gnn_model.pt")
 
 lstm_model = MouseTrajectoryLSTM()
 lstm_loaded = lstm_model.load_weights(lstm_weights_path)
 
 tabular_model = TabularBotClassifier()
 tabular_loaded = tabular_model.load(tabular_weights_path)
-
-gnn_model = HeteroClickFraudGNN()
-gnn_loaded = gnn_model.load_model(gnn_weights_path)
 
 ensemble_detector = EnsembleBotDetector(
     lstm_model=lstm_model,
@@ -222,7 +217,7 @@ def index():
         "models": {
             "behavioral_lstm": "ready" if lstm_loaded else "untrained_fallback",
             "tabular_xgboost": "ready" if tabular_loaded else "fallback_heuristic",
-            "hetero_gnn": "loaded_offline" if gnn_loaded else "unavailable",
+            "hetero_gnn": "not_trained_without_real_graph_data",
         },
         "graph_node_counts": {
             "devices": stats["device_count"],
@@ -244,7 +239,7 @@ def health_check():
         "models_loaded": {
             "tabular": tabular_loaded,
             "lstm": lstm_loaded,
-            "gnn_offline": gnn_loaded,
+            "gnn_offline": False,
         },
         "database": database_ready,
     }

@@ -1410,7 +1410,7 @@ async function fetchHealth() {
   if (data && data.status === 'healthy') {
     document.getElementById('statusDot').className = 'status-dot';
     const models = data.models_loaded || {};
-    const allLoaded = models.tabular && models.lstm && models.gnn_offline;
+    const allLoaded = models.tabular && models.lstm;
     document.getElementById('statusText').textContent =
       allLoaded ? 'All Models Online' : 'Partial Models';
   } else {

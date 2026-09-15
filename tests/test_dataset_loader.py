@@ -13,6 +13,7 @@ from core_ml.dataset.loader import (
     parse_phase2_record,
     records_to_chunks,
     generate_synthetic_telemetry,
+    load_real_dataset,
 )
 
 
@@ -101,3 +102,31 @@ class TestDatasetLoader:
     def test_parsers_clamp_negative_coordinates(self):
         records = parse_movement_notation("[m(-50,-20)][m(100,200)]")
         assert all(0.0 <= item["x"] <= 1.0 and 0.0 <= item["y"] <= 1.0 for item in records)
+
+    def test_real_dataset_preserves_official_phase1_split(self, tmp_path):
+        scenario = "humans_and_moderate_bots"
+        data_root = tmp_path / "phase1" / "data" / "mouse_movements" / scenario
+        annotations = tmp_path / "phase1" / "annotations" / scenario
+        for offset, session_id in enumerate(("train-human", "test-bot")):
+            session_dir = data_root / session_id
+            session_dir.mkdir(parents=True)
+            notation = "".join(
+                f"[m({100 + i + offset * 50},{200 + i})]" for i in range(12)
+            )
+            (session_dir / "mouse_movements.json").write_text(
+                json.dumps({"total_behaviour": notation}), encoding="utf-8"
+            )
+        annotations.mkdir(parents=True)
+        (annotations / "train").write_text("train-human human\n", encoding="utf-8")
+        (annotations / "test").write_text("test-bot moderate_bot\n", encoding="utf-8")
+
+        sessions = load_real_dataset(
+            str(tmp_path), scenario=scenario, include_phase2=False, with_metadata=True
+        )
+
+        by_id = {session.session_id: session for session in sessions}
+        assert by_id["train-human"].split == "train"
+        assert by_id["train-human"].label == 0
+        assert by_id["test-bot"].split == "test"
+        assert by_id["test-bot"].label == 1
+        assert all(session.source == "phase1" for session in sessions)

@@ -2,7 +2,7 @@
 Training Pipeline for Multi-Modal Bot Detection & Graph Neural Network (v2)
 ============================================================================
 Major improvements:
-  1. Train/Val/Test split (70/15/15) with stratification
+  1. Published test split preservation and leakage-safe stratification
   2. Real data ingestion from web_bot_detection_dataset
   3. Learning rate scheduling (CosineAnnealing)
   4. Early stopping on validation loss
@@ -32,6 +32,7 @@ from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_sco
 from sklearn.model_selection import train_test_split
 
 from core_ml.dataset.loader import (
+    RealMouseSession,
     generate_synthetic_telemetry,
     load_real_dataset,
     records_to_chunks,
@@ -61,6 +62,66 @@ MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 def records_signature(records: list) -> str:
     payload = json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def deduplicate_real_sessions(sessions: list[RealMouseSession]) -> list[RealMouseSession]:
+    """Deduplicate trajectories across scenarios without hiding label conflicts."""
+    unique = {}
+    for session in sessions:
+        signature = records_signature(session.records)
+        existing = unique.get(signature)
+        if existing is None:
+            unique[signature] = session
+            continue
+        if existing.label != session.label:
+            raise ValueError(
+                f"Conflicting labels for duplicate trajectory: {existing.session_id} / {session.session_id}"
+            )
+        # A trajectory marked as official test must never be downgraded to train.
+        if session.split == "test" and existing.split != "test":
+            unique[signature] = session
+    return list(unique.values())
+
+
+def assign_real_session_splits(sessions: list[RealMouseSession], seed: int = SEED) -> list[str]:
+    """Preserve official splits and stratify data that has no published split."""
+    assignments = [session.split for session in sessions]
+
+    def stable_order(indices):
+        return sorted(
+            indices,
+            key=lambda idx: hashlib.sha256(
+                f"{seed}:{sessions[idx].source}:{sessions[idx].session_id}".encode("utf-8")
+            ).digest(),
+        )
+
+    for label in (0, 1):
+        official_train = stable_order([
+            idx for idx, session in enumerate(sessions)
+            if session.source == "phase1" and session.split == "train" and session.label == label
+        ])
+        n_val = max(1, round(len(official_train) * 0.15)) if len(official_train) >= 2 else 0
+        for idx in official_train[:n_val]:
+            assignments[idx] = "val"
+
+        unspecified = stable_order([
+            idx for idx, session in enumerate(sessions)
+            if session.split == "unspecified" and session.label == label
+        ])
+        if len(unspecified) >= 3:
+            n_test = max(1, round(len(unspecified) * 0.15))
+            n_val = max(1, round(len(unspecified) * 0.15))
+            for idx in unspecified[:n_test]:
+                assignments[idx] = "test"
+            for idx in unspecified[n_test:n_test + n_val]:
+                assignments[idx] = "val"
+            for idx in unspecified[n_test + n_val:]:
+                assignments[idx] = "train"
+        else:
+            for idx in unspecified:
+                assignments[idx] = "train"
+
+    return assignments
 
 
 def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.ndarray:
@@ -209,6 +270,20 @@ def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
     return metrics
 
 
+def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, session_indices, labels):
+    """Aggregate chunk predictions exactly as the production detector does."""
+    chunk_sessions = np.asarray(chunk_session_indices)
+    probabilities = []
+    session_labels = []
+    for session_idx in session_indices:
+        positions = np.flatnonzero(chunk_sessions == int(session_idx))
+        if positions.size == 0:
+            continue
+        probabilities.append(lstm_model.predict_session_proba(chunks_tensor[positions.tolist()]))
+        session_labels.append(int(labels[int(session_idx)]))
+    return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
+
+
 def main(dataset_root=None):
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -229,19 +304,11 @@ def main(dataset_root=None):
         print("  Loading real mouse data from web_bot_detection_dataset...")
         for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
             sessions = load_real_dataset(real_data_root, scenario=scenario,
-                                          include_phase2=True)
+                                          include_phase2=True, with_metadata=True)
             real_sessions.extend(sessions)
-        # Deduplicate exact trajectories shared by the two dataset scenarios.
-        seen = set()
-        unique_sessions = []
-        for records, label in real_sessions:
-            key = records_signature(records)
-            if key not in seen:
-                seen.add(key)
-                unique_sessions.append((records, label))
-        real_sessions = unique_sessions
-        n_real_h = sum(1 for _, l in real_sessions if l == 0)
-        n_real_b = sum(1 for _, l in real_sessions if l == 1)
+        real_sessions = deduplicate_real_sessions(real_sessions)
+        n_real_h = sum(1 for session in real_sessions if session.label == 0)
+        n_real_b = sum(1 for session in real_sessions if session.label == 1)
         print(f"  Loaded {len(real_sessions)} real sessions ({n_real_h} Human + {n_real_b} Bot)")
     else:
         print("  Real dataset not found. Using synthetic data only.")
@@ -250,6 +317,7 @@ def main(dataset_root=None):
     print("  Generating synthetic training samples...")
     all_telemetries = []
     all_labels = []
+    all_splits = []
 
     n_synthetic = 150 if real_sessions else 300
 
@@ -258,6 +326,7 @@ def main(dataset_root=None):
         t["sessionId"] = f"synthetic_human_{sample_idx}"
         all_telemetries.append(t)
         all_labels.append(0)
+        all_splits.append("train")
 
     for sample_idx in range(n_synthetic):
         level = random.choice(["naive", "moderate", "advanced"])
@@ -265,9 +334,12 @@ def main(dataset_root=None):
         t["sessionId"] = f"synthetic_bot_{sample_idx}"
         all_telemetries.append(t)
         all_labels.append(1)
+        all_splits.append("train")
 
     # 1c. Build real data telemetry payloads
-    for real_idx, (records, label) in enumerate(real_sessions):
+    real_splits = assign_real_session_splits(real_sessions)
+    for real_idx, (session, split) in enumerate(zip(real_sessions, real_splits)):
+        records, label = session.records, session.label
         # Create telemetry-like structure from real mouse data
         chunks = records_to_chunks(records, chunk_size=24, stride=12)
         telemetry = {
@@ -281,6 +353,7 @@ def main(dataset_root=None):
         }
         all_telemetries.append(telemetry)
         all_labels.append(label)
+        all_splits.append(split)
 
     print(f"  Total samples: {len(all_telemetries)} (Humans: {all_labels.count(0)}, Bots: {all_labels.count(1)})")
 
@@ -293,7 +366,6 @@ def main(dataset_root=None):
     all_chunks = []
     all_chunk_labels = []
     all_chunk_session_indices = []
-    graph_builder = ClickFraudGraphBuilder()
 
     feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURE_NAMES
 
@@ -323,15 +395,6 @@ def main(dataset_root=None):
                 all_chunk_labels.append(label)
                 all_chunk_session_indices.append(idx)
 
-        # Graph event
-        # Realistic network simulation:
-        # Bots may coordinate across proxy IPs (higher request concurrency per IP node)
-        if label == 1 and random.random() < 0.40 and len(graph_builder.ip_map) > 0:
-            ip = random.choice(list(graph_builder.ip_map.keys())[-15:])
-        else:
-            ip = f"203.0.113.{random.randint(1, 200)}"
-        graph_builder.add_telemetry_event(t, ip_address=ip, is_bot_ground_truth=label)
-
     X_tab = np.array(X_tab_list, dtype=np.float32)
     y_tab = np.array(all_labels, dtype=int)
 
@@ -345,15 +408,21 @@ def main(dataset_root=None):
     # ================================================================
     # PHASE 3: Train/Val/Test Split (Stratified)
     # ================================================================
-    print("\n[PHASE 3] Train/Val/Test Split (70/15/15)")
+    print("\n[PHASE 3] Leakage-safe Train/Val/Test Split")
 
     indices = np.arange(len(y_tab))
-    idx_train, idx_temp, y_tr, y_temp = train_test_split(
-        indices, y_tab, test_size=0.30, stratify=y_tab, random_state=SEED
-    )
-    idx_val, idx_test, y_v, y_te = train_test_split(
-        idx_temp, y_temp, test_size=0.50, stratify=y_temp, random_state=SEED
-    )
+    if real_sessions:
+        split_array = np.array(all_splits)
+        idx_train = indices[split_array == "train"]
+        idx_val = indices[split_array == "val"]
+        idx_test = indices[split_array == "test"]
+    else:
+        idx_train, idx_temp = train_test_split(
+            indices, test_size=0.30, stratify=y_tab, random_state=SEED
+        )
+        idx_val, idx_test = train_test_split(
+            idx_temp, test_size=0.50, stratify=y_tab[idx_temp], random_state=SEED
+        )
 
     X_train_tab, X_val_tab, X_test_tab = X_tab[idx_train], X_tab[idx_val], X_tab[idx_test]
     y_train_tab, y_val_tab, y_test_tab = y_tab[idx_train], y_tab[idx_val], y_tab[idx_test]
@@ -422,22 +491,10 @@ def main(dataset_root=None):
         print("    No LSTM chunks available for training.")
         lstm_model = MouseTrajectoryLSTM()
 
-    # ================================================================
-    # PHASE 6: Train GNN Model
-    # ================================================================
-    graph_tensors = graph_builder.to_torch_tensors()
-    gnn_model = HeteroClickFraudGNN()
-    train_gnn(
-        gnn_model,
-        graph_tensors,
-        train_indices=idx_train,
-        val_indices=idx_val,
-        test_indices=idx_test,
-        epochs=25,
-    )
-    gnn_path = os.path.join(weights_dir, "gnn_model.pt")
-    gnn_model.save_model(gnn_path)
-    print(f"    Saved GNN Model -> {gnn_path}")
+    # A GNN requires observed device/IP/target relationships. The public mouse
+    # dataset has none, so synthesizing graph edges from labels would leak the
+    # target into model inputs. Train it separately only on real graph data.
+    print("\n[PHASE 6] Skipping GNN: no observed graph relationships in this dataset")
 
     # ================================================================
     # PHASE 7: Evaluation on Train/Val/Test
@@ -456,20 +513,21 @@ def main(dataset_root=None):
         probas = tabular_model.predict_batch(X_set)
         evaluate_metrics(y_set, probas, prefix=f"[{name}] ")
 
-    # LSTM evaluation on chunks
+    # LSTM evaluation on sessions, matching production aggregation.
     if all_chunks:
-        print(f"\n  --- Val Set (BiLSTM on chunks) ---")
-        lstm_model.eval()
-        with torch.no_grad():
-            lstm_val_preds = lstm_model(X_chunks_val).squeeze().numpy()
-            lstm_val_true = y_chunks_val.numpy().astype(int)
-        evaluate_metrics(lstm_val_true, lstm_val_preds, prefix="[Val LSTM] ")
-        if len(test_idx):
-            with torch.no_grad():
-                lstm_test_preds = lstm_model(X_chunks_test).squeeze().numpy()
-                lstm_test_true = y_chunks_test.numpy().astype(int)
-            print(f"\n  --- Test Set (BiLSTM on chunks) ---")
-            evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
+        print(f"\n  --- Val Set (BiLSTM by session) ---")
+        lstm_val_true, lstm_val_preds = predict_lstm_sessions(
+            lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_val, y_tab
+        )
+        if len(lstm_val_true):
+            evaluate_metrics(lstm_val_true, lstm_val_preds, prefix="[Val LSTM] ")
+        if len(idx_test):
+            lstm_test_true, lstm_test_preds = predict_lstm_sessions(
+                lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_test, y_tab
+            )
+            if len(lstm_test_true):
+                print(f"\n  --- Test Set (BiLSTM by session) ---")
+                evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
 
     print("\n" + "=" * 60)
     print("  TRAINING COMPLETE")
