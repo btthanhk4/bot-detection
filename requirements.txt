@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.3.0+cpu
 torch_geometric>=2.8.0
-xgboost>=3.0.0
+xgboost-cpu==3.2.0
 scikit-learn==1.4.2
 numpy>=1.26.0
 pandas>=2.2.0
