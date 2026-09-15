@@ -107,3 +107,36 @@ def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
     assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 1}, {"verdict": "BOT"}) is None
     assert save_detection_result({"sessionId": "s1", "visitorId": "attacker", "sequence": 3}, {"verdict": "BOT"}) is None
     assert detections.docs["s1"]["verdict"] == "HUMAN"
+
+
+def test_save_uses_server_computed_mouse_stats(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+    records = [
+        {"time": i * 20, "x": 0.1 + i * 0.01, "y": 0.2, "type": "move"}
+        for i in range(30)
+    ]
+    telemetry = {
+        "sessionId": "trusted-stats",
+        "visitorId": "visitor",
+        "sequence": 1,
+        "mouse": {
+            "records": records,
+            "stats": {"pointCount": 999999, "avgSpeed": 999999},
+        },
+    }
+
+    assert save_detection_result(telemetry, {"verdict": "HUMAN"})
+    stored = detections.docs["trusted-stats"]
+    assert stored["mouse_points_captured"] == 30
+    assert stored["mouse_stats"]["move_point_count"] == 30
+    assert stored["mouse_stats"]["chunks_count"] == 1
+    assert "avgSpeed" not in stored["mouse_stats"]

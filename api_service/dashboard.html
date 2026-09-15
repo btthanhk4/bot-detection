@@ -2019,15 +2019,15 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 5. Mouse Stats (handle both camelCase from JS collector and snake_case)
   const mousePts = dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.pointCount || 0;
   document.getElementById('dMouseCount').textContent = mousePts;
-  const avgSpd = mouseStats.avg_speed || mouseStats.avgSpeed || null;
+  const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
   const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
-  const avgAcc = mouseStats.avg_accel || mouseStats.avgAccel || null;
+  const avgAcc = mouseStats.mean_accel || mouseStats.avg_accel || mouseStats.avgAccel || null;
   const straight = mouseStats.straightness;
-  document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(1) + ' px/s') : '--';
-  document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(1) + ' px/s') : '--';
-  document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(1) + ' px/s²') : '--';
+  document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(3) + ' norm/s') : '--';
+  document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(3) + ' norm/s') : '--';
+  document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(3) + ' norm/s²') : '--';
   document.getElementById('dMouseStraight').textContent = (straight !== undefined && straight !== null) ? Number(straight).toFixed(2) : '--';
-  document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || (mouseStats.hasEnoughData ? Math.max(1, Math.floor(mousePts / 24)) : Math.max(0, Math.floor(mousePts / 24)));
+  document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || 0;
 
   // 6. Fingerprint Grid
   const fpGrid = document.getElementById('dFingerprintGrid');

@@ -117,21 +117,19 @@ class ClickFraudGraphBuilder:
                     is_private = 1.0 if ipaddress.ip_address(ip_str).is_private else 0.0
                 except ValueError:
                     is_private = 0.0
-                ip_feat = np.array([_deterministic_hash_feature(ip_str), is_private, 1.0], dtype=np.float32)
+                ip_feat = np.array([_deterministic_hash_feature(ip_str), is_private, 0.0], dtype=np.float32)
                 self.ip_features.append(ip_feat)
             else:
                 ip_idx = self.ip_map[ip_str]
-                self.ip_features[ip_idx][2] += 1.0  # increment request count
 
             # 3. Target Node (URL / Ad, deterministic hashing)
             if page_url not in self.target_map:
                 tgt_idx = len(self.target_map)
                 self.target_map[page_url] = tgt_idx
-                tgt_feat = np.array([_deterministic_hash_feature(page_url), 1.0], dtype=np.float32)
+                tgt_feat = np.array([_deterministic_hash_feature(page_url), 0.0], dtype=np.float32)
                 self.target_features.append(tgt_feat)
             else:
                 tgt_idx = self.target_map[page_url]
-                self.target_features[tgt_idx][1] += 1.0
 
             # 4. Session Node
             if session_id not in self.session_map:
@@ -160,11 +158,13 @@ class ClickFraudGraphBuilder:
             if edge_ip not in self._edge_set_ip_sess:
                 self._edge_set_ip_sess.add(edge_ip)
                 self.edges_session_ip.append(edge_ip)
+                self.ip_features[ip_idx][2] += 1.0
 
             edge_tgt = (tgt_idx, sess_idx)
             if edge_tgt not in self._edge_set_tgt_sess:
                 self._edge_set_tgt_sess.add(edge_tgt)
                 self.edges_session_target.append(edge_tgt)
+                self.target_features[tgt_idx][1] += 1.0
 
             return sess_idx
 

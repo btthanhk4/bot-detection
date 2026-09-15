@@ -106,3 +106,5 @@ class TestGraphBuilder:
         assert len(builder.edges_device_session) == 1
         assert len(builder.edges_session_ip) == 1
         assert len(builder.edges_session_target) == 1
+        assert builder.ip_features[0][2] == 1.0
+        assert builder.target_features[0][1] == 1.0

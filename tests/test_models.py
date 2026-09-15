@@ -167,3 +167,15 @@ class TestEnsembleDetector:
         chunk = [[0.01] * 8 for _ in range(24)]
         result = detector.predict({"mouse": {"chunks": [chunk]}})
         assert result["breakdown"]["weights_used"]["w_lstm"] == 0
+
+    def test_client_chunks_cannot_spoof_mouse_sufficiency(self):
+        class FailingLSTM:
+            def predict_session_proba(self, _chunks):
+                raise AssertionError("LSTM must not receive client-provided chunks")
+
+        detector = EnsembleBotDetector(lstm_model=FailingLSTM())
+        fake_chunk = [[0.1] * 8 for _ in range(24)]
+        result = detector.predict({"mouse": {"records": [], "chunks": [fake_chunk]}})
+
+        assert result["breakdown"]["has_enough_mouse_data"] is False
+        assert result["breakdown"]["behavioral_lstm_score"] == 0.5

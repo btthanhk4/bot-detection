@@ -148,10 +148,13 @@ class TestMouseFeatures:
         empty_tensor = extract_sequential_chunks(None)
         assert empty_tensor.shape == (0, 24, 8)
 
-        # Truncated or padded chunks
+        # Incomplete chunks must be rejected, never padded into valid evidence.
         short_chunk = [[[0.1, 0.1, 0.5, 0.5, 0.7, 1.2, 0.014, 0.016] for _ in range(10)]]
-        padded_tensor = extract_sequential_chunks(short_chunk, chunk_size=24, n_features=8)
-        assert padded_tensor.shape == (1, 24, 8)
+        rejected_tensor = extract_sequential_chunks(short_chunk, chunk_size=24, n_features=8)
+        assert rejected_tensor.shape == (0, 24, 8)
+
+        malformed_chunk = [[[0.1] * 7 for _ in range(24)]]
+        assert extract_sequential_chunks(malformed_chunk).shape == (0, 24, 8)
 
     def test_dos_defensive_caps(self):
         # 1. 2,000 points sent by adversarial caller capped to 500
@@ -161,6 +164,11 @@ class TestMouseFeatures:
         ]
         stats = compute_statistical_features(excessive_records)
         assert stats["point_count"] == 500
+
+        # Invalid trailing records cannot evict all valid movement before validation.
+        valid_then_garbage = excessive_records[:30] + [{"x": None}] * 600
+        valid_stats = compute_statistical_features(valid_then_garbage)
+        assert valid_stats["move_point_count"] == 30
 
         # 2. 200 chunks sent by caller capped to 50
         excessive_chunks = [

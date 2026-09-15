@@ -54,6 +54,42 @@ def _get_empty_stats(point_count: int = 0, move_count: int = 0) -> dict:
     return stats
 
 
+def sanitize_mouse_records(records: list, max_records: int = 500) -> list:
+    """Return finite, chronological mouse events with a bounded size."""
+    if not isinstance(records, list):
+        return []
+
+    valid_records = []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            continue
+        raw_time = record.get("time", record.get("t"))
+        if record.get("x") is None or record.get("y") is None or raw_time is None:
+            continue
+        try:
+            numeric_time = float(raw_time)
+            numeric_x = float(record["x"])
+            numeric_y = float(record["y"])
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not all(math.isfinite(value) for value in (numeric_time, numeric_x, numeric_y)):
+            continue
+        valid_records.append({
+            "time": numeric_time,
+            "x": numeric_x,
+            "y": numeric_y,
+            "type": str(record.get("type", "move")),
+            "_input_order": index,
+        })
+
+    valid_records.sort(key=lambda record: (record["time"], record["_input_order"]))
+    if max_records > 0:
+        valid_records = valid_records[-max_records:]
+    for record in valid_records:
+        record.pop("_input_order", None)
+    return valid_records
+
+
 def compute_statistical_features(records: list) -> dict:
     """
     Extract comprehensive statistical motion features from a list of mouse points.
@@ -64,38 +100,11 @@ def compute_statistical_features(records: list) -> dict:
     if not records or not isinstance(records, list):
         return _get_empty_stats()
 
-    # Defensive cap to prevent CPU exhaustion DoS attacks
-    if len(records) > 500:
-        records = records[-500:]
-    valid_records = []
-    for r in records:
-        if not isinstance(r, dict):
-            continue
-        rx = r.get("x")
-        ry = r.get("y")
-        rt = r.get("time", r.get("t"))
-        if rx is None or ry is None or rt is None:
-            continue
-        try:
-            numeric_time = float(rt)
-            numeric_x = float(rx)
-            numeric_y = float(ry)
-            if not all(math.isfinite(value) for value in (numeric_time, numeric_x, numeric_y)):
-                continue
-            valid_records.append({
-                "time": numeric_time,
-                "x": numeric_x,
-                "y": numeric_y,
-                "type": str(r.get("type", "move")),
-            })
-        except (ValueError, TypeError):
-            continue
+    # Validate before capping so trailing garbage cannot hide valid movement.
+    valid_records = sanitize_mouse_records(records, max_records=500)
 
     if not valid_records:
         return _get_empty_stats(point_count=len(valid_records))
-
-    # Ensure chronological order in case of asynchronous network/browser event arrival
-    valid_records.sort(key=lambda r: r["time"])
 
     move_records = [r for r in valid_records if r["type"] == "move"]
     if len(move_records) < 3:
@@ -274,6 +283,47 @@ def compute_statistical_features(records: list) -> dict:
     }
 
 
+def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> list:
+    """Build canonical LSTM transition windows from server-validated move events."""
+    if chunk_size <= 0 or stride <= 0:
+        return []
+
+    moves = [
+        record for record in sanitize_mouse_records(records, max_records=500)
+        if record["type"] == "move"
+    ]
+    if len(moves) < chunk_size + 1:
+        return []
+
+    max_x = max(record["x"] for record in moves)
+    max_y = max(record["y"] for record in moves)
+    scale_w = max(1920.0, max_x) if max_x > 1.0 else 1.0
+    scale_h = max(1080.0, max_y) if max_y > 1.0 else 1.0
+
+    feature_rows = []
+    prev_speed_x = 0.0
+    prev_speed_y = 0.0
+    for previous, current in zip(moves, moves[1:]):
+        dt = max(0.001, (current["time"] - previous["time"]) / 1000.0)
+        dx = (current["x"] - previous["x"]) / scale_w
+        dy = (current["y"] - previous["y"]) / scale_h
+        distance = math.sqrt(dx * dx + dy * dy)
+        speed_x = dx / dt
+        speed_y = dy / dt
+        speed = distance / dt
+        acceleration = math.sqrt(
+            (speed_x - prev_speed_x) ** 2 + (speed_y - prev_speed_y) ** 2
+        ) / dt
+        feature_rows.append([dx, dy, speed_x, speed_y, speed, acceleration, distance, dt])
+        prev_speed_x = speed_x
+        prev_speed_y = speed_y
+
+    return [
+        feature_rows[start:start + chunk_size]
+        for start in range(0, len(feature_rows) - chunk_size + 1, stride)
+    ]
+
+
 def extract_mouse_stat_vector(records_or_stats) -> np.ndarray:
     """
     Extract ordered float32 feature vector of length 20 from raw records or stats dict.
@@ -314,31 +364,31 @@ def extract_sequential_chunks(chunks: list, chunk_size: int = 24, n_features: in
 
     valid_chunks = []
     for c in chunks:
-        if not isinstance(c, (list, tuple)):
+        if not isinstance(c, (list, tuple)) or len(c) != chunk_size:
             continue
         cleaned_rows = []
+        chunk_is_valid = True
         for row in c:
-            if not isinstance(row, (list, tuple)):
-                cleaned_rows.append([0.0] * n_features)
-                continue
+            if not isinstance(row, (list, tuple)) or len(row) != n_features:
+                chunk_is_valid = False
+                break
             cleaned_row = []
-            for val in row[:n_features]:
+            for val in row:
                 try:
-                    fval = float(val) if val is not None else 0.0
-                    cleaned_row.append(0.0 if (math.isnan(fval) or math.isinf(fval)) else fval)
-                except (ValueError, TypeError):
-                    cleaned_row.append(0.0)
-            if len(cleaned_row) < n_features:
-                cleaned_row.extend([0.0] * (n_features - len(cleaned_row)))
+                    fval = float(val)
+                except (ValueError, TypeError, OverflowError):
+                    chunk_is_valid = False
+                    break
+                if not math.isfinite(fval):
+                    chunk_is_valid = False
+                    break
+                cleaned_row.append(fval)
+            if not chunk_is_valid:
+                break
             cleaned_rows.append(cleaned_row)
 
-        if len(cleaned_rows) == chunk_size:
+        if chunk_is_valid:
             valid_chunks.append(cleaned_rows)
-        elif len(cleaned_rows) > chunk_size:
-            valid_chunks.append(cleaned_rows[:chunk_size])
-        elif len(cleaned_rows) > 0:
-            padded = list(cleaned_rows) + [[0.0] * n_features] * (chunk_size - len(cleaned_rows))
-            valid_chunks.append(padded)
 
     if not valid_chunks:
         return torch.zeros((0, chunk_size, n_features), dtype=torch.float32)

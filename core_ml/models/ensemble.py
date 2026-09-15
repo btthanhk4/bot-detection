@@ -11,7 +11,12 @@ Improvements:
 
 import numpy as np
 from core_ml.features.env_features import extract_env_vector
-from core_ml.features.mouse_features import compute_statistical_features, extract_sequential_chunks, extract_mouse_stat_vector
+from core_ml.features.mouse_features import (
+    compute_statistical_features,
+    extract_mouse_stat_vector,
+    extract_sequential_chunks,
+    records_to_chunks,
+)
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
@@ -55,7 +60,9 @@ class EnsembleBotDetector:
 
         raw_records = mouse.get("records") or mouse.get("trajectory")
         records = raw_records if isinstance(raw_records, list) else []
-        chunks = mouse.get("chunks") if isinstance(mouse.get("chunks"), list) else []
+        # Client-provided chunks are untrusted and can disagree with raw records.
+        # Rebuild canonical windows server-side so data sufficiency cannot be spoofed.
+        chunks = records_to_chunks(records, chunk_size=24, stride=12)
 
         # Compute mouse stats ONCE — reused for both fallback logic and tabular vector
         mouse_stats = compute_statistical_features(records)

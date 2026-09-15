@@ -16,6 +16,11 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from pymongo.errors import DuplicateKeyError
+from core_ml.features.mouse_features import (
+    compute_statistical_features,
+    records_to_chunks,
+    sanitize_mouse_records,
+)
 
 logger = logging.getLogger("bot_detection.database")
 
@@ -132,11 +137,11 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
 
         mouse_data = telemetry.get("mouse") or {}
         records = mouse_data.get("records") or mouse_data.get("trajectory") or []
-        mouse_stats = mouse_data.get("stats") if isinstance(mouse_data.get("stats"), dict) else {}
-        try:
-            captured_count = max(len(records), int(mouse_stats.get("pointCount", len(records))))
-        except (TypeError, ValueError):
-            captured_count = len(records)
+        sanitized_records = sanitize_mouse_records(records, max_records=500)
+        mouse_stats = compute_statistical_features(sanitized_records)
+        mouse_stats["chunks_count"] = len(records_to_chunks(sanitized_records))
+        mouse_stats["has_enough_data"] = mouse_stats["chunks_count"] > 0
+        captured_count = len(sanitized_records)
         now = datetime.now(timezone.utc)
         raw_order = telemetry.get("sequence")
         if raw_order is None:
@@ -163,7 +168,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "fingerprint": telemetry.get("fingerprint") or {},
             "botd": telemetry.get("botd") or {},
             "mouse_stats": mouse_stats,
-            "mouse_trajectory": records[-200:] if isinstance(records, list) else [],
+            "mouse_trajectory": sanitized_records[-200:],
             "event_order": event_order,
             "event_timestamp": telemetry.get("timestamp"),
             "updated_at": now,

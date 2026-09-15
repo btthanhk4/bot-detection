@@ -17,6 +17,8 @@ import re
 import hashlib
 import numpy as np
 
+from core_ml.features.mouse_features import records_to_chunks as _canonical_records_to_chunks
+
 
 # ---------- Real Dataset Parser ----------
 
@@ -409,46 +411,9 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12, n_f
     Features: [dx, dy, speedX, speedY, speed, accel, distance, timeDiff]
     Works directly in normalized screen coordinate space [0.0, 1.0].
     """
-    # Filter to moves only with positive time diff
-    moves = sorted(
-        [r for r in records if isinstance(r, dict) and r.get("type") == "move"],
-        key=lambda record: record.get("time", 0),
-    )
-    if len(moves) < chunk_size + 1:
+    if n_features != 8:
         return []
-
-    # Ensure coordinates are in normalized screen space [0, 1]
-    xs = [r["x"] for r in moves]
-    ys = [r["y"] for r in moves]
-    max_x = max(xs) if xs else 1.0
-    max_y = max(ys) if ys else 1.0
-    scale_w = max(1920.0, max_x) if max_x > 1.0 else 1.0
-    scale_h = max(1080.0, max_y) if max_y > 1.0 else 1.0
-
-    # Compute kinematic features
-    feature_rows = []
-    prev_speed_x, prev_speed_y = 0.0, 0.0
-    for i in range(1, len(moves)):
-        dt = max(0.001, (moves[i]["time"] - moves[i - 1]["time"]) / 1000.0)  # seconds
-        dx = (moves[i]["x"] - moves[i - 1]["x"]) / scale_w
-        dy = (moves[i]["y"] - moves[i - 1]["y"]) / scale_h
-        dist = math.sqrt(dx * dx + dy * dy)
-        speed_x = dx / dt
-        speed_y = dy / dt
-        speed = dist / dt
-        accel = math.sqrt((speed_x - prev_speed_x)**2 + (speed_y - prev_speed_y)**2) / dt
-
-        feature_rows.append([dx, dy, speed_x, speed_y, speed, accel, dist, dt])
-        prev_speed_x, prev_speed_y = speed_x, speed_y
-
-    # Sliding window chunking
-    chunks = []
-    for start in range(0, len(feature_rows) - chunk_size + 1, stride):
-        chunk = feature_rows[start:start + chunk_size]
-        if len(chunk) == chunk_size:
-            chunks.append(chunk)
-
-    return chunks
+    return _canonical_records_to_chunks(records, chunk_size=chunk_size, stride=stride)
 
 
 # ---------- Improved Synthetic Generators ----------
