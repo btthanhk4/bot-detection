@@ -65,26 +65,29 @@ def get_db():
 
 def _ensure_indexes(db):
     """Create indexes for efficient queries."""
-    try:
-        existing = db["detection_results"].index_information().get("sessionId_1")
-        if existing and not existing.get("unique"):
-            db["detection_results"].drop_index("sessionId_1")
-    except Exception as e:
-        logger.warning(f"[DB] Existing session index inspection warning: {e}")
-
     indexes = [
-        (db["detection_results"], [("created_at", -1)], {"expireAfterSeconds": 86400 * 30}),
-        (db["detection_results"], [("sessionId", 1)], {"unique": True}),
-        (db["detection_results"], [("verdict", 1)], {}),
-        (db["detection_results"], [("visitorId", 1)], {}),
-        (db["detection_results"], [("updated_at", -1)], {}),
-        (db["deleted_sessions"], [("expires_at", 1)], {"expireAfterSeconds": 0}),
+        (db["detection_results"], "created_at_-1", [("created_at", -1)], {"expireAfterSeconds": 86400 * 30}),
+        (db["detection_results"], "sessionId_1", [("sessionId", 1)], {"unique": True}),
+        (db["detection_results"], "verdict_1", [("verdict", 1)], {}),
+        (db["detection_results"], "visitorId_1", [("visitorId", 1)], {}),
+        (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {}),
+        (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
     ]
-    for collection, keys, options in indexes:
+    for collection, name, keys, options in indexes:
         try:
-            collection.create_index(keys, **options)
+            existing = collection.index_information().get(name)
+            existing_keys = [tuple(item) for item in (existing or {}).get("key", [])]
+            options_match = all(existing.get(key) == value for key, value in options.items()) if existing else False
+
+            if existing and (existing_keys != keys or not options_match):
+                logger.info(f"[DB] Rebuilding index {name} with updated options")
+                collection.drop_index(name)
+                existing = None
+
+            if not existing:
+                collection.create_index(keys, name=name, **options)
         except Exception as e:
-            logger.warning(f"[DB] Index creation warning for {keys}: {e}")
+            logger.warning(f"[DB] Index creation warning for {name}: {e}")
 
 
 def _writes_are_blocked(db, session_id: str) -> bool:
