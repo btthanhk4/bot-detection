@@ -143,13 +143,29 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         mouse_stats["has_enough_data"] = mouse_stats["chunks_count"] > 0
         captured_count = len(sanitized_records)
         now = datetime.now(timezone.utc)
-        raw_order = telemetry.get("sequence")
-        if raw_order is None:
-            raw_order = telemetry.get("timestamp") or telemetry.get("received_at") or int(now.timestamp() * 1000)
+        raw_sequence = telemetry.get("sequence")
+        raw_timestamp = telemetry.get("timestamp")
+        raw_received_at = telemetry.get("received_at")
+        if raw_timestamp is None:
+            raw_timestamp = raw_received_at
         try:
-            event_order = max(0, min(int(raw_order), 9007199254740991))
+            sequence = max(0, min(int(raw_sequence or 0), 999))
         except (TypeError, ValueError, OverflowError):
-            event_order = int(now.timestamp() * 1000)
+            sequence = 0
+        try:
+            if raw_timestamp is not None:
+                # Millisecond timestamp is the lifecycle-safe primary order; sequence
+                # only breaks ties. This allows a reused custom sessionId after reload.
+                timestamp = max(0, min(int(raw_timestamp), 9_000_000_000_000))
+                if raw_received_at is not None:
+                    received_at = max(0, min(int(raw_received_at), 9_000_000_000_000))
+                    timestamp = max(received_at - 86_400_000, min(timestamp, received_at + 300_000))
+                event_order = timestamp * 1000 + sequence
+            else:
+                # Backward compatibility for callers that only provide sequence.
+                event_order = max(0, min(int(raw_sequence), 9007199254740991))
+        except (TypeError, ValueError, OverflowError):
+            event_order = int(now.timestamp() * 1000) * 1000 + sequence
 
         doc = {
             "sessionId": session_id,

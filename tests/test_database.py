@@ -109,6 +109,77 @@ def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
     assert detections.docs["s1"]["verdict"] == "HUMAN"
 
 
+def test_newer_timestamp_allows_sequence_restart(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    first = {"sessionId": "reused", "visitorId": "v1", "timestamp": 1000, "sequence": 50}
+    reloaded = {"sessionId": "reused", "visitorId": "v1", "timestamp": 2000, "sequence": 0}
+    delayed = {"sessionId": "reused", "visitorId": "v1", "timestamp": 1500, "sequence": 99}
+
+    assert save_detection_result(first, {"verdict": "SUSPECT"})
+    assert save_detection_result(reloaded, {"verdict": "HUMAN"})
+    assert save_detection_result(delayed, {"verdict": "BOT"}) is None
+    assert detections.docs["reused"]["verdict"] == "HUMAN"
+
+
+def test_event_timestamp_is_bounded_by_server_receive_time(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    future = {
+        "sessionId": "clock-skew",
+        "visitorId": "v1",
+        "timestamp": 9_000_000_000_000,
+        "received_at": 2_000_000,
+        "sequence": 1,
+    }
+    later = {
+        "sessionId": "clock-skew",
+        "visitorId": "v1",
+        "timestamp": 9_000_000_000_000,
+        "received_at": 2_001_000,
+        "sequence": 0,
+    }
+
+    assert save_detection_result(future, {"verdict": "SUSPECT"})
+    assert save_detection_result(later, {"verdict": "HUMAN"})
+    assert detections.docs["clock-skew"]["verdict"] == "HUMAN"
+
+
+def test_zero_timestamp_is_not_replaced_by_receive_time(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    telemetry = {"sessionId": "epoch", "visitorId": "v1", "timestamp": 0, "sequence": 1}
+    assert save_detection_result(telemetry, {"verdict": "HUMAN"})
+    assert detections.docs["epoch"]["event_order"] == 1
+
+
 def test_save_uses_server_computed_mouse_stats(monkeypatch):
     detections = MemoryCollection()
     empty = MemoryCollection()
