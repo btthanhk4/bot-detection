@@ -28,9 +28,9 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp s�
          ▼                                   ▼
 ┌──────────────────────────────────────────────────┐
 │           FEATURE EXTRACTION (core_ml/features/)  │
-│  Mouse Kinematics (8 dims/step + 17 stats)       │
-│  Environment + BotD Fingerprint (26 dims)        │
-│  Total: 43-dimensional feature vector            │
+│  Mouse Kinematics (8 dims/step + 20 stats)       │
+│  Environment + BotD Fingerprint (30 dims)        │
+│  Total: 50-dimensional feature vector            │
 └────────┬────────────────────────────┬────────────┘
          │                            │
 ┌────────▼────────┐    ┌──────────────▼──────────────┐
@@ -44,6 +44,9 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp s�
 │    → Verdict: HUMAN / SUSPECT / BOT                 │
 └─────────────────────────────────────────────────────┘
 ```
+
+The GNN is currently trained as an offline fraud-ring experiment. Live API
+verdicts use BiLSTM, XGBoost, and BotD heuristics; they do not include a GNN score.
 
 ---
 
@@ -64,8 +67,8 @@ bot-detection-core/
 │   ├── dataset/
 │   │   └── loader.py               # Parser M4D dataset + synthetic generator
 │   ├── features/
-│   │   ├── env_features.py         # Environment/fingerprint vector (26 dims)
-│   │   ├── mouse_features.py       # Mouse dynamics stats + chunks (17 + 8 dims)
+│   │   ├── env_features.py         # Environment/fingerprint vector (30 dims)
+│   │   ├── mouse_features.py       # Mouse dynamics stats + chunks (20 + 8 dims)
 │   │   └── graph_builder.py        # Heterogeneous graph construction
 │   ├── models/
 │   │   ├── behavioral_lstm.py      # BiLSTM + TemporalAttention (v2)
@@ -96,7 +99,7 @@ bot-detection-core/
 
 | Model | Val AUC-ROC | Val F1 | Val FPR |
 |-------|-------------|--------|---------|
-| **XGBoost (43 features)** | **0.9995** | **0.9773** | **0.0000** |
+| **XGBoost (50 features)** | **0.9995** | **0.9773** | **0.0000** |
 | BiLSTM (mouse chunks) | 0.8240 | 0.6752 | — |
 | GNN (graph) | Loss=0.35 | — | — |
 
@@ -133,6 +136,10 @@ bot-detection-core/
 cd bot-detection-core
 pip install -r requirements.txt
 ```
+
+Set `BOT_ADMIN_TOKEN` before enabling dashboard delete actions. The Docker
+Compose service is exposed only on the internal `silkmoon-network`; access it
+through the reverse proxy.
 
 ### 2. Huấn luyện mô hình
 

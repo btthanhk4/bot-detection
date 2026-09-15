@@ -9,6 +9,8 @@ from api_service.main import app
 
 @pytest.fixture
 def client():
+    from api_service.main import _rate_limit_records
+    _rate_limit_records.clear()
     return TestClient(app)
 
 
@@ -25,8 +27,9 @@ def test_health_endpoint(client):
     res = client.get("/health")
     assert res.status_code == 200
     data = res.json()
-    assert data["status"] == "healthy"
+    assert data["status"] in ("healthy", "degraded")
     assert "models_loaded" in data
+    assert "database" in data
 
 
 def test_detect_bot_human(client):
@@ -87,7 +90,8 @@ def test_detect_empty_payload(client):
     assert "bot_probability" in data
 
 
-def test_telemetry_async_ingestion(client):
+def test_telemetry_async_ingestion(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: "saved")
     payload = {
         "sessionId": "sess_beacon_1",
         "action": "scroll",
@@ -100,7 +104,8 @@ def test_telemetry_async_ingestion(client):
     assert data["recorded"] is True
 
 
-def test_telemetry_beacon_text_plain_ingestion(client):
+def test_telemetry_beacon_text_plain_ingestion(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: "saved")
     # Tests navigator.sendBeacon fallback where Content-Type is text/plain
     raw_json = '{"sessionId": "sess_beacon_text_plain", "action": "leave", "mouse": {"records": []}}'
     res = client.post(
@@ -123,7 +128,8 @@ def test_graph_stats(client):
     assert "session_count" in data
 
 
-def test_reverse_proxy_ip_forwarding(client):
+def test_reverse_proxy_ip_forwarding(client, monkeypatch):
+    monkeypatch.setattr("api_service.main._is_trusted_proxy", lambda _host: True)
     # Test Cloudflare header
     res = client.post(
         "/api/v1/detect",
@@ -143,8 +149,19 @@ def test_reverse_proxy_ip_forwarding(client):
     assert res2.json()["client_ip"] == "198.51.100.42"
 
 
-def test_rate_limiter_blocks_excessive_traffic(client):
+def test_untrusted_client_cannot_spoof_forwarded_ip(client):
+    res = client.post(
+        "/api/v1/detect",
+        json={"sessionId": "sess_untrusted_proxy"},
+        headers={"X-Forwarded-For": "198.51.100.99"},
+    )
+    assert res.status_code == 200
+    assert res.json()["client_ip"] != "198.51.100.99"
+
+
+def test_rate_limiter_blocks_excessive_traffic(client, monkeypatch):
     from api_service.config import settings
+    monkeypatch.setattr("api_service.main._is_trusted_proxy", lambda _host: True)
     orig_limit = settings.RATE_LIMIT_PER_MINUTE
     settings.RATE_LIMIT_PER_MINUTE = 3  # temporarily set low limit for test
 
@@ -177,3 +194,37 @@ def test_get_bot_collector_sdk(client):
     assert res.status_code == 200
     assert "application/javascript" in res.headers["content-type"]
     assert "BotCollector" in res.text
+
+
+def test_invalid_telemetry_is_rejected(client):
+    res = client.post("/api/v1/telemetry", content=b"not-json", headers={"Content-Type": "text/plain"})
+    assert res.status_code == 400
+
+
+def test_oversized_payload_is_rejected(client):
+    from api_service.config import settings
+    body = b"x" * (settings.MAX_PAYLOAD_BYTES + 1)
+    res = client.post("/api/v1/telemetry", content=body, headers={"Content-Type": "application/json"})
+    assert res.status_code == 413
+
+
+def test_delete_requires_admin_token(client, monkeypatch):
+    from api_service.config import settings
+    original_token = settings.ADMIN_TOKEN
+    settings.ADMIN_TOKEN = "test-secret"
+    monkeypatch.setattr("api_service.database.delete_all_sessions", lambda: 3)
+    try:
+        assert client.delete("/api/v1/sessions").status_code == 401
+        res = client.delete("/api/v1/sessions", headers={"X-Admin-Token": "test-secret"})
+        assert res.status_code == 200
+        assert res.json()["count"] == 3
+    finally:
+        settings.ADMIN_TOKEN = original_token
+
+
+def test_graph_topology_has_no_dangling_edges(client):
+    res = client.get("/api/v1/graph/topology?max_nodes=1")
+    assert res.status_code == 200
+    data = res.json()
+    node_ids = {node["id"] for node in data["nodes"]}
+    assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in data["edges"])

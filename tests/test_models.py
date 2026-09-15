@@ -156,3 +156,8 @@ class TestEnsembleDetector:
         assert not math.isnan(res["bot_probability"])
         assert 0.0 <= res["bot_probability"] <= 1.0
         assert res["verdict"] in ("HUMAN", "BOT", "SUSPECT")
+
+    def test_ensemble_uses_configured_thresholds(self):
+        detector = EnsembleBotDetector(threshold=0.99, suspect_threshold=0.98)
+        result = detector.predict({"botd": {"heuristicScore": 0.6}})
+        assert result["verdict"] != "BOT"

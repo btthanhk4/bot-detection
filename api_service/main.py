@@ -4,14 +4,19 @@ Serves real-time bot detection inference using the trained Multi-Modal Ensemble
 and provides endpoints for telemetry ingestion & graph analysis.
 """
 
+import collections
+import ipaddress
 import json
 import os
+import secrets
+import threading
 import time
 from typing import Optional, Dict, Any, List
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Request, HTTPException, Query
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from api_service.config import settings
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
@@ -22,7 +27,7 @@ from core_ml.models.gnn_detector import HeteroClickFraudGNN
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Multi-Modal Bot Detection combining FingerprintJS, BotD, DELBOT-Mouse, and Graph Neural Networks",
+    description="Bot detection using browser heuristics, mouse dynamics, and tabular ML",
     version=settings.VERSION,
 )
 
@@ -30,7 +35,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials="*" not in settings.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -42,25 +47,23 @@ tabular_weights_path = os.path.join(weights_dir, "tabular_model.joblib")
 gnn_weights_path = os.path.join(weights_dir, "gnn_model.pt")
 
 lstm_model = MouseTrajectoryLSTM()
-lstm_model.load_weights(lstm_weights_path)
+lstm_loaded = lstm_model.load_weights(lstm_weights_path)
 
 tabular_model = TabularBotClassifier()
-tabular_model.load(tabular_weights_path)
+tabular_loaded = tabular_model.load(tabular_weights_path)
 
 gnn_model = HeteroClickFraudGNN()
-gnn_model.load_model(gnn_weights_path)
+gnn_loaded = gnn_model.load_model(gnn_weights_path)
 
 ensemble_detector = EnsembleBotDetector(
     lstm_model=lstm_model,
     tabular_model=tabular_model,
     threshold=settings.THRESHOLD,
+    suspect_threshold=settings.SUSPECT_THRESHOLD,
 )
 graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
-import collections
-import threading
-
-# Thread-safe in-memory ring buffer for recent telemetry events
+# Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
 
 # Sliding-window rate limiter per client IP
@@ -92,15 +95,38 @@ def check_rate_limit(client_ip: str) -> bool:
 
 
 class TelemetryPayload(BaseModel):
-    sessionId: Optional[str] = None
-    visitorId: Optional[str] = None
-    action: Optional[str] = "telemetry"
+    sessionId: Optional[str] = Field(default=None, max_length=128)
+    visitorId: Optional[str] = Field(default=None, max_length=128)
+    action: Optional[str] = Field(default="telemetry", max_length=64)
     timestamp: Optional[int] = None
-    pageUrl: Optional[str] = None
-    referrer: Optional[str] = None
+    pageUrl: Optional[str] = Field(default=None, max_length=2048)
+    referrer: Optional[str] = Field(default=None, max_length=2048)
     fingerprint: Optional[Dict[str, Any]] = None
     botd: Optional[Dict[str, Any]] = None
     mouse: Optional[Dict[str, Any]] = None
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    if request.method in {"POST", "PUT", "PATCH"}:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > settings.MAX_PAYLOAD_BYTES:
+                    return JSONResponse(status_code=413, content={"detail": "Request payload too large"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+    return await call_next(request)
+
+
+def _is_trusted_proxy(host: str) -> bool:
+    if not settings.TRUST_PROXY_HEADERS:
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+        return any(address in ipaddress.ip_network(value, strict=False) for value in settings.TRUSTED_PROXIES)
+    except ValueError:
+        return False
 
 
 def get_client_ip(request: Request) -> str:
@@ -108,16 +134,32 @@ def get_client_ip(request: Request) -> str:
     Extract real client IP address, honoring reverse proxy headers
     (Cloudflare, Nginx, AWS ALB, Traefik, Docker).
     """
-    cf_ip = request.headers.get("CF-Connecting-IP")
-    if cf_ip:
-        return cf_ip.strip()
-    xff = request.headers.get("X-Forwarded-For")
-    if xff:
-        return xff.split(",")[0].strip()
-    x_real = request.headers.get("X-Real-IP")
-    if x_real:
-        return x_real.strip()
-    return request.client.host if request.client else "127.0.0.1"
+    peer_ip = request.client.host if request.client else "127.0.0.1"
+    if not _is_trusted_proxy(peer_ip):
+        return peer_ip
+
+    candidates = [
+        request.headers.get("CF-Connecting-IP"),
+        (request.headers.get("X-Forwarded-For") or "").split(",")[0],
+        request.headers.get("X-Real-IP"),
+    ]
+    for candidate in candidates:
+        try:
+            return str(ipaddress.ip_address((candidate or "").strip()))
+        except ValueError:
+            continue
+    return peer_ip
+
+
+def require_admin(request: Request):
+    if not settings.ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Admin API is disabled until BOT_ADMIN_TOKEN is configured")
+    supplied = request.headers.get("X-Admin-Token", "")
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        supplied = authorization[7:].strip()
+    if not supplied or not secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
 @app.get("/")
@@ -127,9 +169,9 @@ def index():
         "status": "online",
         "service": "Bot Detection Core",
         "models": {
-            "behavioral_lstm": "ready",
-            "tabular_xgboost": "ready" if tabular_model.is_fitted else "fallback_heuristic",
-            "hetero_gnn": "ready",
+            "behavioral_lstm": "ready" if lstm_loaded else "untrained_fallback",
+            "tabular_xgboost": "ready" if tabular_loaded else "fallback_heuristic",
+            "hetero_gnn": "loaded_offline" if gnn_loaded else "unavailable",
         },
         "graph_node_counts": {
             "devices": stats["device_count"],
@@ -143,14 +185,17 @@ def index():
 @app.get("/healthz")
 def health_check():
     """Standard health check endpoint for load balancers and container orchestrators."""
+    from api_service.database import get_db
+    database_ready = get_db() is not None
     return {
-        "status": "healthy",
+        "status": "healthy" if (tabular_loaded and lstm_loaded and database_ready) else "degraded",
         "timestamp": int(time.time() * 1000),
         "models_loaded": {
-            "tabular": tabular_model.is_fitted,
-            "lstm": True,
-            "gnn": True,
-        }
+            "tabular": tabular_loaded,
+            "lstm": lstm_loaded,
+            "gnn_offline": gnn_loaded,
+        },
+        "database": database_ready,
     }
 
 
@@ -171,7 +216,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
 
     start_t = time.perf_counter()
     try:
-        result = ensemble_detector.predict(data)
+        result = await run_in_threadpool(ensemble_detector.predict, data)
     except Exception as e:
         result = {
             "is_bot": False,
@@ -220,22 +265,40 @@ async def receive_telemetry(request: Request):
 
     # Robust parsing supporting application/json, text/plain (sendBeacon), or raw bytes
     try:
-        data = await request.json()
-    except Exception:
-        try:
-            body_bytes = await request.body()
-            data = json.loads(body_bytes.decode("utf-8", errors="ignore")) if body_bytes else {}
-        except Exception:
-            data = {}
+        body_bytes = await request.body()
+        if len(body_bytes) > settings.MAX_PAYLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Request payload too large")
+        data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+    except HTTPException:
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Telemetry body must be a valid JSON object")
 
     if not isinstance(data, dict):
-        data = {}
+        raise HTTPException(status_code=400, detail="Telemetry body must be a JSON object")
+
+    try:
+        data = TelemetryPayload.model_validate(data).model_dump(exclude_none=True)
+    except ValidationError as exc:
+        detail = [{"loc": error["loc"], "msg": error["msg"], "type": error["type"]} for error in exc.errors()]
+        raise HTTPException(status_code=422, detail=detail)
+    if not data.get("sessionId"):
+        raise HTTPException(status_code=422, detail="sessionId is required")
 
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
 
-    # Thread-safe ring buffer auto-evicts oldest item when maxlen reached
+    # Best-effort local cache; MongoDB remains the persistent source of truth.
     telemetry_buffer.append(data)
+
+    # Run AI analysis and save to MongoDB
+    persisted = False
+    try:
+        analysis = await run_in_threadpool(ensemble_detector.predict, data)
+        from api_service.database import save_detection_result
+        persisted = bool(await run_in_threadpool(save_detection_result, data, analysis))
+    except Exception:
+        persisted = False
 
     # Auto-add to evolving graph
     try:
@@ -243,7 +306,22 @@ async def receive_telemetry(request: Request):
     except Exception:
         pass
 
-    return {"status": "success", "recorded": True}
+    return {"status": "success" if persisted else "degraded", "recorded": True, "persisted": persisted}
+
+
+@app.get("/api/v1/telemetry/recent")
+def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200)):
+    """
+    Returns the most recent detection sessions from MongoDB.
+    Single source of truth — no fallback to in-memory buffer.
+    """
+    from api_service.database import get_db, get_recent_results, get_total_count
+    if get_db() is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    results = get_recent_results(limit=limit)
+    total = get_total_count()
+
+    return {"total_buffered": total, "returned": len(results), "sessions": results}
 
 
 @app.get("/api/v1/graph/stats")
@@ -252,6 +330,96 @@ def get_graph_stats():
     Returns graph topology statistics and fraud ring indicators.
     """
     return graph_builder.get_stats()
+
+
+@app.get("/api/v1/graph/topology")
+def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200)):
+    """
+    Returns the full graph topology (nodes + edges) for interactive visualization.
+    Limits output to max_nodes most recent sessions and their connected nodes.
+    """
+    # Snapshot graph data under lock (fast, no I/O)
+    with graph_builder._lock:
+        session_items = list(graph_builder.session_map.items())[-max_nodes:]
+        selected_sessions = {idx for _, idx in session_items}
+        edge_dev_sess = [edge for edge in graph_builder.edges_device_session if edge[1] in selected_sessions]
+        edge_ip_sess = [edge for edge in graph_builder.edges_session_ip if edge[1] in selected_sessions]
+        edge_tgt_sess = [edge for edge in graph_builder.edges_session_target if edge[1] in selected_sessions]
+        selected_devices = {edge[0] for edge in edge_dev_sess}
+        selected_ips = {edge[0] for edge in edge_ip_sess}
+        selected_targets = {edge[0] for edge in edge_tgt_sess}
+        device_items = [(key, idx) for key, idx in graph_builder.device_map.items() if idx in selected_devices]
+        ip_items = [(key, idx) for key, idx in graph_builder.ip_map.items() if idx in selected_ips]
+        target_items = [(key, idx) for key, idx in graph_builder.target_map.items() if idx in selected_targets]
+        stats = {
+            "device_count": len(graph_builder.device_map),
+            "ip_count": len(graph_builder.ip_map),
+            "session_count": len(graph_builder.session_map),
+            "edges_count": len(graph_builder.edges_device_session) + len(graph_builder.edges_session_ip) + len(graph_builder.edges_session_target),
+            "suspected_coordinated_rings": 1 if (len(graph_builder.session_map) > 10 and len(graph_builder.device_map) < len(graph_builder.session_map) * 0.3) else 0,
+        }
+
+    # Build nodes (outside lock)
+    nodes = []
+    edges = []
+
+    for vid, idx in device_items:
+        nodes.append({
+            "id": f"dev_{idx}", "type": "device",
+            "label": vid[:12] + "…" if len(vid) > 12 else vid,
+            "fullId": vid,
+        })
+
+    for ip, idx in ip_items:
+        nodes.append({
+            "id": f"ip_{idx}", "type": "ip",
+            "label": ip, "fullId": ip,
+        })
+
+    # Session verdicts from DB (outside lock, may be slow)
+    session_verdicts = {}
+    try:
+        from api_service.database import get_db
+        db = get_db()
+        if db is not None:
+            selected_ids = [sid for sid, _ in session_items]
+            for doc in db["detection_results"].find(
+                {"sessionId": {"$in": selected_ids}},
+                {"sessionId": 1, "verdict": 1, "bot_probability": 1, "_id": 0},
+            ):
+                session_verdicts[doc.get("sessionId")] = {
+                    "verdict": doc.get("verdict", "UNKNOWN"),
+                    "prob": doc.get("bot_probability", 0),
+                }
+    except Exception:
+        pass
+
+    for sid, idx in session_items:
+        sv = session_verdicts.get(sid, {})
+        nodes.append({
+            "id": f"sess_{idx}", "type": "session",
+            "label": sid[:10] + "…" if len(sid) > 10 else sid,
+            "fullId": sid,
+            "verdict": sv.get("verdict", "UNKNOWN"),
+            "prob": sv.get("prob", 0),
+        })
+
+    for url, idx in target_items:
+        short = url.replace("http://159.223.91.163", "").replace("http://localhost", "") or "/"
+        nodes.append({
+            "id": f"tgt_{idx}", "type": "target",
+            "label": short[:20] + "…" if len(short) > 20 else short,
+            "fullId": url,
+        })
+
+    for dev_idx, sess_idx in edge_dev_sess:
+        edges.append({"source": f"dev_{dev_idx}", "target": f"sess_{sess_idx}", "type": "operates"})
+    for ip_idx, sess_idx in edge_ip_sess:
+        edges.append({"source": f"ip_{ip_idx}", "target": f"sess_{sess_idx}", "type": "originates"})
+    for tgt_idx, sess_idx in edge_tgt_sess:
+        edges.append({"source": f"sess_{sess_idx}", "target": f"tgt_{tgt_idx}", "type": "visits"})
+
+    return {"nodes": nodes, "edges": edges, "stats": stats}
 
 
 @app.get("/bot-collector.js")
@@ -269,3 +437,106 @@ def get_bot_collector_sdk():
         )
     raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
 
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def get_dashboard():
+    """
+    Serves the real-time SOC Monitoring Dashboard for Bot Detection.
+    """
+    dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    dashboard_path = os.path.abspath(dashboard_path)
+    if os.path.exists(dashboard_path):
+        with open(dashboard_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    raise HTTPException(status_code=404, detail="Dashboard not found.")
+
+
+@app.get("/api/v1/telemetry/raw/{session_id}")
+def get_raw_telemetry(session_id: str):
+    """
+    Returns the raw telemetry data for a specific session, including mouse records.
+    """
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None:
+        doc = db["detection_results"].find_one(
+            {"sessionId": session_id},
+            {"_id": 0, "sessionId": 1, "mouse_trajectory": 1, "fingerprint": 1, "botd": 1},
+        )
+        if doc:
+            return {
+                "sessionId": session_id,
+                "mouse": {"records": doc.get("mouse_trajectory") or []},
+                "fingerprint": doc.get("fingerprint") or {},
+                "botd": doc.get("botd") or {},
+                "raw_keys": list(doc.keys()),
+            }
+    for ev in reversed(list(telemetry_buffer)):
+        if ev.get("sessionId") == session_id:
+            mouse = ev.get("mouse") or {}
+            return {
+                "sessionId": session_id,
+                "mouse": mouse,
+                "fingerprint": ev.get("fingerprint"),
+                "botd": ev.get("botd"),
+                "raw_keys": list(ev.keys()),
+            }
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.delete("/api/v1/sessions/{session_id}")
+def delete_session(session_id: str, _admin=Depends(require_admin)):
+    """Delete a specific detection session by sessionId."""
+    from api_service.database import delete_session as db_delete
+    success = db_delete(session_id)
+    if success is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    if success:
+        return {"status": "deleted", "sessionId": session_id}
+    raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+
+@app.delete("/api/v1/sessions")
+def delete_all_sessions(_admin=Depends(require_admin)):
+    """Delete all detection sessions from the database."""
+    from api_service.database import delete_all_sessions as db_delete_all
+    count = db_delete_all()
+    if count is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"status": "deleted", "count": count}
+
+
+@app.get("/api/v1/stats/summary")
+def get_stats_summary():
+    """Get aggregated detection statistics from MongoDB."""
+    from api_service.database import get_db, get_summary_stats
+    if get_db() is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return get_summary_stats()
+
+
+@app.get("/api/v1/sessions/{session_id}/detail")
+def get_session_detail(session_id: str):
+    """
+    Returns comprehensive analysis detail for a specific session.
+    Includes AI breakdown, fingerprint, botd detectors, mouse stats, and reasons.
+    """
+    from api_service.database import get_db
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+
+    doc = db["detection_results"].find_one(
+        {"sessionId": session_id},
+        {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Convert datetime objects
+    for key in ["created_at", "updated_at"]:
+        if key in doc and doc[key]:
+            doc[key] = int(doc[key].timestamp() * 1000)
+
+    doc["mouse_trajectory"] = (doc.get("mouse_trajectory") or [])[:200]
+    return doc

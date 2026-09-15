@@ -14,6 +14,8 @@ Major improvements:
 import os
 import sys
 import random
+import hashlib
+import json
 import numpy as np
 
 # Ensure utf-8 encoding for Windows console
@@ -53,6 +55,11 @@ torch.manual_seed(SEED)
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
+
+
+def records_signature(records: list) -> str:
+    payload = json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.ndarray:
@@ -133,8 +140,8 @@ def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=N
     print(f"    Top 5 Features: {top5}")
 
 
-def train_gnn(gnn_model, graph_data, epochs=30, lr=0.01):
-    """Train GNN with gradient clipping."""
+def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, epochs=30, lr=0.01):
+    """Train GNN without using validation/test labels in the loss."""
     print("--> Training HeteroClickFraudGNN Model...")
     x_dict = graph_data["x_dict"]
     edge_index_dict = graph_data["edge_index_dict"]
@@ -144,6 +151,11 @@ def train_gnn(gnn_model, graph_data, epochs=30, lr=0.01):
         print("    No session labels found in graph. Skipping GNN training.")
         return
 
+    train_indices = torch.as_tensor(
+        train_indices if train_indices is not None else np.arange(len(y_session)), dtype=torch.long
+    )
+    val_indices = torch.as_tensor(val_indices if val_indices is not None else [], dtype=torch.long)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=lr, weight_decay=1e-4)
 
@@ -151,7 +163,7 @@ def train_gnn(gnn_model, graph_data, epochs=30, lr=0.01):
     for epoch in range(epochs):
         optimizer.zero_grad()
         logits = gnn_model(x_dict, edge_index_dict)
-        loss = criterion(logits, y_session)
+        loss = criterion(logits[train_indices], y_session[train_indices])
         loss.backward()
         torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -159,6 +171,10 @@ def train_gnn(gnn_model, graph_data, epochs=30, lr=0.01):
             print(f"    GNN Epoch [{epoch+1}/{epochs}] Loss: {loss.item():.4f}")
 
     gnn_model.eval()
+    if val_indices.numel() > 0:
+        with torch.no_grad():
+            val_proba = gnn_model.predict_session_probabilities(x_dict, edge_index_dict)[val_indices].numpy()
+        evaluate_metrics(y_session[val_indices].numpy(), val_proba, prefix="[Val GNN] ")
 
 
 def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
@@ -210,11 +226,11 @@ def main():
             sessions = load_real_dataset(real_data_root, scenario=scenario,
                                           include_phase2=(i == 0))
             real_sessions.extend(sessions)
-        # Deduplicate by comparing record lengths + labels (real data overlap)
+        # Deduplicate exact trajectories shared by the two dataset scenarios.
         seen = set()
         unique_sessions = []
         for records, label in real_sessions:
-            key = (len(records), label, records[0]["x"] if records else 0)
+            key = (label, records_signature(records))
             if key not in seen:
                 seen.add(key)
                 unique_sessions.append((records, label))
@@ -269,6 +285,7 @@ def main():
     X_tab_list = []
     all_chunks = []
     all_chunk_labels = []
+    all_chunk_session_indices = []
     graph_builder = ClickFraudGraphBuilder()
 
     feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURE_NAMES
@@ -297,6 +314,7 @@ def main():
             for c in tensor_c:
                 all_chunks.append(c)
                 all_chunk_labels.append(label)
+                all_chunk_session_indices.append(idx)
 
         # Graph event
         # Realistic network simulation:
@@ -358,12 +376,17 @@ def main():
         X_chunks_tensor = torch.stack(all_chunks)
         y_chunks_tensor = torch.tensor(all_chunk_labels, dtype=torch.float32)
 
-        # Split chunks for LSTM
-        n_chunks = len(all_chunk_labels)
-        n_val_chunks = max(1, int(n_chunks * 0.15))
-        perm = torch.randperm(n_chunks)
-        train_idx = perm[n_val_chunks:]
-        val_idx = perm[:n_val_chunks]
+        # Keep every chunk from a session in the same split to avoid leakage.
+        train_sessions = set(idx_train.tolist())
+        val_sessions = set(idx_val.tolist())
+        train_idx = torch.tensor(
+            [i for i, session_idx in enumerate(all_chunk_session_indices) if session_idx in train_sessions],
+            dtype=torch.long,
+        )
+        val_idx = torch.tensor(
+            [i for i, session_idx in enumerate(all_chunk_session_indices) if session_idx in val_sessions],
+            dtype=torch.long,
+        )
 
         X_chunks_train = X_chunks_tensor[train_idx]
         y_chunks_train = y_chunks_tensor[train_idx]
@@ -373,11 +396,14 @@ def main():
         print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
-        train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
-                   epochs=30, patience=7)
-        lstm_path = os.path.join(weights_dir, "behavioral_lstm.pt")
-        lstm_model.save_weights(lstm_path)
-        print(f"    Saved LSTM Weights -> {lstm_path}")
+        if len(train_idx) and len(val_idx):
+            train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
+                       epochs=30, patience=7)
+            lstm_path = os.path.join(weights_dir, "behavioral_lstm.pt")
+            lstm_model.save_weights(lstm_path)
+            print(f"    Saved LSTM Weights -> {lstm_path}")
+        else:
+            print("    Insufficient session-separated chunks; leaving LSTM untrained.")
     else:
         print("    No LSTM chunks available for training.")
         lstm_model = MouseTrajectoryLSTM()
@@ -387,7 +413,7 @@ def main():
     # ================================================================
     graph_tensors = graph_builder.to_torch_tensors()
     gnn_model = HeteroClickFraudGNN()
-    train_gnn(gnn_model, graph_tensors, epochs=25)
+    train_gnn(gnn_model, graph_tensors, train_indices=idx_train, val_indices=idx_val, epochs=25)
     gnn_path = os.path.join(weights_dir, "gnn_model.pt")
     gnn_model.save_model(gnn_path)
     print(f"    Saved GNN Model -> {gnn_path}")

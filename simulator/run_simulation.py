@@ -34,6 +34,7 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
         t0 = time.perf_counter()
         try:
             res = requests.post(endpoint, json=payload, timeout=5)
+            res.raise_for_status()
             dt = (time.perf_counter() - t0) * 1000
             latencies.append(dt)
             data = res.json()
@@ -52,6 +53,7 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
         t0 = time.perf_counter()
         try:
             res = requests.post(endpoint, json=payload, timeout=5)
+            res.raise_for_status()
             dt = (time.perf_counter() - t0) * 1000
             latencies.append(dt)
             data = res.json()
@@ -119,7 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--endpoint", default="http://127.0.0.1:8000/api/v1/detect")
     parser.add_argument("--url", default="http://localhost:5173")
     parser.add_argument("--samples", type=int, default=20)
-    parser.add_argument("--headless", action="store_true", default=True)
+    parser.add_argument("--headless", action=argparse.BooleanOptionalAction, default=True)
 
     args = parser.parse_args()
 

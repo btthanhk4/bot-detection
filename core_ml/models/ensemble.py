@@ -24,14 +24,16 @@ class EnsembleBotDetector:
         w_lstm: float = 0.40,
         w_tabular: float = 0.40,
         w_heuristic: float = 0.20,
-        threshold: float = 0.50,
+        threshold: float = 0.70,
+        suspect_threshold: float = 0.45,
     ):
         self.lstm_model = lstm_model or MouseTrajectoryLSTM()
         self.tabular_model = tabular_model or TabularBotClassifier()
         self.w_lstm = w_lstm
         self.w_tabular = w_tabular
         self.w_heuristic = w_heuristic
-        self.threshold = threshold
+        self.threshold = max(0.0, min(1.0, float(threshold)))
+        self.suspect_threshold = max(0.0, min(self.threshold, float(suspect_threshold)))
 
     def _compute_confidence_weight(self, score: float) -> float:
         """Higher confidence (further from 0.5) → higher weight."""
@@ -47,7 +49,8 @@ class EnsembleBotDetector:
         botd = payload.get("botd") if isinstance(payload.get("botd"), dict) else {}
         mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
 
-        records = mouse.get("records") if isinstance(mouse.get("records"), list) else []
+        raw_records = mouse.get("records") or mouse.get("trajectory")
+        records = raw_records if isinstance(raw_records, list) else []
         chunks = mouse.get("chunks") if isinstance(mouse.get("chunks"), list) else []
 
         # Compute mouse stats ONCE — reused for both fallback logic and tabular vector
@@ -60,15 +63,21 @@ class EnsembleBotDetector:
             raw_h_score = 0.0
         heuristic_score = max(0.0, min(1.0, raw_h_score))
         raw_reasons = botd.get("reasons")
-        reasons = list(raw_reasons) if (raw_reasons and isinstance(raw_reasons, list)) else []
+        reasons = [str(reason)[:256] for reason in raw_reasons[:20]] if isinstance(raw_reasons, list) else []
         detectors = botd.get("detectors") if isinstance(botd.get("detectors"), dict) else {}
 
         # Immediate hard rule triggers (100% confidence bot flags)
         critical_flags = []
-        if detectors.get("webdriver", False):
+        is_webdriver = detectors.get("webdriver", False) or botd.get("webDriver", False) or botd.get("webdriver", False)
+        if is_webdriver:
             critical_flags.append("Critical: Webdriver automation flag confirmed")
-        if detectors.get("distinctiveProperties", False):
+            heuristic_score = max(heuristic_score, 0.95)
+        if detectors.get("distinctiveProperties", False) or botd.get("automationTool", False):
             critical_flags.append("Critical: Automation framework signature detected")
+            heuristic_score = max(heuristic_score, 0.95)
+        if detectors.get("headlessUa", False) or detectors.get("headless", False) or botd.get("headless", False):
+            critical_flags.append("Headless browser environment detected")
+            heuristic_score = max(heuristic_score, 0.80)
         reasons.extend(critical_flags)
 
         # 2. Behavioral LSTM evaluation
@@ -131,16 +140,23 @@ class EnsembleBotDetector:
         if critical_flags:
             final_proba = max(final_proba, 0.96)
 
-        final_proba = max(0.0, min(1.0, float(final_proba)))
-        is_bot = final_proba >= self.threshold
+        # No-mouse penalty: real users almost always generate mouse movement
+        # If a session has zero mouse data and no critical flags, apply mild bot suspicion
+        if mouse_stats.get("move_point_count", 0) == 0 and not critical_flags:
+            final_proba = min(1.0, final_proba + 0.05)
 
-        # Calibrated verdict thresholds
-        if final_proba >= 0.75:
+        final_proba = max(0.0, min(1.0, float(final_proba)))
+
+        # Thresholds are deployment settings and must match the reported decision policy.
+        if final_proba >= self.threshold:
             verdict = "BOT"
-        elif final_proba >= 0.40:
+        elif final_proba >= self.suspect_threshold:
             verdict = "SUSPECT"
         else:
             verdict = "HUMAN"
+
+        # is_bot aligns with verdict (not a separate threshold)
+        is_bot = (verdict == "BOT")
 
         confidence = abs(final_proba - 0.5) * 2.0  # 0.0 to 1.0
 

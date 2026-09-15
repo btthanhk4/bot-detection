@@ -73,14 +73,19 @@ def compute_statistical_features(records: list) -> dict:
             continue
         rx = r.get("x")
         ry = r.get("y")
-        rt = r.get("time")
+        rt = r.get("time", r.get("t"))
         if rx is None or ry is None or rt is None:
             continue
         try:
+            numeric_time = float(rt)
+            numeric_x = float(rx)
+            numeric_y = float(ry)
+            if not all(math.isfinite(value) for value in (numeric_time, numeric_x, numeric_y)):
+                continue
             valid_records.append({
-                "time": float(rt),
-                "x": float(rx),
-                "y": float(ry),
+                "time": numeric_time,
+                "x": numeric_x,
+                "y": numeric_y,
                 "type": str(r.get("type", "move")),
             })
         except (ValueError, TypeError):

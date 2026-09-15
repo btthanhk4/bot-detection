@@ -18,7 +18,7 @@ import hashlib
 import threading
 import numpy as np
 import torch
-from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.env_features import extract_env_vector, safe_float, FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
     compute_statistical_features,
     extract_mouse_stat_vector,
@@ -71,8 +71,8 @@ class ClickFraudGraphBuilder:
         """Build session feature vector from mouse stats + metadata using canonical vector extractor."""
         mouse_vec = extract_mouse_stat_vector(mouse_stats)
         bd = botd if isinstance(botd, dict) else {}
-        h_score = float(bd.get("heuristicScore") or 0.0)
-        r_count = float(record_count or 0)
+        h_score = safe_float(bd.get("heuristicScore"), 0.0)
+        r_count = safe_float(record_count, 0.0)
         return np.append(mouse_vec, [h_score, r_count]).astype(np.float32)
 
     def add_telemetry_event(self, telemetry: dict, ip_address: str = "127.0.0.1", is_bot_ground_truth: int = None):
@@ -156,8 +156,8 @@ class ClickFraudGraphBuilder:
                 # Update session features with new mouse data
                 if records:
                     m_stats = compute_statistical_features(records)
-                    prev_count = self.session_features[sess_idx][-1] if self.session_features[sess_idx].size > 0 else 0
-                    sess_feat = self._build_session_feature(m_stats, botd, prev_count + len(records))
+                    # Collector heartbeats contain a rolling snapshot, not a delta.
+                    sess_feat = self._build_session_feature(m_stats, botd, len(records))
                     self.session_features[sess_idx] = sess_feat
 
             # 5. Connect Edges (deduplicated across recurring heartbeats)

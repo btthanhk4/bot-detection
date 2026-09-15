@@ -25,4 +25,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "api_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["sh", "-c", "exec uvicorn api_service.main:app --host ${BOT_API_HOST:-0.0.0.0} --port ${BOT_API_PORT:-8000} --workers ${BOT_API_WORKERS:-1}"]

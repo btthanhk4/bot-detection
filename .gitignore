@@ -38,6 +38,9 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
+# Runtime state
+telemetry_buffer.json
+
 # Model checkpoints & dataset caches (large binaries)
 *.tar.gz
 *.zip

@@ -4,14 +4,18 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bot-detection-api
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - BOT_API_HOST=0.0.0.0
       - BOT_API_PORT=8000
-      - BOT_API_WORKERS=4
+      - BOT_API_WORKERS=1
       - BOT_CORS_ORIGINS=*
-      - BOT_DECISION_THRESHOLD=0.50
+      - BOT_DECISION_THRESHOLD=0.70
+      - BOT_SUSPECT_THRESHOLD=0.45
+      - BOT_TRUST_PROXY_HEADERS=true
+      - BOT_TRUSTED_PROXIES=172.16.0.0/12
+      - BOT_ADMIN_TOKEN=${BOT_ADMIN_TOKEN:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -22,4 +26,3 @@ services:
 networks:
   default:
     name: silkmoon-network
-

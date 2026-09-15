@@ -1,91 +1,69 @@
-"""
-Commercial Production Stress & Concurrency Test
-Simulates concurrent production traffic against the FastAPI API service.
-Measures latency percentiles (P50, P95, P99), error rate, and throughput.
+"""Opt-in local stress benchmark for the FastAPI service.
+
+Run directly with ``python -m tests.test_stress``. It intentionally does not
+execute during pytest collection because that polluted shared rate-limit state.
 """
 
-import os
-import sys
-import time
 import statistics
+import time
 from concurrent.futures import ThreadPoolExecutor
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from fastapi.testclient import TestClient
+
+from api_service.config import settings
 from api_service.main import app
 from core_ml.dataset.loader import generate_synthetic_telemetry
 
-client = TestClient(app)
 
 NUM_REQUESTS = 400
 CONCURRENCY = 8
 
-print("=" * 60)
-print(f"  STARTING STRESS TEST: {NUM_REQUESTS} requests across {CONCURRENCY} threads")
-print("=" * 60)
 
-# Pre-generate diverse payloads
-payloads = []
-for i in range(NUM_REQUESTS):
-    is_bot = (i % 2 == 1)
-    b_level = ["naive", "moderate", "advanced"][i % 3] if is_bot else None
-    t = generate_synthetic_telemetry(is_bot=is_bot, bot_level=b_level)
-    payloads.append((f"ip_{i % 50}", t))  # rotate through 50 distinct IPs to test graph & limiter
+def run_stress_test(num_requests=NUM_REQUESTS, concurrency=CONCURRENCY):
+    client = TestClient(app)
+    payloads = []
+    for i in range(num_requests):
+        is_bot = i % 2 == 1
+        level = ["naive", "moderate", "advanced"][i % 3] if is_bot else None
+        payloads.append(generate_synthetic_telemetry(is_bot=is_bot, bot_level=level))
 
-latencies = []
-errors = 0
-verdicts = {"HUMAN": 0, "BOT": 0, "SUSPECT": 0}
+    def send_request(payload):
+        started = time.perf_counter()
+        try:
+            response = client.post("/api/v1/detect", json=payload)
+            elapsed = (time.perf_counter() - started) * 1000.0
+            verdict = response.json().get("verdict") if response.status_code == 200 else None
+            return elapsed, verdict, None if response.status_code == 200 else f"HTTP_{response.status_code}"
+        except Exception as exc:
+            return (time.perf_counter() - started) * 1000.0, None, str(exc)
 
-def send_request(idx):
-    ip, payload = payloads[idx]
-    t0 = time.perf_counter()
+    original_limit = settings.RATE_LIMIT_PER_MINUTE
+    settings.RATE_LIMIT_PER_MINUTE = 0
+    started = time.perf_counter()
     try:
-        res = client.post(
-            "/api/v1/detect",
-            json=payload,
-            headers={"X-Forwarded-For": ip},
-        )
-        dt = (time.perf_counter() - t0) * 1000.0  # ms
-        if res.status_code == 200:
-            data = res.json()
-            return dt, data.get("verdict", "UNKNOWN"), None
-        else:
-            return dt, None, f"HTTP_{res.status_code}"
-    except Exception as e:
-        dt = (time.perf_counter() - t0) * 1000.0
-        return dt, None, str(e)
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            results = list(executor.map(send_request, payloads))
+    finally:
+        settings.RATE_LIMIT_PER_MINUTE = original_limit
 
-start_time = time.perf_counter()
-with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
-    results = list(executor.map(send_request, range(NUM_REQUESTS)))
-total_time = time.perf_counter() - start_time
+    total_time = time.perf_counter() - started
+    latencies = sorted(result[0] for result in results)
+    errors = [result[2] for result in results if result[2]]
+    verdicts = {name: sum(result[1] == name for result in results) for name in ("HUMAN", "BOT", "SUSPECT")}
 
-for dt, verdict, err in results:
-    latencies.append(dt)
-    if err:
-        errors += 1
-    elif verdict in verdicts:
-        verdicts[verdict] += 1
+    return {
+        "requests": num_requests,
+        "errors": len(errors),
+        "rps": num_requests / total_time,
+        "p50_ms": statistics.median(latencies),
+        "p95_ms": latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))],
+        "p99_ms": latencies[min(len(latencies) - 1, int(len(latencies) * 0.99))],
+        "verdicts": verdicts,
+    }
 
-latencies.sort()
-p50 = statistics.median(latencies)
-p90 = latencies[int(len(latencies) * 0.90)]
-p95 = latencies[int(len(latencies) * 0.95)]
-p99 = latencies[int(len(latencies) * 0.99)]
-rps = NUM_REQUESTS / total_time
 
-print(f"Total Requests:      {NUM_REQUESTS}")
-print(f"Successful:          {NUM_REQUESTS - errors} ({(NUM_REQUESTS - errors)/NUM_REQUESTS*100:.1f}%)")
-print(f"Failed / Errors:     {errors}")
-print(f"Total Elapsed Time:  {total_time:.2f}s")
-print(f"Throughput (RPS):    {rps:.1f} req/sec")
-print("-" * 60)
-print(f"Latency P50 (median): {p50:.2f} ms")
-print(f"Latency P90:          {p90:.2f} ms")
-print(f"Latency P95:          {p95:.2f} ms")
-print(f"Latency P99:          {p99:.2f} ms")
-print(f"Min / Max:            {min(latencies):.2f} ms / {max(latencies):.2f} ms")
-print("-" * 60)
-print(f"Verdicts distributed: {verdicts}")
-print("=" * 60)
+if __name__ == "__main__":
+    result = run_stress_test()
+    print("Bot Detection Stress Benchmark")
+    for key, value in result.items():
+        print(f"{key}: {value}")

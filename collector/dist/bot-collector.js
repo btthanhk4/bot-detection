@@ -10,7 +10,7 @@
    * Inspired by FingerprintJS (https://github.com/fingerprintjs/fingerprintjs)
    * Collects ~40 browser/hardware signals and generates a deterministic visitor ID hash.
    */
-  
+
   // Simple 32-bit FNV-1a hash
   function fnv1a(str) {
     let hash = 2166136261;
@@ -20,7 +20,7 @@
     }
     return (hash >>> 0).toString(16);
   }
-  
+
   // Canvas fingerprinting
   function getCanvasFingerprint() {
     try {
@@ -30,7 +30,7 @@
       canvas.height = 60;
       const ctx = canvas.getContext('2d');
       if (!ctx) return 'unsupported';
-  
+
       ctx.textBaseline = 'top';
       ctx.font = "14px 'Arial', sans-serif";
       ctx.textBaseline = 'alphabetic';
@@ -40,13 +40,13 @@
       ctx.fillText('SilkmoonBotD, 😃 2026', 2, 15);
       ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
       ctx.fillText('SilkmoonBotD, 😃 2026', 4, 17);
-  
+
       return fnv1a(canvas.toDataURL());
     } catch (e) {
       return 'error';
     }
   }
-  
+
   // WebGL fingerprinting (Renderer & Vendor)
   function getWebGLFingerprint() {
     try {
@@ -54,10 +54,10 @@
       const canvas = document.createElement('canvas');
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
       if (!gl) return { vendor: 'unsupported', renderer: 'unsupported' };
-  
+
       const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
       if (!debugInfo) return { vendor: 'no_debug_info', renderer: 'no_debug_info' };
-  
+
       return {
         vendor: gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'unknown',
         renderer: gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'unknown',
@@ -66,30 +66,30 @@
       return { vendor: 'error', renderer: 'error' };
     }
   }
-  
+
   // Audio fingerprinting via OfflineAudioContext
   async function getAudioFingerprint() {
     try {
       const win = typeof window !== 'undefined' ? window : {};
       const AudioCtx = win.OfflineAudioContext || win.webkitOfflineAudioContext;
       if (!AudioCtx) return 'unsupported';
-  
+
       const ctx = new AudioCtx(1, 44100, 44100);
       const osc = ctx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(10000, ctx.currentTime);
-  
+
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.setValueAtTime(-50, ctx.currentTime);
       comp.knee.setValueAtTime(40, ctx.currentTime);
       comp.ratio.setValueAtTime(12, ctx.currentTime);
       comp.attack.setValueAtTime(0, ctx.currentTime);
       comp.release.setValueAtTime(0.25, ctx.currentTime);
-  
+
       osc.connect(comp);
       comp.connect(ctx.destination);
       osc.start(0);
-  
+
       // Timeout after 3 seconds to prevent hanging on some devices
       const renderedBuffer = await Promise.race([
         ctx.startRendering(),
@@ -105,35 +105,35 @@
       return e.message === 'audio_timeout' ? 'timeout' : 'error';
     }
   }
-  
+
   // Installed font detection (heuristic probe)
   function getFontList() {
     if (typeof document === 'undefined') return [];
     const container = document.body || document.documentElement;
     if (!container) return [];
-  
+
     const baseFonts = ['monospace', 'sans-serif', 'serif'];
     const testFonts = [
       'Arial', 'Verdana', 'Times New Roman', 'Courier New',
       'Georgia', 'Comic Sans MS', 'Trebuchet MS', 'Impact',
       'Segoe UI', 'Roboto', 'Helvetica', 'Ubuntu', 'Consolas'
     ];
-  
+
     const span = document.createElement('span');
     span.style.fontSize = '72px';
     span.innerHTML = 'mmmmmmmmmmlli';
     span.style.position = 'absolute';
     span.style.left = '-9999px';
-  
+
     try {
       container.appendChild(span);
-  
+
       const baseWidths = {};
       for (const base of baseFonts) {
         span.style.fontFamily = base;
         baseWidths[base] = span.offsetWidth;
       }
-  
+
       const detected = [];
       for (const font of testFonts) {
         for (const base of baseFonts) {
@@ -153,7 +153,7 @@
       }
     }
   }
-  
+
   /**
    * Collect complete hardware & browser environment components
    */
@@ -165,7 +165,7 @@
     const audio = await getAudioFingerprint();
     const canvas = getCanvasFingerprint();
     const fonts = getFontList();
-  
+
     const components = {
       userAgent: nav.userAgent || '',
       platform: nav.platform || '',
@@ -193,7 +193,7 @@
       fontsCount: fonts.length,
       fontsList: fonts,
     };
-  
+
     // Generate deterministic visitorId hash (high-entropy: 16 components)
     const rawId = [
       components.userAgent,
@@ -213,12 +213,12 @@
       components.maxTouchPoints,
       components.pixelRatio,
     ].join('###');
-  
+
     const visitorId = fnv1a(rawId);
-  
+
     return { visitorId, components };
   }
-  
+
 
   // --- BotD Client-Side Heuristics ---
   /**
@@ -226,19 +226,19 @@
    * Inspired by BotD (https://github.com/fingerprintjs/BotD)
    * Implements 18 heuristic tests for browser automation, headless environments, and spoofing.
    */
-  
+
   function runBotDetectors(components = {}) {
     const nav = typeof navigator !== 'undefined' ? navigator : {};
     const win = typeof window !== 'undefined' ? window : {};
     const doc = typeof document !== 'undefined' ? document : {};
-  
+
     const detectors = {};
     const reasons = [];
-  
+
     // 1. WebDriver detector (Selenium, Puppeteer, Playwright default)
     detectors.webdriver = !!(nav.webdriver || doc.documentElement?.getAttribute?.('webdriver'));
     if (detectors.webdriver) reasons.push('navigator.webdriver is true');
-  
+
     // 2. Distinctive automation properties
     const automationProps = [
       '_phantom', '__nightmare', '_selenium', 'callPhantom', 'callSelenium',
@@ -269,27 +269,27 @@
       // Object.keys(window) may throw SecurityError in some environments
     }
     detectors.distinctiveProperties = foundDistinctive;
-  
+
     // 3. WebGL Software Renderer / VM / Headless detection
     const renderer = (components.webglRenderer || '').toLowerCase();
     const vendor = (components.webglVendor || '').toLowerCase();
     const isVirtualGpu = /swiftshader|llvmpipe|virtualbox|vmware|mesa offscreen|softpipe/i.test(renderer);
     detectors.virtualGpu = isVirtualGpu;
     if (isVirtualGpu) reasons.push(`Software / Virtual GPU detected: ${renderer}`);
-  
+
     // 4. Plugins Inconsistency (Desktop Chrome must have plugins, Headless Chrome has 0)
     const isChrome = /chrome/i.test(nav.userAgent || '') && !/edg|opr|brave/i.test(nav.userAgent || '');
     const isDesktop = !/android|iphone|ipad|ipod|mobile/i.test(nav.userAgent || '');
     const pluginsLength = nav.plugins ? nav.plugins.length : 0;
     detectors.pluginsInconsistency = isChrome && isDesktop && pluginsLength === 0;
     if (detectors.pluginsInconsistency) reasons.push('Chrome desktop with 0 plugins (indicates headless)');
-  
+
     // 5. Languages Inconsistency
     const langs = nav.languages || [];
     const lang = nav.language || '';
     detectors.languagesInconsistency = !langs.length || (lang && langs.length > 0 && !langs.includes(lang));
     if (detectors.languagesInconsistency) reasons.push('Browser language inconsistency');
-  
+
     // 6. Window Size Anomaly (Headless environments often start with 0x0 or fixed 800x600)
     const w = win.innerWidth || 0;
     const h = win.innerHeight || 0;
@@ -297,7 +297,7 @@
     const outerH = win.outerHeight || 0;
     detectors.windowSize = (w === 0 && h === 0) || (outerW === 0 && outerH === 0);
     if (detectors.windowSize) reasons.push('Zero inner/outer window dimensions');
-  
+
     // 7. Error Stack Trace Inspection
     let errorTraceBot = false;
     try {
@@ -310,11 +310,11 @@
       }
     }
     detectors.errorTrace = errorTraceBot;
-  
+
     // 8. Process global in renderer (Electron / Node-Webkit / automation)
     detectors.hasProcess = typeof win.process === 'object' && win.process?.versions?.node !== undefined;
     if (detectors.hasProcess) reasons.push('Node.js process object exposed in browser');
-  
+
     // 9. Eval / Function.bind length check (anti-tampering check)
     let evalLengthAnomaly = false;
     try {
@@ -328,7 +328,7 @@
       evalLengthAnomaly = true;
     }
     detectors.evalLength = evalLengthAnomaly;
-  
+
     // 10. Document Element Keys & Attributes check
     let hasDocAttr = false;
     try {
@@ -347,7 +347,7 @@
     const docKeys = Object.keys(doc.documentElement || {});
     detectors.documentKeys = hasDocAttr || docKeys.some((k) => /selenium|webdriver|driver/i.test(k));
     if (detectors.documentKeys) reasons.push('Automation attributes on documentElement');
-  
+
     // 11. User-Agent vs Platform Inconsistency (FP-Inconsistent paper inspired)
     const ua = (nav.userAgent || '').toLowerCase();
     const plat = (nav.platform || '').toLowerCase();
@@ -357,11 +357,11 @@
     if (ua.includes('linux') && !plat.includes('linux') && !plat.includes('arm')) platformMismatch = true;
     detectors.platformMismatch = platformMismatch;
     if (platformMismatch) reasons.push(`Platform mismatch: UserAgent (${nav.userAgent}) vs Platform (${nav.platform})`);
-  
+
     // 12. Headless Chrome User-Agent flag
     detectors.headlessUa = /headlesschrome/i.test(nav.userAgent || '');
     if (detectors.headlessUa) reasons.push('User-Agent explicitly declares HeadlessChrome');
-  
+
     // Calculate Weighted Heuristic Score
     // High-confidence detectors get higher weight than noisy ones
     const detectorWeights = {
@@ -379,14 +379,14 @@
       errorTrace: 1.5,
       evalLength: 1.0,  // noisy, low weight
     };
-  
+
     const keys = Object.keys(detectors);
     const flagged = keys.filter((k) => detectors[k]);
     const totalWeight = keys.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
     const flaggedWeight = flagged.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
     const heuristicScore = totalWeight > 0 ? flaggedWeight / totalWeight : 0;
     const isBotHeuristic = flagged.length > 0;
-  
+
     return {
       isBot: isBotHeuristic,
       heuristicScore: Number(heuristicScore.toFixed(4)),
@@ -395,7 +395,7 @@
       reasons,
     };
   }
-  
+
 
   // --- DELBOT Mouse Dynamics Recorder ---
   /**
@@ -404,7 +404,7 @@
    * Captures user mouse/touch trajectories, computes kinematic features (velocity, acceleration, jerk),
    * and prepares sequential chunks (24 points) for LSTM behavioral classification.
    */
-  
+
   class MouseRecorder {
     constructor(options = {}) {
       this.maxRecords = options.maxRecords || 500;
@@ -423,7 +423,7 @@
       this.handleTouchMove = this.handleTouchMove.bind(this);
       this.handleTouchEnd = this.handleTouchEnd.bind(this);
     }
-  
+
     start() {
       if (this.isListening || typeof window === 'undefined') return;
       this.isListening = true;
@@ -436,7 +436,7 @@
       window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
       window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
     }
-  
+
     stop() {
       if (!this.isListening || typeof window === 'undefined') return;
       this.isListening = false;
@@ -449,26 +449,26 @@
       window.removeEventListener('touchmove', this.handleTouchMove);
       window.removeEventListener('touchend', this.handleTouchEnd);
     }
-  
+
     clear() {
       this.records = [];
       this.chunks = [];
       this.scrollEvents = [];
     }
-  
+
     recordPoint(type, clientX, clientY) {
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const time = Math.round(now - this.startTime);
-  
+
       const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
       const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
       const safeX = (typeof clientX === 'number' && Number.isFinite(clientX)) ? clientX : 0;
       const safeY = (typeof clientY === 'number' && Number.isFinite(clientY)) ? clientY : 0;
       const normX = Math.max(0, Math.min(1, Number((safeX / w).toFixed(5))));
       const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
-  
+
       const prev = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-  
+
       let timeDiff = 0;
       let dx = 0;
       let dy = 0;
@@ -479,7 +479,7 @@
       let accelX = 0;
       let accelY = 0;
       let accel = 0;
-  
+
       if (prev) {
         timeDiff = Math.max(1, time - prev.time); // milliseconds
         dx = normX - prev.x;
@@ -488,16 +488,16 @@
         speedX = dx / (timeDiff / 1000); // normalized unit per second
         speedY = dy / (timeDiff / 1000);
         speed = distance / (timeDiff / 1000);
-  
+
         accelX = (speedX - (prev.speedX || 0)) / (timeDiff / 1000);
         accelY = (speedY - (prev.speedY || 0)) / (timeDiff / 1000);
         accel = Math.sqrt(accelX * accelX + accelY * accelY);
-  
+
         accelX = Number.isFinite(accelX) ? accelX : 0;
         accelY = Number.isFinite(accelY) ? accelY : 0;
         accel = Number.isFinite(accel) ? accel : 0;
       }
-  
+
       const record = {
         time,
         type,
@@ -514,30 +514,30 @@
         accelY: Number(accelY.toFixed(3)),
         accel: Number(accel.toFixed(3)),
       };
-  
+
       this.records.push(record);
       // Efficient truncation: splice from front in batch instead of shift() one-by-one
       if (this.records.length > this.maxRecords + 50) {
         this.records = this.records.slice(-this.maxRecords);
       }
     }
-  
+
     handleMouseMove(e) {
       this.recordPoint('move', e.clientX, e.clientY);
     }
-  
+
     handleMouseDown(e) {
       this.recordPoint('down', e.clientX, e.clientY);
     }
-  
+
     handleMouseUp(e) {
       this.recordPoint('up', e.clientX, e.clientY);
     }
-  
+
     handleClick(e) {
       this.recordPoint('click', e.clientX, e.clientY);
     }
-  
+
     handleWheel(e) {
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const time = Math.round(now - this.startTime);
@@ -551,19 +551,19 @@
         this.scrollEvents = this.scrollEvents.slice(-200);
       }
     }
-  
+
     handleTouchStart(e) {
       if (e.touches && e.touches[0]) {
         this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY);
       }
     }
-  
+
     handleTouchMove(e) {
       if (e.touches && e.touches[0]) {
         this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY);
       }
     }
-  
+
     handleTouchEnd(e) {
       const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
       if (touch) {
@@ -577,7 +577,7 @@
         this.recordPoint('up', x, y);
       }
     }
-  
+
     /**
      * Split records into consecutive chunks of 24 points for LSTM input
      */
@@ -601,7 +601,7 @@
       }
       return chunks;
     }
-  
+
     /**
      * Aggregated statistical summary of mouse dynamics
      */
@@ -616,21 +616,21 @@
           straightness: 1.0,
         };
       }
-  
+
       const speeds = this.records.map((r) => r.speed).filter((s) => s > 0);
       const accels = this.records.map((r) => r.accel).filter((a) => a > 0);
-  
+
       const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
       const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
       const avgAccel = accels.length ? accels.reduce((a, b) => a + b, 0) / accels.length : 0;
-  
+
       // Straightness = net displacement / total path length
       const first = this.records[0];
       const last = this.records[this.records.length - 1];
       const netDist = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
       const totalDist = this.records.reduce((sum, r) => sum + (r.distance || 0), 0);
       const straightness = totalDist > 0 ? Number((netDist / totalDist).toFixed(4)) : 1.0;
-  
+
       return {
         pointCount: this.records.length,
         hasEnoughData: this.records.length >= this.chunkSize,
@@ -640,7 +640,7 @@
         straightness,
       };
     }
-  
+
     exportData() {
       return {
         records: this.records.slice(-100), // last 100 points
@@ -650,64 +650,95 @@
       };
     }
   }
-  
+
 
   // --- Unified BotCollector SDK ---
   /**
    * Unified Bot & Fraud Telemetry Collector SDK
    * Combines FingerprintJS + BotD Heuristics + DELBOT Mouse Dynamics
    */
-  
-  
-  
-  
-  
+
+
+
+
+
   class BotCollector {
     constructor(options = {}) {
-      this.endpointUrl = options.endpointUrl || '/api/v1/telemetry';
+      this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
       this.detectUrl = options.detectUrl || '/api/v1/detect';
       this.sessionId = options.sessionId || this.generateSessionId();
-      this.autoSendInterval = options.autoSendInterval || 5000;
+      this.autoSendInterval = options.autoSendInterval !== undefined ? options.autoSendInterval : 5000;
       this.mouseRecorder = new MouseRecorder();
       this.cachedFingerprint = null;
       this.cachedBotd = null;
       this.timer = null;
+      this.initPromise = null;
+      this.destroyed = false;
+      this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
     }
-  
+
     generateSessionId() {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return 'sess_' + crypto.randomUUID();
+      }
       return 'sess_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
     }
-  
-    async init() {
+
+    start() {
+      return this.init();
+    }
+
+    init() {
+      if (this.initPromise) return this.initPromise;
+      this.destroyed = false;
+      this.initPromise = this.initialize();
+      return this.initPromise;
+    }
+
+    async initialize() {
       this.mouseRecorder.start();
       // Pre-warm fingerprint and heuristics
       const { visitorId, components } = await getFingerprintComponents();
       this.cachedFingerprint = { visitorId, components };
       this.cachedBotd = runBotDetectors(components);
-  
-      if (this.autoSendInterval > 0) {
+
+      if (this.destroyed) return this;
+
+      if (typeof window !== 'undefined') {
+        window.addEventListener('pagehide', this.handlePageHide, { capture: true });
+      }
+
+      await this.sendTelemetry('init');
+
+      if (!this.destroyed && this.autoSendInterval > 0) {
         this.timer = setInterval(() => {
-          this.sendTelemetry();
+          this.sendTelemetry().catch(() => false);
         }, this.autoSendInterval);
       }
-  
+
       return this;
     }
-  
+
     destroy() {
+      this.destroyed = true;
       this.mouseRecorder.stop();
       if (this.timer) clearInterval(this.timer);
+      this.timer = null;
+      this.initPromise = null;
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pagehide', this.handlePageHide, { capture: true });
+      }
     }
-  
+
     async getPayload(action = 'heartbeat') {
       if (!this.cachedFingerprint) {
         const { visitorId, components } = await getFingerprintComponents();
         this.cachedFingerprint = { visitorId, components };
         this.cachedBotd = runBotDetectors(components);
       }
-  
+
       const mouseData = this.mouseRecorder.exportData();
-  
+
       return {
         sessionId: this.sessionId,
         action,
@@ -720,33 +751,33 @@
         mouse: mouseData,
       };
     }
-  
+
     /**
      * Send telemetry asynchronously via sendBeacon or fetch
      */
     async sendTelemetry(action = 'telemetry') {
       const payload = await this.getPayload(action);
       const body = JSON.stringify(payload);
-  
-      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+
+      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
         const blob = new Blob([body], { type: 'application/json' });
         const success = navigator.sendBeacon(this.endpointUrl, blob);
         if (success) return true;
       }
-  
+
       try {
-        await fetch(this.endpointUrl, {
+        const res = await fetch(this.endpointUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
           keepalive: true,
         });
-        return true;
+        return res.ok;
       } catch (e) {
         return false;
       }
     }
-  
+
     /**
      * Query backend real-time ML inference for bot verdict
      */
@@ -778,14 +809,14 @@
       }
     }
   }
-  
+
   // Auto-instantiate singleton on window if running in browser
   if (typeof window !== 'undefined') {
     window.BotCollector = BotCollector;
   }
-  
-  
-  
+
+
+
 
   return BotCollector;
 }));

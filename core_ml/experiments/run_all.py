@@ -18,6 +18,7 @@ import sys
 import time
 import random
 import json
+import hashlib
 import numpy as np
 
 try:
@@ -52,6 +53,11 @@ torch.manual_seed(SEED)
 MOUSE_STAT_FEATURES = list(STATISTICAL_FEATURE_NAMES)
 
 RESULTS = {}
+
+
+def records_signature(records):
+    payload = json.dumps(records, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def build_full_vector(fp, bd, records):
@@ -96,7 +102,7 @@ def prepare_data():
         seen = set()
         unique_sessions = []
         for records, label in real_sessions:
-            key = (len(records), label, records[0]["x"] if records else 0)
+            key = (label, records_signature(records))
             if key not in seen:
                 seen.add(key)
                 unique_sessions.append((records, label))

@@ -660,11 +660,11 @@ def generate_synthetic_telemetry(is_bot: bool = False, bot_level: str = "moderat
     chunks = []
     chunk_size = 24
     move_records = [r for r in records if r.get("type") == "move"]
-    if len(move_records) >= chunk_size:
+    if len(move_records) >= chunk_size + 1:
         # Sliding window with 50% overlap
-        for start in range(0, len(move_records) - chunk_size + 1, chunk_size // 2):
+        for start in range(0, len(move_records) - chunk_size, chunk_size // 2):
             slice_p = move_records[start:start + chunk_size + 1]
-            if len(slice_p) < chunk_size:
+            if len(slice_p) < chunk_size + 1:
                 break
             chunk_matrix = []
             prev_sx, prev_sy = 0.0, 0.0

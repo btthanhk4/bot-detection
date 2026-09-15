@@ -1,0 +1,2636 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SilkMoon Bot Detection — SOC Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════
+   CYBERSECURITY SOC DARK MODE DESIGN SYSTEM
+   ═══════════════════════════════════════════════════ */
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-card: #1a1f35;
+  --bg-card-hover: #222845;
+  --bg-glass: rgba(26, 31, 53, 0.75);
+  --border-subtle: rgba(99, 117, 171, 0.15);
+  --border-glow: rgba(99, 117, 171, 0.3);
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8b95b0;
+  --text-muted: #5a6580;
+
+  --accent-cyan: #00e5ff;
+  --accent-blue: #4d7cfe;
+  --accent-purple: #9c5cff;
+  --accent-green: #00e676;
+  --accent-orange: #ff9100;
+  --accent-red: #ff3d71;
+  --accent-yellow: #ffd740;
+
+  --gradient-hero: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #162036 100%);
+  --gradient-cyan: linear-gradient(135deg, #00e5ff, #4d7cfe);
+  --gradient-green: linear-gradient(135deg, #00e676, #00c853);
+  --gradient-red: linear-gradient(135deg, #ff3d71, #ff1744);
+  --gradient-orange: linear-gradient(135deg, #ff9100, #ff6d00);
+  --gradient-purple: linear-gradient(135deg, #9c5cff, #6a1bff);
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.2);
+  --shadow-glow-cyan: 0 0 20px rgba(0, 229, 255, 0.15);
+  --shadow-glow-red: 0 0 20px rgba(255, 61, 113, 0.2);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 14px; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--gradient-hero);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Animated background grid */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(77, 124, 254, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 124, 254, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ═══════ HEADER ═══════ */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(10, 14, 26, 0.85);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 2rem;
+}
+
+.header-inner {
+  max-width: 1600px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--gradient-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0a0e1a;
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.header-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: var(--gradient-cyan);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 8px rgba(0, 230, 118, 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.status-dot.offline { background: var(--accent-red); box-shadow: 0 0 8px rgba(255, 61, 113, 0.6); animation: none; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+
+.header-clock {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+/* ═══════ MAIN LAYOUT ═══════ */
+.main {
+  position: relative;
+  z-index: 1;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 3rem;
+}
+
+/* ═══════ KPI ROW ═══════ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.35rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-card);
+}
+
+.kpi-card:hover {
+  border-color: var(--border-glow);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.kpi-card.cyan::before { background: var(--gradient-cyan); }
+.kpi-card.green::before { background: var(--gradient-green); }
+.kpi-card.red::before { background: var(--gradient-red); }
+.kpi-card.orange::before { background: var(--gradient-orange); }
+.kpi-card.purple::before { background: var(--gradient-purple); }
+.kpi-card.blue::before { background: linear-gradient(135deg, #4d7cfe, #3451b2); }
+
+.kpi-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  margin-bottom: 0.8rem;
+}
+
+.kpi-card.cyan .kpi-icon { background: rgba(0, 229, 255, 0.1); color: var(--accent-cyan); }
+.kpi-card.green .kpi-icon { background: rgba(0, 230, 118, 0.1); color: var(--accent-green); }
+.kpi-card.red .kpi-icon { background: rgba(255, 61, 113, 0.1); color: var(--accent-red); }
+.kpi-card.orange .kpi-icon { background: rgba(255, 145, 0, 0.1); color: var(--accent-orange); }
+.kpi-card.purple .kpi-icon { background: rgba(156, 92, 255, 0.1); color: var(--accent-purple); }
+.kpi-card.blue .kpi-icon { background: rgba(77, 124, 254, 0.1); color: var(--accent-blue); }
+
+.kpi-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.3rem;
+}
+
+.kpi-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.kpi-card.cyan .kpi-value { color: var(--accent-cyan); }
+.kpi-card.green .kpi-value { color: var(--accent-green); }
+.kpi-card.red .kpi-value { color: var(--accent-red); }
+.kpi-card.orange .kpi-value { color: var(--accent-orange); }
+.kpi-card.purple .kpi-value { color: var(--accent-purple); }
+.kpi-card.blue .kpi-value { color: var(--accent-blue); }
+
+.kpi-extra {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
+  font-family: var(--font-mono);
+}
+
+/* ═══════ CONTENT GRID ═══════ */
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.35rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel-title .dot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 6px rgba(0, 230, 118, 0.5);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.panel-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+}
+
+.badge-live {
+  background: rgba(0, 230, 118, 0.12);
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+}
+
+.badge-count {
+  background: rgba(77, 124, 254, 0.12);
+  color: var(--accent-blue);
+  border: 1px solid rgba(77, 124, 254, 0.25);
+}
+
+/* ═══════ TRAFFIC TABLE ═══════ */
+.traffic-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.traffic-table thead th {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.7rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  z-index: 2;
+}
+
+.traffic-table tbody tr {
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.traffic-table tbody tr:hover {
+  background: rgba(77, 124, 254, 0.06);
+}
+
+.traffic-table tbody tr.row-bot {
+  background: rgba(255, 61, 113, 0.04);
+}
+
+.traffic-table tbody tr.row-bot:hover {
+  background: rgba(255, 61, 113, 0.08);
+}
+
+.traffic-table tbody tr.row-suspect {
+  background: rgba(255, 145, 0, 0.04);
+}
+
+.traffic-table tbody td {
+  font-size: 0.78rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid rgba(99, 117, 171, 0.08);
+  vertical-align: middle;
+}
+
+.table-scroll {
+  max-height: 460px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(77, 124, 254, 0.3) transparent;
+}
+
+.table-scroll::-webkit-scrollbar { width: 5px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background: rgba(77, 124, 254, 0.3); border-radius: 4px; }
+
+.verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.verdict-human {
+  background: rgba(0, 230, 118, 0.12);
+  color: var(--accent-green);
+  border: 1px solid rgba(0, 230, 118, 0.2);
+}
+
+.verdict-bot {
+  background: rgba(255, 61, 113, 0.14);
+  color: var(--accent-red);
+  border: 1px solid rgba(255, 61, 113, 0.25);
+  animation: glow-red 2s ease-in-out infinite;
+}
+
+.verdict-suspect {
+  background: rgba(255, 145, 0, 0.12);
+  color: var(--accent-orange);
+  border: 1px solid rgba(255, 145, 0, 0.2);
+}
+
+@keyframes glow-red {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 10px rgba(255, 61, 113, 0.25); }
+}
+
+.risk-bar-container {
+  width: 70px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.risk-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.risk-pct {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.ip-text {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.page-text {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.time-text {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* ═══════ SIDE PANELS ═══════ */
+.side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Mouse Trajectory Canvas */
+.trajectory-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4/3;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  margin: 1rem 1.35rem;
+  width: calc(100% - 2.7rem);
+  overflow: hidden;
+}
+
+#trajectoryCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.trajectory-info {
+  padding: 0.5rem 1.35rem 1rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.trajectory-info span {
+  font-family: var(--font-mono);
+}
+
+.no-selection-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Charts area */
+.chart-container {
+  padding: 1rem 1.35rem;
+  height: 200px;
+}
+
+/* ═══════ BOTTOM ROW ═══════ */
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.model-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0.7rem;
+  padding: 0 1.35rem;
+}
+
+.model-bar-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: 90px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.model-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.model-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.model-bar-value {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.model-bars-wrapper {
+  padding: 1rem 0;
+}
+
+/* Graph stats */
+.graph-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  padding: 1rem 1.35rem;
+}
+
+.graph-stat-item {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem;
+  text-align: center;
+}
+
+.graph-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--accent-cyan);
+}
+
+.graph-stat-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.2rem;
+}
+
+/* Reasons list */
+.reasons-list {
+  padding: 0.8rem 1.35rem 1rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.reason-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0.4rem 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(99, 117, 171, 0.06);
+}
+
+.reason-icon { font-size: 0.7rem; margin-top: 2px; flex-shrink: 0; }
+.reason-icon.warn { color: var(--accent-orange); }
+.reason-icon.crit { color: var(--accent-red); }
+
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+/* ═══════ RISK GAUGE (SVG) ═══════ */
+.gauge-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+
+.gauge-svg { width: 160px; height: 100px; }
+
+.gauge-text {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  fill: var(--text-primary);
+}
+
+.gauge-label-text {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  fill: var(--text-muted);
+  font-size: 10px;
+}
+
+/* ═══════ RESPONSIVE ═══════ */
+@media (max-width: 1200px) {
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .content-grid { grid-template-columns: 1fr; }
+  .bottom-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .bottom-grid { grid-template-columns: 1fr; }
+  .main { padding: 1rem; }
+  .header { padding: 0 1rem; }
+}
+
+/* ═══════ ANIMATIONS ═══════ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in {
+  animation: fadeInUp 0.4s ease-out both;
+}
+
+.animate-in:nth-child(1) { animation-delay: 0.05s; }
+.animate-in:nth-child(2) { animation-delay: 0.1s; }
+.animate-in:nth-child(3) { animation-delay: 0.15s; }
+.animate-in:nth-child(4) { animation-delay: 0.2s; }
+.animate-in:nth-child(5) { animation-delay: 0.25s; }
+.animate-in:nth-child(6) { animation-delay: 0.3s; }
+
+/* ═══════ ALERT BANNER ═══════ */
+.alert-banner {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 0.8rem 1.5rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  background: rgba(255, 61, 113, 0.08);
+  border: 1px solid rgba(255, 61, 113, 0.25);
+  animation: alertPulse 2s ease-in-out infinite;
+}
+.alert-banner.show { display: flex; }
+.alert-banner .alert-icon { font-size: 1.4rem; }
+.alert-banner .alert-text { font-size: 0.85rem; color: var(--accent-red); font-weight: 600; flex: 1; }
+.alert-banner .alert-time { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); }
+@keyframes alertPulse {
+  0%,100% { border-color: rgba(255, 61, 113, 0.25); }
+  50% { border-color: rgba(255, 61, 113, 0.5); box-shadow: 0 0 20px rgba(255, 61, 113, 0.1); }
+}
+
+/* ═══════ SIMULATE BUTTON ═══════ */
+.simulate-btn {
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 61, 113, 0.3);
+  background: rgba(255, 61, 113, 0.08);
+  color: var(--accent-red);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+.simulate-btn:hover {
+  background: rgba(255, 61, 113, 0.18);
+  border-color: rgba(255, 61, 113, 0.5);
+  box-shadow: 0 0 15px rgba(255, 61, 113, 0.15);
+  transform: translateY(-1px);
+}
+.simulate-btn:active { transform: translateY(0); }
+.simulate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.simulate-btn.human-btn {
+  border-color: rgba(0, 230, 118, 0.3);
+  background: rgba(0, 230, 118, 0.08);
+  color: var(--accent-green);
+}
+.simulate-btn.human-btn:hover {
+  background: rgba(0, 230, 118, 0.18);
+  border-color: rgba(0, 230, 118, 0.5);
+  box-shadow: 0 0 15px rgba(0, 230, 118, 0.15);
+}
+
+/* ═══════ DONUT CHART ═══════ */
+.chart-donut-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  height: 220px;
+}
+
+/* ═══════ MID ROW ═══════ */
+.mid-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+  .mid-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════ DELETE BUTTON ═══════ */
+.delete-btn {
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 61, 113, 0.2);
+  background: rgba(255, 61, 113, 0.06);
+  color: var(--accent-red);
+  font-size: 0.65rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.5;
+}
+.delete-btn:hover {
+  opacity: 1;
+  background: rgba(255, 61, 113, 0.15);
+  border-color: rgba(255, 61, 113, 0.4);
+}
+.view-btn {
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--accent-cyan);
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.view-btn:hover {
+  background: rgba(0, 229, 255, 0.2);
+  border-color: rgba(0, 229, 255, 0.5);
+  transform: translateY(-1px);
+}
+.delete-all-btn {
+  padding: 5px 14px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 61, 113, 0.2);
+  background: rgba(255, 61, 113, 0.06);
+  color: var(--accent-red);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.delete-all-btn:hover {
+  background: rgba(255, 61, 113, 0.15);
+  border-color: rgba(255, 61, 113, 0.4);
+}
+
+/* ═══════ COUNTER ANIMATION ═══════ */
+.kpi-value {
+  transition: transform 0.3s ease;
+}
+.kpi-value.bump {
+  transform: scale(1.12);
+}
+/* ═══════ SESSION DETAIL DRAWER ═══════ */
+.session-drawer { position:fixed;top:0;left:0;width:100%;height:100%;z-index:1000;pointer-events:none;opacity:0;transition:opacity .3s ease; }
+.session-drawer.open { pointer-events:all;opacity:1; }
+.drawer-backdrop { position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);backdrop-filter:blur(4px); }
+.drawer-content { position:absolute;top:0;right:-680px;width:660px;max-width:90vw;height:100%;background:var(--bg-card);border-left:1px solid var(--border-subtle);overflow-y:auto;transition:right .35s cubic-bezier(.4,0,.2,1);box-shadow:-8px 0 40px rgba(0,0,0,.5); }
+.drawer-content::-webkit-scrollbar { width:6px; }
+.drawer-content::-webkit-scrollbar-track { background:transparent; }
+.drawer-content::-webkit-scrollbar-thumb { background:rgba(99,117,171,.25);border-radius:3px; }
+.drawer-content::-webkit-scrollbar-thumb:hover { background:rgba(99,117,171,.4); }
+.session-drawer.open .drawer-content { right:0; }
+.drawer-header { display:flex;justify-content:space-between;align-items:center;padding:1.2rem 1.5rem;border-bottom:1px solid var(--border-subtle);background:linear-gradient(135deg,rgba(99,117,171,.08),rgba(99,117,171,.02));position:sticky;top:0;z-index:10;backdrop-filter:blur(12px); }
+.drawer-title { font-size:1.05rem;font-weight:700;color:var(--text-primary); }
+.drawer-subtitle { font-size:.72rem;color:var(--accent-cyan);font-family:var(--font-mono);margin-top:2px; }
+.drawer-close { width:32px;height:32px;border-radius:8px;border:1px solid var(--border-subtle);background:transparent;color:var(--text-muted);font-size:1rem;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center; }
+.drawer-close:hover { background:rgba(255,61,113,.15);color:var(--accent-red); }
+.drawer-body { padding:0; }
+.drawer-section { padding:1.2rem 1.5rem;border-bottom:1px solid var(--border-subtle); }
+.drawer-section-title { font-size:.82rem;font-weight:700;color:var(--text-primary);margin-bottom:.8rem;letter-spacing:.02em; }
+.drawer-grid-2 { display:grid;grid-template-columns:1fr 1fr;gap:.6rem; }
+.drawer-grid-3 { display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem; }
+.drawer-field { background:rgba(99,117,171,.04);border:1px solid var(--border-subtle);border-radius:8px;padding:.6rem .8rem; }
+.drawer-field-label { font-size:.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px; }
+.drawer-field-value { font-size:.78rem;color:var(--text-primary);word-break:break-all; }
+.drawer-field-value.mono { font-family:var(--font-mono);font-size:.72rem;color:var(--accent-cyan); }
+.drawer-explain { font-size:.74rem;color:var(--text-muted);line-height:1.5;margin-bottom:.8rem; }
+.drawer-explain strong { color:var(--text-primary); }
+.verdict-hero { display:flex;align-items:center;gap:1.2rem;padding:1rem;border-radius:10px; }
+.verdict-hero.human { background:linear-gradient(135deg,rgba(0,230,118,.08),rgba(0,230,118,.02));border:1px solid rgba(0,230,118,.2); }
+.verdict-hero.bot { background:linear-gradient(135deg,rgba(255,61,113,.08),rgba(255,61,113,.02));border:1px solid rgba(255,61,113,.2); }
+.verdict-hero.suspect { background:linear-gradient(135deg,rgba(255,171,0,.08),rgba(255,171,0,.02));border:1px solid rgba(255,171,0,.2); }
+.verdict-hero-badge { font-size:1.4rem;font-weight:800;padding:.5rem 1rem;border-radius:10px;min-width:100px;text-align:center; }
+.verdict-hero.human .verdict-hero-badge { color:var(--accent-green);background:rgba(0,230,118,.1); }
+.verdict-hero.bot .verdict-hero-badge { color:var(--accent-red);background:rgba(255,61,113,.1); }
+.verdict-hero.suspect .verdict-hero-badge { color:var(--accent-orange);background:rgba(255,171,0,.1); }
+.verdict-hero-prob { display:flex;flex-direction:column;gap:2px; }
+.verdict-prob-label { font-size:.68rem;color:var(--text-muted); }
+.verdict-prob-value { font-size:1.6rem;font-weight:800;font-family:var(--font-mono); }
+.verdict-hero-conf { display:flex;align-items:center;gap:8px;font-size:.7rem;color:var(--text-muted);margin-left:auto; }
+.conf-bar { width:80px;height:6px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden; }
+.conf-bar-fill { height:100%;border-radius:3px;background:var(--accent-cyan);transition:width .5s ease; }
+.verdict-explain { font-size:.74rem;color:var(--text-muted);margin-top:.6rem;line-height:1.5;padding:.6rem .8rem;background:rgba(99,117,171,.04);border-radius:8px;border-left:3px solid var(--accent-cyan); }
+.model-detail-card { background:rgba(99,117,171,.04);border:1px solid var(--border-subtle);border-radius:10px;padding:.8rem 1rem;margin-bottom:.6rem;transition:border-color .3s; }
+.model-detail-card:hover { border-color:rgba(99,117,171,.2); }
+.model-detail-header { display:flex;align-items:flex-start;gap:.8rem;margin-bottom:.6rem; }
+.model-detail-icon { font-size:1.4rem;min-width:32px;text-align:center; }
+.model-detail-name { font-size:.78rem;font-weight:700;color:var(--text-primary); }
+.model-detail-desc { font-size:.68rem;color:var(--text-muted);line-height:1.4;margin-top:2px; }
+.model-detail-bar { display:flex;align-items:center;gap:10px; }
+.model-detail-track { flex:1;height:8px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden; }
+.model-detail-fill { height:100%;border-radius:4px;transition:width .6s ease; }
+.model-detail-score { font-family:var(--font-mono);font-size:.82rem;font-weight:700;min-width:50px;text-align:right; }
+.model-detail-weight { font-size:.65rem;color:var(--text-muted);margin-top:4px;font-family:var(--font-mono); }
+.fusion-formula { background:rgba(99,117,171,.06);border:1px solid var(--border-subtle);border-radius:8px;padding:.8rem;text-align:center;margin-top:.6rem; }
+.fusion-formula code { font-family:var(--font-mono);font-size:.72rem;color:var(--accent-cyan); }
+.fusion-result { font-family:var(--font-mono);font-size:.8rem;font-weight:700;margin-top:.4rem; }
+.drawer-reasons { display:flex;flex-direction:column;gap:.4rem; }
+.drawer-reason-item { display:flex;align-items:flex-start;gap:.6rem;padding:.5rem .7rem;border-radius:6px;background:rgba(255,61,113,.04);border:1px solid rgba(255,61,113,.1);font-size:.74rem;color:var(--text-secondary);line-height:1.4; }
+.drawer-reason-item.critical { background:rgba(255,61,113,.08);border-color:rgba(255,61,113,.25); }
+.drawer-reason-icon { font-size:.7rem;min-width:16px; }
+.reason-none { color:var(--accent-green);font-size:.74rem;padding:.5rem; }
+.drawer-stat-card { background:rgba(99,117,171,.04);border:1px solid var(--border-subtle);border-radius:8px;padding:.6rem .8rem;text-align:center; }
+.drawer-stat-value { font-family:var(--font-mono);font-size:1.1rem;font-weight:700;color:var(--accent-cyan); }
+.drawer-stat-label { font-size:.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-top:2px; }
+.drawer-detectors { display:flex;flex-wrap:wrap;gap:.5rem; }
+.detector-badge { display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;font-size:.7rem;font-family:var(--font-mono);border:1px solid var(--border-subtle); }
+.detector-badge.safe { color:var(--accent-green);border-color:rgba(0,230,118,.15);background:rgba(0,230,118,.04); }
+.detector-badge.flagged { color:var(--accent-red);border-color:rgba(255,61,113,.2);background:rgba(255,61,113,.06);font-weight:600; }
+
+</style>
+</head>
+<body>
+
+<!-- ═══════ HEADER ═══════ -->
+<header class="header">
+  <div class="header-inner">
+    <div class="header-brand">
+      <div class="header-logo">🛡</div>
+      <div>
+        <div class="header-title">SilkMoon Bot Detection</div>
+        <div class="header-subtitle">Security Operations Center — Real-time Monitoring</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div style="display:flex;gap:8px;">
+        <button class="simulate-btn human-btn" onclick="simulateHuman()" title="Gửi dữ liệu người thật giả lập">✓ Giả lập Human</button>
+        <button class="simulate-btn" onclick="simulateBot()" title="Gửi dữ liệu bot giả lập">🤖 Giả lập Bot</button>
+      </div>
+      <div class="status-indicator">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">All Models Online</span>
+      </div>
+      <div class="header-clock" id="headerClock">--:--:--</div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════ MAIN ═══════ -->
+<main class="main">
+
+  <!-- ALERT BANNER -->
+  <div class="alert-banner" id="alertBanner">
+    <span class="alert-icon">🚨</span>
+    <span class="alert-text" id="alertText">Bot Activity Detected!</span>
+    <span class="alert-time" id="alertTime"></span>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpi-grid">
+    <div class="kpi-card cyan animate-in">
+      <div class="kpi-icon">📡</div>
+      <div class="kpi-label">Tổng phiên thu thập</div>
+      <div class="kpi-value" id="kpiTotalSessions">0</div>
+      <div class="kpi-extra" id="kpiTotalExtra">Buffered events</div>
+    </div>
+    <div class="kpi-card green animate-in">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-label">Người thật (Human)</div>
+      <div class="kpi-value" id="kpiHumanCount">0</div>
+      <div class="kpi-extra" id="kpiHumanRate">--</div>
+    </div>
+    <div class="kpi-card red animate-in">
+      <div class="kpi-icon">🤖</div>
+      <div class="kpi-label">Bot phát hiện</div>
+      <div class="kpi-value" id="kpiBotCount">0</div>
+      <div class="kpi-extra" id="kpiBotRate">--</div>
+    </div>
+    <div class="kpi-card orange animate-in">
+      <div class="kpi-icon">⚠️</div>
+      <div class="kpi-label">Nghi vấn (Suspect)</div>
+      <div class="kpi-value" id="kpiSuspectCount">0</div>
+      <div class="kpi-extra" id="kpiSuspectRate">--</div>
+    </div>
+    <div class="kpi-card purple animate-in">
+      <div class="kpi-icon">🕸️</div>
+      <div class="kpi-label">Nút đồ thị GNN</div>
+      <div class="kpi-value" id="kpiGraphNodes">0</div>
+      <div class="kpi-extra" id="kpiGraphEdges">0 edges</div>
+    </div>
+    <div class="kpi-card blue animate-in">
+      <div class="kpi-icon">⏱️</div>
+      <div class="kpi-label">Độ trễ trung bình</div>
+      <div class="kpi-value" id="kpiAvgLatency">--</div>
+      <div class="kpi-extra">ms / inference</div>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="content-grid">
+
+    <!-- LIVE TRAFFIC TABLE -->
+    <div class="panel animate-in">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="dot-live"></span>
+          Luồng truy cập thời gian thực
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="delete-all-btn" onclick="deleteAllSessions()" title="Xóa tất cả sessions">🗑️ Xóa tất cả</button>
+          <span class="panel-badge badge-live">● LIVE</span>
+          <span class="panel-badge badge-count" id="trafficCount">0 sessions</span>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="traffic-table">
+          <thead>
+            <tr>
+              <th>Thời gian</th>
+              <th>IP</th>
+              <th>Trang</th>
+              <th>Kết luận</th>
+              <th>Rủi ro</th>
+              <th>Chuột</th>
+              <th>LSTM</th>
+              <th>Tabular</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="trafficBody">
+            <tr><td colspan="9" class="empty-state">Đang chờ dữ liệu telemetry...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDE STACK -->
+    <div class="side-stack">
+
+      <!-- MOUSE TRAJECTORY -->
+      <div class="panel animate-in">
+        <div class="panel-header">
+          <div class="panel-title">🖱️ Quỹ đạo chuột (Mouse Trajectory)</div>
+        </div>
+        <div class="trajectory-canvas-wrapper">
+          <canvas id="trajectoryCanvas"></canvas>
+        </div>
+        <div class="trajectory-info">
+          <span id="trajSession">Bấm vào 1 phiên bên trái để xem</span>
+          <span id="trajPoints">0 điểm</span>
+        </div>
+      </div>
+
+      <!-- RISK GAUGE -->
+      <div class="panel animate-in">
+        <div class="panel-header">
+          <div class="panel-title">🎯 Điểm rủi ro phiên đang chọn</div>
+        </div>
+        <div class="gauge-wrapper">
+          <svg class="gauge-svg" viewBox="0 0 160 100">
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" style="stop-color:#00e676"/>
+                <stop offset="50%" style="stop-color:#ffd740"/>
+                <stop offset="100%" style="stop-color:#ff3d71"/>
+              </linearGradient>
+            </defs>
+            <!-- Background arc -->
+            <path d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10" stroke-linecap="round"/>
+            <!-- Filled arc -->
+            <path id="gaugeArc" d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+            <!-- Value text -->
+            <text x="80" y="72" text-anchor="middle" class="gauge-text" font-size="24" id="gaugeValue">--%</text>
+            <text x="80" y="90" text-anchor="middle" class="gauge-label-text" id="gaugeLabel">Chọn một phiên</text>
+          </svg>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MID ROW: DISTRIBUTION + TIMELINE -->
+  <div class="mid-grid">
+    <div class="panel animate-in">
+      <div class="panel-header">
+        <div class="panel-title">📊 Phân bố phân loại</div>
+      </div>
+      <div class="chart-donut-wrapper">
+        <canvas id="donutChart"></canvas>
+      </div>
+    </div>
+    <div class="panel animate-in">
+      <div class="panel-header">
+        <div class="panel-title">📈 Luồng truy cập theo khoảng thời gian</div>
+      </div>
+      <div style="padding:1rem 1.35rem;height:220px;">
+        <canvas id="timelineChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM ROW -->
+  <div class="bottom-grid">
+
+    <!-- MODEL BREAKDOWN -->
+    <div class="panel animate-in">
+      <div class="panel-header">
+        <div class="panel-title">🧠 Đóng góp từng mô hình AI</div>
+      </div>
+      <div class="model-bars-wrapper" id="modelBars">
+        <div class="model-bar">
+          <span class="model-bar-label">LSTM BiGRU</span>
+          <div class="model-bar-track"><div class="model-bar-fill" id="barLSTM" style="width:0%;background:var(--gradient-cyan)"></div></div>
+          <span class="model-bar-value" style="color:var(--accent-cyan)" id="valLSTM">--</span>
+        </div>
+        <div class="model-bar">
+          <span class="model-bar-label">XGBoost</span>
+          <div class="model-bar-track"><div class="model-bar-fill" id="barTabular" style="width:0%;background:var(--gradient-purple)"></div></div>
+          <span class="model-bar-value" style="color:var(--accent-purple)" id="valTabular">--</span>
+        </div>
+        <div class="model-bar">
+          <span class="model-bar-label">Heuristic</span>
+          <div class="model-bar-track"><div class="model-bar-fill" id="barHeuristic" style="width:0%;background:var(--gradient-orange)"></div></div>
+          <span class="model-bar-value" style="color:var(--accent-orange)" id="valHeuristic">--</span>
+        </div>
+        <div style="padding: 0.6rem 1.35rem 0; border-top: 1px solid var(--border-subtle); margin-top: 0.5rem;">
+          <div class="model-bar" style="margin-bottom:0.4rem; padding:0">
+            <span class="model-bar-label" style="font-weight:700;color:var(--text-primary)">Trọng số</span>
+            <div class="model-bar-track" style="background:transparent; height:auto"><span id="weightsInfo" style="font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono)">--</span></div>
+            <span class="model-bar-value"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAPH TOPOLOGY (Interactive Visualization) -->
+    <div class="panel animate-in" style="grid-column: span 2;">
+      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="panel-title">🕸️ Đồ thị quan hệ GNN (Interactive Graph)</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);display:inline-block;"></span>Device
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-blue);display:inline-block;"></span>IP
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-green);display:inline-block;"></span>Session
+          </span>
+          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-purple);display:inline-block;"></span>Target
+          </span>
+        </div>
+      </div>
+      <div style="position:relative;">
+        <canvas id="graphCanvas" width="800" height="420" style="width:100%;height:420px;border-radius:0 0 var(--radius) var(--radius);background:rgba(10,14,26,0.6);cursor:grab;"></canvas>
+        <div id="graphTooltip" style="display:none;position:absolute;padding:8px 12px;background:rgba(26,31,53,0.95);border:1px solid var(--border-subtle);border-radius:8px;font-size:0.7rem;color:var(--text-primary);pointer-events:none;z-index:20;max-width:260px;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:0.6rem 1rem;">
+        <div class="graph-stat-item">
+          <div class="graph-stat-value" id="gDevices">0</div>
+          <div class="graph-stat-label">Thiết bị</div>
+        </div>
+        <div class="graph-stat-item">
+          <div class="graph-stat-value" id="gIPs" style="color:var(--accent-blue)">0</div>
+          <div class="graph-stat-label">Địa chỉ IP</div>
+        </div>
+        <div class="graph-stat-item">
+          <div class="graph-stat-value" id="gSessions" style="color:var(--accent-purple)">0</div>
+          <div class="graph-stat-label">Phiên</div>
+        </div>
+        <div class="graph-stat-item">
+          <div class="graph-stat-value" id="gEdges" style="color:var(--accent-orange)">0</div>
+          <div class="graph-stat-label">Cạnh liên kết</div>
+        </div>
+        <div class="graph-stat-item">
+          <div class="graph-stat-value" id="gFraudRings" style="color:var(--accent-green)">0</div>
+          <div class="graph-stat-label" id="gFraudLabel">Fraud Ring</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DETECTION REASONS -->
+    <div class="panel animate-in">
+      <div class="panel-header">
+        <div class="panel-title">📋 Lý do phát hiện (Detection Reasons)</div>
+      </div>
+      <div class="reasons-list" id="reasonsList">
+        <div class="empty-state">Bấm vào phiên Bot để xem lý do phát hiện</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ═══════ SESSION DETAIL DRAWER ═══════ -->
+<div id="sessionDrawer" class="session-drawer">
+  <div class="drawer-backdrop" onclick="closeDrawer()"></div>
+  <div class="drawer-content">
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-title">🔍 Phân tích chi tiết phiên</div>
+        <div class="drawer-subtitle" id="drawerSessionId">--</div>
+      </div>
+      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="drawer-body">
+
+      <!-- SECTION 1: Overview -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">📌 Thông tin phiên</div>
+        <div class="drawer-grid-2">
+          <div class="drawer-field">
+            <div class="drawer-field-label">Session ID</div>
+            <div class="drawer-field-value mono" id="dSessionId">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Visitor ID (Fingerprint)</div>
+            <div class="drawer-field-value mono" id="dVisitorId">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Địa chỉ IP</div>
+            <div class="drawer-field-value mono" id="dClientIP">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Trang truy cập</div>
+            <div class="drawer-field-value" id="dPageUrl">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Thời gian</div>
+            <div class="drawer-field-value" id="dTime">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Điểm chuột thu được</div>
+            <div class="drawer-field-value mono" id="dMousePoints">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: AI Verdict -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🤖 Kết luận AI</div>
+        <div class="verdict-hero" id="dVerdictHero">
+          <div class="verdict-hero-badge" id="dVerdictBadge">--</div>
+          <div class="verdict-hero-prob">
+            <span class="verdict-prob-label">Xác suất là Bot:</span>
+            <span class="verdict-prob-value" id="dBotProb">--%</span>
+          </div>
+          <div class="verdict-hero-conf">
+            <span>Độ tin cậy:</span>
+            <div class="conf-bar"><div class="conf-bar-fill" id="dConfBar"></div></div>
+            <span id="dConfValue">--%</span>
+          </div>
+        </div>
+        <div class="verdict-explain" id="dVerdictExplain"></div>
+      </div>
+
+      <!-- SECTION 3: Model Breakdown -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🧠 Phân tích đa mô hình (Ensemble Fusion)</div>
+        <div class="drawer-explain">
+          Hệ thống kết hợp <strong>3 mô hình AI</strong> độc lập, mỗi mô hình đánh giá khía cạnh khác nhau.
+          Trọng số được tự điều chỉnh dựa trên độ tin cậy của từng mô hình.
+        </div>
+
+        <div class="model-detail-card" id="dModelLSTM">
+          <div class="model-detail-header">
+            <div class="model-detail-icon">🧬</div>
+            <div>
+              <div class="model-detail-name">LSTM BiGRU — Hành vi chuột</div>
+              <div class="model-detail-desc">Phân tích quỹ đạo, tốc độ, gia tốc di chuột. Bot có quỹ đạo thẳng và đều, người có quỹ đạo cong tự nhiên.</div>
+            </div>
+          </div>
+          <div class="model-detail-bar">
+            <div class="model-detail-track"><div class="model-detail-fill" id="dBarLSTM"></div></div>
+            <span class="model-detail-score" id="dScoreLSTM">--</span>
+          </div>
+          <div class="model-detail-weight">Trọng số: <span id="dWeightLSTM">--</span></div>
+        </div>
+
+        <div class="model-detail-card" id="dModelTab">
+          <div class="model-detail-header">
+            <div class="model-detail-icon">📊</div>
+            <div>
+              <div class="model-detail-name">XGBoost — Fingerprint & Môi trường</div>
+              <div class="model-detail-desc">Phân tích phần cứng (CPU, RAM, GPU), trình duyệt, plugin, độ phân giải, canvas hash, audio hash, v.v.</div>
+            </div>
+          </div>
+          <div class="model-detail-bar">
+            <div class="model-detail-track"><div class="model-detail-fill" id="dBarTab"></div></div>
+            <span class="model-detail-score" id="dScoreTab">--</span>
+          </div>
+          <div class="model-detail-weight">Trọng số: <span id="dWeightTab">--</span></div>
+        </div>
+
+        <div class="model-detail-card" id="dModelHeur">
+          <div class="model-detail-header">
+            <div class="model-detail-icon">🛡️</div>
+            <div>
+              <div class="model-detail-name">BotD Heuristic — Kiểm tra tự động</div>
+              <div class="model-detail-desc">Kiểm tra WebDriver, Selenium, PhantomJS, Puppeteer, distinctive properties, plugins inconsistency.</div>
+            </div>
+          </div>
+          <div class="model-detail-bar">
+            <div class="model-detail-track"><div class="model-detail-fill" id="dBarHeur"></div></div>
+            <span class="model-detail-score" id="dScoreHeur">--</span>
+          </div>
+          <div class="model-detail-weight">Trọng số: <span id="dWeightHeur">--</span></div>
+        </div>
+
+        <div class="fusion-formula">
+          <code>final_score = (w<sub>lstm</sub> × lstm + w<sub>tab</sub> × tabular + w<sub>heur</sub> × heuristic) / Σw</code>
+          <div class="fusion-result" id="dFusionResult"></div>
+        </div>
+      </div>
+
+      <!-- SECTION 4: Detection Reasons -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🚩 Lý do phát hiện</div>
+        <div id="dReasonsList" class="drawer-reasons"></div>
+      </div>
+
+      <!-- SECTION 5: Mouse Stats -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🖱️ Thống kê hành vi chuột</div>
+        <div class="drawer-grid-3" id="dMouseStats">
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseCount">0</div>
+            <div class="drawer-stat-label">Điểm thu được</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseSpeed">--</div>
+            <div class="drawer-stat-label">Tốc độ TB</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseMaxSpeed">--</div>
+            <div class="drawer-stat-label">Tốc độ max</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseAccel">--</div>
+            <div class="drawer-stat-label">Gia tốc TB</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseStraight">--</div>
+            <div class="drawer-stat-label">Straightness</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-value" id="dMouseChunks">0</div>
+            <div class="drawer-stat-label">Chunks LSTM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 6: Device Fingerprint -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🖥️ Dấu vân tay thiết bị (Fingerprint)</div>
+        <div class="drawer-grid-2" id="dFingerprintGrid"></div>
+      </div>
+
+      <!-- SECTION 7: BotD Detectors -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">🛡️ BotD Heuristic Detectors</div>
+        <div class="drawer-detectors" id="dDetectorsList"></div>
+      </div>
+
+      <!-- SECTION 8: Actions -->
+      <div class="drawer-section" style="display:flex;gap:10px;justify-content:flex-end;align-items:center;background:rgba(10,14,26,0.6);border-bottom:none">
+        <button class="delete-btn" style="padding:7px 14px;font-size:0.75rem;opacity:0.9" onclick="deleteCurrentDrawerSession()">🗑️ Xóa phiên này</button>
+        <button class="delete-all-btn" style="padding:7px 14px;background:rgba(99,117,171,0.12);border-color:var(--border-subtle);color:var(--text-primary)" onclick="closeDrawer()">Đóng hồ sơ</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   REAL-TIME DASHBOARD ENGINE
+   ═══════════════════════════════════════════════════ */
+
+const API_BASE = window.location.origin;
+const POLL_INTERVAL = 3000;
+
+let allSessions = [];
+let selectedSession = null;
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[ch]);
+}
+
+function adminHeaders() {
+  let token = sessionStorage.getItem('bot_admin_token') || '';
+  if (!token) {
+    token = prompt('Nhập BOT_ADMIN_TOKEN để thực hiện thao tác quản trị:') || '';
+    if (token) sessionStorage.setItem('bot_admin_token', token);
+  }
+  return token ? { 'X-Admin-Token': token } : {};
+}
+
+// ──── Clock ────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('headerClock').textContent =
+    now.toLocaleTimeString('vi-VN', { hour12: false }) + '.' +
+    String(now.getMilliseconds()).padStart(3, '0');
+}
+setInterval(updateClock, 100);
+updateClock();
+
+// ──── API Fetchers ────
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    console.warn('Fetch error:', url, e);
+    return null;
+  }
+}
+
+async function fetchHealth() {
+  const data = await fetchJSON(API_BASE + '/health');
+  if (data && data.status === 'healthy') {
+    document.getElementById('statusDot').className = 'status-dot';
+    const models = data.models_loaded || {};
+    const allLoaded = models.tabular && models.lstm && models.gnn;
+    document.getElementById('statusText').textContent =
+      allLoaded ? 'All Models Online' : 'Partial Models';
+  } else {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusText').textContent = 'OFFLINE';
+  }
+}
+
+// ═══════ INTERACTIVE FORCE-DIRECTED GRAPH ═══════
+let graphNodes = [];
+let graphEdges = [];
+let graphSim = null;
+let graphDragNode = null;
+let graphHoverNode = null;
+let graphAnimFrame = null;
+
+const NODE_COLORS = {
+  device: '#00e5ff',
+  ip: '#4d7cfe',
+  session: '#00e676',
+  target: '#9c5cff',
+};
+const VERDICT_COLORS = {
+  HUMAN: '#00e676',
+  BOT: '#ff3d71',
+  SUSPECT: '#ff9100',
+  UNKNOWN: '#8b95b0',
+};
+const NODE_RADIUS = { device: 14, ip: 12, session: 10, target: 9 };
+const NODE_ICONS = { device: '💻', ip: '🌐', session: '📄', target: '🎯' };
+
+function initForceGraph() {
+  const canvas = document.getElementById('graphCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * (window.devicePixelRatio || 1);
+  canvas.height = rect.height * (window.devicePixelRatio || 1);
+  const W = rect.width, H = rect.height;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.scale(dpr, dpr);
+
+  // Force simulation
+  function simulate() {
+    if (graphNodes.length === 0) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#5a6580';
+      ctx.font = '13px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Đang chờ dữ liệu đồ thị...', W / 2, H / 2);
+      graphAnimFrame = requestAnimationFrame(simulate);
+      return;
+    }
+
+    // Build adjacency for force
+    const nodeMap = {};
+    graphNodes.forEach((n, i) => { n._i = i; nodeMap[n.id] = n; });
+
+    // Apply forces
+    const k = 0.008; // spring constant
+    const repulsion = 2200;
+    const damping = 0.88;
+    const centerX = W / 2, centerY = H / 2;
+
+    // Repulsion (all pairs)
+    for (let i = 0; i < graphNodes.length; i++) {
+      for (let j = i + 1; j < graphNodes.length; j++) {
+        const a = graphNodes[i], b = graphNodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        let force = repulsion / (dist * dist);
+        let fx = (dx / dist) * force, fy = (dy / dist) * force;
+        if (!a._dragging) { a.vx = (a.vx || 0) + fx; a.vy = (a.vy || 0) + fy; }
+        if (!b._dragging) { b.vx = (b.vx || 0) - fx; b.vy = (b.vy || 0) - fy; }
+      }
+    }
+
+    // Attraction (edges)
+    graphEdges.forEach(e => {
+      const a = nodeMap[e.source], b = nodeMap[e.target];
+      if (!a || !b) return;
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      let force = (dist - 100) * k;
+      let fx = (dx / dist) * force, fy = (dy / dist) * force;
+      if (!a._dragging) { a.vx = (a.vx || 0) + fx; a.vy = (a.vy || 0) + fy; }
+      if (!b._dragging) { b.vx = (b.vx || 0) - fx; b.vy = (b.vy || 0) - fy; }
+    });
+
+    // Center gravity + apply velocity
+    graphNodes.forEach(n => {
+      if (n._dragging) return;
+      n.vx = (n.vx || 0) + (centerX - n.x) * 0.001;
+      n.vy = (n.vy || 0) + (centerY - n.y) * 0.001;
+      n.vx *= damping;
+      n.vy *= damping;
+      n.x += n.vx;
+      n.y += n.vy;
+      // Bounds
+      const r = NODE_RADIUS[n.type] || 10;
+      n.x = Math.max(r + 5, Math.min(W - r - 5, n.x));
+      n.y = Math.max(r + 5, Math.min(H - r - 5, n.y));
+    });
+
+    // ── Draw ──
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw edges
+    graphEdges.forEach(e => {
+      const a = nodeMap[e.source], b = nodeMap[e.target];
+      if (!a || !b) return;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      const isHighlighted = graphHoverNode && (graphHoverNode.id === e.source || graphHoverNode.id === e.target);
+      ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.35)' : 'rgba(99,117,171,0.15)';
+      ctx.lineWidth = isHighlighted ? 1.5 : 0.7;
+      ctx.stroke();
+
+      // Edge label
+      if (isHighlighted) {
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        ctx.fillStyle = 'rgba(99,117,171,0.5)';
+        ctx.font = '8px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(e.type, mx, my - 4);
+      }
+    });
+
+    // Draw nodes
+    graphNodes.forEach(n => {
+      const r = NODE_RADIUS[n.type] || 10;
+      let color = NODE_COLORS[n.type] || '#8b95b0';
+
+      // Sessions: color by verdict
+      if (n.type === 'session' && n.verdict) {
+        color = VERDICT_COLORS[n.verdict.toUpperCase()] || VERDICT_COLORS.UNKNOWN;
+      }
+
+      const isHovered = graphHoverNode && graphHoverNode.id === n.id;
+      const isConnected = graphHoverNode && graphEdges.some(e =>
+        (e.source === graphHoverNode.id && e.target === n.id) ||
+        (e.target === graphHoverNode.id && e.source === n.id)
+      );
+      const dimmed = graphHoverNode && !isHovered && !isConnected;
+
+      // Glow effect for hovered
+      if (isHovered) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
+        const glow = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 8);
+        glow.addColorStop(0, color + '40');
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fill();
+      }
+
+      // Node circle
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = dimmed ? (color + '30') : (color + 'cc');
+      ctx.fill();
+      ctx.strokeStyle = dimmed ? 'rgba(99,117,171,0.1)' : (color + '80');
+      ctx.lineWidth = isHovered ? 2.5 : 1;
+      ctx.stroke();
+
+      // Icon
+      ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.9)';
+      ctx.font = `${r * 0.9}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(NODE_ICONS[n.type] || '●', n.x, n.y);
+
+      // Label
+      if (isHovered || !dimmed) {
+        ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.1)' : 'rgba(232,236,244,0.7)';
+        ctx.font = '9px Inter, sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillText(n.label, n.x, n.y + r + 3);
+      }
+    });
+
+    graphAnimFrame = requestAnimationFrame(simulate);
+  }
+
+  // ── Mouse interactions ──
+  function getNodeAt(mx, my) {
+    for (let i = graphNodes.length - 1; i >= 0; i--) {
+      const n = graphNodes[i];
+      const r = NODE_RADIUS[n.type] || 10;
+      const dx = mx - n.x, dy = my - n.y;
+      if (dx * dx + dy * dy <= (r + 4) * (r + 4)) return n;
+    }
+    return null;
+  }
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+    if (graphDragNode) {
+      graphDragNode.x = mx;
+      graphDragNode.y = my;
+      graphDragNode.vx = 0;
+      graphDragNode.vy = 0;
+      return;
+    }
+
+    const node = getNodeAt(mx, my);
+    graphHoverNode = node;
+    canvas.style.cursor = node ? 'pointer' : 'grab';
+
+    // Tooltip
+    const tooltip = document.getElementById('graphTooltip');
+    if (node) {
+      let html = `<div style="font-weight:700;margin-bottom:3px;">${NODE_ICONS[node.type]} ${escapeHtml(node.type.toUpperCase())}</div>`;
+      html += `<div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--accent-cyan);word-break:break-all;">${escapeHtml(node.fullId || node.label)}</div>`;
+      if (node.type === 'session' && node.verdict) {
+        const vc = VERDICT_COLORS[node.verdict.toUpperCase()] || '#8b95b0';
+        html += `<div style="margin-top:4px;">Verdict: <b style="color:${vc}">${escapeHtml(node.verdict)}</b></div>`;
+        html += `<div>Bot Prob: <b style="color:${vc}">${((node.prob || 0) * 100).toFixed(1)}%</b></div>`;
+      }
+      // Count connections
+      const conns = graphEdges.filter(ed => ed.source === node.id || ed.target === node.id).length;
+      html += `<div style="margin-top:2px;color:var(--text-muted);">${conns} kết nối</div>`;
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      tooltip.style.left = (mx + 16) + 'px';
+      tooltip.style.top = (my - 10) + 'px';
+    } else {
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const node = getNodeAt(mx, my);
+    if (node) {
+      graphDragNode = node;
+      node._dragging = true;
+      canvas.style.cursor = 'grabbing';
+    }
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    if (graphDragNode) {
+      graphDragNode._dragging = false;
+      graphDragNode = null;
+      canvas.style.cursor = 'grab';
+    }
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    graphHoverNode = null;
+    document.getElementById('graphTooltip').style.display = 'none';
+    if (graphDragNode) {
+      graphDragNode._dragging = false;
+      graphDragNode = null;
+    }
+  });
+
+  // Start animation loop
+  if (graphAnimFrame) cancelAnimationFrame(graphAnimFrame);
+  simulate();
+}
+
+async function fetchGraphStats() {
+  // Fetch topology for visualization
+  const topoData = await fetchJSON(API_BASE + '/api/v1/graph/topology');
+  if (topoData && topoData.nodes) {
+    const canvas = document.getElementById('graphCanvas');
+    const rect = canvas ? canvas.getBoundingClientRect() : { width: 800, height: 420 };
+    const W = rect.width, H = rect.height;
+
+    // Only reset positions for genuinely new nodes
+    const existingPos = {};
+    graphNodes.forEach(n => { existingPos[n.id] = { x: n.x, y: n.y, vx: n.vx || 0, vy: n.vy || 0 }; });
+
+    graphNodes = topoData.nodes.map(n => {
+      const prev = existingPos[n.id];
+      return {
+        ...n,
+        x: prev ? prev.x : (W * 0.2 + Math.random() * W * 0.6),
+        y: prev ? prev.y : (H * 0.2 + Math.random() * H * 0.6),
+        vx: prev ? prev.vx : 0,
+        vy: prev ? prev.vy : 0,
+      };
+    });
+    graphEdges = topoData.edges || [];
+
+    // Update stats
+    const stats = topoData.stats || {};
+    document.getElementById('gDevices').textContent = stats.device_count || 0;
+    document.getElementById('gIPs').textContent = stats.ip_count || 0;
+    document.getElementById('gSessions').textContent = stats.session_count || 0;
+    document.getElementById('gEdges').textContent = stats.edges_count || 0;
+
+    const totalNodes = (stats.device_count || 0) + (stats.ip_count || 0) + (stats.session_count || 0);
+    document.getElementById('kpiGraphNodes').textContent = totalNodes;
+    document.getElementById('kpiGraphEdges').textContent = (stats.edges_count || 0) + ' edges';
+
+    const rings = stats.suspected_coordinated_rings || 0;
+    document.getElementById('gFraudRings').textContent = rings;
+    if (rings > 0) {
+      document.getElementById('gFraudRings').style.color = 'var(--accent-red)';
+      document.getElementById('gFraudLabel').textContent = '⚠ Fraud Ring!';
+      document.getElementById('gFraudLabel').style.color = 'var(--accent-red)';
+    } else {
+      document.getElementById('gFraudRings').style.color = 'var(--accent-green)';
+      document.getElementById('gFraudLabel').textContent = 'Fraud Ring';
+      document.getElementById('gFraudLabel').style.color = '';
+    }
+  } else {
+    // Fallback: fetch stats only
+    const data = await fetchJSON(API_BASE + '/api/v1/graph/stats');
+    if (!data) return;
+    const totalNodes = (data.device_count || 0) + (data.ip_count || 0) + (data.session_count || 0);
+    document.getElementById('kpiGraphNodes').textContent = totalNodes;
+    document.getElementById('kpiGraphEdges').textContent = (data.edges_count || 0) + ' edges';
+    document.getElementById('gDevices').textContent = data.device_count || 0;
+    document.getElementById('gIPs').textContent = data.ip_count || 0;
+    document.getElementById('gSessions').textContent = data.session_count || 0;
+    document.getElementById('gEdges').textContent = data.edges_count || 0;
+  }
+}
+
+async function fetchRecentTelemetry() {
+  const data = await fetchJSON(API_BASE + '/api/v1/telemetry/recent?limit=50');
+
+  if (data && data.sessions) {
+    // Dirty-check: only update if data actually changed
+    const newFingerprint = data.sessions.map(s => s.sessionId + '|' + s.verdict + '|' + s.bot_probability).join(';');
+    const oldFingerprint = allSessions.map(s => s.sessionId + '|' + s.verdict + '|' + s.bot_probability).join(';');
+
+    if (newFingerprint !== oldFingerprint) {
+      // Preserve selected session reference
+      const selectedId = selectedSession ? selectedSession.sessionId : null;
+      allSessions = data.sessions;
+      // Re-find selectedSession in new data
+      if (selectedId) {
+        selectedSession = allSessions.find(s => s.sessionId === selectedId) || null;
+      }
+      renderTrafficTable();
+    }
+  }
+
+  const totalBuffered = (data && data.total_buffered) ? data.total_buffered : allSessions.length;
+
+  animateValue(document.getElementById('kpiTotalSessions'), totalBuffered);
+  document.getElementById('kpiTotalExtra').textContent = allSessions.length + ' phiên gần nhất';
+  document.getElementById('trafficCount').textContent = allSessions.length + ' sessions';
+
+  // Compute KPI stats
+  let humans = 0, bots = 0, suspects = 0;
+  allSessions.forEach(s => {
+    const v = (s.verdict || '').toUpperCase();
+    if (v === 'HUMAN') humans++;
+    else if (v === 'BOT') bots++;
+    else suspects++;
+  });
+
+  const total = allSessions.length || 1;
+  animateValue(document.getElementById('kpiHumanCount'), humans);
+  document.getElementById('kpiHumanRate').textContent = (humans / total * 100).toFixed(1) + '% tỷ lệ';
+  animateValue(document.getElementById('kpiBotCount'), bots);
+  document.getElementById('kpiBotRate').textContent = (bots / total * 100).toFixed(1) + '% tỷ lệ';
+  animateValue(document.getElementById('kpiSuspectCount'), suspects);
+  document.getElementById('kpiSuspectRate').textContent = (suspects / total * 100).toFixed(1) + '% tỷ lệ';
+}
+
+// ──── Traffic Table (flicker-free) ────
+let _lastTableHTML = '';
+function renderTrafficTable() {
+  const tbody = document.getElementById('trafficBody');
+  if (allSessions.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Đang chờ dữ liệu telemetry — hãy mở http://159.223.91.163 trên tab khác và di chuột, hoặc bấm "Giả lập Bot"</td></tr>';
+    _lastTableHTML = '';
+    return;
+  }
+
+  const selectedId = selectedSession ? selectedSession.sessionId : null;
+
+  const newHTML = allSessions.map((s, idx) => {
+    const v = (s.verdict || 'UNKNOWN').toUpperCase();
+    const prob = s.bot_probability || 0;
+    const probPct = (prob * 100).toFixed(1);
+    const bd = s.breakdown || {};
+    const lstmScore = (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
+    const tabScore = (bd.tabular_score !== undefined) ? (bd.tabular_score * 100).toFixed(1) : '--';
+    const mousePoints = s.mouse_points_captured || 0;
+
+    let verdictClass = 'verdict-suspect';
+    let rowClass = '';
+    if (v === 'HUMAN') verdictClass = 'verdict-human';
+    else if (v === 'BOT') { verdictClass = 'verdict-bot'; rowClass = 'row-bot'; }
+    else rowClass = 'row-suspect';
+
+    let barColor = 'var(--accent-green)';
+    if (prob > 0.7) barColor = 'var(--accent-red)';
+    else if (prob > 0.4) barColor = 'var(--accent-orange)';
+
+    const timeStr = s.received_at ? new Date(s.received_at).toLocaleTimeString('vi-VN', {hour12: false}) : '--';
+    const ip = s.client_ip || '--';
+    const page = s.pageUrl ? s.pageUrl.replace(/https?:\/\/[^\/]+/, '') || '/' : '--';
+    const isSelected = s.sessionId === selectedId;
+
+    return `<tr class="${rowClass}" data-idx="${idx}" onclick="selectSession(${idx})" style="cursor:pointer;${isSelected ? 'outline:1px solid var(--accent-cyan)' : ''}" title="Bấm để xem phân tích chi tiết">
+      <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
+      <td><span class="ip-text">${escapeHtml(ip)}</span></td>
+      <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
+      <td><span class="verdict-badge ${verdictClass}">${v === 'HUMAN' ? '✓' : v === 'BOT' ? '✕' : '?'} ${v}</span></td>
+      <td>
+        <div class="risk-bar-container">
+          <div class="risk-bar-fill" style="width:${probPct}%;background:${barColor}"></div>
+        </div>
+        <div class="risk-pct" style="color:${barColor}">${probPct}%</div>
+      </td>
+      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${mousePoints > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)'}">${mousePoints}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(lstmScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${lstmScore}%</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(tabScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${tabScore}%</span></td>
+      <td>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx});" title="Xem hồ sơ phân tích">🔍 Hồ sơ</button>
+          <button class="delete-btn" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa">✕</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Only update DOM if content actually changed (prevent flicker)
+  if (newHTML !== _lastTableHTML) {
+    tbody.innerHTML = newHTML;
+    _lastTableHTML = newHTML;
+  }
+}
+
+// ──── Session Selection ────
+async function selectSession(idx) {
+  selectedSession = allSessions[idx];
+  if (!selectedSession) return;
+
+  // Highlight selected row
+  document.querySelectorAll('.traffic-table tbody tr').forEach(r => r.style.outline = 'none');
+  const row = document.querySelector(`tr[data-idx="${idx}"]`);
+  if (row) row.style.outline = '1px solid var(--accent-cyan)';
+
+  updateModelBars(selectedSession);
+  updateGauge(selectedSession);
+  updateReasons(selectedSession);
+
+  // Fetch raw mouse records for accurate trajectory rendering
+  let rawMouse = null;
+  if (selectedSession.sessionId) {
+    const rawData = await fetchJSON(API_BASE + '/api/v1/telemetry/raw/' + encodeURIComponent(selectedSession.sessionId));
+    if (rawData && rawData.mouse) {
+      rawMouse = rawData.mouse;
+    }
+  }
+  drawTrajectory(selectedSession, rawMouse);
+
+  // Open drawer with comprehensive details
+  openSessionDrawer(idx, rawMouse);
+}
+
+function closeDrawer() {
+  const drawer = document.getElementById('sessionDrawer');
+  if (drawer) drawer.classList.remove('open');
+}
+
+function openDrawer() {
+  const drawer = document.getElementById('sessionDrawer');
+  if (drawer) drawer.classList.add('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+async function deleteCurrentDrawerSession() {
+  if (!selectedSession) return;
+  const sid = selectedSession.sessionId;
+  const idx = allSessions.findIndex(s => s.sessionId === sid);
+  await deleteSession(sid, idx >= 0 ? idx : 0);
+  closeDrawer();
+}
+
+async function openSessionDrawer(idx, preloadedMouse = null) {
+  const s = allSessions[idx];
+  if (!s) return;
+  selectedSession = s;
+
+  openDrawer();
+
+  // 1. Overview
+  document.getElementById('drawerSessionId').textContent = s.sessionId || '--';
+  document.getElementById('dSessionId').textContent = s.sessionId || '--';
+  document.getElementById('dVisitorId').textContent = s.visitorId || 'Chưa khởi tạo';
+  document.getElementById('dClientIP').textContent = s.client_ip || '--';
+  document.getElementById('dPageUrl').textContent = s.pageUrl || '--';
+
+  const timeVal = s.received_at || s.created_at || s.updated_at;
+  document.getElementById('dTime').textContent = timeVal ? new Date(timeVal).toLocaleString('vi-VN') : '--';
+  document.getElementById('dMousePoints').textContent = (s.mouse_points_captured || 0) + ' điểm';
+
+  // Fetch full detail document from MongoDB if needed
+  let detail = null;
+  try {
+    detail = await fetchJSON(API_BASE + '/api/v1/sessions/' + encodeURIComponent(s.sessionId) + '/detail');
+  } catch(e) {}
+
+  const dataObj = detail || s;
+  const v = (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
+  const prob = (dataObj.bot_probability !== undefined) ? dataObj.bot_probability : (s.bot_probability || 0);
+  const conf = (dataObj.confidence !== undefined) ? dataObj.confidence : (s.confidence || 0);
+  const bd = dataObj.breakdown || s.breakdown || {};
+  const reasons = dataObj.reasons || s.reasons || [];
+  const fp = dataObj.fingerprint || s.fingerprint || {};
+  const botd = dataObj.botd || s.botd || {};
+  const botdDetectors = botd.detectors || {};
+  const mouseStats = dataObj.mouse_stats || s.mouse_stats || {};
+
+  // 2. Verdict Hero
+  const hero = document.getElementById('dVerdictHero');
+  hero.className = 'verdict-hero ' + (v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect');
+  document.getElementById('dVerdictBadge').textContent = (v === 'HUMAN' ? '✓ HUMAN' : v === 'BOT' ? '✕ BOT' : '? SUSPECT');
+  document.getElementById('dBotProb').textContent = (prob * 100).toFixed(1) + '%';
+  document.getElementById('dBotProb').style.color = v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
+  document.getElementById('dConfBar').style.width = (conf * 100).toFixed(0) + '%';
+  document.getElementById('dConfValue').textContent = (conf * 100).toFixed(0) + '%';
+
+  // Verdict Explain in Vietnamese
+  let explainText = '';
+  if (v === 'BOT') {
+    explainText = `<strong>Hệ thống kết luận là BOT (Xác suất ${(prob * 100).toFixed(1)}%):</strong> `;
+    const flags = [];
+    if (botdDetectors.webdriver || botd.webDriver) flags.push('cờ tự động hóa navigator.webdriver = true');
+    if (botdDetectors.headlessUa || botdDetectors.headless || botd.headless) flags.push('môi trường trình duyệt Headless');
+    if (botdDetectors.distinctiveProperties || botd.automationTool) flags.push('công cụ Selenium/Puppeteer/Playwright');
+    if (bd.behavioral_lstm_score > 0.5) flags.push(`quỹ đạo chuột thẳng tắp máy móc (LSTM: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%)`);
+    if (bd.tabular_score > 0.5) flags.push(`thông số phần cứng giả mạo (XGBoost: ${(bd.tabular_score * 100).toFixed(1)}%)`);
+    if (flags.length > 0) {
+      explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
+    } else {
+      explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng an toàn 70%.';
+    }
+  } else if (v === 'HUMAN') {
+    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Mọi kiểm tra bảo mật đều hợp lệ. `;
+    if (s.mouse_points_captured > 5) {
+      explainText += `Hành vi di chuột có tính ngẫu nhiên sinh học tự nhiên, gia tốc biến thiên hợp lý (LSTM: ${((bd.behavioral_lstm_score||0)*100).toFixed(1)}%). Không phát hiện cờ tự động hóa.`;
+    } else {
+      explainText += 'Môi trường trình duyệt hoàn chỉnh, các thuộc tính phần cứng và plugin đồng nhất.';
+    }
+  } else {
+    explainText = `<strong>Hệ thống xếp loại NGHI VẤN (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới (45% - 70%). Chưa phát hiện cờ bot nghiêm trọng nhưng hành vi chưa đủ dữ liệu để khẳng định người thật.`;
+  }
+  document.getElementById('dVerdictExplain').innerHTML = explainText;
+
+  // 3. Model Breakdown & Fusion
+  const lstmScore = (bd.behavioral_lstm_score !== undefined) ? bd.behavioral_lstm_score : 0;
+  const tabScore = (bd.tabular_score !== undefined) ? bd.tabular_score : 0;
+  const heurScore = (bd.heuristic_score !== undefined) ? bd.heuristic_score : 0;
+  const weights = bd.weights_used || { w_lstm: 0.35, w_tabular: 0.40, w_heuristic: 0.25 };
+
+  const barL = document.getElementById('dBarLSTM');
+  barL.style.width = (lstmScore * 100) + '%';
+  barL.style.background = lstmScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-cyan)';
+  document.getElementById('dScoreLSTM').textContent = (lstmScore * 100).toFixed(1) + '%';
+  document.getElementById('dWeightLSTM').textContent = ((weights.w_lstm || 0) * 100).toFixed(0) + '%';
+
+  const barT = document.getElementById('dBarTab');
+  barT.style.width = (tabScore * 100) + '%';
+  barT.style.background = tabScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-purple)';
+  document.getElementById('dScoreTab').textContent = (tabScore * 100).toFixed(1) + '%';
+  document.getElementById('dWeightTab').textContent = ((weights.w_tabular || 0) * 100).toFixed(0) + '%';
+
+  const barH = document.getElementById('dBarHeur');
+  barH.style.width = (heurScore * 100) + '%';
+  barH.style.background = heurScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-orange)';
+  document.getElementById('dScoreHeur').textContent = (heurScore * 100).toFixed(1) + '%';
+  document.getElementById('dWeightHeur').textContent = ((weights.w_heuristic || 0) * 100).toFixed(0) + '%';
+
+  const sumW = (weights.w_lstm || 0) + (weights.w_tabular || 0) + (weights.w_heuristic || 0) || 1;
+  document.getElementById('dFusionResult').innerHTML =
+    `<span style="color:var(--text-muted)">Tính toán Fusion:</span> ` +
+    `(${((weights.w_lstm||0)).toFixed(2)}×${lstmScore.toFixed(2)} + ${((weights.w_tabular||0)).toFixed(2)}×${tabScore.toFixed(2)} + ${((weights.w_heuristic||0)).toFixed(2)}×${heurScore.toFixed(2)}) / ${sumW.toFixed(2)} = ` +
+    `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${(prob * 100).toFixed(1)}% → ${v}</span>`;
+
+  // 4. Detection Reasons
+  const reasonsDiv = document.getElementById('dReasonsList');
+  if (reasons.length === 0) {
+    reasonsDiv.innerHTML = `<div class="reason-none">✓ Không phát hiện bất thường nào.</div>`;
+  } else {
+    reasonsDiv.innerHTML = reasons.map(r => {
+      const reason = String(r);
+      const isCrit = reason.toLowerCase().includes('critical') || reason.toLowerCase().includes('webdriver');
+      return `<div class="drawer-reason-item ${isCrit ? 'critical' : ''}">
+        <span class="drawer-reason-icon">${isCrit ? '🚨' : '⚠️'}</span>
+        <span>${escapeHtml(reason)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // 5. Mouse Stats (handle both camelCase from JS collector and snake_case)
+  const mousePts = dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.pointCount || 0;
+  document.getElementById('dMouseCount').textContent = mousePts;
+  const avgSpd = mouseStats.avg_speed || mouseStats.avgSpeed || null;
+  const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
+  const avgAcc = mouseStats.avg_accel || mouseStats.avgAccel || null;
+  const straight = mouseStats.straightness;
+  document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(1) + ' px/s') : '--';
+  document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(1) + ' px/s') : '--';
+  document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(1) + ' px/s²') : '--';
+  document.getElementById('dMouseStraight').textContent = (straight !== undefined && straight !== null) ? Number(straight).toFixed(2) : '--';
+  document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || (mouseStats.hasEnoughData ? Math.max(1, Math.floor(mousePts / 24)) : Math.max(0, Math.floor(mousePts / 24)));
+
+  // 6. Fingerprint Grid
+  const fpGrid = document.getElementById('dFingerprintGrid');
+  const fpFields = [
+    { label: 'Hệ điều hành / Platform', value: fp.platform || '--' },
+    { label: 'Độ phân giải màn hình', value: fp.screenResolution ? (Array.isArray(fp.screenResolution) ? `${fp.screenResolution[0]} × ${fp.screenResolution[1]}` : String(fp.screenResolution).replace('x', ' × ')) : '--' },
+    { label: 'Số lõi CPU (Concurrency)', value: fp.hardwareConcurrency || '--' },
+    { label: 'Bộ nhớ RAM (Device Memory)', value: (fp.deviceMemory ? fp.deviceMemory + ' GB' : '--') },
+    { label: 'Ngôn ngữ trình duyệt', value: (fp.languages ? (Array.isArray(fp.languages) ? fp.languages.join(', ') : String(fp.languages)) : '--') },
+    { label: 'Múi giờ (Timezone)', value: fp.timezone || '--' },
+    { label: 'Canvas Hash', value: fp.canvasHash ? String(fp.canvasHash).substring(0, 16) + '...' : '--' },
+    { label: 'Audio Hash', value: fp.audioHash ? String(fp.audioHash).substring(0, 16) + '...' : '--' },
+    { label: 'WebGL Renderer', value: fp.webglRenderer || '--' },
+    { label: 'Touch Support', value: (fp.maxTouchPoints && fp.maxTouchPoints > 0) ? `Có (${fp.maxTouchPoints} điểm)` : 'Không (Chuột)' },
+  ];
+  fpGrid.innerHTML = fpFields.map(f => `
+    <div class="drawer-field">
+      <div class="drawer-field-label">${escapeHtml(f.label)}</div>
+      <div class="drawer-field-value mono">${escapeHtml(f.value)}</div>
+    </div>
+  `).join('');
+
+  // 7. BotD Detectors
+  const detList = document.getElementById('dDetectorsList');
+  const detectors = [
+    { name: 'navigator.webdriver', flagged: !!(botdDetectors.webdriver || botd.webDriver), desc: 'Cờ tự động hóa WebDriver chuẩn W3C' },
+    { name: 'Headless Browser', flagged: !!(botdDetectors.headlessUa || botdDetectors.headless || botd.headless), desc: 'Chạy không giao diện đồ họa' },
+    { name: 'Automation Tool', flagged: !!(botdDetectors.distinctiveProperties || botd.automationTool), desc: 'Selenium, Puppeteer, Playwright' },
+    { name: 'PhantomJS', flagged: !!botd.phantomJS, desc: 'Phantom runtime' },
+    { name: 'Plugins Empty', flagged: botd.pluginsLength === 0, desc: 'Danh sách plugin rỗng bất thường' },
+    { name: 'Languages Missing', flagged: !fp.languages || fp.languages.length === 0, desc: 'Không có thông tin ngôn ngữ' },
+    { name: 'Screen Inconsistency', flagged: fp.screenResolution && (fp.screenResolution[0] === 0 || fp.screenResolution[1] === 0), desc: 'Độ phân giải 0x0' },
+    { name: 'DevTools Opened', flagged: !!botd.devtools, desc: 'Công cụ gỡ lỗi DevTools' },
+  ];
+  detList.innerHTML = detectors.map(d => `
+    <div class="detector-badge ${d.flagged ? 'flagged' : 'safe'}" title="${d.desc}">
+      <span>${d.flagged ? '✕' : '✓'}</span>
+      <span>${d.name}</span>
+      <span style="opacity:0.6;font-size:0.62rem">(${d.flagged ? 'PHÁT HIỆN' : 'HỢP LỆ'})</span>
+    </div>
+  `).join('');
+}
+
+function updateModelBars(s) {
+  const bd = s.breakdown || {};
+  const lstm = (bd.behavioral_lstm_score || 0) * 100;
+  const tab = (bd.tabular_score || 0) * 100;
+  const heur = (bd.heuristic_score || 0) * 100;
+
+  document.getElementById('barLSTM').style.width = lstm + '%';
+  document.getElementById('valLSTM').textContent = lstm.toFixed(1) + '%';
+  document.getElementById('barTabular').style.width = tab + '%';
+  document.getElementById('valTabular').textContent = tab.toFixed(1) + '%';
+  document.getElementById('barHeuristic').style.width = heur + '%';
+  document.getElementById('valHeuristic').textContent = heur.toFixed(1) + '%';
+
+  const w = bd.weights_used || {};
+  document.getElementById('weightsInfo').textContent =
+    `LSTM: ${((w.w_lstm || 0) * 100).toFixed(0)}% | Tab: ${((w.w_tabular || 0) * 100).toFixed(0)}% | Heur: ${((w.w_heuristic || 0) * 100).toFixed(0)}%`;
+}
+
+function updateGauge(s) {
+  const prob = (s.bot_probability || 0);
+  const pct = prob * 100;
+  const arcLength = 188.5;
+  const offset = arcLength * (1 - prob);
+
+  document.getElementById('gaugeArc').setAttribute('stroke-dashoffset', offset);
+  document.getElementById('gaugeValue').textContent = pct.toFixed(1) + '%';
+
+  const v = (s.verdict || '').toUpperCase();
+  const label = v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? '⚠ BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
+  document.getElementById('gaugeLabel').textContent = label;
+  document.getElementById('gaugeLabel').style.fill =
+    v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
+}
+
+function updateReasons(s) {
+  const reasons = s.reasons || [];
+  const container = document.getElementById('reasonsList');
+
+  if (reasons.length === 0) {
+    const v = (s.verdict || '').toUpperCase();
+    if (v === 'HUMAN') {
+      container.innerHTML = '<div class="empty-state" style="color:var(--accent-green)">✓ Phiên này an toàn — không phát hiện dấu hiệu bot</div>';
+    } else {
+      container.innerHTML = '<div class="empty-state">Không có lý do cụ thể</div>';
+    }
+    return;
+  }
+
+  container.innerHTML = reasons.map(r => {
+    const reason = String(r);
+    const isCrit = reason.toLowerCase().includes('critical') || reason.toLowerCase().includes('webdriver');
+    return `<div class="reason-item">
+      <span class="reason-icon ${isCrit ? 'crit' : 'warn'}">${isCrit ? '🚨' : '⚠️'}</span>
+      <span>${escapeHtml(reason)}</span>
+    </div>`;
+  }).join('');
+}
+
+// ──── Mouse Trajectory Drawing ────
+function drawTrajectory(s, rawMouse) {
+  const canvas = document.getElementById('trajectoryCanvas');
+  const ctx = canvas.getContext('2d');
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * 2;
+  canvas.height = rect.height * 2;
+  ctx.scale(2, 2);
+  const w = rect.width;
+  const h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw grid
+  ctx.strokeStyle = 'rgba(77, 124, 254, 0.06)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < w; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+  for (let y = 0; y < h; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+  const bd = s.breakdown || {};
+  const mousePoints = s.mouse_points_captured || 0;
+  const lstmScore = bd.behavioral_lstm_score || 0;
+  const isBot = lstmScore > 0.5;
+
+  document.getElementById('trajSession').textContent = 'Session: ' + (s.sessionId || '--').substring(0, 24);
+  document.getElementById('trajPoints').textContent = mousePoints + ' điểm';
+
+  if (mousePoints === 0) {
+    ctx.fillStyle = 'rgba(139, 149, 176, 0.4)';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Không có dữ liệu chuột cho phiên này', w / 2, h / 2);
+    return;
+  }
+
+  // Extract real mouse records from raw telemetry
+  let realRecords = [];
+  if (rawMouse) {
+    realRecords = rawMouse.records || rawMouse.trajectory || [];
+  }
+
+  const points = [];
+
+  if (realRecords.length > 1) {
+    // Use REAL mouse data — scale normalized x/y (0..1) to canvas
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    realRecords.forEach(r => {
+      const rx = r.x !== undefined ? r.x : 0;
+      const ry = r.y !== undefined ? r.y : 0;
+      if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
+      if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
+    });
+
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const padX = 25, padY = 20;
+
+    // Limit to last 120 records for performance
+    const records = realRecords.slice(-120);
+    records.forEach(r => {
+      const rx = r.x !== undefined ? r.x : 0;
+      const ry = r.y !== undefined ? r.y : 0;
+      points.push({
+        x: padX + ((rx - minX) / rangeX) * (w - padX * 2),
+        y: padY + ((ry - minY) / rangeY) * (h - padY * 2),
+        speed: r.speed || 0,
+        accel: r.accel || 0,
+      });
+    });
+  } else {
+    // Fallback: generate representative trajectory from LSTM score
+    const numPts = Math.min(mousePoints, 50);
+    if (isBot) {
+      for (let i = 0; i < numPts; i++) {
+        points.push({
+          x: 20 + (w - 40) * (i / numPts),
+          y: 20 + (h - 40) * (i / numPts) + (Math.random() < 0.1 ? Math.random() * 20 : 0),
+          speed: 0, accel: 0,
+        });
+      }
+    } else {
+      let cx = 30, cy = h * 0.3;
+      for (let i = 0; i < numPts; i++) {
+        const t = i / numPts;
+        cx += (w - 60) / numPts + Math.sin(t * 8) * 3;
+        cy += Math.sin(t * 4 + 1) * 8 + (Math.random() - 0.5) * 4;
+        cy = Math.max(15, Math.min(h - 15, cy));
+        points.push({ x: cx, y: cy, speed: 0, accel: 0 });
+      }
+    }
+  }
+
+  // Draw path with smooth curve
+  if (points.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const midX = (prev.x + curr.x) / 2;
+      const midY = (prev.y + curr.y) / 2;
+      ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+    }
+    ctx.strokeStyle = isBot ? 'rgba(255, 61, 113, 0.7)' : 'rgba(0, 229, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Glow effect
+    ctx.strokeStyle = isBot ? 'rgba(255, 61, 113, 0.15)' : 'rgba(0, 229, 255, 0.12)';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+  }
+
+  // Draw individual points with progressive opacity
+  points.forEach((p, i) => {
+    const alpha = 0.3 + (i / points.length) * 0.7;
+    const radius = (i === points.length - 1) ? 4 : (p.speed > 2 ? 3 : 2);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = isBot
+      ? `rgba(255, 61, 113, ${alpha})`
+      : `rgba(0, 229, 255, ${alpha})`;
+    ctx.fill();
+  });
+
+  // Start marker
+  ctx.beginPath();
+  ctx.arc(points[0].x, points[0].y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0, 230, 118, 0.85)';
+  ctx.fill();
+  ctx.fillStyle = '#0a0e1a';
+  ctx.font = 'bold 7px Inter';
+  ctx.textAlign = 'center';
+  ctx.fillText('S', points[0].x, points[0].y + 2.5);
+
+  // End marker
+  const last = points[points.length - 1];
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = isBot ? 'rgba(255, 61, 113, 0.9)' : 'rgba(77, 124, 254, 0.9)';
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillText('E', last.x, last.y + 2.5);
+
+  // Legend
+  ctx.fillStyle = 'rgba(139, 149, 176, 0.6)';
+  ctx.font = '9px Inter';
+  ctx.textAlign = 'left';
+  const dataSource = realRecords.length > 1 ? 'Dữ liệu thật' : 'Mô phỏng';
+  const lstmLabel = `LSTM: ${(lstmScore * 100).toFixed(1)}% | ${dataSource} | ${isBot ? '🤖 Quỹ đạo robot' : '✓ Quỹ đạo cơ sinh học'}`;
+  ctx.fillText(lstmLabel, 8, h - 8);
+}
+
+// ──── Chart.js: Donut Distribution ────
+let donutChart = null;
+function initDonutChart() {
+  const ctx = document.getElementById('donutChart').getContext('2d');
+  donutChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Người thật', 'Bot', 'Nghi vấn'],
+      datasets: [{
+        data: [1, 0, 0],
+        backgroundColor: ['#00e676', '#ff3d71', '#ff9100'],
+        borderColor: ['rgba(0,230,118,0.3)', 'rgba(255,61,113,0.3)', 'rgba(255,145,0,0.3)'],
+        borderWidth: 2,
+        hoverBorderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: '#8b95b0',
+            font: { family: 'Inter', size: 11, weight: '500' },
+            padding: 12,
+            usePointStyle: true,
+            pointStyleWidth: 8,
+          }
+        },
+        tooltip: {
+          backgroundColor: '#1a1f35',
+          titleColor: '#e8ecf4',
+          bodyColor: '#8b95b0',
+          borderColor: 'rgba(99,117,171,0.3)',
+          borderWidth: 1,
+          cornerRadius: 10,
+          padding: 10,
+          bodyFont: { family: 'JetBrains Mono', size: 12 },
+        }
+      },
+      animation: { animateScale: true, animateRotate: true },
+    }
+  });
+}
+
+// ──── Chart.js: Timeline Traffic Flow by Time Intervals ────
+let timelineChart = null;
+const MAX_TIMELINE_INTERVALS = 15;
+
+function initTimelineChart() {
+  const ctx = document.getElementById('timelineChart').getContext('2d');
+  timelineChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: 'Người thật',
+          data: [],
+          backgroundColor: 'rgba(0, 230, 118, 0.6)',
+          borderRadius: { topLeft: 3, topRight: 3 },
+          borderSkipped: false,
+          barPercentage: 0.65,
+          stack: 'traffic',
+        },
+        {
+          label: 'Nghi vấn',
+          data: [],
+          backgroundColor: 'rgba(255, 145, 0, 0.6)',
+          borderRadius: 0,
+          borderSkipped: false,
+          barPercentage: 0.65,
+          stack: 'traffic',
+        },
+        {
+          label: 'Bot',
+          data: [],
+          backgroundColor: 'rgba(255, 61, 113, 0.7)',
+          borderRadius: { topLeft: 3, topRight: 3 },
+          borderSkipped: false,
+          barPercentage: 0.65,
+          stack: 'traffic',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          stacked: true,
+          display: true,
+          grid: { color: 'rgba(99,117,171,0.06)' },
+          ticks: { color: '#5a6580', font: { family: 'JetBrains Mono', size: 9 }, maxRotation: 0 },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          grid: { color: 'rgba(99,117,171,0.08)' },
+          ticks: {
+            color: '#5a6580',
+            font: { family: 'JetBrains Mono', size: 10 },
+            stepSize: 1,
+            callback: v => Number.isInteger(v) ? v : '',
+          },
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: {
+            color: '#8b95b0',
+            font: { family: 'Inter', size: 10, weight: '500' },
+            padding: 10,
+            usePointStyle: true,
+            pointStyleWidth: 8,
+            boxWidth: 6,
+          }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          backgroundColor: '#1a1f35',
+          titleColor: '#e8ecf4',
+          bodyColor: '#8b95b0',
+          borderColor: 'rgba(99,117,171,0.3)',
+          borderWidth: 1,
+          cornerRadius: 10,
+          bodyFont: { family: 'JetBrains Mono', size: 11 },
+          callbacks: {
+            footer: items => {
+              const total = items.reduce((sum, i) => sum + i.parsed.y, 0);
+              return `Tổng: ${total} phiên`;
+            }
+          }
+        }
+      },
+      animation: { duration: 400 },
+    }
+  });
+}
+
+function updateCharts() {
+  if (!donutChart || !timelineChart) return;
+
+  let humans = 0, bots = 0, suspects = 0;
+  allSessions.forEach(s => {
+    const v = (s.verdict || '').toUpperCase();
+    if (v === 'HUMAN') humans++;
+    else if (v === 'BOT') bots++;
+    else suspects++;
+  });
+
+  donutChart.data.datasets[0].data = [humans, bots, suspects];
+  donutChart.update('none');
+
+  // Group sessions into time intervals (per-minute buckets)
+  const buckets = new Map(); // key: "HH:MM" -> { human, bot, suspect }
+
+  allSessions.forEach(s => {
+    if (!s.received_at) return;
+    const d = new Date(s.received_at);
+    const key = d.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    if (!buckets.has(key)) buckets.set(key, { human: 0, bot: 0, suspect: 0 });
+    const b = buckets.get(key);
+    const v = (s.verdict || '').toUpperCase();
+    if (v === 'HUMAN') b.human++;
+    else if (v === 'BOT') b.bot++;
+    else b.suspect++;
+  });
+
+  // Take last N intervals
+  const entries = Array.from(buckets.entries()).slice(-MAX_TIMELINE_INTERVALS);
+
+  timelineChart.data.labels = entries.map(e => e[0]);
+  timelineChart.data.datasets[0].data = entries.map(e => e[1].human);
+  timelineChart.data.datasets[1].data = entries.map(e => e[1].suspect);
+  timelineChart.data.datasets[2].data = entries.map(e => e[1].bot);
+  timelineChart.update('none');
+}
+
+// ──── Animated Counter ────
+function animateValue(el, newVal) {
+  const old = parseInt(el.textContent) || 0;
+  if (old === newVal) return;
+  el.textContent = newVal;
+  el.classList.add('bump');
+  setTimeout(() => el.classList.remove('bump'), 300);
+}
+
+// ──── Alert Banner ────
+let lastBotCount = 0;
+function checkAlerts() {
+  let bots = 0;
+  allSessions.forEach(s => { if ((s.verdict || '').toUpperCase() === 'BOT') bots++; });
+
+  if (bots > lastBotCount && bots > 0) {
+    const banner = document.getElementById('alertBanner');
+    banner.classList.add('show');
+    document.getElementById('alertText').textContent =
+      `🚨 Phát hiện ${bots} phiên Bot! Hệ thống đang theo dõi hoạt động đáng ngờ.`;
+    document.getElementById('alertTime').textContent =
+      new Date().toLocaleTimeString('vi-VN', { hour12: false });
+
+    // Auto-hide after 8 seconds
+    setTimeout(() => banner.classList.remove('show'), 8000);
+  }
+  lastBotCount = bots;
+}
+
+// ──── Delete Session(s) ────
+async function deleteSession(sessionId, idx) {
+  try {
+    const res = await fetch(API_BASE + '/api/v1/sessions/' + encodeURIComponent(sessionId), {
+      method: 'DELETE', headers: adminHeaders()
+    });
+    if (res.status === 401) sessionStorage.removeItem('bot_admin_token');
+    if (res.ok) {
+      // Remove by sessionId (more reliable than index which can shift)
+      allSessions = allSessions.filter(s => s.sessionId !== sessionId);
+      if (selectedSession && selectedSession.sessionId === sessionId) {
+        selectedSession = null;
+      }
+      _lastTableHTML = ''; // Force re-render
+      renderTrafficTable();
+      updateCharts();
+      // Update KPIs immediately
+      let humans = 0, bots = 0, suspects = 0;
+      allSessions.forEach(s => {
+        const v = (s.verdict || '').toUpperCase();
+        if (v === 'HUMAN') humans++;
+        else if (v === 'BOT') bots++;
+        else suspects++;
+      });
+      animateValue(document.getElementById('kpiTotalSessions'), allSessions.length);
+      animateValue(document.getElementById('kpiHumanCount'), humans);
+      animateValue(document.getElementById('kpiBotCount'), bots);
+      animateValue(document.getElementById('kpiSuspectCount'), suspects);
+    }
+  } catch(e) { console.error('Delete failed:', e); }
+}
+
+async function deleteSessionByIndex(idx) {
+  const session = allSessions[idx];
+  if (session) await deleteSession(session.sessionId, idx);
+}
+
+async function deleteAllSessions() {
+  if (!confirm('Xác nhận xóa TẤT CẢ sessions? Hành động này không thể hoàn tác.')) return;
+  try {
+    const res = await fetch(API_BASE + '/api/v1/sessions', {
+      method: 'DELETE', headers: adminHeaders()
+    });
+    if (res.status === 401) sessionStorage.removeItem('bot_admin_token');
+    if (res.ok) {
+      allSessions = [];
+      selectedSession = null;
+      _lastTableHTML = ''; // Force re-render
+      renderTrafficTable();
+      updateCharts();
+      animateValue(document.getElementById('kpiTotalSessions'), 0);
+      animateValue(document.getElementById('kpiHumanCount'), 0);
+      animateValue(document.getElementById('kpiBotCount'), 0);
+      animateValue(document.getElementById('kpiSuspectCount'), 0);
+      try { localStorage.removeItem('silkmoon_sessions'); } catch(e) {}
+    }
+  } catch(e) { console.error('Delete all failed:', e); }
+}
+
+// ──── Simulate Bot / Human ────
+async function simulateBot() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang gửi...';
+
+  try {
+    const payload = {
+      sessionId: 'sim_bot_' + Date.now(),
+      visitorId: 'fp_bot_sim',
+      action: 'telemetry',
+      timestamp: Date.now(),
+      pageUrl: 'http://159.223.91.163/san-pham',
+      fingerprint: { hardwareConcurrency: 1, deviceMemory: 1, screenResolution: [800, 600] },
+      botd: { automationTool: true, pluginsLength: 0, webDriver: true, headless: true },
+      mouse: { records: [] }
+    };
+
+    // Send to telemetry first, then detect
+    await fetch(API_BASE + '/api/v1/telemetry', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    await fetch(API_BASE + '/api/v1/detect', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+
+    // Immediately refresh
+    setTimeout(() => pollAll(), 500);
+  } catch(e) { console.error('Simulate bot error:', e); }
+
+  setTimeout(() => { btn.disabled = false; btn.textContent = '🤖 Giả lập Bot'; }, 2000);
+}
+
+async function simulateHuman() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Đang gửi...';
+
+  try {
+    const trajectory = [];
+    for (let i = 0; i < 15; i++) {
+      trajectory.push({
+        x: 100 + i * 25 + Math.sin(i * 0.7) * 15,
+        y: 200 + Math.sin(i * 0.5) * 40 + (Math.random() - 0.5) * 10,
+        time: i * 16 + Math.random() * 5,
+        type: 'move'
+      });
+    }
+
+    const payload = {
+      sessionId: 'sim_human_' + Date.now(),
+      visitorId: 'fp_human_sim',
+      action: 'telemetry',
+      timestamp: Date.now(),
+      pageUrl: 'http://159.223.91.163/',
+      fingerprint: { hardwareConcurrency: 8, deviceMemory: 16, screenResolution: [1920, 1080] },
+      botd: { automationTool: false, pluginsLength: 5, webDriver: false },
+      mouse: { records: trajectory }
+    };
+
+    await fetch(API_BASE + '/api/v1/telemetry', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    await fetch(API_BASE + '/api/v1/detect', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+
+    setTimeout(() => pollAll(), 500);
+  } catch(e) { console.error('Simulate human error:', e); }
+
+  setTimeout(() => { btn.disabled = false; btn.textContent = '✓ Giả lập Human'; }, 2000);
+}
+
+// ──── Enhanced Polling Loop ────
+async function pollAll() {
+  await Promise.all([
+    fetchHealth(),
+    fetchGraphStats(),
+    fetchRecentTelemetry(),
+  ]);
+  updateCharts();
+  checkAlerts();
+}
+
+// Initialize charts
+initDonutChart();
+initTimelineChart();
+initForceGraph();
+
+// Initial load
+pollAll();
+// Poll every 3 seconds
+setInterval(pollAll, POLL_INTERVAL);
+</script>
+
+</body>
+</html>

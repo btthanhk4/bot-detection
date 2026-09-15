@@ -1,5 +1,10 @@
 # BÁO CÁO QUÁ TRÌNH XÂY DỰNG & TỐI ƯU MÔ HÌNH PHÁT HIỆN BOT
 
+> **Lưu ý tái lập:** Các số liệu bên dưới là kết quả lịch sử. Pipeline hiện tại đã
+> sửa cách chia BiLSTM theo session để ngăn data leakage; cần chạy lại
+> `python -m core_ml.train` và `python -m core_ml.experiments.run_all` trên bộ dữ
+> liệu gốc trước khi dùng các số liệu này làm kết quả cuối cùng của khóa luận.
+
 > **Đề tài:** Xây dựng mô hình phân biệt bot và người truy cập trang web  
 > **Dataset:** Web Bot Detection Dataset (M4D-ITI) — Phase 1  
 > **Cập nhật lần cuối:** 2026-09-09

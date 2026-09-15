@@ -33,7 +33,7 @@ botdCode = stripEsModules(botdCode);
 mouseCode = stripEsModules(mouseCode);
 indexCode = stripEsModules(indexCode);
 
-const bundle = `(function (global, factory) {
+let bundle = `(function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
   typeof define === 'function' && define.amd ? define(factory) :
   (global = typeof globalThis !== 'undefined' ? globalThis : global || self, global.BotCollector = factory());
@@ -56,5 +56,6 @@ ${indexCode.split('\n').map(l => '  ' + l).join('\n')}
 `;
 
 const distPath = path.join(distDir, 'bot-collector.js');
+bundle = bundle.replace(/[ \t]+$/gm, '');
 fs.writeFileSync(distPath, bundle, 'utf-8');
 console.log(`Successfully built ${distPath} (${fs.statSync(distPath).size} bytes)`);
