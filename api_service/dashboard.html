@@ -1355,6 +1355,7 @@ const POLL_INTERVAL = 3000;
 let allSessions = [];
 let selectedSession = null;
 let readTokenPrompted = false;
+let sessionSelectionVersion = 0;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, ch => ({
@@ -1409,7 +1410,7 @@ async function fetchHealth() {
   if (data && data.status === 'healthy') {
     document.getElementById('statusDot').className = 'status-dot';
     const models = data.models_loaded || {};
-    const allLoaded = models.tabular && models.lstm && models.gnn;
+    const allLoaded = models.tabular && models.lstm && models.gnn_offline;
     document.getElementById('statusText').textContent =
       allLoaded ? 'All Models Online' : 'Partial Models';
   } else {
@@ -1849,30 +1850,33 @@ function renderTrafficTable() {
 
 // ──── Session Selection ────
 async function selectSession(idx) {
-  selectedSession = allSessions[idx];
-  if (!selectedSession) return;
+  const session = allSessions[idx];
+  if (!session) return;
+  selectedSession = session;
+  const selectionVersion = ++sessionSelectionVersion;
 
   // Highlight selected row
   document.querySelectorAll('.traffic-table tbody tr').forEach(r => r.style.outline = 'none');
   const row = document.querySelector(`tr[data-idx="${idx}"]`);
   if (row) row.style.outline = '1px solid var(--accent-cyan)';
 
-  updateModelBars(selectedSession);
-  updateGauge(selectedSession);
-  updateReasons(selectedSession);
+  updateModelBars(session);
+  updateGauge(session);
+  updateReasons(session);
 
   // Fetch raw mouse records for accurate trajectory rendering
   let rawMouse = null;
-  if (selectedSession.sessionId) {
-    const rawData = await fetchJSON(API_BASE + '/api/v1/telemetry/raw/' + encodeURIComponent(selectedSession.sessionId));
+  if (session.sessionId) {
+    const rawData = await fetchJSON(API_BASE + '/api/v1/telemetry/raw/' + encodeURIComponent(session.sessionId));
     if (rawData && rawData.mouse) {
       rawMouse = rawData.mouse;
     }
   }
-  drawTrajectory(selectedSession, rawMouse);
+  if (selectionVersion !== sessionSelectionVersion || selectedSession?.sessionId !== session.sessionId) return;
+  drawTrajectory(session, rawMouse);
 
   // Open drawer with comprehensive details
-  openSessionDrawer(idx, rawMouse);
+  openSessionDrawer(idx, rawMouse, session, selectionVersion);
 }
 
 function closeDrawer() {
@@ -1895,8 +1899,8 @@ async function deleteCurrentDrawerSession() {
   closeDrawer();
 }
 
-async function openSessionDrawer(idx, preloadedMouse = null) {
-  const s = allSessions[idx];
+async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = null, selectionVersion = sessionSelectionVersion) {
+  const s = sessionSnapshot || allSessions[idx];
   if (!s) return;
   selectedSession = s;
 
@@ -1918,6 +1922,7 @@ async function openSessionDrawer(idx, preloadedMouse = null) {
   try {
     detail = await fetchJSON(API_BASE + '/api/v1/sessions/' + encodeURIComponent(s.sessionId) + '/detail');
   } catch(e) {}
+  if (selectionVersion !== sessionSelectionVersion || selectedSession?.sessionId !== s.sessionId) return;
 
   const dataObj = detail || s;
   const v = (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
@@ -2148,84 +2153,68 @@ function drawTrajectory(s, rawMouse) {
   const lstmScore = bd.behavioral_lstm_score || 0;
   const isBot = lstmScore > 0.5;
 
-  document.getElementById('trajSession').textContent = 'Session: ' + (s.sessionId || '--').substring(0, 24);
-  document.getElementById('trajPoints').textContent = mousePoints + ' điểm';
-
-  if (mousePoints === 0) {
-    ctx.fillStyle = 'rgba(139, 149, 176, 0.4)';
-    ctx.font = '12px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Không có dữ liệu chuột cho phiên này', w / 2, h / 2);
-    return;
-  }
-
   // Extract real mouse records from raw telemetry
   let realRecords = [];
   if (rawMouse) {
-    realRecords = rawMouse.records || rawMouse.trajectory || [];
+    const rawRecords = rawMouse.records || rawMouse.trajectory || [];
+    realRecords = rawRecords
+      .filter(r => r && (!r.type || r.type === 'move') && Number.isFinite(Number(r.x)) && Number.isFinite(Number(r.y)))
+      .map((r, index) => ({ ...r, x: Number(r.x), y: Number(r.y), _index: index }))
+      .sort((a, b) => {
+        const aTime = Number(a.time ?? a.t);
+        const bTime = Number(b.time ?? b.t);
+        return Number.isFinite(aTime) && Number.isFinite(bTime) ? aTime - bTime : a._index - b._index;
+      });
+  }
+
+  document.getElementById('trajSession').textContent = 'Session: ' + (s.sessionId || '--').substring(0, 24);
+  document.getElementById('trajPoints').textContent = realRecords.length === mousePoints
+    ? mousePoints + ' điểm di chuyển'
+    : realRecords.length + ' điểm di chuyển / ' + mousePoints + ' sự kiện';
+
+  if (realRecords.length < 2) {
+    ctx.fillStyle = 'rgba(139, 149, 176, 0.55)';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Không đủ dữ liệu quỹ đạo chuột thô', w / 2, h / 2);
+    return;
   }
 
   const points = [];
+  // Draw only the latest stored move records and preserve their geometric proportions.
+  const records = realRecords.slice(-120);
+  const xs = records.map(r => r.x);
+  const ys = records.map(r => r.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rangeX = maxX - minX;
+  const rangeY = maxY - minY;
+  const padX = 25, padY = 20;
+  const scaleX = rangeX > 0 ? (w - padX * 2) / rangeX : Infinity;
+  const scaleY = rangeY > 0 ? (h - padY * 2) / rangeY : Infinity;
+  const scale = Math.min(scaleX, scaleY);
+  const safeScale = Number.isFinite(scale) ? scale : 1;
+  const drawnWidth = rangeX * safeScale;
+  const drawnHeight = rangeY * safeScale;
+  const offsetX = (w - drawnWidth) / 2;
+  const offsetY = (h - drawnHeight) / 2;
 
-  if (realRecords.length > 1) {
-    // Use REAL mouse data — scale normalized x/y (0..1) to canvas
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    realRecords.forEach(r => {
-      const rx = r.x !== undefined ? r.x : 0;
-      const ry = r.y !== undefined ? r.y : 0;
-      if (rx < minX) minX = rx; if (rx > maxX) maxX = rx;
-      if (ry < minY) minY = ry; if (ry > maxY) maxY = ry;
+  records.forEach(r => {
+    points.push({
+      x: rangeX > 0 ? offsetX + (r.x - minX) * safeScale : w / 2,
+      y: rangeY > 0 ? offsetY + (r.y - minY) * safeScale : h / 2,
+      speed: Number(r.speed) || 0,
+      accel: Number(r.accel) || 0,
     });
+  });
 
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    const padX = 25, padY = 20;
-
-    // Limit to last 120 records for performance
-    const records = realRecords.slice(-120);
-    records.forEach(r => {
-      const rx = r.x !== undefined ? r.x : 0;
-      const ry = r.y !== undefined ? r.y : 0;
-      points.push({
-        x: padX + ((rx - minX) / rangeX) * (w - padX * 2),
-        y: padY + ((ry - minY) / rangeY) * (h - padY * 2),
-        speed: r.speed || 0,
-        accel: r.accel || 0,
-      });
-    });
-  } else {
-    // Fallback: generate representative trajectory from LSTM score
-    const numPts = Math.min(mousePoints, 50);
-    if (isBot) {
-      for (let i = 0; i < numPts; i++) {
-        points.push({
-          x: 20 + (w - 40) * (i / numPts),
-          y: 20 + (h - 40) * (i / numPts) + (Math.random() < 0.1 ? Math.random() * 20 : 0),
-          speed: 0, accel: 0,
-        });
-      }
-    } else {
-      let cx = 30, cy = h * 0.3;
-      for (let i = 0; i < numPts; i++) {
-        const t = i / numPts;
-        cx += (w - 60) / numPts + Math.sin(t * 8) * 3;
-        cy += Math.sin(t * 4 + 1) * 8 + (Math.random() - 0.5) * 4;
-        cy = Math.max(15, Math.min(h - 15, cy));
-        points.push({ x: cx, y: cy, speed: 0, accel: 0 });
-      }
-    }
-  }
-
-  // Draw path with smooth curve
+  // Draw the measured path exactly; smoothing would alter the observed trajectory.
   if (points.length > 1) {
     ctx.beginPath();
     ctx.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) {
-      const prev = points[i - 1];
       const curr = points[i];
-      const midX = (prev.x + curr.x) / 2;
-      const midY = (prev.y + curr.y) / 2;
-      ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+      ctx.lineTo(curr.x, curr.y);
     }
     ctx.strokeStyle = isBot ? 'rgba(255, 61, 113, 0.7)' : 'rgba(0, 229, 255, 0.6)';
     ctx.lineWidth = 2;
@@ -2272,8 +2261,7 @@ function drawTrajectory(s, rawMouse) {
   ctx.fillStyle = 'rgba(139, 149, 176, 0.6)';
   ctx.font = '9px Inter';
   ctx.textAlign = 'left';
-  const dataSource = realRecords.length > 1 ? 'Dữ liệu thật' : 'Mô phỏng';
-  const lstmLabel = `LSTM: ${(lstmScore * 100).toFixed(1)}% | ${dataSource} | ${isBot ? '🤖 Quỹ đạo robot' : '✓ Quỹ đạo cơ sinh học'}`;
+  const lstmLabel = `LSTM: ${(lstmScore * 100).toFixed(1)}% | Dữ liệu thật | ${isBot ? 'Quỹ đạo đáng ngờ' : 'Quỹ đạo tự nhiên'}`;
   ctx.fillText(lstmLabel, 8, h - 8);
 }
 

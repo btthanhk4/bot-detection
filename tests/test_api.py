@@ -207,6 +207,15 @@ def test_get_bot_collector_sdk(client):
     assert "BotCollector" in res.text
 
 
+def test_dashboard_uses_only_real_mouse_trajectory(client):
+    res = client.get("/dashboard")
+    assert res.status_code == 200
+    assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
+    assert "sessionSelectionVersion" in res.text
+    assert "models.gnn_offline" in res.text
+    assert "Fallback: generate representative trajectory" not in res.text
+
+
 def test_invalid_telemetry_is_rejected(client):
     res = client.post("/api/v1/telemetry", content=b"not-json", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400
