@@ -45,6 +45,7 @@ from core_ml.features.mouse_features import (
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.train import deduplicate_real_sessions, assign_real_session_splits
 
 SEED = 42
 random.seed(SEED)
@@ -65,6 +66,25 @@ def build_full_vector(fp, bd, records):
     env_vec = extract_env_vector(fp, bd)
     mouse_vec = extract_mouse_stat_vector(records)
     return np.concatenate([env_vec, mouse_vec])
+
+
+def truncate_moves(records, max_points):
+    """Return the first valid mouse-move records without mutating the session."""
+    return [record for record in records if isinstance(record, dict) and record.get("type") == "move"][:max_points]
+
+
+def to_json_safe(value):
+    """Recursively convert numpy values and non-finite floats to strict JSON values."""
+    if isinstance(value, dict):
+        return {key: to_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return [to_json_safe(item) for item in value]
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        numeric = float(value)
+        return numeric if np.isfinite(numeric) else None
+    return value
 
 
 def eval_metrics(y_true, y_proba, threshold=0.5):
@@ -91,25 +111,20 @@ def prepare_data(dataset_root=None):
     all_telemetries = []
     all_labels = []
     all_records = []  # raw records for per-session analysis
+    all_splits = []
 
     # Real data (Phase 1 + Phase 2 with deduplication)
     real_sessions = []
     if os.path.isdir(real_root):
         for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
             sessions = load_real_dataset(real_root, scenario=scenario,
-                                          include_phase2=True)
+                                          include_phase2=True, with_metadata=True)
             real_sessions.extend(sessions)
-        # Deduplicate
-        seen = set()
-        unique_sessions = []
-        for records, label in real_sessions:
-            key = records_signature(records)
-            if key not in seen:
-                seen.add(key)
-                unique_sessions.append((records, label))
-        real_sessions = unique_sessions
+        real_sessions = deduplicate_real_sessions(real_sessions)
 
-    for records, label in real_sessions:
+    real_splits = assign_real_session_splits(real_sessions)
+    for session, split in zip(real_sessions, real_splits):
+        records, label = session.records, session.label
         chunks = records_to_chunks(records, chunk_size=24, stride=12)
         if len(chunks) > 10:
             chunks = random.sample(chunks, 10)
@@ -120,6 +135,7 @@ def prepare_data(dataset_root=None):
         all_telemetries.append(t)
         all_labels.append(label)
         all_records.append(records)
+        all_splits.append(split)
 
     # Synthetic (reduced count since real data is now larger)
     for _ in range(150):
@@ -127,6 +143,7 @@ def prepare_data(dataset_root=None):
         all_telemetries.append(t)
         all_labels.append(0)
         all_records.append(t["mouse"]["records"])
+        all_splits.append("train")
 
     for _ in range(150):
         level = random.choice(["naive", "moderate", "advanced"])
@@ -134,6 +151,7 @@ def prepare_data(dataset_root=None):
         all_telemetries.append(t)
         all_labels.append(1)
         all_records.append(t["mouse"]["records"])
+        all_splits.append("train")
 
     # Build feature matrices
     X_list = []
@@ -145,7 +163,19 @@ def prepare_data(dataset_root=None):
     X = np.nan_to_num(np.array(X_list, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
     y = np.array(all_labels, dtype=int)
 
-    return X, y, feature_names, all_records, all_telemetries
+    return X, y, feature_names, all_records, all_telemetries, np.asarray(all_splits)
+
+
+def get_experiment_indices(y, splits):
+    """Return one shared leakage-safe split for every comparable experiment."""
+    split_array = np.asarray(splits)
+    idx_test = np.flatnonzero(split_array == "test")
+    idx_train = np.flatnonzero(split_array != "test")
+    if len(idx_test) and len(idx_train) and len(np.unique(y[idx_test])) == 2:
+        return idx_train, idx_test
+    return train_test_split(
+        np.arange(len(y)), test_size=0.30, stratify=y, random_state=SEED
+    )
 
 
 def load_real_by_scenario(real_root, scenario, include_phase2=True):
@@ -182,12 +212,11 @@ def sessions_to_xy(sessions):
 # ============================================================
 # EXPERIMENT 1: Baseline Comparison
 # ============================================================
-def experiment_baseline(X, y, feature_names):
+def experiment_baseline(X, y, feature_names, idx_train, idx_test):
     print("\n" + "=" * 60)
     print("  E1: BASELINE COMPARISON (Rule-based vs ML)")
     print("=" * 60)
 
-    idx_train, idx_test = train_test_split(np.arange(len(y)), test_size=0.3, stratify=y, random_state=SEED)
     X_train, X_test = X[idx_train], X[idx_test]
     y_train, y_test = y[idx_train], y[idx_test]
 
@@ -303,12 +332,10 @@ def experiment_concept_drift(dataset_root=None):
 # ============================================================
 # EXPERIMENT 3: Feature Ablation
 # ============================================================
-def experiment_feature_ablation(X, y, feature_names):
+def experiment_feature_ablation(X, y, feature_names, idx_train, idx_test):
     print("\n" + "=" * 60)
     print("  E3: FEATURE ABLATION STUDY")
     print("=" * 60)
-
-    idx_train, idx_test = train_test_split(np.arange(len(y)), test_size=0.3, stratify=y, random_state=SEED)
 
     # Define feature groups
     env_names = list(ENV_FEATURE_NAMES)
@@ -343,21 +370,24 @@ def experiment_feature_ablation(X, y, feature_names):
 # ============================================================
 # EXPERIMENT 4: Class Imbalance
 # ============================================================
-def experiment_class_imbalance(X, y, feature_names):
+def experiment_class_imbalance(X, y, feature_names, idx_train, idx_test):
     print("\n" + "=" * 60)
     print("  E4: CLASS IMBALANCE ROBUSTNESS")
     print("=" * 60)
 
-    idx_human = np.where(y == 0)[0]
-    idx_bot = np.where(y == 1)[0]
+    idx_human = idx_train[y[idx_train] == 0]
+    idx_bot = idx_train[y[idx_train] == 1]
 
     # Fixed test set
-    n_test = min(40, len(idx_human) // 3, len(idx_bot) // 3)
-    test_h = np.random.choice(idx_human, n_test, replace=False)
-    test_b = np.random.choice(idx_bot, n_test, replace=False)
+    test_human = idx_test[y[idx_test] == 0]
+    test_bot = idx_test[y[idx_test] == 1]
+    n_test = min(40, len(test_human), len(test_bot))
+    rng = np.random.default_rng(SEED)
+    test_h = rng.choice(test_human, n_test, replace=False)
+    test_b = rng.choice(test_bot, n_test, replace=False)
     test_idx = np.concatenate([test_h, test_b])
-    train_pool_h = np.setdiff1d(idx_human, test_h)
-    train_pool_b = np.setdiff1d(idx_bot, test_b)
+    train_pool_h = idx_human
+    train_pool_b = idx_bot
 
     ratios = [("1:1", 1.0), ("1:3", 3.0), ("1:5", 5.0), ("1:10", 10.0)]
     imbalance_results = {}
@@ -367,8 +397,8 @@ def experiment_class_imbalance(X, y, feature_names):
         n_b = max(1, int(n_h / ratio))
         n_b = min(n_b, len(train_pool_b))
 
-        tr_h = np.random.choice(train_pool_h, n_h, replace=False)
-        tr_b = np.random.choice(train_pool_b, n_b, replace=n_b > len(train_pool_b))
+        tr_h = rng.choice(train_pool_h, n_h, replace=False)
+        tr_b = rng.choice(train_pool_b, n_b, replace=n_b > len(train_pool_b))
         tr_idx = np.concatenate([tr_h, tr_b])
 
         model = TabularBotClassifier(
@@ -378,8 +408,9 @@ def experiment_class_imbalance(X, y, feature_names):
         model.fit(X[tr_idx], y[tr_idx], feature_names=feature_names)
         proba = model.predict_batch(X[test_idx])
         metrics = eval_metrics(y[test_idx], proba)
-        imbalance_results[ratio_name] = {**metrics, "train_human": int(n_h), "train_bot": int(n_b)}
-        print(f"  [H:B={ratio_name}] Train={n_h}H+{n_b}B → AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | Recall={metrics['recall']:.4f} | FPR={metrics['fpr']:.4f}")
+        result_key = f"B:H={ratio_name}"
+        imbalance_results[result_key] = {**metrics, "train_human": int(n_h), "train_bot": int(n_b)}
+        print(f"  [{result_key}] Train={n_h}H+{n_b}B → AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | Recall={metrics['recall']:.4f} | FPR={metrics['fpr']:.4f}")
 
     RESULTS["E4_class_imbalance"] = imbalance_results
 
@@ -387,7 +418,7 @@ def experiment_class_imbalance(X, y, feature_names):
 # ============================================================
 # EXPERIMENT 5: Early Detection (Minimum Mouse Points)
 # ============================================================
-def experiment_early_detection(all_records, y, feature_names):
+def experiment_early_detection(all_records, y, feature_names, idx_train, idx_test):
     print("\n" + "=" * 60)
     print("  E5: EARLY DETECTION (Minimum Mouse Points Required)")
     print("=" * 60)
@@ -398,9 +429,10 @@ def experiment_early_detection(all_records, y, feature_names):
     for max_pts in thresholds:
         X_list = []
         y_valid = []
-        for records, label in zip(all_records, y):
+        original_indices = []
+        for original_idx, (records, label) in enumerate(zip(all_records, y)):
             # Truncate records to first max_pts move events
-            moves = [r for r in records if r.get("type") == "move"][:max_pts]
+            moves = truncate_moves(records, max_pts)
             if len(moves) < 3:
                 continue
             # Rebuild stats from truncated records
@@ -409,6 +441,7 @@ def experiment_early_detection(all_records, y, feature_names):
             vec = build_full_vector(fp, bd, moves)
             X_list.append(vec)
             y_valid.append(label)
+            original_indices.append(original_idx)
 
         if len(y_valid) < 20:
             continue
@@ -416,13 +449,21 @@ def experiment_early_detection(all_records, y, feature_names):
         X_trunc = np.nan_to_num(np.array(X_list, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
         y_trunc = np.array(y_valid, dtype=int)
 
-        idx_tr, idx_te = train_test_split(np.arange(len(y_trunc)), test_size=0.3, stratify=y_trunc, random_state=SEED)
+        train_set, test_set = set(idx_train.tolist()), set(idx_test.tolist())
+        idx_tr = np.array([i for i, original in enumerate(original_indices) if original in train_set])
+        idx_te = np.array([i for i, original in enumerate(original_indices) if original in test_set])
+        if not len(idx_tr) or not len(idx_te) or len(np.unique(y_trunc[idx_te])) < 2:
+            continue
         model = TabularBotClassifier(n_estimators=150, max_depth=5)
         model.fit(X_trunc[idx_tr], y_trunc[idx_tr], feature_names=feature_names)
         proba = model.predict_batch(X_trunc[idx_te])
         metrics = eval_metrics(y_trunc[idx_te], proba)
-        early_results[f"{max_pts}_points"] = {**metrics, "n_samples": len(y_valid)}
-        print(f"  [{max_pts:3d} pts] n={len(y_valid):3d} → AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | Recall={metrics['recall']:.4f}")
+        early_results[f"{max_pts}_points"] = {
+            **metrics,
+            "n_train": len(idx_tr),
+            "n_test": len(idx_te),
+        }
+        print(f"  [{max_pts:3d} pts] train={len(idx_tr):3d} test={len(idx_te):3d} → AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | Recall={metrics['recall']:.4f}")
 
     RESULTS["E5_early_detection"] = early_results
 
@@ -469,77 +510,95 @@ def experiment_inference_latency(X, model_trained):
 # ============================================================
 # EXPERIMENT 7: FPR/ROC Threshold Analysis
 # ============================================================
-def experiment_roc_analysis(X, y, feature_names):
+def experiment_roc_analysis(X, y, feature_names, idx_tr, idx_val, idx_te):
     print("\n" + "=" * 60)
     print("  E7: FPR/ROC THRESHOLD ANALYSIS")
     print("=" * 60)
 
-    idx_tr, idx_te = train_test_split(np.arange(len(y)), test_size=0.3, stratify=y, random_state=SEED)
     model = TabularBotClassifier(n_estimators=300, max_depth=6)
     model.fit(X[idx_tr], y[idx_tr], feature_names=feature_names)
-    proba = model.predict_batch(X[idx_te])
+    val_proba = model.predict_batch(X[idx_val])
 
     thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    roc_results = {}
+    validation_results = {}
     print(f"  {'Threshold':>10s} | {'FPR':>6s} | {'TPR':>6s} | {'Precision':>9s} | {'F1':>6s}")
     print(f"  {'-'*10} | {'-'*6} | {'-'*6} | {'-'*9} | {'-'*6}")
 
     for t in thresholds:
-        m = eval_metrics(y[idx_te], proba, threshold=t)
+        m = eval_metrics(y[idx_val], val_proba, threshold=t)
         tpr = m['recall']
         print(f"  {t:>10.1f} | {m['fpr']:>6.4f} | {tpr:>6.4f} | {m['precision']:>9.4f} | {m['f1']:>6.4f}")
-        roc_results[str(t)] = m
+        validation_results[str(t)] = m
 
-    # Full ROC curve data
+    selected_threshold = max(
+        thresholds,
+        key=lambda threshold: (validation_results[str(threshold)]["f1"], -threshold),
+    )
+    test_proba = model.predict_batch(X[idx_te])
+    test_metrics = eval_metrics(y[idx_te], test_proba, threshold=selected_threshold)
+    print(f"\n  Selected on validation: {selected_threshold:.1f}")
+    print(f"  Independent test: AUC={test_metrics['roc_auc']:.4f} | F1={test_metrics['f1']:.4f} | FPR={test_metrics['fpr']:.4f}")
+
+    # Full test ROC curve is threshold-independent.
     try:
-        fpr_curve, tpr_curve, thres_curve = roc_curve(y[idx_te], proba)
-        auc_val = roc_auc_score(y[idx_te], proba)
-        print(f"\n  Overall AUC-ROC: {auc_val:.4f}")
-        roc_results["auc"] = round(auc_val, 4)
+        fpr_curve, tpr_curve, thres_curve = roc_curve(y[idx_te], test_proba)
+        test_metrics["roc_curve"] = {
+            "fpr": fpr_curve.tolist(),
+            "tpr": tpr_curve.tolist(),
+            "thresholds": thres_curve.tolist(),
+        }
     except Exception:
         pass
 
-    RESULTS["E7_roc_analysis"] = roc_results
+    RESULTS["E7_roc_analysis"] = {
+        "validation_thresholds": validation_results,
+        "selected_threshold": selected_threshold,
+        "independent_test": test_metrics,
+    }
 
 
 # ============================================================
 # EXPERIMENT 8: Short Session Analysis
 # ============================================================
-def experiment_short_sessions(all_records, y, feature_names):
+def experiment_short_sessions(all_records, y, feature_names, idx_tr, idx_te):
     print("\n" + "=" * 60)
     print("  E8: SHORT SESSION ANALYSIS")
     print("=" * 60)
 
-    # Group sessions by length
-    lengths = [len([r for r in rec if r.get("type") == "move"]) for rec in all_records]
-    
-    bins = [(0, 10, "Very short (<10)"), (10, 25, "Short (10-25)"), (25, 50, "Medium (25-50)"), (50, float('inf'), "Long (50+)")]
-    
-    # Train on all data
+    # Train once on complete sessions, then shorten only the independent test set.
     X_list = []
     for rec in all_records:
         vec = build_full_vector({}, {"heuristicScore": 0.0, "detectors": {}, "reasons": []}, rec)
         X_list.append(vec)
     X_all = np.nan_to_num(np.array(X_list, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
     
-    idx_tr, idx_te = train_test_split(np.arange(len(y)), test_size=0.3, stratify=y, random_state=SEED)
     model = TabularBotClassifier(n_estimators=200, max_depth=5)
     model.fit(X_all[idx_tr], y[idx_tr], feature_names=feature_names)
 
     short_results = {}
-    for lo, hi, label in bins:
-        mask = [(i in idx_te) and (lo <= lengths[i] < hi) for i in range(len(y))]
-        test_in_bin = np.where(mask)[0]
-        if len(test_in_bin) < 5:
-            print(f"  [{label:20s}] n={len(test_in_bin):3d} — too few samples")
-            continue
-        proba = model.predict_batch(X_all[test_in_bin])
-        metrics = eval_metrics(y[test_in_bin], proba)
-        if len(np.unique(y[test_in_bin])) < 2:
-            metrics["roc_auc"] = None
-        short_results[label] = {**metrics, "n_samples": len(test_in_bin)}
-        auc_text = f"{metrics['roc_auc']:.4f}" if metrics["roc_auc"] is not None else "N/A"
-        print(f"  [{label:20s}] n={len(test_in_bin):3d} → AUC={auc_text} | F1={metrics['f1']:.4f} | FPR={metrics['fpr']:.4f}")
+    for max_points in [5, 10, 15, 24, 50, 100]:
+        truncated_vectors = [
+            build_full_vector(
+                {},
+                {"heuristicScore": 0.0, "detectors": {}, "reasons": []},
+                truncate_moves(all_records[index], max_points),
+            )
+            for index in idx_te
+        ]
+        X_test = np.nan_to_num(
+            np.asarray(truncated_vectors, dtype=np.float32),
+            nan=0.0,
+            posinf=100.0,
+            neginf=-100.0,
+        )
+        proba = model.predict_batch(X_test)
+        metrics = eval_metrics(y[idx_te], proba)
+        key = f"first_{max_points}_points"
+        short_results[key] = {**metrics, "n_samples": len(idx_te)}
+        print(
+            f"  [{max_points:3d} pts] n={len(idx_te):3d} → "
+            f"AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | FPR={metrics['fpr']:.4f}"
+        )
 
     RESULTS["E8_short_sessions"] = short_results
 
@@ -547,7 +606,7 @@ def experiment_short_sessions(all_records, y, feature_names):
 # ============================================================
 # EXPERIMENT 9: Power User Stress Test
 # ============================================================
-def experiment_power_user(all_records, y, feature_names):
+def experiment_power_user(all_records, y, feature_names, idx_tr, idx_te):
     print("\n" + "=" * 60)
     print("  E9: POWER USER STRESS TEST")
     print("=" * 60)
@@ -564,17 +623,18 @@ def experiment_power_user(all_records, y, feature_names):
     X_all = np.nan_to_num(np.array(X_list, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
     
     # Train model on all data
-    idx_tr, idx_te = train_test_split(np.arange(len(y)), test_size=0.3, stratify=y, random_state=SEED)
     model = TabularBotClassifier(n_estimators=200, max_depth=5)
     model.fit(X_all[idx_tr], y[idx_tr], feature_names=feature_names)
 
     # Find "power user" humans in test set: high straightness OR high speed
+    train_human_speeds = [stats_list[i]["mean_speed"] for i in idx_tr if y[i] == 0]
+    high_speed_threshold = np.percentile(train_human_speeds, 90) if train_human_speeds else float("inf")
     power_users = []
     normal_humans = []
     for i in idx_te:
         if y[i] == 0:  # human
             s = stats_list[i]
-            if s["straightness"] > 0.85 or s["mean_speed"] > np.percentile([st["mean_speed"] for st in stats_list], 90):
+            if s["straightness"] > 0.85 or s["mean_speed"] > high_speed_threshold:
                 power_users.append(i)
             else:
                 normal_humans.append(i)
@@ -616,37 +676,42 @@ def main(dataset_root=None):
     print("  BOT DETECTION — COMPREHENSIVE EXPERIMENT SUITE")
     print("=" * 60)
 
-    X, y, feature_names, all_records, all_telemetries = prepare_data(dataset_root=dataset_root)
+    RESULTS.clear()
+    X, y, feature_names, all_records, all_telemetries, splits = prepare_data(dataset_root=dataset_root)
     print(f"  Dataset: {len(y)} samples ({sum(y==0)} Human, {sum(y==1)} Bot), {len(feature_names)} features")
+    idx_train, idx_test = get_experiment_indices(y, splits)
+    idx_fit = np.flatnonzero(splits == "train")
+    idx_val = np.flatnonzero(splits == "val")
+    if not len(idx_val) or len(np.unique(y[idx_val])) < 2:
+        idx_fit, idx_val = train_test_split(
+            idx_train, test_size=0.20, stratify=y[idx_train], random_state=SEED
+        )
+    print(f"  Shared split: train={len(idx_train)} | independent test={len(idx_test)}")
+    RESULTS["metadata"] = {
+        "seed": SEED,
+        "samples": len(y),
+        "features": len(feature_names),
+        "shared_train": len(idx_train),
+        "independent_test": len(idx_test),
+        "test_human": int(np.sum(y[idx_test] == 0)),
+        "test_bot": int(np.sum(y[idx_test] == 1)),
+    }
 
     # Run all experiments
-    model, idx_train, idx_test = experiment_baseline(X, y, feature_names)
+    model, _, _ = experiment_baseline(X, y, feature_names, idx_train, idx_test)
     experiment_concept_drift(dataset_root=dataset_root)
-    experiment_feature_ablation(X, y, feature_names)
-    experiment_class_imbalance(X, y, feature_names)
-    experiment_early_detection(all_records, y, feature_names)
+    experiment_feature_ablation(X, y, feature_names, idx_train, idx_test)
+    experiment_class_imbalance(X, y, feature_names, idx_train, idx_test)
+    experiment_early_detection(all_records, y, feature_names, idx_train, idx_test)
     experiment_inference_latency(X, model)
-    experiment_roc_analysis(X, y, feature_names)
-    experiment_short_sessions(all_records, y, feature_names)
-    experiment_power_user(all_records, y, feature_names)
+    experiment_roc_analysis(X, y, feature_names, idx_fit, idx_val, idx_test)
+    experiment_short_sessions(all_records, y, feature_names, idx_train, idx_test)
+    experiment_power_user(all_records, y, feature_names, idx_train, idx_test)
 
     # Save all results to JSON
     results_path = os.path.join(os.path.dirname(__file__), "..", "experiment_results.json")
-    # Convert numpy types to native Python for JSON serialization
-    def convert(obj):
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        return obj
-    import json as json2
-    class NpEncoder(json2.JSONEncoder):
-        def default(self, obj):
-            return convert(obj)
     with open(results_path, "w", encoding="utf-8") as f:
-        json2.dump(RESULTS, f, indent=2, ensure_ascii=False, cls=NpEncoder)
+        json.dump(to_json_safe(RESULTS), f, indent=2, ensure_ascii=False, allow_nan=False)
     print(f"\n  Results saved to: {results_path}")
 
     print("\n" + "=" * 60)

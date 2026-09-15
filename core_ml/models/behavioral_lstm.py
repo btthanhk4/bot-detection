@@ -6,7 +6,7 @@ Improvements:
   - Bidirectional LSTM for capturing both forward/backward temporal context
   - Temporal Attention mechanism to focus on discriminative time steps
   - LeakyReLU activation + L1/L2 regularization per DELBOT best practices
-  - Weighted median aggregation for session-level prediction
+  - Confidence-weighted mean aggregation for session-level prediction
 """
 
 import os
@@ -145,7 +145,7 @@ class MouseTrajectoryLSTM(nn.Module):
     def predict_session_proba(self, chunks_tensor: torch.Tensor) -> float:
         """
         Evaluates all chunks from a single session and aggregates their bot probability.
-        Uses weighted median: more extreme predictions get higher weight.
+        Uses a confidence-weighted mean: more extreme predictions get higher weight.
         """
         if chunks_tensor is None or chunks_tensor.size(0) == 0:
             return 0.5

@@ -118,18 +118,18 @@ kết quả trên dataset nghiên cứu, không phải cam kết hiệu năng tr
 
 | # | Thí nghiệm | Kết quả chính |
 |---|-------------|---------------|
-| E1 | Baseline Comparison | ML **+50.5% AUC** so với rule-based |
+| E1 | Baseline Comparison | ML **+42.6% AUC** so với rule-based tốt nhất |
 | E2 | Concept Drift | ⚠️ Train moderate → Recall=**0%** trên advanced bot |
 | E3 | Feature Ablation | Mouse dynamics alone = AUC **1.0** |
-| E4 | Class Imbalance | Robust đến 1:10 (AUC=**0.97**) |
-| E5 | Early Detection | Chỉ cần **5 mouse points** → AUC=**0.9968** |
-| E6 | Inference Latency | XGBoost **1.668ms**, BiLSTM **4.820ms** trung bình |
-| E7 | ROC/FPR Analysis | Threshold **0.4**: FPR=0, TPR=0.9932 |
-| E8 | Short Sessions | Hoạt động tốt mọi độ dài |
+| E4 | Class Imbalance | Tỷ lệ bot:human 1:10: AUC=**0.9931**, Recall=**75%** |
+| E5 | Early Detection | Model retrain ở 5 điểm: AUC=**0.9924** |
+| E6 | Inference Latency | XGBoost **0.571ms**, BiLSTM **1.395ms** trung bình |
+| E7 | ROC/FPR Analysis | Threshold chọn trên validation: **0.6**; test FPR=0 |
+| E8 | Short Sessions | Model full-session ở 5 điểm có FPR **87.5%**; 24 điểm còn **8.33%** |
 | E9 | Power User Test | **0% False Positive** trên power users |
 
-> `core_ml/experiment_results.json` và `EXPERIMENT_REPORT.md` là artifact lịch sử
-> của pipeline random-split cũ. Cần chạy lại E1-E9 trước khi trích dẫn các kết quả này.
+> `core_ml/experiment_results.json` được tạo bởi pipeline dùng chung tập test độc lập.
+> `EXPERIMENT_REPORT.md` vẫn là báo cáo lịch sử và cần được tái lập trước khi trích dẫn.
 
 ---
 

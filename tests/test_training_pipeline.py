@@ -8,6 +8,7 @@ from core_ml.train import (
     deduplicate_real_sessions,
     predict_lstm_sessions,
 )
+from core_ml.experiments.run_all import get_experiment_indices, to_json_safe, truncate_moves
 
 
 def _session(session_id, label, source="phase2", split="unspecified", records=None):
@@ -59,3 +60,30 @@ def test_lstm_metrics_are_aggregated_per_session():
 
     assert labels.tolist() == [1, 1]
     assert probabilities.tolist() == pytest.approx([0.3, 0.9])
+
+
+def test_experiments_share_published_test_split():
+    y = np.array([0, 1, 0, 1, 0, 1])
+    splits = np.array(["train", "train", "val", "val", "test", "test"])
+
+    train_idx, test_idx = get_experiment_indices(y, splits)
+
+    assert train_idx.tolist() == [0, 1, 2, 3]
+    assert test_idx.tolist() == [4, 5]
+
+
+def test_truncate_moves_filters_non_move_and_malformed_records():
+    records = [
+        {"type": "down", "x": 1},
+        None,
+        {"type": "move", "x": 2},
+        {"type": "move", "x": 3},
+    ]
+
+    assert truncate_moves(records, 1) == [{"type": "move", "x": 2}]
+
+
+def test_experiment_results_are_strict_json_safe():
+    converted = to_json_safe({"thresholds": np.array([float("inf"), np.float32(0.5)])})
+
+    assert converted == {"thresholds": [None, 0.5]}

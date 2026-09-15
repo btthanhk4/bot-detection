@@ -64,7 +64,7 @@ class TestGraphBuilder:
         assert tensors["x_dict"]["ip"].shape[0] == 2
         assert tensors["y_session"].shape[0] == 3
 
-    def test_memory_bounds_preserve_existing_topology(self):
+    def test_memory_bounds_keep_most_recent_topology(self):
         # Builder with small max_sessions limit
         builder = ClickFraudGraphBuilder(max_sessions=5)
         for i in range(10):
@@ -77,8 +77,37 @@ class TestGraphBuilder:
 
         # Capacity pruning prevents unbounded growth
         assert len(builder.session_map) <= 5
-        assert "sess_0" in builder.session_map
-        assert "sess_4" in builder.session_map
+        assert set(builder.session_map) == {f"sess_{i}" for i in range(5, 10)}
+        assert builder.pruned_sessions == 5
+
+        tensors = builder.to_torch_tensors()
+        session_count = tensors["x_dict"]["session"].shape[0]
+        for edge_index in tensors["edge_index_dict"].values():
+            assert edge_index.shape[1] == session_count
+            assert int(edge_index[1].max()) < session_count
+
+    def test_recent_heartbeat_prevents_session_eviction(self):
+        builder = ClickFraudGraphBuilder(max_sessions=3)
+        for i in range(3):
+            builder.add_telemetry_event({"sessionId": f"sess_{i}", "visitorId": f"dev_{i}"})
+
+        builder.add_telemetry_event({"sessionId": "sess_0", "visitorId": "dev_0"})
+        builder.add_telemetry_event({"sessionId": "sess_3", "visitorId": "dev_3"})
+
+        assert set(builder.session_map) == {"sess_0", "sess_2", "sess_3"}
+        assert "sess_1" not in builder.session_map
+
+    def test_relations_per_session_are_bounded(self):
+        builder = ClickFraudGraphBuilder(max_sessions=2, max_relations_per_session=3)
+        for i in range(10):
+            builder.add_telemetry_event(
+                {"sessionId": "session", "visitorId": f"dev_{i}", "pageUrl": f"/page/{i}"},
+                ip_address=f"10.0.0.{i + 1}",
+            )
+
+        assert len(builder.device_map) == 3
+        assert len(builder.ip_map) == 3
+        assert len(builder.target_map) == 3
 
     def test_none_safe_ingestion(self):
         builder = ClickFraudGraphBuilder()
