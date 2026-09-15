@@ -209,7 +209,10 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
     "tabular_score": 0.782,
     "heuristic_score": 0.1,
     "has_enough_mouse_data": true,
-    "mouse_points": 31
+    "mouse_points": 31,
+    "records_received": 34,
+    "decision_deferred": false,
+    "minimum_mouse_points": 24
   },
   "latency_ms": 3.42
 }

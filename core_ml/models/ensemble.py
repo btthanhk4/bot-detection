@@ -10,7 +10,7 @@ Improvements:
 """
 
 import numpy as np
-from core_ml.features.env_features import extract_env_vector
+from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
 from core_ml.features.mouse_features import (
     compute_statistical_features,
     extract_mouse_stat_vector,
@@ -31,6 +31,7 @@ class EnsembleBotDetector:
         w_heuristic: float = 0.20,
         threshold: float = 0.70,
         suspect_threshold: float = 0.45,
+        min_mouse_points_for_bot: int = 24,
         lstm_available: bool = True,
         tabular_available: bool = True,
     ):
@@ -41,6 +42,7 @@ class EnsembleBotDetector:
         self.w_heuristic = w_heuristic
         self.threshold = max(0.0, min(1.0, float(threshold)))
         self.suspect_threshold = max(0.0, min(self.threshold, float(suspect_threshold)))
+        self.min_mouse_points_for_bot = max(0, int(min_mouse_points_for_bot))
         self.lstm_available = bool(lstm_available)
         self.tabular_available = bool(tabular_available)
 
@@ -51,6 +53,12 @@ class EnsembleBotDetector:
     def _compute_heuristic_weight(self, score: float) -> float:
         """Bot rules provide positive evidence; no triggered rule is not human proof."""
         return 0.3 + max(0.0, min(1.0, score))
+
+    @staticmethod
+    def _sanitize_probability(score, default: float) -> float:
+        """Return a finite probability so invalid model output cannot poison fusion weights."""
+        numeric = safe_float(score, default)
+        return max(0.0, min(1.0, numeric))
 
     def predict(self, telemetry_payload: dict) -> dict:
         """
@@ -72,25 +80,29 @@ class EnsembleBotDetector:
         mouse_stats = compute_statistical_features(records)
 
         # 1. BotD Heuristics evaluation
-        try:
-            raw_h_score = float(botd.get("heuristicScore") or 0.0)
-        except (ValueError, TypeError):
-            raw_h_score = 0.0
-        heuristic_score = max(0.0, min(1.0, raw_h_score))
+        heuristic_score = self._sanitize_probability(botd.get("heuristicScore"), 0.0)
         raw_reasons = botd.get("reasons")
         reasons = [str(reason)[:256] for reason in raw_reasons[:20]] if isinstance(raw_reasons, list) else []
         detectors = botd.get("detectors") if isinstance(botd.get("detectors"), dict) else {}
 
         # Immediate hard rule triggers (100% confidence bot flags)
         critical_flags = []
-        is_webdriver = detectors.get("webdriver", False) or botd.get("webDriver", False) or botd.get("webdriver", False)
+        is_webdriver = any(safe_bool(value) for value in (
+            detectors.get("webdriver"), botd.get("webDriver"), botd.get("webdriver")
+        ))
         if is_webdriver:
             critical_flags.append("Critical: Webdriver automation flag confirmed")
             heuristic_score = max(heuristic_score, 0.95)
-        if detectors.get("distinctiveProperties", False) or botd.get("automationTool", False):
+        if any(safe_bool(value) for value in (
+            detectors.get("distinctiveProperties"),
+            detectors.get("chromeDriverGlobal"),
+            botd.get("automationTool"),
+        )):
             critical_flags.append("Critical: Automation framework signature detected")
             heuristic_score = max(heuristic_score, 0.95)
-        if detectors.get("headlessUa", False) or detectors.get("headless", False) or botd.get("headless", False):
+        if any(safe_bool(value) for value in (
+            detectors.get("headlessUa"), detectors.get("headless"), botd.get("headless")
+        )):
             critical_flags.append("Headless browser environment detected")
             heuristic_score = max(heuristic_score, 0.80)
         reasons.extend(critical_flags)
@@ -123,6 +135,11 @@ class EnsembleBotDetector:
         combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
         tabular_score = self.tabular_model.predict_proba(combined_tabular_vec) if self.tabular_available else 0.5
 
+        # Sanitize model outputs before deriving confidence-based weights.
+        lstm_score = self._sanitize_probability(lstm_score, 0.5)
+        tabular_score = self._sanitize_probability(tabular_score, 0.5)
+        heuristic_score = self._sanitize_probability(heuristic_score, 0.0)
+
         # 4. Confidence-Based Adaptive Weighted Fusion
         if not self.lstm_available:
             w_l = 0.0
@@ -151,11 +168,6 @@ class EnsembleBotDetector:
         if not self.tabular_available:
             w_t = 0.0
 
-        # Clean scores against NaN
-        lstm_score = float(np.nan_to_num(lstm_score, nan=0.5))
-        tabular_score = float(np.nan_to_num(tabular_score, nan=0.5))
-        heuristic_score = float(np.nan_to_num(heuristic_score, nan=0.0))
-
         total_w = w_l + w_t + w_h
         final_proba = (w_l * lstm_score + w_t * tabular_score + w_h * heuristic_score) / total_w if total_w > 1e-6 else 0.5
 
@@ -170,8 +182,24 @@ class EnsembleBotDetector:
 
         final_proba = max(0.0, min(1.0, float(final_proba)))
 
+        # The full-session tabular model is not calibrated for very short input.
+        # Defer a final decision until enough validated movement exists while
+        # independently strong automation flags can still trigger immediately.
+        move_point_count = int(mouse_stats.get("move_point_count", 0))
+        decision_deferred = move_point_count < self.min_mouse_points_for_bot and not critical_flags
+        if decision_deferred:
+            upper_bound = max(0.0, self.threshold - 0.01)
+            lower_bound = min(self.suspect_threshold, upper_bound)
+            final_proba = min(upper_bound, max(lower_bound, final_proba))
+            reasons.append(
+                f"Decision deferred: need {self.min_mouse_points_for_bot} valid mouse points "
+                f"(received {move_point_count})"
+            )
+
         # Thresholds are deployment settings and must match the reported decision policy.
-        if final_proba >= self.threshold:
+        if decision_deferred:
+            verdict = "SUSPECT"
+        elif final_proba >= self.threshold:
             verdict = "BOT"
         elif final_proba >= self.suspect_threshold:
             verdict = "SUSPECT"
@@ -194,7 +222,10 @@ class EnsembleBotDetector:
                 "tabular_score": round(tabular_score, 4),
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,
-                "mouse_points": len(records),
+                "mouse_points": move_point_count,
+                "records_received": len(records),
+                "decision_deferred": decision_deferred,
+                "minimum_mouse_points": self.min_mouse_points_for_bot,
                 "weights_used": {
                     "w_lstm": round(w_l / total_w, 3) if total_w > 0 else 0,
                     "w_tabular": round(w_t / total_w, 3) if total_w > 0 else 0,

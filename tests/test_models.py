@@ -157,6 +157,107 @@ class TestEnsembleDetector:
         assert 0.0 <= res["bot_probability"] <= 1.0
         assert res["verdict"] in ("HUMAN", "BOT", "SUSPECT")
 
+    def test_string_false_does_not_trigger_critical_bot_rule(self):
+        detector = EnsembleBotDetector(lstm_available=False, tabular_available=False)
+        result = detector.predict({
+            "botd": {
+                "heuristicScore": 0,
+                "webdriver": "false",
+                "automationTool": "0",
+                "headless": "no",
+                "detectors": {
+                    "webdriver": "false",
+                    "distinctiveProperties": "false",
+                    "headlessUa": "false",
+                },
+            }
+        })
+
+        assert result["verdict"] != "BOT"
+        assert not any(reason.startswith("Critical:") for reason in result["reasons"])
+
+    def test_non_finite_model_scores_do_not_poison_fusion(self):
+        class InvalidLSTM:
+            def predict_session_proba(self, _chunks):
+                return float("nan")
+
+        class InvalidTabular:
+            def predict_proba(self, _features):
+                return float("inf")
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        detector = EnsembleBotDetector(lstm_model=InvalidLSTM(), tabular_model=InvalidTabular())
+        result = detector.predict({"mouse": {"records": records}})
+
+        assert math.isfinite(result["bot_probability"])
+        assert result["breakdown"]["behavioral_lstm_score"] == 0.5
+        assert result["breakdown"]["tabular_score"] == 0.5
+
+    def test_mouse_points_counts_only_valid_moves(self):
+        records = [
+            {"time": 0, "x": 0.1, "y": 0.1, "type": "move"},
+            {"time": 1, "x": 0.1, "y": 0.1, "type": "click"},
+            {"time": "bad", "x": 0.2, "y": 0.2, "type": "move"},
+        ]
+        result = EnsembleBotDetector(lstm_available=False, tabular_available=False).predict(
+            {"mouse": {"records": records}}
+        )
+
+        assert result["breakdown"]["mouse_points"] == 1
+        assert result["breakdown"]["records_received"] == 3
+
+    def test_short_session_defers_bot_decision_without_critical_flag(self):
+        class StrongTabular:
+            def predict_proba(self, _features):
+                return 0.99
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(23)
+        ]
+        detector = EnsembleBotDetector(
+            tabular_model=StrongTabular(), lstm_available=False, threshold=0.70
+        )
+        result = detector.predict({"mouse": {"records": records}})
+
+        assert result["verdict"] == "SUSPECT"
+        assert result["is_bot"] is False
+        assert result["bot_probability"] < 0.70
+        assert result["breakdown"]["decision_deferred"] is True
+
+    def test_minimum_mouse_evidence_allows_final_decision(self):
+        class StrongTabular:
+            def predict_proba(self, _features):
+                return 0.99
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(24)
+        ]
+        detector = EnsembleBotDetector(
+            tabular_model=StrongTabular(), lstm_available=False, threshold=0.70
+        )
+        result = detector.predict({"mouse": {"records": records}})
+
+        assert result["verdict"] == "BOT"
+        assert result["breakdown"]["decision_deferred"] is False
+
+    def test_deferred_decision_survives_equal_threshold_configuration(self):
+        detector = EnsembleBotDetector(
+            threshold=0.70,
+            suspect_threshold=0.70,
+            lstm_available=False,
+            tabular_available=False,
+        )
+
+        result = detector.predict({})
+
+        assert result["verdict"] == "SUSPECT"
+        assert result["is_bot"] is False
+
     def test_ensemble_uses_configured_thresholds(self):
         detector = EnsembleBotDetector(threshold=0.99, suspect_threshold=0.98)
         result = detector.predict({"botd": {"heuristicScore": 0.6}})

@@ -1363,6 +1363,12 @@ function escapeHtml(value) {
   })[ch]);
 }
 
+function asBoolean(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value !== 'string') return false;
+  return ['true', '1', 'yes'].includes(value.trim().toLowerCase());
+}
+
 function adminHeaders() {
   let token = sessionStorage.getItem('bot_admin_token') || '';
   if (!token) {
@@ -1801,7 +1807,9 @@ function renderTrafficTable() {
     const bd = s.breakdown || {};
     const lstmScore = (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
     const tabScore = (bd.tabular_score !== undefined) ? (bd.tabular_score * 100).toFixed(1) : '--';
-    const mousePoints = s.mouse_points_captured || 0;
+    const mousePoints = Number.isFinite(Number(bd.mouse_points))
+      ? Number(bd.mouse_points)
+      : (s.mouse_points_captured || 0);
 
     let verdictClass = 'verdict-suspect';
     let rowClass = '';
@@ -1915,7 +1923,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 
   const timeVal = s.received_at || s.created_at || s.updated_at;
   document.getElementById('dTime').textContent = timeVal ? new Date(timeVal).toLocaleString('vi-VN') : '--';
-  document.getElementById('dMousePoints').textContent = (s.mouse_points_captured || 0) + ' điểm';
+  const snapshotBreakdown = s.breakdown || {};
+  const snapshotMousePoints = Number.isFinite(Number(snapshotBreakdown.mouse_points))
+    ? Number(snapshotBreakdown.mouse_points)
+    : (s.mouse_points_captured || 0);
+  document.getElementById('dMousePoints').textContent = snapshotMousePoints + ' điểm';
 
   // Fetch full detail document from MongoDB if needed
   let detail = null;
@@ -1949,9 +1961,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   if (v === 'BOT') {
     explainText = `<strong>Hệ thống kết luận là BOT (Xác suất ${(prob * 100).toFixed(1)}%):</strong> `;
     const flags = [];
-    if (botdDetectors.webdriver || botd.webDriver) flags.push('cờ tự động hóa navigator.webdriver = true');
-    if (botdDetectors.headlessUa || botdDetectors.headless || botd.headless) flags.push('môi trường trình duyệt Headless');
-    if (botdDetectors.distinctiveProperties || botd.automationTool) flags.push('công cụ Selenium/Puppeteer/Playwright');
+    if (asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver)) flags.push('cờ tự động hóa navigator.webdriver = true');
+    if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
+    if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('công cụ Selenium/Puppeteer/Playwright');
     if (bd.behavioral_lstm_score > 0.5) flags.push(`quỹ đạo chuột thẳng tắp máy móc (LSTM: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%)`);
     if (bd.tabular_score > 0.5) flags.push(`thông số phần cứng giả mạo (XGBoost: ${(bd.tabular_score * 100).toFixed(1)}%)`);
     if (flags.length > 0) {
@@ -1967,7 +1979,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText += 'Môi trường trình duyệt hoàn chỉnh, các thuộc tính phần cứng và plugin đồng nhất.';
     }
   } else {
-    explainText = `<strong>Hệ thống xếp loại NGHI VẤN (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới (45% - 70%). Chưa phát hiện cờ bot nghiêm trọng nhưng hành vi chưa đủ dữ liệu để khẳng định người thật.`;
+    if (bd.decision_deferred) {
+      const received = Number(bd.mouse_points) || 0;
+      const required = Number(bd.minimum_mouse_points) || 24;
+      explainText = `<strong>Hệ thống đang chờ thêm dữ liệu (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Chưa đưa ra kết luận BOT khi bằng chứng hành vi còn thiếu.`;
+    } else {
+      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới (45% - 70%). Chưa phát hiện cờ bot nghiêm trọng nhưng hành vi chưa đủ rõ để khẳng định.`;
+    }
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
 
@@ -2017,7 +2035,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   }
 
   // 5. Mouse Stats (handle both camelCase from JS collector and snake_case)
-  const mousePts = dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.pointCount || 0;
+  const mousePts = Number.isFinite(Number(bd.mouse_points))
+    ? Number(bd.mouse_points)
+    : (dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.move_point_count || 0);
   document.getElementById('dMouseCount').textContent = mousePts;
   const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
   const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
@@ -2053,14 +2073,14 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 7. BotD Detectors
   const detList = document.getElementById('dDetectorsList');
   const detectors = [
-    { name: 'navigator.webdriver', flagged: !!(botdDetectors.webdriver || botd.webDriver), desc: 'Cờ tự động hóa WebDriver chuẩn W3C' },
-    { name: 'Headless Browser', flagged: !!(botdDetectors.headlessUa || botdDetectors.headless || botd.headless), desc: 'Chạy không giao diện đồ họa' },
-    { name: 'Automation Tool', flagged: !!(botdDetectors.distinctiveProperties || botd.automationTool), desc: 'Selenium, Puppeteer, Playwright' },
-    { name: 'PhantomJS', flagged: !!botd.phantomJS, desc: 'Phantom runtime' },
+    { name: 'navigator.webdriver', flagged: asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver), desc: 'Cờ tự động hóa WebDriver chuẩn W3C' },
+    { name: 'Headless Browser', flagged: asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless), desc: 'Chạy không giao diện đồ họa' },
+    { name: 'Automation Tool', flagged: asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool), desc: 'Selenium, Puppeteer, Playwright' },
+    { name: 'PhantomJS', flagged: asBoolean(botd.phantomJS), desc: 'Phantom runtime' },
     { name: 'Plugins Empty', flagged: botd.pluginsLength === 0, desc: 'Danh sách plugin rỗng bất thường' },
     { name: 'Languages Missing', flagged: !fp.languages || fp.languages.length === 0, desc: 'Không có thông tin ngôn ngữ' },
     { name: 'Screen Inconsistency', flagged: fp.screenResolution && (fp.screenResolution[0] === 0 || fp.screenResolution[1] === 0), desc: 'Độ phân giải 0x0' },
-    { name: 'DevTools Opened', flagged: !!botd.devtools, desc: 'Công cụ gỡ lỗi DevTools' },
+    { name: 'DevTools Opened', flagged: asBoolean(botd.devtools), desc: 'Công cụ gỡ lỗi DevTools' },
   ];
   detList.innerHTML = detectors.map(d => `
     <div class="detector-badge ${d.flagged ? 'flagged' : 'safe'}" title="${d.desc}">

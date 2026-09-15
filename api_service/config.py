@@ -40,6 +40,7 @@ class Settings:
     # Classification Thresholds
     THRESHOLD: float = float(os.getenv("BOT_DECISION_THRESHOLD", "0.70"))
     SUSPECT_THRESHOLD: float = float(os.getenv("BOT_SUSPECT_THRESHOLD", "0.45"))
+    MIN_MOUSE_POINTS_FOR_BOT: int = int(os.getenv("BOT_MIN_MOUSE_POINTS_FOR_BOT", "24"))
 
     # Capacity limits & Protection
     MAX_BUFFER_SIZE: int = int(os.getenv("BOT_MAX_TELEMETRY_BUFFER", "1000"))

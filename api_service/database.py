@@ -72,13 +72,26 @@ def get_db():
 
 def is_database_ready() -> bool:
     """Ping MongoDB so readiness detects a stale or disconnected client."""
+    global _client, _db, _retry_after
     db = get_db()
-    if db is None or _client is None:
+    client = _client
+    if db is None or client is None:
         return False
     try:
-        _client.admin.command("ping")
+        client.admin.command("ping")
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning(f"[DB] MongoDB readiness ping failed: {exc}")
+        with _connect_lock:
+            # A concurrent reconnect may already have installed a healthy client.
+            if _client is client:
+                _client = None
+                _db = None
+                _retry_after = time.monotonic() + 1.0
+                try:
+                    client.close()
+                except Exception:
+                    pass
         return False
 
 

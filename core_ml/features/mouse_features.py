@@ -345,10 +345,12 @@ def extract_mouse_stat_vector(records_or_stats) -> np.ndarray:
     vec = []
     for k in STATISTICAL_FEATURE_NAMES:
         val = stats.get(k, 0.0)
-        if val is None or math.isnan(val) or math.isinf(val):
+        try:
+            numeric = float(val)
+        except (TypeError, ValueError, OverflowError):
             vec.append(0.0)
-        else:
-            vec.append(float(val))
+            continue
+        vec.append(numeric if math.isfinite(numeric) else 0.0)
     return np.array(vec, dtype=np.float32)
 
 

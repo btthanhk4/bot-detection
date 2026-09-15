@@ -125,6 +125,10 @@ class TestMouseFeatures:
         assert len(vec) == len(STATISTICAL_FEATURE_NAMES)
         assert (vec == 0.0).all()
 
+        malformed_vec = extract_mouse_stat_vector({"mean_speed": "not-a-number", "std_speed": None})
+        assert not np.isnan(malformed_vec).any()
+        assert (malformed_vec == 0.0).all()
+
     def test_pixel_auto_normalization(self):
         # Raw pixel coordinates (> 1.0)
         records_pixel = [

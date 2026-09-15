@@ -103,6 +103,7 @@ ensemble_detector = EnsembleBotDetector(
     tabular_model=tabular_model,
     threshold=settings.THRESHOLD,
     suspect_threshold=settings.SUSPECT_THRESHOLD,
+    min_mouse_points_for_bot=settings.MIN_MOUSE_POINTS_FOR_BOT,
     lstm_available=lstm_loaded,
     tabular_available=tabular_loaded,
 )
@@ -282,6 +283,9 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
                 "heuristic_score": 0.0,
                 "has_enough_mouse_data": False,
                 "mouse_points": 0,
+                "records_received": 0,
+                "decision_deferred": True,
+                "minimum_mouse_points": settings.MIN_MOUSE_POINTS_FOR_BOT,
             },
         }
 

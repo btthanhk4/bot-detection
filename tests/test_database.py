@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from pymongo.errors import DuplicateKeyError
-from api_service.database import _ensure_indexes, save_detection_result
+from api_service.database import _ensure_indexes, is_database_ready, save_detection_result
 
 
 class FakeCollection:
@@ -59,6 +59,34 @@ def test_ensure_indexes_keeps_matching_indexes():
 
     assert detections.dropped == []
     assert deleted.dropped == []
+
+
+def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):
+    import api_service.database as database_module
+
+    class FailingAdmin:
+        def command(self, _name):
+            raise ConnectionError("connection dropped")
+
+    class StaleClient:
+        admin = FailingAdmin()
+
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    client = StaleClient()
+    monkeypatch.setattr(database_module, "_client", client)
+    monkeypatch.setattr(database_module, "_db", {"cached": "stale"})
+    monkeypatch.setattr(database_module, "_retry_after", 0.0)
+
+    assert is_database_ready() is False
+    assert client.closed is True
+    assert database_module._client is None
+    assert database_module._db is None
+    assert database_module._retry_after > 0.0
 
 
 class MemoryCollection:

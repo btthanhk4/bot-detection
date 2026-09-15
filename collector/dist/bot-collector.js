@@ -407,7 +407,13 @@
     const totalWeight = keys.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
     const flaggedWeight = flagged.reduce((sum, k) => sum + (detectorWeights[k] || 1.0), 0);
     const heuristicScore = totalWeight > 0 ? flaggedWeight / totalWeight : 0;
-    const isBotHeuristic = flagged.length > 0;
+    const hasCriticalAutomationSignal = !!(
+      detectors.webdriver ||
+      detectors.distinctiveProperties ||
+      detectors.chromeDriverGlobal ||
+      detectors.headlessUa
+    );
+    const isBotHeuristic = hasCriticalAutomationSignal || heuristicScore >= 0.35;
 
     return {
       isBot: isBotHeuristic,
