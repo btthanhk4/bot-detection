@@ -29,6 +29,7 @@ class Settings:
         if origin.strip()
     ]
     ADMIN_TOKEN: str = os.getenv("BOT_ADMIN_TOKEN", "").strip()
+    READ_TOKEN: str = (os.getenv("BOT_READ_TOKEN") or ADMIN_TOKEN).strip()
     TRUST_PROXY_HEADERS: bool = os.getenv("BOT_TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
     TRUSTED_PROXIES: List[str] = [
         proxy.strip()

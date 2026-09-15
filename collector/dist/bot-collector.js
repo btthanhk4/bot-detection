@@ -21,6 +21,28 @@
     return (hash >>> 0).toString(16);
   }
 
+  async function hashVisitorId(value) {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+        return Array.from(new Uint8Array(digest).slice(0, 16))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('');
+      }
+    } catch (e) {}
+
+    // Compatibility fallback: four independently salted 32-bit hashes (128 bits).
+    return [0, 1, 2, 3].map((salt) => fnv1a(`${salt}:${value}`)).join('');
+  }
+
+  function supportsStorage(win, key) {
+    try {
+      return typeof win[key] !== 'undefined';
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Canvas fingerprinting
   function getCanvasFingerprint() {
     try {
@@ -180,8 +202,8 @@
       pixelRatio: win.devicePixelRatio || 1,
       timezoneOffset: new Date().getTimezoneOffset(),
       timezone: (typeof Intl !== 'undefined' && Intl?.DateTimeFormat?.().resolvedOptions?.().timeZone) || '',
-      sessionStorage: typeof win.sessionStorage !== 'undefined',
-      localStorage: typeof win.localStorage !== 'undefined',
+      sessionStorage: supportsStorage(win, 'sessionStorage'),
+      localStorage: supportsStorage(win, 'localStorage'),
       indexedDb: typeof win.indexedDB !== 'undefined',
       openDatabase: typeof win.openDatabase !== 'undefined',
       pluginsLength: nav.plugins ? nav.plugins.length : 0,
@@ -214,7 +236,7 @@
       components.pixelRatio,
     ].join('###');
 
-    const visitorId = fnv1a(rawId);
+    const visitorId = await hashVisitorId(rawId);
 
     return { visitorId, components };
   }
@@ -454,6 +476,7 @@
       this.records = [];
       this.chunks = [];
       this.scrollEvents = [];
+      this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
 
     recordPoint(type, clientX, clientY) {
@@ -467,7 +490,10 @@
       const normX = Math.max(0, Math.min(1, Number((safeX / w).toFixed(5))));
       const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
 
-      const prev = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+      const previousRecord = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+      const prev = type === 'move'
+        ? [...this.records].reverse().find((record) => record.type === 'move') || null
+        : previousRecord;
 
       let timeDiff = 0;
       let dx = 0;
@@ -582,22 +608,33 @@
      * Split records into consecutive chunks of 24 points for LSTM input
      */
     getChunks(chunkSize = 24) {
-      const moveRecords = this.records.filter((r) => r.type === 'move' && r.timeDiff > 0);
+      const moveRecords = this.records.filter((r) => r.type === 'move');
+      const featureRows = [];
+      let prevSpeedX = 0;
+      let prevSpeedY = 0;
+
+      for (let i = 1; i < moveRecords.length; i++) {
+        const prev = moveRecords[i - 1];
+        const point = moveRecords[i];
+        const dt = Math.max(0.001, (point.time - prev.time) / 1000);
+        const dx = point.x - prev.x;
+        const dy = point.y - prev.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const speedX = dx / dt;
+        const speedY = dy / dt;
+        const speed = distance / dt;
+        const accel = Math.sqrt(
+          Math.pow(speedX - prevSpeedX, 2) + Math.pow(speedY - prevSpeedY, 2)
+        ) / dt;
+        featureRows.push([dx, dy, speedX, speedY, speed, accel, distance, dt]);
+        prevSpeedX = speedX;
+        prevSpeedY = speedY;
+      }
+
       const chunks = [];
-      for (let i = 0; i + chunkSize <= moveRecords.length; i += Math.floor(chunkSize / 2)) {
-        const slice = moveRecords.slice(i, i + chunkSize);
-        // Format 8 features per point: [dx, dy, speedX, speedY, speed, accel, distance, timeDiff]
-        const matrix = slice.map((p) => [
-          p.dx,
-          p.dy,
-          p.speedX,
-          p.speedY,
-          p.speed,
-          p.accel,
-          p.distance,
-          p.timeDiff / 1000,
-        ]);
-        chunks.push(matrix);
+      const stride = Math.max(1, Math.floor(chunkSize / 2));
+      for (let i = 0; i + chunkSize <= featureRows.length; i += stride) {
+        chunks.push(featureRows.slice(i, i + chunkSize));
       }
       return chunks;
     }
@@ -617,23 +654,25 @@
         };
       }
 
-      const speeds = this.records.map((r) => r.speed).filter((s) => s > 0);
-      const accels = this.records.map((r) => r.accel).filter((a) => a > 0);
+      const moveRecords = this.records.filter((r) => r.type === 'move');
+      const speeds = moveRecords.map((r) => r.speed).filter((s) => s > 0);
+      const accels = moveRecords.map((r) => r.accel).filter((a) => a > 0);
 
       const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
       const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
       const avgAccel = accels.length ? accels.reduce((a, b) => a + b, 0) / accels.length : 0;
 
       // Straightness = net displacement / total path length
-      const first = this.records[0];
-      const last = this.records[this.records.length - 1];
+      const first = moveRecords[0] || this.records[0];
+      const last = moveRecords[moveRecords.length - 1] || this.records[this.records.length - 1];
       const netDist = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
-      const totalDist = this.records.reduce((sum, r) => sum + (r.distance || 0), 0);
+      const totalDist = moveRecords.reduce((sum, r) => sum + (r.distance || 0), 0);
       const straightness = totalDist > 0 ? Number((netDist / totalDist).toFixed(4)) : 1.0;
 
       return {
         pointCount: this.records.length,
-        hasEnoughData: this.records.length >= this.chunkSize,
+        movePointCount: moveRecords.length,
+        hasEnoughData: moveRecords.length >= this.chunkSize + 1,
         avgSpeed: Number(avgSpeed.toFixed(4)),
         maxSpeed: Number(maxSpeed.toFixed(4)),
         avgAccel: Number(avgAccel.toFixed(4)),
@@ -674,6 +713,8 @@
       this.timer = null;
       this.initPromise = null;
       this.destroyed = false;
+      this.sequence = 0;
+      this.sendPromise = null;
       this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
     }
 
@@ -697,16 +738,22 @@
 
     async initialize() {
       this.mouseRecorder.start();
+      if (typeof window !== 'undefined') {
+        window.addEventListener('pagehide', this.handlePageHide, { capture: true });
+      }
       // Pre-warm fingerprint and heuristics
-      const { visitorId, components } = await getFingerprintComponents();
+      let visitorId;
+      let components;
+      try {
+        ({ visitorId, components } = await getFingerprintComponents());
+      } catch (e) {
+        visitorId = this.generateSessionId().replace('sess_', 'fp_');
+        components = {};
+      }
       this.cachedFingerprint = { visitorId, components };
       this.cachedBotd = runBotDetectors(components);
 
       if (this.destroyed) return this;
-
-      if (typeof window !== 'undefined') {
-        window.addEventListener('pagehide', this.handlePageHide, { capture: true });
-      }
 
       await this.sendTelemetry('init');
 
@@ -743,6 +790,7 @@
         sessionId: this.sessionId,
         action,
         timestamp: Date.now(),
+        sequence: this.sequence++,
         pageUrl: typeof window !== 'undefined' ? window.location.href : '',
         referrer: typeof document !== 'undefined' ? document.referrer : '',
         visitorId: this.cachedFingerprint.visitorId,
@@ -756,25 +804,51 @@
      * Send telemetry asynchronously via sendBeacon or fetch
      */
     async sendTelemetry(action = 'telemetry') {
-      const payload = await this.getPayload(action);
-      const body = JSON.stringify(payload);
+      if (this.sendPromise && action !== 'pagehide') return this.sendPromise;
 
-      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-        const blob = new Blob([body], { type: 'application/json' });
-        const success = navigator.sendBeacon(this.endpointUrl, blob);
-        if (success) return true;
-      }
+      const operation = this._sendTelemetry(action);
+      if (action === 'pagehide') return operation;
+      const tracked = operation.finally(() => {
+        if (this.sendPromise === tracked) this.sendPromise = null;
+      });
+      this.sendPromise = tracked;
+      return tracked;
+    }
 
+    async _sendTelemetry(action) {
+      let timeoutId = null;
       try {
+        const payload = await this.getPayload(action);
+        let body = JSON.stringify(payload);
+
+        // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
+        if (action === 'pagehide' && body.length > 60000 && payload.mouse) {
+          payload.mouse.records = (payload.mouse.records || []).slice(-40);
+          payload.mouse.chunks = (payload.mouse.chunks || []).slice(-2);
+          payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
+          body = JSON.stringify(payload);
+        }
+
+        if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          const blob = new Blob([body], { type: 'application/json' });
+          const success = navigator.sendBeacon(this.endpointUrl, blob);
+          if (success) return true;
+        }
+
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
         const res = await fetch(this.endpointUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
-          keepalive: true,
+          keepalive: action === 'pagehide',
+          ...(controller ? { signal: controller.signal } : {}),
         });
         return res.ok;
       } catch (e) {
         return false;
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
       }
     }
 

@@ -19,6 +19,7 @@ import time
 import random
 import json
 import hashlib
+import argparse
 import numpy as np
 
 try:
@@ -82,10 +83,10 @@ def eval_metrics(y_true, y_proba, threshold=0.5):
     }
 
 
-def prepare_data():
+def prepare_data(dataset_root=None):
     """Prepare common dataset for all experiments."""
     print("  Preparing data...")
-    real_root = os.path.join(os.path.dirname(__file__), "..", "..", "..", "Tuần 3", "repos", "web_bot_detection_dataset")
+    real_root = dataset_root or os.getenv("BOT_DATASET_ROOT", "")
     
     all_telemetries = []
     all_labels = []
@@ -94,15 +95,15 @@ def prepare_data():
     # Real data (Phase 1 + Phase 2 with deduplication)
     real_sessions = []
     if os.path.isdir(real_root):
-        for i, scenario in enumerate(["humans_and_moderate_bots", "humans_and_advanced_bots"]):
+        for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
             sessions = load_real_dataset(real_root, scenario=scenario,
-                                          include_phase2=(i == 0))
+                                          include_phase2=True)
             real_sessions.extend(sessions)
         # Deduplicate
         seen = set()
         unique_sessions = []
         for records, label in real_sessions:
-            key = (label, records_signature(records))
+            key = records_signature(records)
             if key not in seen:
                 seen.add(key)
                 unique_sessions.append((records, label))
@@ -164,6 +165,20 @@ def load_real_by_scenario(real_root, scenario, include_phase2=True):
     return X, np.array(y_list, dtype=int)
 
 
+def sessions_to_xy(sessions):
+    feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURES
+    vectors = [
+        build_full_vector({}, {"heuristicScore": 0.0, "detectors": {}, "reasons": []}, records)
+        for records, _ in sessions
+    ]
+    if not vectors:
+        return np.empty((0, len(feature_names))), np.array([], dtype=int)
+    return (
+        np.nan_to_num(np.array(vectors, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0),
+        np.array([label for _, label in sessions], dtype=int),
+    )
+
+
 # ============================================================
 # EXPERIMENT 1: Baseline Comparison
 # ============================================================
@@ -219,20 +234,33 @@ def experiment_baseline(X, y, feature_names):
 # ============================================================
 # EXPERIMENT 2: Concept Drift
 # ============================================================
-def experiment_concept_drift():
+def experiment_concept_drift(dataset_root=None):
     print("\n" + "=" * 60)
     print("  E2: CONCEPT DRIFT (Train moderate → Test advanced)")
     print("=" * 60)
 
-    real_root = os.path.join(os.path.dirname(__file__), "..", "..", "..", "Tuần 3", "repos", "web_bot_detection_dataset")
+    real_root = dataset_root or os.getenv("BOT_DATASET_ROOT", "")
     if not os.path.isdir(real_root):
         print("  Real dataset not found. Skipping.")
         return
 
-    X_mod, y_mod = load_real_by_scenario(real_root, "humans_and_moderate_bots")
-    X_adv, y_adv = load_real_by_scenario(real_root, "humans_and_advanced_bots")
+    moderate = load_real_dataset(real_root, scenario="humans_and_moderate_bots", include_phase2=True)
+    advanced = load_real_dataset(real_root, scenario="humans_and_advanced_bots", include_phase2=True)
 
-    if len(y_mod) == 0 or len(y_adv) == 0:
+    # Source scenarios reuse human sessions. Partition unique humans so no
+    # trajectory can occur in both the moderate training and advanced test set.
+    humans, moderate_bots, advanced_bots = {}, {}, {}
+    for records, label in moderate:
+        (humans if label == 0 else moderate_bots)[records_signature(records)] = (records, label)
+    for records, label in advanced:
+        (humans if label == 0 else advanced_bots)[records_signature(records)] = (records, label)
+    human_sessions = list(humans.values())
+    random.Random(SEED).shuffle(human_sessions)
+    split_at = max(1, len(human_sessions) // 2)
+    X_mod, y_mod = sessions_to_xy(human_sessions[:split_at] + list(moderate_bots.values()))
+    X_adv, y_adv = sessions_to_xy(human_sessions[split_at:] + list(advanced_bots.values()))
+
+    if set(y_mod.tolist()) != {0, 1} or set(y_adv.tolist()) != {0, 1}:
         print("  Insufficient data. Skipping.")
         return
 
@@ -294,7 +322,7 @@ def experiment_feature_ablation(X, y, feature_names):
         f"Only Mouse Dynamics ({len(mouse_stat_names)})": [i for i, n in enumerate(feature_names) if n in mouse_stat_names],
         f"Without v2 features ({len(feature_names) - len(new_v2_features)})": [i for i, n in enumerate(feature_names) if n not in new_v2_features],
         f"Only v2 new features ({len(new_v2_features)})": [i for i, n in enumerate(feature_names) if n in new_v2_features],
-        "Without BotD heuristics (remove top env)": [i for i, n in enumerate(feature_names) if n not in ["heuristic_score", "flagged_count", "flag_webdriver", "flag_virtualGpu"]],
+        "Without BotD heuristics (remove top env)": [i for i, n in enumerate(feature_names) if n not in ["heuristic_score", "flagged_count", "flag_webdriver", "flag_virtual_gpu"]],
     }
 
     ablation_results = {}
@@ -507,8 +535,11 @@ def experiment_short_sessions(all_records, y, feature_names):
             continue
         proba = model.predict_batch(X_all[test_in_bin])
         metrics = eval_metrics(y[test_in_bin], proba)
+        if len(np.unique(y[test_in_bin])) < 2:
+            metrics["roc_auc"] = None
         short_results[label] = {**metrics, "n_samples": len(test_in_bin)}
-        print(f"  [{label:20s}] n={len(test_in_bin):3d} → AUC={metrics['roc_auc']:.4f} | F1={metrics['f1']:.4f} | FPR={metrics['fpr']:.4f}")
+        auc_text = f"{metrics['roc_auc']:.4f}" if metrics["roc_auc"] is not None else "N/A"
+        print(f"  [{label:20s}] n={len(test_in_bin):3d} → AUC={auc_text} | F1={metrics['f1']:.4f} | FPR={metrics['fpr']:.4f}")
 
     RESULTS["E8_short_sessions"] = short_results
 
@@ -580,17 +611,17 @@ def experiment_power_user(all_records, y, feature_names):
 # ============================================================
 # MAIN
 # ============================================================
-def main():
+def main(dataset_root=None):
     print("=" * 60)
     print("  BOT DETECTION — COMPREHENSIVE EXPERIMENT SUITE")
     print("=" * 60)
 
-    X, y, feature_names, all_records, all_telemetries = prepare_data()
+    X, y, feature_names, all_records, all_telemetries = prepare_data(dataset_root=dataset_root)
     print(f"  Dataset: {len(y)} samples ({sum(y==0)} Human, {sum(y==1)} Bot), {len(feature_names)} features")
 
     # Run all experiments
     model, idx_train, idx_test = experiment_baseline(X, y, feature_names)
-    experiment_concept_drift()
+    experiment_concept_drift(dataset_root=dataset_root)
     experiment_feature_ablation(X, y, feature_names)
     experiment_class_imbalance(X, y, feature_names)
     experiment_early_detection(all_records, y, feature_names)
@@ -624,4 +655,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run bot detection experiments")
+    parser.add_argument("--dataset-root", default=os.getenv("BOT_DATASET_ROOT", ""))
+    args = parser.parse_args()
+    main(dataset_root=args.dataset_root)

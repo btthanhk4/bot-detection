@@ -16,6 +16,7 @@ import sys
 import random
 import hashlib
 import json
+import argparse
 import numpy as np
 
 # Ensure utf-8 encoding for Windows console
@@ -140,7 +141,7 @@ def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=N
     print(f"    Top 5 Features: {top5}")
 
 
-def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, epochs=30, lr=0.01):
+def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, test_indices=None, epochs=30, lr=0.01):
     """Train GNN without using validation/test labels in the loss."""
     print("--> Training HeteroClickFraudGNN Model...")
     x_dict = graph_data["x_dict"]
@@ -155,6 +156,7 @@ def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, epoch
         train_indices if train_indices is not None else np.arange(len(y_session)), dtype=torch.long
     )
     val_indices = torch.as_tensor(val_indices if val_indices is not None else [], dtype=torch.long)
+    test_indices = torch.as_tensor(test_indices if test_indices is not None else [], dtype=torch.long)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=lr, weight_decay=1e-4)
@@ -175,6 +177,10 @@ def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, epoch
         with torch.no_grad():
             val_proba = gnn_model.predict_session_probabilities(x_dict, edge_index_dict)[val_indices].numpy()
         evaluate_metrics(y_session[val_indices].numpy(), val_proba, prefix="[Val GNN] ")
+    if test_indices.numel() > 0:
+        with torch.no_grad():
+            test_proba = gnn_model.predict_session_probabilities(x_dict, edge_index_dict)[test_indices].numpy()
+        evaluate_metrics(y_session[test_indices].numpy(), test_proba, prefix="[Test GNN] ")
 
 
 def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
@@ -203,7 +209,7 @@ def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
     return metrics
 
 
-def main():
+def main(dataset_root=None):
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
     print("=" * 60)
@@ -217,20 +223,19 @@ def main():
     print("\n[PHASE 1] Data Preparation")
 
     # 1a. Try to load real dataset (Phase 1 + Phase 2)
-    real_data_root = os.path.join(os.path.dirname(__file__), "..", "..", "Tuần 3", "repos", "web_bot_detection_dataset")
+    real_data_root = dataset_root or os.getenv("BOT_DATASET_ROOT", "")
     real_sessions = []
     if os.path.isdir(real_data_root):
         print("  Loading real mouse data from web_bot_detection_dataset...")
-        # Load Phase 2 only once (first scenario) to avoid duplicate sessions
-        for i, scenario in enumerate(["humans_and_moderate_bots", "humans_and_advanced_bots"]):
+        for scenario in ["humans_and_moderate_bots", "humans_and_advanced_bots"]:
             sessions = load_real_dataset(real_data_root, scenario=scenario,
-                                          include_phase2=(i == 0))
+                                          include_phase2=True)
             real_sessions.extend(sessions)
         # Deduplicate exact trajectories shared by the two dataset scenarios.
         seen = set()
         unique_sessions = []
         for records, label in real_sessions:
-            key = (label, records_signature(records))
+            key = records_signature(records)
             if key not in seen:
                 seen.add(key)
                 unique_sessions.append((records, label))
@@ -248,24 +253,26 @@ def main():
 
     n_synthetic = 150 if real_sessions else 300
 
-    for _ in range(n_synthetic):
+    for sample_idx in range(n_synthetic):
         t = generate_synthetic_telemetry(is_bot=False)
+        t["sessionId"] = f"synthetic_human_{sample_idx}"
         all_telemetries.append(t)
         all_labels.append(0)
 
-    for _ in range(n_synthetic):
+    for sample_idx in range(n_synthetic):
         level = random.choice(["naive", "moderate", "advanced"])
         t = generate_synthetic_telemetry(is_bot=True, bot_level=level)
+        t["sessionId"] = f"synthetic_bot_{sample_idx}"
         all_telemetries.append(t)
         all_labels.append(1)
 
     # 1c. Build real data telemetry payloads
-    for records, label in real_sessions:
+    for real_idx, (records, label) in enumerate(real_sessions):
         # Create telemetry-like structure from real mouse data
         chunks = records_to_chunks(records, chunk_size=24, stride=12)
         telemetry = {
-            "sessionId": f"real_{random.randint(100000, 999999)}",
-            "visitorId": f"fp_real_{random.randint(1000, 9999)}",
+            "sessionId": f"real_{real_idx}",
+            "visitorId": f"fp_real_{real_idx}",
             "timestamp": 1725800000000,
             "pageUrl": "https://example.com/test",
             "fingerprint": {},  # No fingerprint data for real sessions
@@ -379,6 +386,7 @@ def main():
         # Keep every chunk from a session in the same split to avoid leakage.
         train_sessions = set(idx_train.tolist())
         val_sessions = set(idx_val.tolist())
+        test_sessions = set(idx_test.tolist())
         train_idx = torch.tensor(
             [i for i, session_idx in enumerate(all_chunk_session_indices) if session_idx in train_sessions],
             dtype=torch.long,
@@ -387,13 +395,19 @@ def main():
             [i for i, session_idx in enumerate(all_chunk_session_indices) if session_idx in val_sessions],
             dtype=torch.long,
         )
+        test_idx = torch.tensor(
+            [i for i, session_idx in enumerate(all_chunk_session_indices) if session_idx in test_sessions],
+            dtype=torch.long,
+        )
 
         X_chunks_train = X_chunks_tensor[train_idx]
         y_chunks_train = y_chunks_tensor[train_idx]
         X_chunks_val = X_chunks_tensor[val_idx]
         y_chunks_val = y_chunks_tensor[val_idx]
+        X_chunks_test = X_chunks_tensor[test_idx]
+        y_chunks_test = y_chunks_tensor[test_idx]
 
-        print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)}")
+        print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
         if len(train_idx) and len(val_idx):
@@ -413,7 +427,14 @@ def main():
     # ================================================================
     graph_tensors = graph_builder.to_torch_tensors()
     gnn_model = HeteroClickFraudGNN()
-    train_gnn(gnn_model, graph_tensors, train_indices=idx_train, val_indices=idx_val, epochs=25)
+    train_gnn(
+        gnn_model,
+        graph_tensors,
+        train_indices=idx_train,
+        val_indices=idx_val,
+        test_indices=idx_test,
+        epochs=25,
+    )
     gnn_path = os.path.join(weights_dir, "gnn_model.pt")
     gnn_model.save_model(gnn_path)
     print(f"    Saved GNN Model -> {gnn_path}")
@@ -443,6 +464,12 @@ def main():
             lstm_val_preds = lstm_model(X_chunks_val).squeeze().numpy()
             lstm_val_true = y_chunks_val.numpy().astype(int)
         evaluate_metrics(lstm_val_true, lstm_val_preds, prefix="[Val LSTM] ")
+        if len(test_idx):
+            with torch.no_grad():
+                lstm_test_preds = lstm_model(X_chunks_test).squeeze().numpy()
+                lstm_test_true = y_chunks_test.numpy().astype(int)
+            print(f"\n  --- Test Set (BiLSTM on chunks) ---")
+            evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
 
     print("\n" + "=" * 60)
     print("  TRAINING COMPLETE")
@@ -450,4 +477,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train bot detection models")
+    parser.add_argument("--dataset-root", default=os.getenv("BOT_DATASET_ROOT", ""))
+    args = parser.parse_args()
+    main(dataset_root=args.dataset_root)

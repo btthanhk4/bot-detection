@@ -904,8 +904,8 @@ body::before {
     </div>
     <div class="header-status">
       <div style="display:flex;gap:8px;">
-        <button class="simulate-btn human-btn" onclick="simulateHuman()" title="Gửi dữ liệu người thật giả lập">✓ Giả lập Human</button>
-        <button class="simulate-btn" onclick="simulateBot()" title="Gửi dữ liệu bot giả lập">🤖 Giả lập Bot</button>
+        <button class="simulate-btn human-btn" onclick="simulateHuman(event)" title="Gửi dữ liệu người thật giả lập">✓ Giả lập Human</button>
+        <button class="simulate-btn" onclick="simulateBot(event)" title="Gửi dữ liệu bot giả lập">🤖 Giả lập Bot</button>
       </div>
       <div class="status-indicator">
         <span class="status-dot" id="statusDot"></span>
@@ -1354,6 +1354,7 @@ const POLL_INTERVAL = 3000;
 
 let allSessions = [];
 let selectedSession = null;
+let readTokenPrompted = false;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, ch => ({
@@ -1370,6 +1371,16 @@ function adminHeaders() {
   return token ? { 'X-Admin-Token': token } : {};
 }
 
+function readHeaders() {
+  let token = sessionStorage.getItem('bot_read_token') || sessionStorage.getItem('bot_admin_token') || '';
+  if (!token && !readTokenPrompted) {
+    readTokenPrompted = true;
+    token = prompt('Nhập BOT_READ_TOKEN để xem dữ liệu giám sát:') || '';
+    if (token) sessionStorage.setItem('bot_read_token', token);
+  }
+  return token ? { 'X-Read-Token': token } : {};
+}
+
 // ──── Clock ────
 function updateClock() {
   const now = new Date();
@@ -1381,9 +1392,10 @@ setInterval(updateClock, 100);
 updateClock();
 
 // ──── API Fetchers ────
-async function fetchJSON(url) {
+async function fetchJSON(url, authenticated = true) {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: authenticated ? readHeaders() : {} });
+    if (res.status === 401) sessionStorage.removeItem('bot_read_token');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
@@ -1393,7 +1405,7 @@ async function fetchJSON(url) {
 }
 
 async function fetchHealth() {
-  const data = await fetchJSON(API_BASE + '/health');
+  const data = await fetchJSON(API_BASE + '/health', false);
   if (data && data.status === 'healthy') {
     document.getElementById('statusDot').className = 'status-dot';
     const models = data.models_loaded || {};
@@ -2538,8 +2550,8 @@ async function deleteAllSessions() {
 }
 
 // ──── Simulate Bot / Human ────
-async function simulateBot() {
-  const btn = event.target;
+async function simulateBot(event) {
+  const btn = event.currentTarget;
   btn.disabled = true;
   btn.textContent = '⏳ Đang gửi...';
 
@@ -2570,8 +2582,8 @@ async function simulateBot() {
   setTimeout(() => { btn.disabled = false; btn.textContent = '🤖 Giả lập Bot'; }, 2000);
 }
 
-async function simulateHuman() {
-  const btn = event.target;
+async function simulateHuman(event) {
+  const btn = event.currentTarget;
   btn.disabled = true;
   btn.textContent = '⏳ Đang gửi...';
 

@@ -14,6 +14,7 @@ import math
 import os
 import random
 import re
+import hashlib
 import numpy as np
 
 
@@ -64,7 +65,7 @@ def parse_movement_notation(notation: str) -> list:
                 last_x, last_y = x, y
 
         elif action == 'c':
-            t += random.randint(50, 150)
+            t += 100
             records.append({
                 "time": t,
                 "x": last_x,
@@ -73,7 +74,7 @@ def parse_movement_notation(notation: str) -> list:
             })
 
         elif action == 's':
-            t += random.randint(20, 80)
+            t += 50
             # Scroll events don't change position
             records.append({
                 "time": t,
@@ -85,12 +86,11 @@ def parse_movement_notation(notation: str) -> list:
     if records:
         max_x = max((r["x"] for r in records), default=1.0)
         max_y = max((r["y"] for r in records), default=1.0)
-        if max_x > 1.0 or max_y > 1.0:
-            scale_w = max(1920.0, max_x)
-            scale_h = max(1080.0, max_y)
-            for r in records:
-                r["x"] = round(r["x"] / scale_w, 5)
-                r["y"] = round(r["y"] / scale_h, 5)
+        scale_w = max(1920.0, max_x) if max_x > 1.0 else 1.0
+        scale_h = max(1080.0, max_y) if max_y > 1.0 else 1.0
+        for r in records:
+            r["x"] = round(max(0.0, min(1.0, r["x"] / scale_w)), 5)
+            r["y"] = round(max(0.0, min(1.0, r["y"] / scale_h)), 5)
 
     return records
 
@@ -179,7 +179,7 @@ def parse_phase2_record(record: dict) -> list:
         
         elif action == 'c':
             if t is None:
-                t = last_time + random.randint(50, 150)
+                t = last_time + 100
             records.append({
                 "time": t,
                 "x": last_x,
@@ -190,7 +190,7 @@ def parse_phase2_record(record: dict) -> list:
         
         elif action == 's':
             if t is None:
-                t = last_time + random.randint(20, 80)
+                t = last_time + 50
             records.append({
                 "time": t,
                 "x": last_x,
@@ -208,13 +208,13 @@ def parse_phase2_record(record: dict) -> list:
     # Normalize coordinates to [0.0, 1.0] matching client-side collector
     if records:
         for r in records:
-            r["x"] = round(r["x"] / view_w, 5)
-            r["y"] = round(r["y"] / view_h, 5)
+            r["x"] = round(max(0.0, min(1.0, r["x"] / view_w)), 5)
+            r["y"] = round(max(0.0, min(1.0, r["y"] / view_h)), 5)
     
     return records
 
 
-def load_phase2_dataset(dataset_root: str):
+def load_phase2_dataset(dataset_root: str, scenario: str = None):
     """
     Load Phase 2 data from MongoDB-exported JSON lines files.
     Phase 2 has real browser timestamps and richer data (~220MB).
@@ -265,11 +265,11 @@ def load_phase2_dataset(dataset_root: str):
                                     label_map[base_sid] = 1
     
     # Load data files
-    data_files = [
-        (os.path.join(phase2_root, "data", "mouse_movements", "humans", "mouse_movements_humans.json"), 0),
-        (os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_moderate_bots.json"), 1),
-        (os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_advanced_bots.json"), 1),
-    ]
+    data_files = [(os.path.join(phase2_root, "data", "mouse_movements", "humans", "mouse_movements_humans.json"), 0)]
+    if scenario != "humans_and_advanced_bots":
+        data_files.append((os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_moderate_bots.json"), 1))
+    if scenario != "humans_and_moderate_bots":
+        data_files.append((os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_advanced_bots.json"), 1))
     
     seen_sessions = set()  # Deduplicate by session_id
     
@@ -387,11 +387,20 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
 
     # ===== Phase 2: MongoDB JSON-lines with REAL timestamps =====
     if include_phase2:
-        phase2_sessions = load_phase2_dataset(dataset_root)
+        phase2_sessions = load_phase2_dataset(dataset_root, scenario=scenario)
         for records, label in phase2_sessions:
             sessions.append((records, label))
 
-    return sessions
+    unique_sessions = []
+    seen_trajectories = set()
+    for records, label in sessions:
+        payload = json.dumps(records, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        signature = hashlib.sha256(payload).digest()
+        key = signature
+        if key not in seen_trajectories:
+            seen_trajectories.add(key)
+            unique_sessions.append((records, label))
+    return unique_sessions
 
 
 def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12, n_features: int = 8) -> list:
@@ -401,7 +410,10 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12, n_f
     Works directly in normalized screen coordinate space [0.0, 1.0].
     """
     # Filter to moves only with positive time diff
-    moves = [r for r in records if r.get("type") == "move"]
+    moves = sorted(
+        [r for r in records if isinstance(r, dict) and r.get("type") == "move"],
+        key=lambda record: record.get("time", 0),
+    )
     if len(moves) < chunk_size + 1:
         return []
 
@@ -656,33 +668,8 @@ def generate_synthetic_telemetry(is_bot: bool = False, bot_level: str = "moderat
             "reasons": [f"Flagged: {k}" for k, v in botd_flags.items() if v],
         }
 
-    # Generate chunks for LSTM
-    chunks = []
-    chunk_size = 24
-    move_records = [r for r in records if r.get("type") == "move"]
-    if len(move_records) >= chunk_size + 1:
-        # Sliding window with 50% overlap
-        for start in range(0, len(move_records) - chunk_size, chunk_size // 2):
-            slice_p = move_records[start:start + chunk_size + 1]
-            if len(slice_p) < chunk_size + 1:
-                break
-            chunk_matrix = []
-            prev_sx, prev_sy = 0.0, 0.0
-            for j in range(1, min(len(slice_p), chunk_size + 1)):
-                dt = max(1, slice_p[j]["time"] - slice_p[j-1]["time"]) / 1000.0
-                dx = slice_p[j]["x"] - slice_p[j-1]["x"]
-                dy = slice_p[j]["y"] - slice_p[j-1]["y"]
-                dist = math.sqrt(dx * dx + dy * dy)
-                sx = dx / dt
-                sy = dy / dt
-                speed = dist / dt
-                accel = math.sqrt((sx - prev_sx)**2 + (sy - prev_sy)**2) / dt
-                chunk_matrix.append([dx, dy, sx, sy, speed, accel, dist, dt])
-                prev_sx, prev_sy = sx, sy
-            # Pad to exactly chunk_size if needed
-            while len(chunk_matrix) < chunk_size:
-                chunk_matrix.append([0.0] * 8)
-            chunks.append(chunk_matrix[:chunk_size])
+    # Use the same feature contract as real data and the browser collector.
+    chunks = records_to_chunks(records, chunk_size=24, stride=12)
 
     return {
         "sessionId": session_id,

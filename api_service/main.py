@@ -25,11 +25,59 @@ from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.models.gnn_detector import HeteroClickFraudGNN
 
+
+class RequestBodyTooLarge(Exception):
+    pass
+
+
+class RequestBodyLimitMiddleware:
+    """Reject oversized streamed bodies before FastAPI buffers them."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+
+        content_length = dict(scope.get("headers") or []).get(b"content-length")
+        if content_length:
+            try:
+                if int(content_length) > self.max_bytes:
+                    response = JSONResponse(status_code=413, content={"detail": "Request payload too large"})
+                    await response(scope, receive, send)
+                    return
+            except ValueError:
+                response = JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+                await response(scope, receive, send)
+                return
+
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise RequestBodyTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except RequestBodyTooLarge:
+            response = JSONResponse(status_code=413, content={"detail": "Request payload too large"})
+            await response(scope, receive, send)
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Bot detection using browser heuristics, mouse dynamics, and tabular ML",
     version=settings.VERSION,
 )
+
+app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BYTES)
 
 # Enable CORS for local development and cloud deployments
 app.add_middleware(
@@ -60,6 +108,8 @@ ensemble_detector = EnsembleBotDetector(
     tabular_model=tabular_model,
     threshold=settings.THRESHOLD,
     suspect_threshold=settings.SUSPECT_THRESHOLD,
+    lstm_available=lstm_loaded,
+    tabular_available=tabular_loaded,
 )
 graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
@@ -99,24 +149,12 @@ class TelemetryPayload(BaseModel):
     visitorId: Optional[str] = Field(default=None, max_length=128)
     action: Optional[str] = Field(default="telemetry", max_length=64)
     timestamp: Optional[int] = None
+    sequence: Optional[int] = Field(default=None, ge=0, le=9007199254740991)
     pageUrl: Optional[str] = Field(default=None, max_length=2048)
     referrer: Optional[str] = Field(default=None, max_length=2048)
     fingerprint: Optional[Dict[str, Any]] = None
     botd: Optional[Dict[str, Any]] = None
     mouse: Optional[Dict[str, Any]] = None
-
-
-@app.middleware("http")
-async def limit_request_body(request: Request, call_next):
-    if request.method in {"POST", "PUT", "PATCH"}:
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > settings.MAX_PAYLOAD_BYTES:
-                    return JSONResponse(status_code=413, content={"detail": "Request payload too large"})
-            except ValueError:
-                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-    return await call_next(request)
 
 
 def _is_trusted_proxy(host: str) -> bool:
@@ -162,6 +200,19 @@ def require_admin(request: Request):
         raise HTTPException(status_code=401, detail="Invalid admin token")
 
 
+def require_read_access(request: Request):
+    if not settings.READ_TOKEN:
+        raise HTTPException(status_code=503, detail="Monitoring API is disabled until BOT_READ_TOKEN is configured")
+    supplied = request.headers.get("X-Read-Token", "")
+    authorization = request.headers.get("Authorization", "")
+    if authorization.lower().startswith("bearer "):
+        supplied = authorization[7:].strip()
+    valid_read = bool(supplied) and secrets.compare_digest(supplied, settings.READ_TOKEN)
+    valid_admin = bool(settings.ADMIN_TOKEN and supplied) and secrets.compare_digest(supplied, settings.ADMIN_TOKEN)
+    if not valid_read and not valid_admin:
+        raise HTTPException(status_code=401, detail="Invalid read token")
+
+
 @app.get("/")
 def index():
     stats = graph_builder.get_stats()
@@ -185,9 +236,9 @@ def index():
 @app.get("/healthz")
 def health_check():
     """Standard health check endpoint for load balancers and container orchestrators."""
-    from api_service.database import get_db
-    database_ready = get_db() is not None
-    return {
+    from api_service.database import is_database_ready
+    database_ready = is_database_ready()
+    content = {
         "status": "healthy" if (tabular_loaded and lstm_loaded and database_ready) else "degraded",
         "timestamp": int(time.time() * 1000),
         "models_loaded": {
@@ -197,6 +248,12 @@ def health_check():
         },
         "database": database_ready,
     }
+    return JSONResponse(content=content, status_code=200 if content["status"] == "healthy" else 503)
+
+
+@app.get("/health/live")
+def liveness_check():
+    return {"status": "alive", "timestamp": int(time.time() * 1000)}
 
 
 @app.post("/api/v1/detect")
@@ -234,12 +291,6 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
         }
 
     latency_ms = round((time.perf_counter() - start_t) * 1000, 2)
-
-    # Ingest into graph builder (label=-1 unknown, not the model's own prediction)
-    try:
-        graph_builder.add_telemetry_event(data, ip_address=client_ip, is_bot_ground_truth=None)
-    except Exception:
-        pass
 
     result["latency_ms"] = latency_ms
     result["client_ip"] = client_ip
@@ -284,6 +335,8 @@ async def receive_telemetry(request: Request):
         raise HTTPException(status_code=422, detail=detail)
     if not data.get("sessionId"):
         raise HTTPException(status_code=422, detail="sessionId is required")
+    if not data.get("visitorId"):
+        raise HTTPException(status_code=422, detail="visitorId is required")
 
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
@@ -300,17 +353,19 @@ async def receive_telemetry(request: Request):
     except Exception:
         persisted = False
 
-    # Auto-add to evolving graph
-    try:
-        graph_builder.add_telemetry_event(data, ip_address=client_ip)
-    except Exception:
-        pass
+    # Only persisted telemetry is eligible for graph aggregation. This keeps
+    # stale/foreign heartbeats rejected by MongoDB out of the live topology.
+    if persisted:
+        try:
+            graph_builder.add_telemetry_event(data, ip_address=client_ip)
+        except Exception:
+            pass
 
     return {"status": "success" if persisted else "degraded", "recorded": True, "persisted": persisted}
 
 
 @app.get("/api/v1/telemetry/recent")
-def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200)):
+def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Depends(require_read_access)):
     """
     Returns the most recent detection sessions from MongoDB.
     Single source of truth — no fallback to in-memory buffer.
@@ -325,7 +380,7 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200)):
 
 
 @app.get("/api/v1/graph/stats")
-def get_graph_stats():
+def get_graph_stats(_read=Depends(require_read_access)):
     """
     Returns graph topology statistics and fraud ring indicators.
     """
@@ -333,7 +388,7 @@ def get_graph_stats():
 
 
 @app.get("/api/v1/graph/topology")
-def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200)):
+def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200), _read=Depends(require_read_access)):
     """
     Returns the full graph topology (nodes + edges) for interactive visualization.
     Limits output to max_nodes most recent sessions and their connected nodes.
@@ -452,7 +507,7 @@ def get_dashboard():
 
 
 @app.get("/api/v1/telemetry/raw/{session_id}")
-def get_raw_telemetry(session_id: str):
+def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
     """
     Returns the raw telemetry data for a specific session, including mouse records.
     """
@@ -507,7 +562,7 @@ def delete_all_sessions(_admin=Depends(require_admin)):
 
 
 @app.get("/api/v1/stats/summary")
-def get_stats_summary():
+def get_stats_summary(_read=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""
     from api_service.database import get_db, get_summary_stats
     if get_db() is None:
@@ -516,7 +571,7 @@ def get_stats_summary():
 
 
 @app.get("/api/v1/sessions/{session_id}/detail")
-def get_session_detail(session_id: str):
+def get_session_detail(session_id: str, _read=Depends(require_read_access)):
     """
     Returns comprehensive analysis detail for a specific session.
     Includes AI breakdown, fingerprint, botd detectors, mouse stats, and reasons.

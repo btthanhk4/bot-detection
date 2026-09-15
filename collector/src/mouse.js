@@ -54,6 +54,7 @@ export class MouseRecorder {
     this.records = [];
     this.chunks = [];
     this.scrollEvents = [];
+    this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
 
   recordPoint(type, clientX, clientY) {
@@ -67,7 +68,10 @@ export class MouseRecorder {
     const normX = Math.max(0, Math.min(1, Number((safeX / w).toFixed(5))));
     const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
 
-    const prev = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+    const previousRecord = this.records.length > 0 ? this.records[this.records.length - 1] : null;
+    const prev = type === 'move'
+      ? [...this.records].reverse().find((record) => record.type === 'move') || null
+      : previousRecord;
 
     let timeDiff = 0;
     let dx = 0;
@@ -182,22 +186,33 @@ export class MouseRecorder {
    * Split records into consecutive chunks of 24 points for LSTM input
    */
   getChunks(chunkSize = 24) {
-    const moveRecords = this.records.filter((r) => r.type === 'move' && r.timeDiff > 0);
+    const moveRecords = this.records.filter((r) => r.type === 'move');
+    const featureRows = [];
+    let prevSpeedX = 0;
+    let prevSpeedY = 0;
+
+    for (let i = 1; i < moveRecords.length; i++) {
+      const prev = moveRecords[i - 1];
+      const point = moveRecords[i];
+      const dt = Math.max(0.001, (point.time - prev.time) / 1000);
+      const dx = point.x - prev.x;
+      const dy = point.y - prev.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const speedX = dx / dt;
+      const speedY = dy / dt;
+      const speed = distance / dt;
+      const accel = Math.sqrt(
+        Math.pow(speedX - prevSpeedX, 2) + Math.pow(speedY - prevSpeedY, 2)
+      ) / dt;
+      featureRows.push([dx, dy, speedX, speedY, speed, accel, distance, dt]);
+      prevSpeedX = speedX;
+      prevSpeedY = speedY;
+    }
+
     const chunks = [];
-    for (let i = 0; i + chunkSize <= moveRecords.length; i += Math.floor(chunkSize / 2)) {
-      const slice = moveRecords.slice(i, i + chunkSize);
-      // Format 8 features per point: [dx, dy, speedX, speedY, speed, accel, distance, timeDiff]
-      const matrix = slice.map((p) => [
-        p.dx,
-        p.dy,
-        p.speedX,
-        p.speedY,
-        p.speed,
-        p.accel,
-        p.distance,
-        p.timeDiff / 1000,
-      ]);
-      chunks.push(matrix);
+    const stride = Math.max(1, Math.floor(chunkSize / 2));
+    for (let i = 0; i + chunkSize <= featureRows.length; i += stride) {
+      chunks.push(featureRows.slice(i, i + chunkSize));
     }
     return chunks;
   }
@@ -217,23 +232,25 @@ export class MouseRecorder {
       };
     }
 
-    const speeds = this.records.map((r) => r.speed).filter((s) => s > 0);
-    const accels = this.records.map((r) => r.accel).filter((a) => a > 0);
+    const moveRecords = this.records.filter((r) => r.type === 'move');
+    const speeds = moveRecords.map((r) => r.speed).filter((s) => s > 0);
+    const accels = moveRecords.map((r) => r.accel).filter((a) => a > 0);
 
     const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
     const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
     const avgAccel = accels.length ? accels.reduce((a, b) => a + b, 0) / accels.length : 0;
 
     // Straightness = net displacement / total path length
-    const first = this.records[0];
-    const last = this.records[this.records.length - 1];
+    const first = moveRecords[0] || this.records[0];
+    const last = moveRecords[moveRecords.length - 1] || this.records[this.records.length - 1];
     const netDist = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
-    const totalDist = this.records.reduce((sum, r) => sum + (r.distance || 0), 0);
+    const totalDist = moveRecords.reduce((sum, r) => sum + (r.distance || 0), 0);
     const straightness = totalDist > 0 ? Number((netDist / totalDist).toFixed(4)) : 1.0;
 
     return {
       pointCount: this.records.length,
-      hasEnoughData: this.records.length >= this.chunkSize,
+      movePointCount: moveRecords.length,
+      hasEnoughData: moveRecords.length >= this.chunkSize + 1,
       avgSpeed: Number(avgSpeed.toFixed(4)),
       maxSpeed: Number(maxSpeed.toFixed(4)),
       avgAccel: Number(avgAccel.toFixed(4)),

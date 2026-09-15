@@ -26,6 +26,8 @@ class EnsembleBotDetector:
         w_heuristic: float = 0.20,
         threshold: float = 0.70,
         suspect_threshold: float = 0.45,
+        lstm_available: bool = True,
+        tabular_available: bool = True,
     ):
         self.lstm_model = lstm_model or MouseTrajectoryLSTM()
         self.tabular_model = tabular_model or TabularBotClassifier()
@@ -34,6 +36,8 @@ class EnsembleBotDetector:
         self.w_heuristic = w_heuristic
         self.threshold = max(0.0, min(1.0, float(threshold)))
         self.suspect_threshold = max(0.0, min(self.threshold, float(suspect_threshold)))
+        self.lstm_available = bool(lstm_available)
+        self.tabular_available = bool(tabular_available)
 
     def _compute_confidence_weight(self, score: float) -> float:
         """Higher confidence (further from 0.5) → higher weight."""
@@ -83,11 +87,12 @@ class EnsembleBotDetector:
         # 2. Behavioral LSTM evaluation
         chunks_tensor = extract_sequential_chunks(chunks)
         has_enough_mouse_data = chunks_tensor.size(0) > 0
-        if has_enough_mouse_data:
+        lstm_score = 0.5
+        if has_enough_mouse_data and self.lstm_available:
             lstm_score = self.lstm_model.predict_session_proba(chunks_tensor)
             if lstm_score > 0.70:
                 reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
-        else:
+        elif self.lstm_available:
             # If user hasn't moved mouse enough, use precomputed mouse stats
             if mouse_stats.get("move_point_count", 0) > 5:
                 if mouse_stats.get("straightness", 0.0) > 0.98:
@@ -105,10 +110,14 @@ class EnsembleBotDetector:
         env_vec = extract_env_vector(fingerprint, botd)
         mouse_stat_vec = extract_mouse_stat_vector(mouse_stats)
         combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
-        tabular_score = self.tabular_model.predict_proba(combined_tabular_vec)
+        tabular_score = self.tabular_model.predict_proba(combined_tabular_vec) if self.tabular_available else 0.5
 
         # 4. Confidence-Based Adaptive Weighted Fusion
-        if not has_enough_mouse_data:
+        if not self.lstm_available:
+            w_l = 0.0
+            w_t = 0.70 * self._compute_confidence_weight(tabular_score) if self.tabular_available else 0.0
+            w_h = 0.30 * self._compute_confidence_weight(heuristic_score)
+        elif not has_enough_mouse_data:
             # Without full 24-point chunks, check if partial mouse trajectory exists
             if mouse_stats.get("move_point_count", 0) >= 5:
                 w_l = 0.15 * self._compute_confidence_weight(lstm_score)
@@ -127,6 +136,9 @@ class EnsembleBotDetector:
             w_l = self.w_lstm * conf_lstm
             w_t = self.w_tabular * conf_tab
             w_h = self.w_heuristic * conf_heur
+
+        if not self.tabular_available:
+            w_t = 0.0
 
         # Clean scores against NaN
         lstm_score = float(np.nan_to_num(lstm_score, nan=0.5))

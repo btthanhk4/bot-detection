@@ -161,3 +161,9 @@ class TestEnsembleDetector:
         detector = EnsembleBotDetector(threshold=0.99, suspect_threshold=0.98)
         result = detector.predict({"botd": {"heuristicScore": 0.6}})
         assert result["verdict"] != "BOT"
+
+    def test_unavailable_lstm_is_not_used(self):
+        detector = EnsembleBotDetector(lstm_available=False)
+        chunk = [[0.01] * 8 for _ in range(24)]
+        result = detector.predict({"mouse": {"chunks": [chunk]}})
+        assert result["breakdown"]["weights_used"]["w_lstm"] == 0

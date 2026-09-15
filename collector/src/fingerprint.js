@@ -14,6 +14,28 @@ export function fnv1a(str) {
   return (hash >>> 0).toString(16);
 }
 
+async function hashVisitorId(value) {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle && typeof TextEncoder !== 'undefined') {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+      return Array.from(new Uint8Array(digest).slice(0, 16))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch (e) {}
+
+  // Compatibility fallback: four independently salted 32-bit hashes (128 bits).
+  return [0, 1, 2, 3].map((salt) => fnv1a(`${salt}:${value}`)).join('');
+}
+
+function supportsStorage(win, key) {
+  try {
+    return typeof win[key] !== 'undefined';
+  } catch (e) {
+    return false;
+  }
+}
+
 // Canvas fingerprinting
 function getCanvasFingerprint() {
   try {
@@ -173,8 +195,8 @@ export async function getFingerprintComponents() {
     pixelRatio: win.devicePixelRatio || 1,
     timezoneOffset: new Date().getTimezoneOffset(),
     timezone: (typeof Intl !== 'undefined' && Intl?.DateTimeFormat?.().resolvedOptions?.().timeZone) || '',
-    sessionStorage: typeof win.sessionStorage !== 'undefined',
-    localStorage: typeof win.localStorage !== 'undefined',
+    sessionStorage: supportsStorage(win, 'sessionStorage'),
+    localStorage: supportsStorage(win, 'localStorage'),
     indexedDb: typeof win.indexedDB !== 'undefined',
     openDatabase: typeof win.openDatabase !== 'undefined',
     pluginsLength: nav.plugins ? nav.plugins.length : 0,
@@ -207,7 +229,7 @@ export async function getFingerprintComponents() {
     components.pixelRatio,
   ].join('###');
 
-  const visitorId = fnv1a(rawId);
+  const visitorId = await hashVisitorId(rawId);
 
   return { visitorId, components };
 }

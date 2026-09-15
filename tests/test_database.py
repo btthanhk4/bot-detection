@@ -1,6 +1,9 @@
 """Unit tests for MongoDB index setup."""
 
-from api_service.database import _ensure_indexes
+from types import SimpleNamespace
+
+from pymongo.errors import DuplicateKeyError
+from api_service.database import _ensure_indexes, save_detection_result
 
 
 class FakeCollection:
@@ -56,3 +59,51 @@ def test_ensure_indexes_keeps_matching_indexes():
 
     assert detections.dropped == []
     assert deleted.dropped == []
+
+
+class MemoryCollection:
+    def __init__(self):
+        self.docs = {}
+
+    def find_one(self, query, projection=None):
+        session_id = query.get("sessionId")
+        return self.docs.get(session_id) if session_id else None
+
+    def update_one(self, query, update, upsert=False):
+        doc = self.docs.get(query.get("sessionId"))
+        incoming = update["$set"]
+        matches = bool(
+            doc
+            and doc.get("event_order", -1) <= incoming["event_order"]
+            and doc.get("visitorId", incoming.get("visitorId")) == incoming.get("visitorId")
+        )
+        if matches:
+            doc.update(incoming)
+        return SimpleNamespace(matched_count=1 if matches else 0)
+
+    def insert_one(self, doc):
+        if doc["sessionId"] in self.docs:
+            raise DuplicateKeyError()
+        self.docs[doc["sessionId"]] = dict(doc)
+        return SimpleNamespace(inserted_id=doc["sessionId"])
+
+    def delete_one(self, query):
+        removed = self.docs.pop(query.get("sessionId"), None)
+        return SimpleNamespace(deleted_count=1 if removed else 0)
+
+
+def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    database = {
+        "detection_results": detections,
+        "deleted_sessions": empty,
+        "service_control": empty,
+    }
+    monkeypatch.setattr("api_service.database.get_db", lambda: database)
+    analysis = {"verdict": "HUMAN", "bot_probability": 0.1}
+
+    assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 2}, analysis)
+    assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 1}, {"verdict": "BOT"}) is None
+    assert save_detection_result({"sessionId": "s1", "visitorId": "attacker", "sequence": 3}, {"verdict": "BOT"}) is None
+    assert detections.docs["s1"]["verdict"] == "HUMAN"

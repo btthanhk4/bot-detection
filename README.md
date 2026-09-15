@@ -95,36 +95,37 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Training v2 (600 samples: 200 real M4D + 400 synthetic)
+### Training v2 (749 samples: 449 real M4D + 300 synthetic)
 
-| Model | Val AUC-ROC | Val F1 | Val FPR |
+| Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
-| **XGBoost (50 features)** | **0.9995** | **0.9773** | **0.0000** |
-| BiLSTM (mouse chunks) | 0.8240 | 0.6752 | — |
-| GNN (graph) | Loss=0.35 | — | — |
+| **XGBoost (50 features)** | **0.9972** | **0.9933** | **0.0256** |
+| BiLSTM (mouse chunks) | 0.9815 | 0.9568 | 0.0759 |
+| GNN (graph) | 0.9539 | 0.8936 | 0.1026 |
 
 **Top 5 Feature Importance (XGBoost):**
-1. `direction_changes_y` — Số lần đổi hướng theo trục Y
-2. `direction_changes_x` — Số lần đổi hướng theo trục X
-3. `std_speed` — Độ biến thiên tốc độ
-4. `fonts_count` — Số font phát hiện (fingerprint)
-5. `time_regularity` — **Feature mới v2** — std(dt)/mean(dt)
+1. `std_speed` — Độ biến thiên tốc độ
+2. `jerk_mean` — Mức thay đổi gia tốc
+3. `curvature_std` — Độ biến thiên độ cong
+4. `mean_accel` — Gia tốc trung bình
+5. `straightness` — Độ thẳng của quỹ đạo
 
 ### 9 Thí nghiệm đánh giá
 
 | # | Thí nghiệm | Kết quả chính |
 |---|-------------|---------------|
-| E1 | Baseline Comparison | ML **+33.1% AUC** so với rule-based |
+| E1 | Baseline Comparison | ML **+50.5% AUC** so với rule-based |
 | E2 | Concept Drift | ⚠️ Train moderate → Recall=**0%** trên advanced bot |
 | E3 | Feature Ablation | Mouse dynamics alone = AUC **1.0** |
 | E4 | Class Imbalance | Robust đến 1:10 (AUC=**0.97**) |
-| E5 | Early Detection | Chỉ cần **5 mouse points** → AUC=**0.99** |
-| E6 | Inference Latency | XGBoost **<1ms**, BiLSTM **<2ms** |
-| E7 | ROC/FPR Analysis | Optimal threshold=**0.3**: FPR=0, TPR=1 |
+| E5 | Early Detection | Chỉ cần **5 mouse points** → AUC=**0.9968** |
+| E6 | Inference Latency | XGBoost **1.668ms**, BiLSTM **4.820ms** trung bình |
+| E7 | ROC/FPR Analysis | Threshold **0.4**: FPR=0, TPR=0.9932 |
 | E8 | Short Sessions | Hoạt động tốt mọi độ dài |
 | E9 | Power User Test | **0% False Positive** trên power users |
 
-> Chi tiết đầy đủ: [EXPERIMENT_REPORT.md](EXPERIMENT_REPORT.md)
+> Kết quả hiện hành: [core_ml/experiment_results.json](core_ml/experiment_results.json).
+> [EXPERIMENT_REPORT.md](EXPERIMENT_REPORT.md) được giữ như bản diễn giải lịch sử.
 
 ---
 
@@ -137,26 +138,27 @@ cd bot-detection-core
 pip install -r requirements.txt
 ```
 
-Set `BOT_ADMIN_TOKEN` before enabling dashboard delete actions. Docker Compose
-publishes the dashboard and API on port `8000`, while also keeping the service
-available to the reverse proxy through `silkmoon-network`.
+Set `BOT_READ_TOKEN` for dashboard data access and `BOT_ADMIN_TOKEN` for delete
+actions. Docker Compose publishes port `8000`; production should put this port
+behind an HTTPS reverse proxy. Copy the values from `.env.example` into the
+server environment and restrict `BOT_CORS_ORIGINS` to trusted website origins.
 
 ### 2. Huấn luyện mô hình
 
 ```bash
-python -u -m core_ml.train
+python -u -m core_ml.train --dataset-root "/path/to/web_bot_detection_dataset"
 ```
 
 Kết quả huấn luyện v2:
-- **XGBoost:** Val AUC=0.9995 | Test AUC=1.0000
-- **BiLSTM:** 30 epochs, Early Stopping, CosineAnnealing LR
-- **GNN:** 25 epochs, Loss 0.59→0.35
+- **XGBoost:** Test AUC=0.9972 | Test F1=0.9933
+- **BiLSTM:** Test AUC=0.9815 | Test F1=0.9568
+- **GNN:** Test AUC=0.9539 | Test F1=0.8936
 - Weights saved to `core_ml/weights/`
 
 ### 3. Chạy toàn bộ thí nghiệm
 
 ```bash
-python -u -m core_ml.experiments.run_all
+python -u -m core_ml.experiments.run_all --dataset-root "/path/to/web_bot_detection_dataset"
 ```
 
 Kết quả JSON: `core_ml/experiment_results.json`

@@ -89,14 +89,11 @@ class TabularBotClassifier:
         if x_arr.ndim == 1:
             x_arr = x_arr.reshape(1, -1)
 
-        # Handle dimension mismatch gracefully if feature set evolved
+        # A mismatched schema means these weights are not compatible. Silently
+        # padding/truncating would attach values to the wrong feature names.
         expected_dim = getattr(self.scaler, "n_features_in_", x_arr.shape[1])
         if x_arr.shape[1] != expected_dim:
-            if x_arr.shape[1] < expected_dim:
-                pad = np.zeros((x_arr.shape[0], expected_dim - x_arr.shape[1]), dtype=np.float32)
-                x_arr = np.hstack([x_arr, pad])
-            else:
-                x_arr = x_arr[:, :expected_dim]
+            return 0.5
 
         try:
             x_scaled = self.scaler.transform(x_arr)
@@ -116,11 +113,7 @@ class TabularBotClassifier:
 
         expected_dim = getattr(self.scaler, "n_features_in_", X_arr.shape[1])
         if X_arr.shape[1] != expected_dim:
-            if X_arr.shape[1] < expected_dim:
-                pad = np.zeros((X_arr.shape[0], expected_dim - X_arr.shape[1]), dtype=np.float32)
-                X_arr = np.hstack([X_arr, pad])
-            else:
-                X_arr = X_arr[:, :expected_dim]
+            return np.full(X_arr.shape[0], 0.5)
 
         try:
             X_scaled = self.scaler.transform(X_arr)

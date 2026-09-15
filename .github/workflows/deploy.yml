@@ -28,7 +28,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt pytest "httpx2>=2.13.0"
+        run: python -m pip install -r requirements-dev.txt
 
       - name: Run tests
         shell: bash
@@ -67,6 +67,8 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SHA: ${{ github.sha }}
           BOT_ADMIN_TOKEN: ${{ secrets.BOT_ADMIN_TOKEN }}
+          BOT_READ_TOKEN: ${{ secrets.BOT_READ_TOKEN }}
+          BOT_CORS_ORIGINS: ${{ vars.BOT_CORS_ORIGINS }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           port: ${{ secrets.DEPLOY_PORT }}
@@ -74,7 +76,7 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           fingerprint: ${{ secrets.DEPLOY_FINGERPRINT }}
           command_timeout: 15m
-          envs: DEPLOY_PATH,DEPLOY_SHA,BOT_ADMIN_TOKEN
+          envs: DEPLOY_PATH,DEPLOY_SHA,BOT_ADMIN_TOKEN,BOT_READ_TOKEN,BOT_CORS_ORIGINS
           script: |
             set -Eeuo pipefail
 
@@ -90,12 +92,14 @@ jobs:
 
             cd "$DEPLOY_PATH"
 
-            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-              echo "Deployment repository has uncommitted tracked changes"
+            if [ -n "$(git status --porcelain)" ]; then
+              echo "Deployment repository has uncommitted or untracked changes"
               git status --short
               exit 1
             fi
 
+            deployed_marker=".git/bot-detection-deployed-sha"
+            previous_sha="$(cat "$deployed_marker" 2>/dev/null || git rev-parse HEAD)"
             git fetch --prune origin main
             git cat-file -e "${DEPLOY_SHA}^{commit}"
             git checkout --detach "$DEPLOY_SHA"
@@ -110,6 +114,7 @@ jobs:
 
               if printf '%s' "$health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
                 echo "Deployment is healthy: $health"
+                printf '%s\n' "$DEPLOY_SHA" > "$deployed_marker"
                 exit 0
               fi
 
@@ -119,4 +124,8 @@ jobs:
 
             echo "Deployment health check failed"
             docker compose logs --tail=100 bot-detection-core
+            echo "Rolling back to $previous_sha"
+            git checkout --detach "$previous_sha"
+            docker compose up -d --build --remove-orphans
+            docker compose ps
             exit 1

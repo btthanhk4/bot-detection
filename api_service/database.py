@@ -15,6 +15,7 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
+from pymongo.errors import DuplicateKeyError
 
 logger = logging.getLogger("bot_detection.database")
 
@@ -61,6 +62,18 @@ def get_db():
             _db = None
             _retry_after = time.monotonic() + 10.0
             return None
+
+
+def is_database_ready() -> bool:
+    """Ping MongoDB so readiness detects a stale or disconnected client."""
+    db = get_db()
+    if db is None or _client is None:
+        return False
+    try:
+        _client.admin.command("ping")
+        return True
+    except Exception:
+        return False
 
 
 def _ensure_indexes(db):
@@ -119,6 +132,19 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
 
         mouse_data = telemetry.get("mouse") or {}
         records = mouse_data.get("records") or mouse_data.get("trajectory") or []
+        mouse_stats = mouse_data.get("stats") if isinstance(mouse_data.get("stats"), dict) else {}
+        try:
+            captured_count = max(len(records), int(mouse_stats.get("pointCount", len(records))))
+        except (TypeError, ValueError):
+            captured_count = len(records)
+        now = datetime.now(timezone.utc)
+        raw_order = telemetry.get("sequence")
+        if raw_order is None:
+            raw_order = telemetry.get("timestamp") or telemetry.get("received_at") or int(now.timestamp() * 1000)
+        try:
+            event_order = max(0, min(int(raw_order), 9007199254740991))
+        except (TypeError, ValueError, OverflowError):
+            event_order = int(now.timestamp() * 1000)
 
         doc = {
             "sessionId": session_id,
@@ -132,25 +158,43 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "confidence": round(analysis.get("confidence", 0), 4),
             "breakdown": analysis.get("breakdown", {}),
             "reasons": analysis.get("reasons", []),
-            "mouse_points_captured": len(records),
+            "mouse_points_captured": captured_count,
             # Store raw fingerprint + botd for detail panel
             "fingerprint": telemetry.get("fingerprint") or {},
             "botd": telemetry.get("botd") or {},
-            "mouse_stats": (mouse_data.get("stats") or {}),
+            "mouse_stats": mouse_stats,
             "mouse_trajectory": records[-200:] if isinstance(records, list) else [],
-            "updated_at": datetime.now(timezone.utc),
+            "event_order": event_order,
+            "event_timestamp": telemetry.get("timestamp"),
+            "updated_at": now,
         }
 
-        # Upsert: update if same sessionId exists, insert if new
-        result = db["detection_results"].update_one(
-            {"sessionId": session_id},
-            {
-                "$set": doc,
-                "$setOnInsert": {"created_at": datetime.now(timezone.utc)},
-            },
-            upsert=True,
-        )
-        return str(result.upserted_id or session_id)
+        visitor_id = telemetry.get("visitorId")
+        update_filter = {
+            "sessionId": session_id,
+            "$and": [
+                {"$or": [{"event_order": {"$lte": event_order}}, {"event_order": {"$exists": False}}]},
+                {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
+            ],
+        }
+        collection = db["detection_results"]
+        result = collection.update_one(update_filter, {"$set": doc}, upsert=False)
+        if result.matched_count == 0:
+            insert_doc = {**doc, "created_at": now}
+            try:
+                collection.insert_one(insert_doc)
+            except DuplicateKeyError:
+                # A concurrent first heartbeat may have inserted the session. Retry
+                # the conditional update; a stale or foreign visitor stays rejected.
+                result = collection.update_one(update_filter, {"$set": doc}, upsert=False)
+                if result.matched_count == 0:
+                    return None
+
+        # Close the delete/write race: a tombstone created during this write wins.
+        if _writes_are_blocked(db, session_id):
+            collection.delete_one({"sessionId": session_id})
+            return None
+        return session_id
     except Exception as e:
         logger.error(f"[DB] Save failed: {e}")
         return None

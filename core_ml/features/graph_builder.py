@@ -15,6 +15,7 @@ Features:
 """
 
 import hashlib
+import ipaddress
 import threading
 import numpy as np
 import torch
@@ -93,24 +94,10 @@ class ClickFraudGraphBuilder:
             mouse = telemetry.get("mouse") or {}
             records = mouse.get("records") or [] if isinstance(mouse, dict) else []
 
-            # Memory control: If session capacity exceeded, reset or prune oldest
+            # Keep the current topology stable when capacity is reached. A caller
+            # may persist the session even when it cannot be represented in-memory.
             if len(self.session_map) >= self.max_sessions and session_id not in self.session_map:
-                # Clear graph cache for long-running service to prevent memory leak
-                self.device_map.clear()
-                self.device_features.clear()
-                self.ip_map.clear()
-                self.ip_features.clear()
-                self.target_map.clear()
-                self.target_features.clear()
-                self.session_map.clear()
-                self.session_features.clear()
-                self.session_labels.clear()
-                self.edges_device_session.clear()
-                self.edges_session_ip.clear()
-                self.edges_session_target.clear()
-                self._edge_set_dev_sess.clear()
-                self._edge_set_ip_sess.clear()
-                self._edge_set_tgt_sess.clear()
+                return None
 
             # 1. Device Node
             if visitor_id not in self.device_map:
@@ -126,7 +113,10 @@ class ClickFraudGraphBuilder:
             if ip_str not in self.ip_map:
                 ip_idx = len(self.ip_map)
                 self.ip_map[ip_str] = ip_idx
-                is_private = 1.0 if ip_str.startswith(("127.", "192.168.", "10.")) else 0.0
+                try:
+                    is_private = 1.0 if ipaddress.ip_address(ip_str).is_private else 0.0
+                except ValueError:
+                    is_private = 0.0
                 ip_feat = np.array([_deterministic_hash_feature(ip_str), is_private, 1.0], dtype=np.float32)
                 self.ip_features.append(ip_feat)
             else:

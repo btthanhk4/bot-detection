@@ -19,6 +19,8 @@ export class BotCollector {
     this.timer = null;
     this.initPromise = null;
     this.destroyed = false;
+    this.sequence = 0;
+    this.sendPromise = null;
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
   }
 
@@ -42,16 +44,22 @@ export class BotCollector {
 
   async initialize() {
     this.mouseRecorder.start();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', this.handlePageHide, { capture: true });
+    }
     // Pre-warm fingerprint and heuristics
-    const { visitorId, components } = await getFingerprintComponents();
+    let visitorId;
+    let components;
+    try {
+      ({ visitorId, components } = await getFingerprintComponents());
+    } catch (e) {
+      visitorId = this.generateSessionId().replace('sess_', 'fp_');
+      components = {};
+    }
     this.cachedFingerprint = { visitorId, components };
     this.cachedBotd = runBotDetectors(components);
 
     if (this.destroyed) return this;
-
-    if (typeof window !== 'undefined') {
-      window.addEventListener('pagehide', this.handlePageHide, { capture: true });
-    }
 
     await this.sendTelemetry('init');
 
@@ -88,6 +96,7 @@ export class BotCollector {
       sessionId: this.sessionId,
       action,
       timestamp: Date.now(),
+      sequence: this.sequence++,
       pageUrl: typeof window !== 'undefined' ? window.location.href : '',
       referrer: typeof document !== 'undefined' ? document.referrer : '',
       visitorId: this.cachedFingerprint.visitorId,
@@ -101,25 +110,51 @@ export class BotCollector {
    * Send telemetry asynchronously via sendBeacon or fetch
    */
   async sendTelemetry(action = 'telemetry') {
-    const payload = await this.getPayload(action);
-    const body = JSON.stringify(payload);
+    if (this.sendPromise && action !== 'pagehide') return this.sendPromise;
 
-    if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      const blob = new Blob([body], { type: 'application/json' });
-      const success = navigator.sendBeacon(this.endpointUrl, blob);
-      if (success) return true;
-    }
+    const operation = this._sendTelemetry(action);
+    if (action === 'pagehide') return operation;
+    const tracked = operation.finally(() => {
+      if (this.sendPromise === tracked) this.sendPromise = null;
+    });
+    this.sendPromise = tracked;
+    return tracked;
+  }
 
+  async _sendTelemetry(action) {
+    let timeoutId = null;
     try {
+      const payload = await this.getPayload(action);
+      let body = JSON.stringify(payload);
+
+      // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
+      if (action === 'pagehide' && body.length > 60000 && payload.mouse) {
+        payload.mouse.records = (payload.mouse.records || []).slice(-40);
+        payload.mouse.chunks = (payload.mouse.chunks || []).slice(-2);
+        payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
+        body = JSON.stringify(payload);
+      }
+
+      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        const success = navigator.sendBeacon(this.endpointUrl, blob);
+        if (success) return true;
+      }
+
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
       const res = await fetch(this.endpointUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body,
-        keepalive: true,
+        keepalive: action === 'pagehide',
+        ...(controller ? { signal: controller.signal } : {}),
       });
       return res.ok;
     } catch (e) {
       return false;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 

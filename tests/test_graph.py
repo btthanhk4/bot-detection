@@ -64,7 +64,7 @@ class TestGraphBuilder:
         assert tensors["x_dict"]["ip"].shape[0] == 2
         assert tensors["y_session"].shape[0] == 3
 
-    def test_memory_bounds_reset(self):
+    def test_memory_bounds_preserve_existing_topology(self):
         # Builder with small max_sessions limit
         builder = ClickFraudGraphBuilder(max_sessions=5)
         for i in range(10):
@@ -77,6 +77,8 @@ class TestGraphBuilder:
 
         # Capacity pruning prevents unbounded growth
         assert len(builder.session_map) <= 5
+        assert "sess_0" in builder.session_map
+        assert "sess_4" in builder.session_map
 
     def test_none_safe_ingestion(self):
         builder = ClickFraudGraphBuilder()

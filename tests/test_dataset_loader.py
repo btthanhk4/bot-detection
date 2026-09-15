@@ -3,6 +3,11 @@ Unit tests for real dataset parsers and synthetic generators.
 """
 
 import pytest
+import json
+import shutil
+import subprocess
+from pathlib import Path
+import numpy as np
 from core_ml.dataset.loader import (
     parse_movement_notation,
     parse_phase2_record,
@@ -24,6 +29,8 @@ class TestDatasetLoader:
         for r in records:
             assert 0.0 <= r["x"] <= 1.0
             assert 0.0 <= r["y"] <= 1.0
+
+        assert records == parse_movement_notation(notation)
 
     def test_parse_phase2_record(self):
         phase2_sample = {
@@ -65,3 +72,32 @@ class TestDatasetLoader:
 
         advanced_bot = generate_synthetic_telemetry(is_bot=True, bot_level="advanced")
         assert "records" in advanced_bot["mouse"]
+
+    def test_collector_chunks_match_python_feature_contract(self):
+        if not shutil.which("node"):
+            pytest.skip("Node.js is not installed")
+
+        records = [
+            {"time": i * 17, "x": 0.1 + i * 0.01, "y": 0.2 + (i % 4) * 0.003, "type": "move"}
+            for i in range(30)
+        ]
+        records.insert(8, {"time": 120, "x": 0.17, "y": 0.209, "type": "click"})
+        root = Path(__file__).resolve().parents[1]
+        subprocess.run(["node", "build.js"], cwd=root / "collector", check=True, capture_output=True)
+        script = (
+            "const BotCollector=require('./collector/dist/bot-collector.js');"
+            "const c=new BotCollector({autoSendInterval:0});"
+            f"c.mouseRecorder.records={json.dumps(records)};"
+            "process.stdout.write(JSON.stringify(c.mouseRecorder.getChunks(24)));"
+        )
+        output = subprocess.run(
+            ["node", "-e", script], cwd=root, check=True, capture_output=True, text=True
+        ).stdout
+
+        js_chunks = json.loads(output)
+        py_chunks = records_to_chunks(records, chunk_size=24, stride=12)
+        assert np.allclose(js_chunks, py_chunks, rtol=1e-6, atol=1e-8)
+
+    def test_parsers_clamp_negative_coordinates(self):
+        records = parse_movement_notation("[m(-50,-20)][m(100,200)]")
+        assert all(0.0 <= item["x"] <= 1.0 and 0.0 <= item["y"] <= 1.0 for item in records)
