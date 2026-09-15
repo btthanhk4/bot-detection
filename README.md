@@ -137,9 +137,9 @@ cd bot-detection-core
 pip install -r requirements.txt
 ```
 
-Set `BOT_ADMIN_TOKEN` before enabling dashboard delete actions. The Docker
-Compose service is exposed only on the internal `silkmoon-network`; access it
-through the reverse proxy.
+Set `BOT_ADMIN_TOKEN` before enabling dashboard delete actions. Docker Compose
+publishes the dashboard and API on port `8000`, while also keeping the service
+available to the reverse proxy through `silkmoon-network`.
 
 ### 2. Huấn luyện mô hình
 
