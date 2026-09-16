@@ -74,6 +74,7 @@ def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dic
     trajectory_owners = {}
     rows = []
     split_counts = {}
+    trajectory_hashes_by_split = {}
     label_counts = {"human": 0, "bot": 0}
     source_counts = {"real": 0, "synthetic": 0}
     for telemetry, raw_label, raw_split in zip(telemetries, labels, splits):
@@ -93,6 +94,7 @@ def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dic
             raise ValueError(f"Duplicate trajectory detected in {split} split")
         trajectory_owners[signature] = (split, label)
         split_counts[split] = split_counts.get(split, 0) + 1
+        trajectory_hashes_by_split.setdefault(split, []).append(signature)
         label_counts["bot" if label else "human"] += 1
         source = "real" if str(telemetry.get("sessionId", "")).startswith("real_") else "synthetic"
         source_counts[source] += 1
@@ -113,6 +115,10 @@ def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dic
         "split_counts": dict(sorted(split_counts.items())),
         "label_counts": label_counts,
         "source_counts": source_counts,
+        "trajectory_hashes_by_split": {
+            split: sorted(hashes)
+            for split, hashes in sorted(trajectory_hashes_by_split.items())
+        },
     }
 
 

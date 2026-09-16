@@ -1,0 +1,29 @@
+{
+  "bot_count": 66,
+  "bundle_id": "1c95d20ba62c4c02b38ba6493ffd587f",
+  "dataset_name": "web_bot_detection_dataset",
+  "evaluation_kind": "heldout_same_dataset",
+  "human_count": 24,
+  "known_bundle_dataset_overlap_count": 90,
+  "metrics": {
+    "accuracy": 1.0,
+    "brier_score": 0.010970746,
+    "confusion_matrix": {
+      "fn": 0,
+      "fp": 0,
+      "tn": 24,
+      "tp": 66
+    },
+    "f1": 1.0,
+    "false_negative_rate": 0.0,
+    "false_positive_rate": 0.0,
+    "pr_auc": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "roc_auc": 1.0,
+    "threshold": 0.7
+  },
+  "session_count": 90,
+  "split": "test",
+  "training_overlap_count": 0
+}
