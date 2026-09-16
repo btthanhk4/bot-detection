@@ -85,19 +85,29 @@ async function testPagehideBeaconUsesCorsSafelistedContentType() {
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
   collector.cachedBotd = { isBot: false, heuristicScore: 0 };
   let beaconBlob = null;
-  global.navigator = {
-    sendBeacon: (_url, blob) => {
-      beaconBlob = blob;
-      return true;
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: {
+      sendBeacon: (_url, blob) => {
+        beaconBlob = blob;
+        return true;
+      },
     },
-  };
+  });
 
-  const sent = await collector.sendTelemetry('pagehide');
-
-  assert.strictEqual(sent, true);
-  assert.ok(beaconBlob, 'pagehide should use sendBeacon when available');
-  assert.strictEqual(beaconBlob.type, 'text/plain;charset=utf-8');
-  delete global.navigator;
+  try {
+    const sent = await collector.sendTelemetry('pagehide');
+    assert.strictEqual(sent, true);
+    assert.ok(beaconBlob, 'pagehide should use sendBeacon when available');
+    assert.strictEqual(beaconBlob.type, 'text/plain;charset=utf-8');
+  } finally {
+    if (originalNavigator) {
+      Object.defineProperty(global, 'navigator', originalNavigator);
+    } else {
+      delete global.navigator;
+    }
+  }
 }
 
 testRestartDuringFingerprinting()
