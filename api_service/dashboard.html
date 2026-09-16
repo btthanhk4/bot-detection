@@ -1400,14 +1400,24 @@ updateClock();
 
 // ──── API Fetchers ────
 async function fetchJSON(url, authenticated = true) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(url, { headers: authenticated ? readHeaders() : {} });
-    if (res.status === 401) sessionStorage.removeItem('bot_read_token');
+    const res = await fetch(url, {
+      headers: authenticated ? readHeaders() : {},
+      signal: controller.signal,
+    });
+    if (res.status === 401) {
+      sessionStorage.removeItem('bot_read_token');
+      readTokenPrompted = false;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
     console.warn('Fetch error:', url, e);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -1793,7 +1803,7 @@ let _lastTableHTML = '';
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Đang chờ dữ liệu telemetry — hãy mở http://159.223.91.163 trên tab khác và di chuột, hoặc bấm "Giả lập Bot"</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">Đang chờ dữ liệu telemetry — hãy mở ${escapeHtml(API_BASE)} trên tab khác và di chuột, hoặc bấm "Giả lập Bot"</td></tr>`;
     _lastTableHTML = '';
     return;
   }
@@ -2569,7 +2579,7 @@ async function simulateBot(event) {
       visitorId: 'fp_bot_sim',
       action: 'telemetry',
       timestamp: Date.now(),
-      pageUrl: 'http://159.223.91.163/san-pham',
+      pageUrl: API_BASE + '/san-pham',
       fingerprint: { hardwareConcurrency: 1, deviceMemory: 1, screenResolution: [800, 600] },
       botd: { automationTool: true, pluginsLength: 0, webDriver: true, headless: true },
       mouse: { records: [] }
@@ -2611,7 +2621,7 @@ async function simulateHuman(event) {
       visitorId: 'fp_human_sim',
       action: 'telemetry',
       timestamp: Date.now(),
-      pageUrl: 'http://159.223.91.163/',
+      pageUrl: API_BASE + '/',
       fingerprint: { hardwareConcurrency: 8, deviceMemory: 16, screenResolution: [1920, 1080] },
       botd: { automationTool: false, pluginsLength: 5, webDriver: false },
       mouse: { records: trajectory }
@@ -2631,14 +2641,20 @@ async function simulateHuman(event) {
 }
 
 // ──── Enhanced Polling Loop ────
-async function pollAll() {
-  await Promise.all([
-    fetchHealth(),
-    fetchGraphStats(),
-    fetchRecentTelemetry(),
-  ]);
-  updateCharts();
-  checkAlerts();
+let activePoll = null;
+function pollAll() {
+  if (activePoll) return activePoll;
+  activePoll = Promise.all([
+      fetchHealth(),
+      fetchGraphStats(),
+      fetchRecentTelemetry(),
+    ])
+    .then(() => {
+      updateCharts();
+      checkAlerts();
+    })
+    .finally(() => { activePoll = null; });
+  return activePoll;
 }
 
 // Initialize charts

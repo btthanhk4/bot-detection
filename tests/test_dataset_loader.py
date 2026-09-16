@@ -182,6 +182,23 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert sessions[0].session_id == "same-session"
         assert len(sessions[0].records) == 12
 
+    def test_phase2_rejects_duplicate_session_id_with_conflicting_labels(self, tmp_path):
+        notation = "".join(f"[m({i},{i})]" for i in range(12))
+        record = json.dumps(
+            {"session_id": "shared-session", "mousemove_total_behaviour": notation}
+        )
+        human_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
+        bot_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "bots"
+        human_dir.mkdir(parents=True)
+        bot_dir.mkdir(parents=True)
+        (human_dir / "mouse_movements_humans.json").write_text(record, encoding="utf-8")
+        (bot_dir / "mouse_movements_moderate_bots.json").write_text(record, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Conflicting labels"):
+            load_phase2_dataset(
+                str(tmp_path), scenario="humans_and_moderate_bots", with_metadata=True
+            )
+
     def test_phase2_long_sessions_keep_recent_tail(self, tmp_path):
         data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
         data_dir.mkdir(parents=True)

@@ -29,6 +29,10 @@ class RealMouseSession:
     scenario: str
 
 
+class DatasetLabelConflictError(ValueError):
+    """Raised when one dataset session ID is assigned incompatible labels."""
+
+
 # ---------- Real Dataset Parser ----------
 
 def parse_movement_notation(notation: str) -> list:
@@ -288,7 +292,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
     if scenario != "humans_and_moderate_bots":
         data_files.append((os.path.join(phase2_root, "data", "mouse_movements", "bots", "mouse_movements_advanced_bots.json"), 1))
     
-    seen_sessions = set()  # Deduplicate by session_id
+    seen_sessions = {}  # session_id -> label
     
     for fpath, default_label in data_files:
         if not os.path.isfile(fpath):
@@ -306,7 +310,15 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         continue
                     
                     session_id = record.get("session_id", "")
-                    if not session_id or session_id in seen_sessions:
+                    if not session_id:
+                        continue
+
+                    label = label_map.get(session_id, default_label)
+                    if session_id in seen_sessions:
+                        if seen_sessions[session_id] != label:
+                            raise DatasetLabelConflictError(
+                                f"Conflicting labels for duplicate Phase 2 session ID: {session_id}"
+                            )
                         continue
                     
                     # Parse mouse records with REAL timestamps
@@ -321,8 +333,6 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         mouse_records = mouse_records[-5000:]
                     
                     # Determine label from annotation or fallback to file-based label
-                    label = label_map.get(session_id, default_label)
-                    
                     session = RealMouseSession(
                         records=mouse_records,
                         label=label,
@@ -332,7 +342,9 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         scenario=scenario or "all",
                     )
                     sessions.append(session if with_metadata else (mouse_records, label))
-                    seen_sessions.add(session_id)
+                    seen_sessions[session_id] = label
+        except DatasetLabelConflictError:
+            raise
         except Exception as e:
             print(f"  Warning: Error loading Phase 2 file {os.path.basename(fpath)}: {e}")
             continue

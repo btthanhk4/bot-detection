@@ -62,7 +62,26 @@ async function testRestartDuringFingerprinting() {
   assert.strictEqual(activeIntervals.size, 0, 'destroy should clear the current timer');
 }
 
+async function testDestroyAbortsStatusRequest() {
+  const collector = new BotCollector({ detectUrl: '/detect' });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  global.fetch = (_url, options) => new Promise((_resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+  });
+
+  const pending = collector.checkBotStatus();
+  await waitFor(() => collector.abortControllers.size === 1);
+  collector.destroy();
+  const result = await pending;
+
+  assert.strictEqual(result.fallback, true, 'aborted status request should use fallback');
+  assert.strictEqual(result.error, 'aborted');
+  assert.strictEqual(collector.abortControllers.size, 0);
+}
+
 testRestartDuringFingerprinting()
+  .then(testDestroyAbortsStatusRequest)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {
     console.error(error);

@@ -37,7 +37,9 @@ class Settings:
     # Server binding
     HOST: str = os.getenv("BOT_API_HOST", "0.0.0.0")
     PORT: int = _env_int("BOT_API_PORT", 8000, 1, 65535)
-    WORKERS: int = _env_int("BOT_API_WORKERS", 1, 1)
+    # Graph, fallback buffering, and rate limiting are process-local. Running
+    # more than one worker would split those guarantees across processes.
+    WORKERS: int = _env_int("BOT_API_WORKERS", 1, 1, 1)
 
     # Model paths
     WEIGHTS_DIR: str = os.getenv(

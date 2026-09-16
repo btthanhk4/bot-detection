@@ -7,12 +7,15 @@ and provides endpoints for telemetry ingestion & graph analysis.
 import collections
 import ipaddress
 import json
+import logging
+import math
 import os
 import secrets
 import threading
 import time
 from typing import Optional, Dict, Any
-from fastapi import Depends, FastAPI, Request, HTTPException, Query
+from urllib.parse import urlsplit
+from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
@@ -23,6 +26,9 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
+
+
+logger = logging.getLogger("bot_detection.api")
 
 
 class RequestBodyTooLarge(Exception):
@@ -112,6 +118,7 @@ graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 # Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
 _telemetry_buffer_lock = threading.Lock()
+_telemetry_flush_lock = threading.Lock()
 
 # Sliding-window rate limiter per client IP
 _rate_limit_lock = threading.Lock()
@@ -135,6 +142,51 @@ def _clear_in_memory_sessions():
         telemetry_buffer.clear()
 
 
+def _flush_telemetry_buffer(max_events: Optional[int] = None):
+    """Persist a bounded batch after MongoDB recovers without duplicate flushers."""
+    if not _telemetry_flush_lock.acquire(blocking=False):
+        return
+    try:
+        from api_service.database import is_database_ready, save_detection_result
+
+        with _telemetry_buffer_lock:
+            pending_count = len(telemetry_buffer)
+        replay_count = pending_count if max_events is None else min(pending_count, max(0, max_events))
+
+        for _ in range(replay_count):
+            with _telemetry_buffer_lock:
+                if not telemetry_buffer:
+                    break
+                data = telemetry_buffer.popleft()
+
+            try:
+                analysis = ensemble_detector.predict(data)
+                persisted = bool(save_detection_result(data, analysis))
+            except Exception:
+                logger.exception("Buffered telemetry replay failed")
+                with _telemetry_buffer_lock:
+                    telemetry_buffer.appendleft(data)
+                break
+
+            if persisted:
+                try:
+                    graph_builder.add_telemetry_event(
+                        data, ip_address=data.get("client_ip") or "127.0.0.1"
+                    )
+                except Exception:
+                    logger.exception("Graph update failed during telemetry replay")
+                continue
+
+            # A live database can intentionally reject stale/tombstoned data;
+            # discard it. On an outage, restore the event and retry later.
+            if not is_database_ready():
+                with _telemetry_buffer_lock:
+                    telemetry_buffer.appendleft(data)
+                break
+    finally:
+        _telemetry_flush_lock.release()
+
+
 def check_rate_limit(client_ip: str) -> bool:
     """Returns True if within rate limit, False if rate limit exceeded."""
     if settings.RATE_LIMIT_PER_MINUTE <= 0:
@@ -142,6 +194,16 @@ def check_rate_limit(client_ip: str) -> bool:
     now = time.time()
     cutoff = now - 60.0
     with _rate_limit_lock:
+        if client_ip not in _rate_limit_records and len(_rate_limit_records) >= 10000:
+            stale_keys = [
+                key for key, values in _rate_limit_records.items()
+                if not values or values[-1] <= cutoff
+            ]
+            for key in stale_keys:
+                del _rate_limit_records[key]
+            if len(_rate_limit_records) >= 10000:
+                return False
+
         timestamps = _rate_limit_records[client_ip]
         valid_ts = [t for t in timestamps if t > cutoff]
         if len(valid_ts) >= settings.RATE_LIMIT_PER_MINUTE:
@@ -149,12 +211,6 @@ def check_rate_limit(client_ip: str) -> bool:
             return False
         valid_ts.append(now)
         _rate_limit_records[client_ip] = valid_ts
-        if len(_rate_limit_records) > 10000:
-            stale_keys = [k for k, v in _rate_limit_records.items() if not v or v[-1] <= cutoff]
-            for k in stale_keys:
-                del _rate_limit_records[k]
-            if len(_rate_limit_records) > 10000:
-                _rate_limit_records.clear()
         return True
 
 
@@ -196,11 +252,19 @@ def get_client_ip(request: Request) -> str:
     if not _is_trusted_proxy(peer_ip):
         return peer_ip
 
-    candidates = [
-        request.headers.get("CF-Connecting-IP"),
-        (request.headers.get("X-Forwarded-For") or "").split(",")[0],
-        request.headers.get("X-Real-IP"),
-    ]
+    forwarded = []
+    for raw_value in (request.headers.get("X-Forwarded-For") or "").split(","):
+        try:
+            forwarded.append(str(ipaddress.ip_address(raw_value.strip())))
+        except ValueError:
+            continue
+    # Walk from the proxy nearest to us towards the client, skipping only hops
+    # explicitly configured as trusted.
+    for candidate in reversed(forwarded):
+        if not _is_trusted_proxy(candidate):
+            return candidate
+
+    candidates = [request.headers.get("CF-Connecting-IP"), request.headers.get("X-Real-IP")]
     for candidate in candidates:
         try:
             return str(ipaddress.ip_address((candidate or "").strip()))
@@ -258,14 +322,23 @@ def health_check():
     """Standard health check endpoint for load balancers and container orchestrators."""
     from api_service.database import is_database_ready
     database_ready = is_database_ready()
+    runtime_ready = False
+    if tabular_loaded and lstm_loaded:
+        try:
+            probe = ensemble_detector.predict({})
+            probability = float(probe.get("bot_probability"))
+            runtime_ready = math.isfinite(probability) and 0.0 <= probability <= 1.0
+        except Exception:
+            logger.exception("Model inference health probe failed")
     content = {
-        "status": "healthy" if (tabular_loaded and lstm_loaded and database_ready) else "degraded",
+        "status": "healthy" if (runtime_ready and database_ready) else "degraded",
         "timestamp": int(time.time() * 1000),
         "models_loaded": {
             "tabular": tabular_loaded,
             "lstm": lstm_loaded,
             "gnn_offline": False,
         },
+        "inference_ready": runtime_ready,
         "database": database_ready,
     }
     return JSONResponse(content=content, status_code=200 if content["status"] == "healthy" else 503)
@@ -295,6 +368,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     try:
         result = await run_in_threadpool(ensemble_detector.predict, data)
     except Exception as e:
+        logger.exception("Detection inference failed")
         result = {
             "is_bot": False,
             "verdict": "SUSPECT",
@@ -324,7 +398,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
 
 
 @app.post("/api/v1/telemetry")
-async def receive_telemetry(request: Request):
+async def receive_telemetry(request: Request, background_tasks: BackgroundTasks):
     """
     Asynchronous telemetry ingestion endpoint (e.g. from navigator.sendBeacon).
     Accepts application/json, text/plain (beacons), and raw JSON payloads.
@@ -371,6 +445,7 @@ async def receive_telemetry(request: Request):
         from api_service.database import save_detection_result
         persisted = bool(await run_in_threadpool(save_detection_result, data, analysis))
     except Exception:
+        logger.exception("Telemetry analysis or persistence failed")
         persisted = False
 
     # Keep a best-effort copy only during a real database outage. Rejected
@@ -393,7 +468,8 @@ async def receive_telemetry(request: Request):
         try:
             graph_builder.add_telemetry_event(data, ip_address=client_ip)
         except Exception:
-            pass
+            logger.exception("Graph update failed after telemetry persistence")
+        background_tasks.add_task(_flush_telemetry_buffer)
 
     return {
         "status": "success" if persisted else "degraded",
@@ -414,6 +490,8 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
         raise HTTPException(status_code=503, detail="Database unavailable")
     results = get_recent_results(limit=limit)
     total = get_total_count()
+    if results is None or total is None:
+        raise HTTPException(status_code=503, detail="Database query failed")
 
     return {"total_buffered": total, "returned": len(results), "sessions": results}
 
@@ -499,7 +577,13 @@ def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200), _read=D
         })
 
     for url, idx in target_items:
-        short = url.replace("http://159.223.91.163", "").replace("http://localhost", "") or "/"
+        try:
+            parsed_url = urlsplit(url)
+            short = parsed_url.path or "/"
+            if parsed_url.query:
+                short += f"?{parsed_url.query}"
+        except (TypeError, ValueError):
+            short = str(url) or "/"
         nodes.append({
             "id": f"tgt_{idx}", "type": "target",
             "label": short[:20] + "…" if len(short) > 20 else short,
@@ -612,7 +696,10 @@ def get_stats_summary(_read=Depends(require_read_access)):
     from api_service.database import get_db, get_summary_stats
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    return get_summary_stats()
+    stats = get_summary_stats()
+    if stats is None:
+        raise HTTPException(status_code=503, detail="Database query failed")
+    return stats
 
 
 @app.get("/api/v1/sessions/{session_id}/detail")

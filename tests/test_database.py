@@ -3,7 +3,12 @@
 from types import SimpleNamespace
 
 from pymongo.errors import DuplicateKeyError
-from api_service.database import _ensure_indexes, is_database_ready, save_detection_result
+from api_service.database import (
+    _ensure_indexes,
+    delete_all_sessions,
+    is_database_ready,
+    save_detection_result,
+)
 
 
 class FakeCollection:
@@ -59,6 +64,74 @@ def test_ensure_indexes_keeps_matching_indexes():
 
     assert detections.dropped == []
     assert deleted.dropped == []
+
+
+def test_ensure_indexes_restores_previous_index_when_rebuild_fails():
+    class RejectUniqueCollection(FakeCollection):
+        def create_index(self, keys, name, **options):
+            if name == "sessionId_1" and options.get("unique") is True:
+                raise RuntimeError("duplicate session ids")
+            return super().create_index(keys, name, **options)
+
+    detections = RejectUniqueCollection(
+        {"sessionId_1": {"key": [("sessionId", 1)], "unique": False}}
+    )
+
+    _ensure_indexes(
+        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+    )
+
+    assert detections.indexes["sessionId_1"]["unique"] is False
+    assert detections.dropped == ["sessionId_1"]
+
+
+def test_delete_all_blocks_writes_until_delete_finishes(monkeypatch):
+    class TrackingCollection:
+        def __init__(self, deleted_count=0):
+            self.deleted_count = deleted_count
+            self.updates = []
+
+        def update_one(self, query, update, upsert=False):
+            self.updates.append(update["$set"]["blocked_until"])
+
+        def delete_many(self, _query):
+            return SimpleNamespace(deleted_count=self.deleted_count)
+
+    control = TrackingCollection()
+    database = {
+        "service_control": control,
+        "deleted_sessions": TrackingCollection(),
+        "detection_results": TrackingCollection(deleted_count=7),
+    }
+    monkeypatch.setattr("api_service.database.get_db", lambda: database)
+
+    assert delete_all_sessions() == 7
+    assert len(control.updates) == 2
+    assert control.updates[0] > control.updates[1]
+
+
+def test_delete_all_keeps_fail_closed_block_when_delete_fails(monkeypatch):
+    class TrackingControl:
+        def __init__(self):
+            self.updates = []
+
+        def update_one(self, query, update, upsert=False):
+            self.updates.append(update["$set"]["blocked_until"])
+
+    class FailingCollection:
+        def delete_many(self, _query):
+            raise RuntimeError("delete failed")
+
+    control = TrackingControl()
+    database = {
+        "service_control": control,
+        "deleted_sessions": FailingCollection(),
+        "detection_results": FakeCollection(),
+    }
+    monkeypatch.setattr("api_service.database.get_db", lambda: database)
+
+    assert delete_all_sessions() is None
+    assert len(control.updates) == 1
 
 
 def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):

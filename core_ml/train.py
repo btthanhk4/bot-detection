@@ -39,15 +39,12 @@ from core_ml.dataset.loader import (
 )
 from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
-    compute_statistical_features,
     extract_sequential_chunks,
     extract_mouse_stat_vector,
     STATISTICAL_FEATURE_NAMES,
 )
-from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.models.gnn_detector import HeteroClickFraudGNN
 
 # Reproducibility
 SEED = 42
@@ -122,6 +119,42 @@ def assign_real_session_splits(sessions: list[RealMouseSession], seed: int = SEE
                 assignments[idx] = "train"
 
     return assignments
+
+
+def resolve_training_indices(labels, splits, seed: int = SEED):
+    """Return non-empty train/validation/test indices while preserving a usable official test split."""
+    labels = np.asarray(labels)
+    splits = np.asarray(splits)
+    indices = np.arange(len(labels))
+    idx_test = indices[splits == "test"]
+    remaining = indices[splits != "test"]
+    generated_test = len(idx_test) == 0
+
+    try:
+        if generated_test:
+            remaining, idx_test = train_test_split(
+                indices, test_size=0.15, stratify=labels, random_state=seed
+            )
+
+        idx_train = indices[splits == "train"]
+        idx_val = indices[splits == "val"]
+        usable_validation = (
+            not generated_test
+            and len(idx_train) > 0
+            and len(idx_val) > 0
+            and len(np.unique(labels[idx_train])) == 2
+            and len(np.unique(labels[idx_val])) == 2
+        )
+        if not usable_validation:
+            idx_train, idx_val = train_test_split(
+                remaining, test_size=0.15, stratify=labels[remaining], random_state=seed
+            )
+    except ValueError as exc:
+        raise ValueError(
+            "Dataset is too small or imbalanced for leakage-safe train/validation/test splits"
+        ) from exc
+
+    return np.asarray(idx_train), np.asarray(idx_val), np.asarray(idx_test)
 
 
 def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.ndarray:
@@ -410,13 +443,10 @@ def main(dataset_root=None):
     # ================================================================
     print("\n[PHASE 3] Leakage-safe Train/Val/Test Split")
 
-    indices = np.arange(len(y_tab))
     if real_sessions:
-        split_array = np.array(all_splits)
-        idx_train = indices[split_array == "train"]
-        idx_val = indices[split_array == "val"]
-        idx_test = indices[split_array == "test"]
+        idx_train, idx_val, idx_test = resolve_training_indices(y_tab, all_splits)
     else:
+        indices = np.arange(len(y_tab))
         idx_train, idx_temp = train_test_split(
             indices, test_size=0.30, stratify=y_tab, random_state=SEED
         )
@@ -473,9 +503,6 @@ def main(dataset_root=None):
         y_chunks_train = y_chunks_tensor[train_idx]
         X_chunks_val = X_chunks_tensor[val_idx]
         y_chunks_val = y_chunks_tensor[val_idx]
-        X_chunks_test = X_chunks_tensor[test_idx]
-        y_chunks_test = y_chunks_tensor[test_idx]
-
         print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
@@ -515,7 +542,7 @@ def main(dataset_root=None):
 
     # LSTM evaluation on sessions, matching production aggregation.
     if all_chunks:
-        print(f"\n  --- Val Set (BiLSTM by session) ---")
+        print("\n  --- Val Set (BiLSTM by session) ---")
         lstm_val_true, lstm_val_preds = predict_lstm_sessions(
             lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_val, y_tab
         )
@@ -526,7 +553,7 @@ def main(dataset_root=None):
                 lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_test, y_tab
             )
             if len(lstm_test_true):
-                print(f"\n  --- Test Set (BiLSTM by session) ---")
+                print("\n  --- Test Set (BiLSTM by session) ---")
                 evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
 
     print("\n" + "=" * 60)

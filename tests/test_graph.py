@@ -2,10 +2,6 @@
 Unit tests for ClickFraudGraphBuilder graph construction and memory bounds.
 """
 
-import numpy as np
-import pytest
-import torch
-
 from core_ml.features.graph_builder import ClickFraudGraphBuilder, _deterministic_hash_feature
 
 

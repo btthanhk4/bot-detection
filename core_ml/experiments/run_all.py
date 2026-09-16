@@ -28,7 +28,7 @@ except Exception:
     pass
 
 import torch
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score, confusion_matrix, roc_curve
+from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score, roc_curve
 from sklearn.model_selection import train_test_split
 
 from core_ml.dataset.loader import (
@@ -39,7 +39,6 @@ from core_ml.dataset.loader import (
 from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
     compute_statistical_features,
-    extract_sequential_chunks,
     extract_mouse_stat_vector,
     STATISTICAL_FEATURE_NAMES,
 )
@@ -182,7 +181,6 @@ def load_real_by_scenario(real_root, scenario, include_phase2=True):
     """Load real data for a specific scenario only."""
     sessions = load_real_dataset(real_root, scenario=scenario, include_phase2=include_phase2)
     X_list, y_list = [], []
-    feature_names = list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURES
     for records, label in sessions:
         fp = {}
         bd = {"heuristicScore": 0.0, "detectors": {}, "reasons": []}

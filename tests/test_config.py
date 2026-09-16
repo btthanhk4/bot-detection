@@ -15,3 +15,10 @@ def test_float_environment_value_rejects_non_finite_values(monkeypatch):
 
     with pytest.raises(ValueError, match="TEST_FLOAT_SETTING"):
         _env_float("TEST_FLOAT_SETTING", 0.5, 0.0, 1.0)
+
+
+def test_process_local_state_rejects_multiple_workers(monkeypatch):
+    monkeypatch.setenv("TEST_WORKERS", "2")
+
+    with pytest.raises(ValueError, match="TEST_WORKERS"):
+        _env_int("TEST_WORKERS", 1, 1, 1)

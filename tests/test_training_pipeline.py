@@ -7,6 +7,7 @@ from core_ml.train import (
     assign_real_session_splits,
     deduplicate_real_sessions,
     predict_lstm_sessions,
+    resolve_training_indices,
 )
 from core_ml.experiments.run_all import get_experiment_indices, to_json_safe, truncate_moves
 
@@ -87,3 +88,16 @@ def test_experiment_results_are_strict_json_safe():
     converted = to_json_safe({"thresholds": np.array([float("inf"), np.float32(0.5)])})
 
     assert converted == {"thresholds": [None, 0.5]}
+
+
+def test_training_split_recovers_when_real_validation_and_test_are_missing():
+    labels = np.array([0, 1] * 20)
+    splits = np.array(["train"] * len(labels))
+
+    train_idx, val_idx, test_idx = resolve_training_indices(labels, splits)
+
+    assert set(train_idx).isdisjoint(val_idx)
+    assert set(train_idx).isdisjoint(test_idx)
+    assert set(val_idx).isdisjoint(test_idx)
+    assert set(labels[val_idx]) == {0, 1}
+    assert set(labels[test_idx]) == {0, 1}

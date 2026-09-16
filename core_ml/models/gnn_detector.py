@@ -2,7 +2,7 @@
 Graph Neural Network (GNN) Model for Coordinated Botnet & Click Fraud Detection (v2)
 ======================================================================================
 Improvements:
-  - Dual-pathway aggregation: SAGEConv + GATConv (attention-based)
+  - Heterogeneous GraphSAGE aggregation across device/session/IP/target relations
   - Residual connections between message-passing layers
   - LayerNorm after each conv layer
   - Improved fallback aggregation without PyG
@@ -15,17 +15,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.graph_builder import SESSION_FEATURE_DIM, IP_FEATURE_DIM, TARGET_FEATURE_DIM
+
 # Filter known PyG warning about star-topology destination nodes (device, ip, target are sources)
 warnings.filterwarnings("ignore", message=".*There exist node types.*representations do not get updated.*")
 
 try:
-    from torch_geometric.nn import HeteroConv, SAGEConv, GATConv
+    from torch_geometric.nn import HeteroConv, SAGEConv
     HAS_PYG = True
 except ImportError:
     HAS_PYG = False
-
-from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
-from core_ml.features.graph_builder import SESSION_FEATURE_DIM, IP_FEATURE_DIM, TARGET_FEATURE_DIM
 
 
 class HeteroClickFraudGNN(nn.Module):
@@ -56,7 +56,7 @@ class HeteroClickFraudGNN(nn.Module):
             for node_type, dim in self.in_dims.items()
         })
 
-        # 2. Graph Convolutions with dual-pathway (PyG HeteroConv if available)
+        # 2. Heterogeneous GraphSAGE convolutions (PyG HeteroConv if available)
         if HAS_PYG:
             self.convs = nn.ModuleList()
             self.layer_norms = nn.ModuleList()

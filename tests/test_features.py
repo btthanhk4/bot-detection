@@ -2,9 +2,7 @@
 Unit tests for mouse and environment feature extraction modules.
 """
 
-import math
 import numpy as np
-import pytest
 import torch
 
 from core_ml.features.env_features import (

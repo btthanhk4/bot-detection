@@ -113,8 +113,23 @@ def _ensure_indexes(db):
 
             if existing and (existing_keys != keys or not options_match):
                 logger.info(f"[DB] Rebuilding index {name} with updated options")
+                previous_options = {
+                    key: existing[key]
+                    for key in ("unique", "sparse", "expireAfterSeconds", "partialFilterExpression")
+                    if key in existing
+                }
                 collection.drop_index(name)
-                existing = None
+                try:
+                    collection.create_index(keys, name=name, **options)
+                except Exception:
+                    # Preserve the old protection if the migration cannot be
+                    # applied (for example, duplicate values block uniqueness).
+                    try:
+                        collection.create_index(existing_keys, name=name, **previous_options)
+                    except Exception as restore_error:
+                        logger.error(f"[DB] Failed to restore index {name}: {restore_error}")
+                    raise
+                existing = collection.index_information().get(name)
 
             if not existing:
                 collection.create_index(keys, name=name, **options)
@@ -235,11 +250,11 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         return None
 
 
-def get_recent_results(limit: int = 50) -> List[dict]:
+def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
     """Get most recent detection results, sorted by created_at descending."""
     db = get_db()
     if db is None:
-        return []
+        return None
 
     try:
         cursor = db["detection_results"].find(
@@ -275,18 +290,19 @@ def get_recent_results(limit: int = 50) -> List[dict]:
         return results
     except Exception as e:
         logger.error(f"[DB] Query failed: {e}")
-        return []
+        return None
 
 
-def get_total_count() -> int:
+def get_total_count() -> Optional[int]:
     """Get total number of detection results."""
     db = get_db()
     if db is None:
-        return 0
+        return None
     try:
         return db["detection_results"].count_documents({})
-    except Exception:
-        return 0
+    except Exception as e:
+        logger.error(f"[DB] Count failed: {e}")
+        return None
 
 
 def delete_session(session_id: str) -> Optional[bool]:
@@ -317,22 +333,30 @@ def delete_all_sessions() -> Optional[int]:
         now = datetime.now(timezone.utc)
         db["service_control"].update_one(
             {"_id": "ingestion"},
-            {"$set": {"blocked_until": now + timedelta(seconds=60)}},
+            # Fail closed for up to one hour if this process dies mid-delete.
+            {"$set": {"blocked_until": now + timedelta(hours=1)}},
             upsert=True,
         )
         db["deleted_sessions"].delete_many({})
         result = db["detection_results"].delete_many({})
+        db["service_control"].update_one(
+            {"_id": "ingestion"},
+            # Give the API process time to clear its in-memory graph and replay
+            # buffer before accepting new writes.
+            {"$set": {"blocked_until": datetime.now(timezone.utc) + timedelta(seconds=5)}},
+            upsert=True,
+        )
         return result.deleted_count
     except Exception as e:
         logger.error(f"[DB] Delete all failed: {e}")
         return None
 
 
-def get_summary_stats() -> dict:
+def get_summary_stats() -> Optional[dict]:
     """Get aggregated statistics from the database."""
     db = get_db()
     if db is None:
-        return {"total": 0, "humans": 0, "bots": 0, "suspects": 0}
+        return None
     try:
         pipeline = [
             {
@@ -362,4 +386,4 @@ def get_summary_stats() -> dict:
         return stats
     except Exception as e:
         logger.error(f"[DB] Stats failed: {e}")
-        return {"total": 0, "humans": 0, "bots": 0, "suspects": 0}
+        return None

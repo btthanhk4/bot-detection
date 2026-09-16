@@ -40,6 +40,20 @@ def test_health_endpoint(client):
     assert data["status"] in ("healthy", "degraded")
     assert "models_loaded" in data
     assert "database" in data
+    assert "inference_ready" in data
+
+
+def test_health_detects_runtime_inference_failure(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+
+    def fail_probe(_payload):
+        raise RuntimeError("broken model runtime")
+
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", fail_probe)
+    response = client.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["inference_ready"] is False
 
 
 def test_detect_bot_human(client):
@@ -140,7 +154,10 @@ def test_graph_stats(client):
 
 
 def test_reverse_proxy_ip_forwarding(client, monkeypatch):
-    monkeypatch.setattr("api_service.main._is_trusted_proxy", lambda _host: True)
+    monkeypatch.setattr(
+        "api_service.main._is_trusted_proxy",
+        lambda host: host == "testclient" or host.startswith("10."),
+    )
     # Test Cloudflare header
     res = client.post(
         "/api/v1/detect",
@@ -158,6 +175,20 @@ def test_reverse_proxy_ip_forwarding(client, monkeypatch):
     )
     assert res2.status_code == 200
     assert res2.json()["client_ip"] == "198.51.100.42"
+
+
+def test_forwarded_chain_skips_only_trusted_proxy_hops(client, monkeypatch):
+    monkeypatch.setattr(
+        "api_service.main._is_trusted_proxy",
+        lambda host: host == "testclient" or host.startswith("10."),
+    )
+    response = client.post(
+        "/api/v1/detect",
+        json={"sessionId": "proxy-chain"},
+        headers={"X-Forwarded-For": "192.0.2.10, 198.51.100.20, 10.0.0.2"},
+    )
+
+    assert response.json()["client_ip"] == "198.51.100.20"
 
 
 def test_untrusted_client_cannot_spoof_forwarded_ip(client):
@@ -211,6 +242,21 @@ def test_rate_limiter_blocks_excessive_traffic(client, monkeypatch):
         settings.RATE_LIMIT_PER_MINUTE = orig_limit
 
 
+def test_rate_limiter_does_not_clear_active_clients_at_capacity():
+    import time
+    from api_service.main import _rate_limit_records, check_rate_limit
+
+    now = time.time()
+    _rate_limit_records.clear()
+    for index in range(10000):
+        _rate_limit_records[f"192.0.2.{index}"] = [now]
+
+    assert check_rate_limit("new-client") is False
+    assert len(_rate_limit_records) == 10000
+    assert check_rate_limit("192.0.2.1") is True
+    _rate_limit_records.clear()
+
+
 def test_get_bot_collector_sdk(client):
     res = client.get("/bot-collector.js")
     assert res.status_code == 200
@@ -226,6 +272,31 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert "sessionSelectionVersion" in res.text
     assert "models.tabular && models.lstm" in res.text
     assert "Fallback: generate representative trajectory" not in res.text
+    assert "const controller = new AbortController()" in res.text
+    assert "let activePoll = null" in res.text
+    assert "sessionStorage.removeItem('bot_read_token');" in res.text
+    assert "http://159.223.91.163/san-pham" not in res.text
+
+
+def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.get_db", lambda: object())
+    monkeypatch.setattr("api_service.database.get_recent_results", lambda limit: None)
+    monkeypatch.setattr("api_service.database.get_total_count", lambda: 1)
+
+    response = client.get("/api/v1/telemetry/recent", headers=READ_HEADERS)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Database query failed"
+
+
+def test_summary_reports_database_query_failure(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.get_db", lambda: object())
+    monkeypatch.setattr("api_service.database.get_summary_stats", lambda: None)
+
+    response = client.get("/api/v1/stats/summary", headers=READ_HEADERS)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Database query failed"
 
 
 def test_invalid_telemetry_is_rejected(client):
@@ -316,6 +387,61 @@ def test_database_outage_uses_fallback_buffer(client, monkeypatch):
             retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
             telemetry_buffer.clear()
             telemetry_buffer.extend(retained)
+
+
+def test_buffered_telemetry_is_flushed_after_database_recovery(monkeypatch):
+    from api_service.main import (
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        telemetry_buffer,
+    )
+
+    event = {"sessionId": "replay-session", "visitorId": "visitor", "client_ip": "192.0.2.1"}
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.append(event)
+    persisted = []
+    graphed = []
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", lambda _data: {"verdict": "HUMAN"})
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda data, _analysis: persisted.append(data["sessionId"]) or data["sessionId"],
+    )
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+    monkeypatch.setattr(
+        "api_service.main.graph_builder.add_telemetry_event",
+        lambda data, ip_address: graphed.append((data["sessionId"], ip_address)),
+    )
+
+    _flush_telemetry_buffer()
+
+    assert persisted == ["replay-session"]
+    assert graphed == [("replay-session", "192.0.2.1")]
+    with _telemetry_buffer_lock:
+        assert not telemetry_buffer
+
+
+def test_buffered_telemetry_is_requeued_when_inference_fails(monkeypatch):
+    from api_service.main import (
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        telemetry_buffer,
+    )
+
+    event = {"sessionId": "retry-session", "visitorId": "visitor"}
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.append(event)
+    monkeypatch.setattr(
+        "api_service.main.ensemble_detector.predict",
+        lambda _data: (_ for _ in ()).throw(RuntimeError("temporary inference failure")),
+    )
+
+    _flush_telemetry_buffer()
+
+    with _telemetry_buffer_lock:
+        assert list(telemetry_buffer) == [event]
+        telemetry_buffer.clear()
 
 
 def test_delete_requires_admin_token(client, monkeypatch):

@@ -153,7 +153,11 @@ class TabularBotClassifier:
                 self.scaler = data.get("scaler", StandardScaler())
                 self.is_fitted = data.get("fitted", False)
                 self.feature_names = data.get("features", [])
-                return True
+                return bool(
+                    self.is_fitted
+                    and hasattr(self.scaler, "transform")
+                    and hasattr(self.model, "predict_proba")
+                )
             except Exception:
                 self.is_fitted = False
                 return False

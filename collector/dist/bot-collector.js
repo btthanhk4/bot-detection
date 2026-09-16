@@ -723,6 +723,7 @@
       this.lifecycleVersion = 0;
       this.sequence = 0;
       this.sendPromise = null;
+      this.abortControllers = new Set();
       this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
     }
 
@@ -781,6 +782,9 @@
       if (this.timer) clearInterval(this.timer);
       this.timer = null;
       this.initPromise = null;
+      this.sendPromise = null;
+      for (const controller of this.abortControllers) controller.abort();
+      this.abortControllers.clear();
       if (typeof window !== 'undefined') {
         window.removeEventListener('pagehide', this.handlePageHide, { capture: true });
       }
@@ -818,7 +822,7 @@
     async sendTelemetry(action = 'telemetry') {
       if (this.sendPromise && action !== 'pagehide') return this.sendPromise;
 
-      const operation = this._sendTelemetry(action);
+      const operation = this._sendTelemetry(action, this.lifecycleVersion);
       if (action === 'pagehide') return operation;
       const tracked = operation.finally(() => {
         if (this.sendPromise === tracked) this.sendPromise = null;
@@ -827,10 +831,27 @@
       return tracked;
     }
 
-    async _sendTelemetry(action) {
-      let timeoutId = null;
+    async fetchWithTimeout(url, options, timeoutMs = 10000) {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+      if (controller) this.abortControllers.add(controller);
+      try {
+        return await fetch(url, {
+          ...options,
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (controller) this.abortControllers.delete(controller);
+      }
+    }
+
+    async _sendTelemetry(action, lifecycleVersion) {
       try {
         const payload = await this.getPayload(action);
+        if (action !== 'pagehide' && (this.destroyed || lifecycleVersion !== this.lifecycleVersion)) {
+          return false;
+        }
         let body = JSON.stringify(payload);
 
         // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
@@ -847,20 +868,15 @@
           if (success) return true;
         }
 
-        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
-        const res = await fetch(this.endpointUrl, {
+        const res = await this.fetchWithTimeout(this.endpointUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body,
           keepalive: action === 'pagehide',
-          ...(controller ? { signal: controller.signal } : {}),
         });
         return res.ok;
       } catch (e) {
         return false;
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
       }
     }
 
@@ -868,9 +884,13 @@
      * Query backend real-time ML inference for bot verdict
      */
     async checkBotStatus(action = 'verify') {
-      const payload = await this.getPayload(action);
+      const lifecycleVersion = this.lifecycleVersion;
       try {
-        const res = await fetch(this.detectUrl, {
+        const payload = await this.getPayload(action);
+        if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) {
+          return { is_bot: false, bot_probability: 0, fallback: true, error: 'collector_inactive' };
+        }
+        const res = await this.fetchWithTimeout(this.detectUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

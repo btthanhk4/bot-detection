@@ -3,8 +3,11 @@ Unit tests for core ML models and multi-modal ensemble.
 """
 
 import math
+import joblib
 import numpy as np
 import torch
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBClassifier
 
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
@@ -50,6 +53,23 @@ class TestTabularClassifier:
 
         assert probabilities.shape == (1,)
         assert probabilities[0] == 0.5
+
+    def test_load_reports_unfitted_artifact_as_unavailable(self, tmp_path):
+        path = tmp_path / "unfitted.joblib"
+        joblib.dump(
+            {
+                "model": XGBClassifier(),
+                "scaler": StandardScaler(),
+                "fitted": False,
+                "features": [],
+            },
+            path,
+        )
+
+        classifier = TabularBotClassifier()
+
+        assert classifier.load(str(path)) is False
+        assert classifier.is_fitted is False
 
     def test_dimension_mismatch_resilience(self):
         clf = TabularBotClassifier(n_estimators=5)
