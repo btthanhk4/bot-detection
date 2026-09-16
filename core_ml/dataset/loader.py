@@ -304,7 +304,6 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                     session_id = record.get("session_id", "")
                     if not session_id or session_id in seen_sessions:
                         continue
-                    seen_sessions.add(session_id)
                     
                     # Parse mouse records with REAL timestamps
                     mouse_records = parse_phase2_record(record)
@@ -312,9 +311,10 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         continue
                     
                     # Cap at 5000 records per session to keep training fast
-                    # (Phase 2 sessions can have 34K+ records)
+                    # (Phase 2 sessions can have 34K+ records). Production uses a
+                    # rolling recent window, so retain the tail rather than start.
                     if len(mouse_records) > 5000:
-                        mouse_records = mouse_records[:5000]
+                        mouse_records = mouse_records[-5000:]
                     
                     # Determine label from annotation or fallback to file-based label
                     label = label_map.get(session_id, default_label)
@@ -328,6 +328,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         scenario=scenario or "all",
                     )
                     sessions.append(session if with_metadata else (mouse_records, label))
+                    seen_sessions.add(session_id)
         except Exception as e:
             print(f"  Warning: Error loading Phase 2 file {os.path.basename(fpath)}: {e}")
             continue
@@ -418,14 +419,21 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
     if include_phase2:
         sessions.extend(load_phase2_dataset(dataset_root, scenario=scenario, with_metadata=True))
 
-    unique_sessions = []
-    seen_trajectories = set()
+    unique_by_trajectory = {}
     for session in sessions:
         payload = json.dumps(session.records, sort_keys=True, separators=(",", ":")).encode("utf-8")
         signature = hashlib.sha256(payload).digest()
-        if signature not in seen_trajectories:
-            seen_trajectories.add(signature)
-            unique_sessions.append(session)
+        existing = unique_by_trajectory.get(signature)
+        if existing is None:
+            unique_by_trajectory[signature] = session
+            continue
+        if existing.label != session.label:
+            raise ValueError(
+                f"Conflicting labels for duplicate trajectory: {existing.session_id} / {session.session_id}"
+            )
+        if session.split == "test" and existing.split != "test":
+            unique_by_trajectory[signature] = session
+    unique_sessions = list(unique_by_trajectory.values())
     if with_metadata:
         return unique_sessions
     return [(session.records, session.label) for session in unique_sessions]

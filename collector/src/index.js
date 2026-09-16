@@ -19,6 +19,7 @@ export class BotCollector {
     this.timer = null;
     this.initPromise = null;
     this.destroyed = false;
+    this.lifecycleVersion = 0;
     this.sequence = 0;
     this.sendPromise = null;
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
@@ -38,11 +39,12 @@ export class BotCollector {
   init() {
     if (this.initPromise) return this.initPromise;
     this.destroyed = false;
-    this.initPromise = this.initialize();
+    const lifecycleVersion = ++this.lifecycleVersion;
+    this.initPromise = this.initialize(lifecycleVersion);
     return this.initPromise;
   }
 
-  async initialize() {
+  async initialize(lifecycleVersion) {
     this.mouseRecorder.start();
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', this.handlePageHide, { capture: true });
@@ -56,14 +58,13 @@ export class BotCollector {
       visitorId = this.generateSessionId().replace('sess_', 'fp_');
       components = {};
     }
+    if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
     this.cachedFingerprint = { visitorId, components };
     this.cachedBotd = runBotDetectors(components);
 
-    if (this.destroyed) return this;
-
     await this.sendTelemetry('init');
 
-    if (!this.destroyed && this.autoSendInterval > 0) {
+    if (!this.destroyed && lifecycleVersion === this.lifecycleVersion && this.autoSendInterval > 0) {
       this.timer = setInterval(() => {
         this.sendTelemetry().catch(() => false);
       }, this.autoSendInterval);
@@ -74,6 +75,7 @@ export class BotCollector {
 
   destroy() {
     this.destroyed = true;
+    this.lifecycleVersion++;
     this.mouseRecorder.stop();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;

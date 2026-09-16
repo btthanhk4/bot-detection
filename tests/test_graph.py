@@ -109,6 +109,37 @@ class TestGraphBuilder:
         assert len(builder.ip_map) == 3
         assert len(builder.target_map) == 3
 
+    def test_remove_session_rebuilds_nodes_without_dangling_edges(self):
+        builder = ClickFraudGraphBuilder(max_sessions=10)
+        builder.add_telemetry_event(
+            {"sessionId": "remove", "visitorId": "only-removed", "pageUrl": "/removed"},
+            ip_address="10.0.0.1",
+        )
+        builder.add_telemetry_event(
+            {"sessionId": "keep", "visitorId": "kept", "pageUrl": "/kept"},
+            ip_address="10.0.0.2",
+        )
+
+        assert builder.remove_session("remove") is True
+        assert builder.remove_session("missing") is False
+        assert set(builder.session_map) == {"keep"}
+        assert set(builder.device_map) == {"kept"}
+        assert set(builder.ip_map) == {"10.0.0.2"}
+        assert set(builder.target_map) == {"/kept"}
+        assert all(edge[1] == 0 for edge in builder.edges_device_session)
+        assert all(edge[1] == 0 for edge in builder.edges_session_ip)
+        assert all(edge[1] == 0 for edge in builder.edges_session_target)
+
+    def test_clear_removes_all_graph_state(self):
+        builder = ClickFraudGraphBuilder(max_sessions=10)
+        builder.add_telemetry_event({"sessionId": "session", "visitorId": "device"})
+
+        builder.clear()
+
+        assert builder.get_stats()["session_count"] == 0
+        assert builder.device_map == {}
+        assert builder.edges_device_session == []
+
     def test_none_safe_ingestion(self):
         builder = ClickFraudGraphBuilder()
         idx = builder.add_telemetry_event(None)

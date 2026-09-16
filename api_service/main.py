@@ -111,10 +111,28 @@ graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
 # Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
+_telemetry_buffer_lock = threading.Lock()
 
 # Sliding-window rate limiter per client IP
 _rate_limit_lock = threading.Lock()
 _rate_limit_records = collections.defaultdict(list)
+
+
+def _purge_session_from_memory(session_id: str) -> bool:
+    """Remove a session from best-effort caches after an administrative delete."""
+    removed_from_graph = graph_builder.remove_session(session_id)
+    with _telemetry_buffer_lock:
+        retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
+        removed_from_buffer = len(retained) != len(telemetry_buffer)
+        telemetry_buffer.clear()
+        telemetry_buffer.extend(retained)
+    return removed_from_graph or removed_from_buffer
+
+
+def _clear_in_memory_sessions():
+    graph_builder.clear()
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
 
 
 def check_rate_limit(client_ip: str) -> bool:
@@ -341,7 +359,8 @@ async def receive_telemetry(request: Request):
     data["received_at"] = int(time.time() * 1000)
 
     # Best-effort local cache; MongoDB remains the persistent source of truth.
-    telemetry_buffer.append(data)
+    with _telemetry_buffer_lock:
+        telemetry_buffer.append(data)
 
     # Run AI analysis and save to MongoDB
     persisted = False
@@ -487,7 +506,7 @@ def get_bot_collector_sdk():
         return FileResponse(
             dist_path,
             media_type="application/javascript",
-            headers={"Cache-Control": "public, max-age=3600"},
+            headers={"Cache-Control": "public, no-cache"},
         )
     raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
 
@@ -525,7 +544,11 @@ def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
                 "botd": doc.get("botd") or {},
                 "raw_keys": list(doc.keys()),
             }
-    for ev in reversed(list(telemetry_buffer)):
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    with _telemetry_buffer_lock:
+        buffered_events = list(telemetry_buffer)
+    for ev in reversed(buffered_events):
         if ev.get("sessionId") == session_id:
             mouse = ev.get("mouse") or {}
             return {
@@ -545,7 +568,8 @@ def delete_session(session_id: str, _admin=Depends(require_admin)):
     success = db_delete(session_id)
     if success is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    if success:
+    removed_from_memory = _purge_session_from_memory(session_id)
+    if success or removed_from_memory:
         return {"status": "deleted", "sessionId": session_id}
     raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -557,6 +581,7 @@ def delete_all_sessions(_admin=Depends(require_admin)):
     count = db_delete_all()
     if count is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    _clear_in_memory_sessions()
     return {"status": "deleted", "count": count}
 
 

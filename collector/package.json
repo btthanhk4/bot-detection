@@ -5,7 +5,8 @@
   "main": "dist/bot-collector.js",
   "module": "src/index.js",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "test": "npm run build && node test.js"
   },
   "keywords": [
     "bot-detection",

@@ -120,6 +120,23 @@ class ClickFraudGraphBuilder:
             self.pruned_sessions += 1
         self._rebuild_topology()
 
+    def remove_session(self, session_id: str) -> bool:
+        """Remove one session and every orphaned relation from the in-memory graph."""
+        normalized_id = str(session_id)[:128]
+        with self._lock:
+            if normalized_id not in self._session_snapshots:
+                return False
+            del self._session_snapshots[normalized_id]
+            self._rebuild_topology()
+            return True
+
+    def clear(self):
+        """Remove all graph state while retaining configured capacity limits."""
+        with self._lock:
+            self._session_snapshots.clear()
+            self.pruned_sessions = 0
+            self._reset_topology()
+
     def _build_session_feature(self, mouse_stats: dict, botd: dict, record_count: int) -> np.ndarray:
         """Build session feature vector from mouse stats + metadata using canonical vector extractor."""
         mouse_vec = extract_mouse_stat_vector(mouse_stats)

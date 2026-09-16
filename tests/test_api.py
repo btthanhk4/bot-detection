@@ -204,6 +204,7 @@ def test_get_bot_collector_sdk(client):
     res = client.get("/bot-collector.js")
     assert res.status_code == 200
     assert "application/javascript" in res.headers["content-type"]
+    assert res.headers["cache-control"] == "public, no-cache"
     assert "BotCollector" in res.text
 
 
@@ -265,17 +266,73 @@ def test_chunked_payload_is_limited_before_buffering():
 
 
 def test_delete_requires_admin_token(client, monkeypatch):
+    from api_service.main import graph_builder, telemetry_buffer, _telemetry_buffer_lock
     from api_service.config import settings
     original_token = settings.ADMIN_TOKEN
     settings.ADMIN_TOKEN = "test-secret"
     monkeypatch.setattr("api_service.database.delete_all_sessions", lambda: 3)
+    graph_builder.add_telemetry_event({"sessionId": "delete-all-memory", "visitorId": "device"})
+    with _telemetry_buffer_lock:
+        telemetry_buffer.append({"sessionId": "delete-all-memory"})
     try:
         assert client.delete("/api/v1/sessions").status_code == 401
         res = client.delete("/api/v1/sessions", headers={"X-Admin-Token": "test-secret"})
         assert res.status_code == 200
         assert res.json()["count"] == 3
+        assert graph_builder.get_stats()["session_count"] == 0
+        with _telemetry_buffer_lock:
+            assert len(telemetry_buffer) == 0
     finally:
         settings.ADMIN_TOKEN = original_token
+
+
+def test_delete_session_purges_in_memory_data(client, monkeypatch):
+    from api_service.config import settings
+    from api_service.main import graph_builder, telemetry_buffer, _telemetry_buffer_lock
+
+    original_token = settings.ADMIN_TOKEN
+    settings.ADMIN_TOKEN = "test-secret"
+    monkeypatch.setattr("api_service.database.delete_session", lambda _session_id: False)
+    graph_builder.add_telemetry_event({"sessionId": "memory-only", "visitorId": "device"})
+    with _telemetry_buffer_lock:
+        telemetry_buffer.append({"sessionId": "memory-only"})
+    try:
+        response = client.delete(
+            "/api/v1/sessions/memory-only",
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert response.status_code == 200
+        assert "memory-only" not in graph_builder.session_map
+        with _telemetry_buffer_lock:
+            assert all(event.get("sessionId") != "memory-only" for event in telemetry_buffer)
+    finally:
+        settings.ADMIN_TOKEN = original_token
+
+
+def test_raw_endpoint_does_not_resurrect_missing_db_session(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    class EmptyDetections:
+        def find_one(self, _query, _projection):
+            return None
+
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {"detection_results": EmptyDetections()},
+    )
+    with _telemetry_buffer_lock:
+        telemetry_buffer.append({"sessionId": "deleted-raw", "mouse": {"records": []}})
+    try:
+        response = client.get(
+            "/api/v1/telemetry/raw/deleted-raw",
+            headers=READ_HEADERS,
+        )
+        assert response.status_code == 404
+    finally:
+        with _telemetry_buffer_lock:
+            retained = [event for event in telemetry_buffer if event.get("sessionId") != "deleted-raw"]
+            telemetry_buffer.clear()
+            telemetry_buffer.extend(retained)
 
 
 def test_graph_topology_has_no_dangling_edges(client):

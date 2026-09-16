@@ -13,6 +13,7 @@ from core_ml.dataset.loader import (
     parse_phase2_record,
     records_to_chunks,
     generate_synthetic_telemetry,
+    load_phase2_dataset,
     load_real_dataset,
 )
 
@@ -158,3 +159,62 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert by_id["test-bot"].split == "test"
         assert by_id["test-bot"].label == 1
         assert all(session.source == "phase1" for session in sessions)
+
+    def test_phase2_invalid_duplicate_does_not_hide_valid_session(self, tmp_path):
+        data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
+        data_dir.mkdir(parents=True)
+        data_file = data_dir / "mouse_movements_humans.json"
+        invalid = {
+            "session_id": "same-session",
+            "mousemove_total_behaviour": "[m(1,1)]",
+        }
+        valid = {
+            "session_id": "same-session",
+            "mousemove_total_behaviour": "".join(f"[m({i},{i})]" for i in range(12)),
+        }
+        data_file.write_text(
+            "\n".join([json.dumps(invalid), json.dumps(valid)]), encoding="utf-8"
+        )
+
+        sessions = load_phase2_dataset(str(tmp_path), with_metadata=True)
+
+        assert len(sessions) == 1
+        assert sessions[0].session_id == "same-session"
+        assert len(sessions[0].records) == 12
+
+    def test_phase2_long_sessions_keep_recent_tail(self, tmp_path):
+        data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
+        data_dir.mkdir(parents=True)
+        point_count = 5002
+        record = {
+            "session_id": "long-session",
+            "mousemove_total_behaviour": "".join(f"[m({i % 100},{i % 100})]" for i in range(point_count)),
+            "mousemove_times": ",".join(str(i) for i in range(point_count)),
+        }
+        (data_dir / "mouse_movements_humans.json").write_text(
+            json.dumps(record), encoding="utf-8"
+        )
+
+        sessions = load_phase2_dataset(str(tmp_path), with_metadata=True)
+
+        assert len(sessions[0].records) == 5000
+        assert sessions[0].records[0]["time"] == 2
+
+    def test_loader_rejects_duplicate_trajectory_with_conflicting_labels(self, tmp_path):
+        scenario = "humans_and_moderate_bots"
+        data_root = tmp_path / "phase1" / "data" / "mouse_movements" / scenario
+        annotations = tmp_path / "phase1" / "annotations" / scenario
+        notation = "".join(f"[m({100 + i},{200 + i})]" for i in range(12))
+        for session_id in ("human", "bot"):
+            session_dir = data_root / session_id
+            session_dir.mkdir(parents=True)
+            (session_dir / "mouse_movements.json").write_text(
+                json.dumps({"total_behaviour": notation}), encoding="utf-8"
+            )
+        annotations.mkdir(parents=True)
+        (annotations / "train").write_text("human human\nbot moderate_bot\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Conflicting labels"):
+            load_real_dataset(
+                str(tmp_path), scenario=scenario, include_phase2=False, with_metadata=True
+            )

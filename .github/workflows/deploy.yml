@@ -49,7 +49,7 @@ jobs:
 
       - name: Build collector
         working-directory: collector
-        run: npm run build
+        run: npm test
 
       - name: Verify generated collector is committed
         run: git diff --exit-code -- collector/dist/bot-collector.js
