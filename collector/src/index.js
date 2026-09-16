@@ -162,7 +162,9 @@ export class BotCollector {
       }
 
       if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-        const blob = new Blob([body], { type: 'application/json' });
+        // text/plain is CORS-safelisted, so a cross-origin unload beacon does
+        // not depend on an asynchronous preflight that the browser may cancel.
+        const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
         const success = navigator.sendBeacon(this.endpointUrl, blob);
         if (success) return true;
       }

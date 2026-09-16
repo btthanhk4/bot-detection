@@ -43,6 +43,8 @@ FEATURE_NAMES = [
     "low_font_count",
 ]
 
+MAX_FEATURE_MAGNITUDE = 1_000_000.0
+
 
 def safe_float(val, default: float = 0.0) -> float:
     """Safely convert any value to float, handling None, NaN, Inf, and TypeErrors."""
@@ -51,7 +53,7 @@ def safe_float(val, default: float = 0.0) -> float:
     try:
         f = float(val)
         return float(default) if (math.isnan(f) or math.isinf(f)) else f
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return float(default)
 
 
@@ -172,7 +174,20 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
         low_font_count,
     ]
 
-    return np.array(features, dtype=np.float32)
+    # Keep malformed but finite client values from overflowing float32 and
+    # poisoning graph/model tensors. Normal browser values are far below this.
+    bounded = np.clip(
+        np.asarray(features, dtype=np.float64),
+        -MAX_FEATURE_MAGNITUDE,
+        MAX_FEATURE_MAGNITUDE,
+    )
+    bounded = np.nan_to_num(
+        bounded,
+        nan=0.0,
+        posinf=MAX_FEATURE_MAGNITUDE,
+        neginf=-MAX_FEATURE_MAGNITUDE,
+    )
+    return bounded.astype(np.float32)
 
 
 def get_feature_dict(fingerprint: dict, botd: dict) -> dict:

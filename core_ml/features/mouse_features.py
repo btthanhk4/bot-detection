@@ -16,6 +16,9 @@ import torch
 
 
 MAX_MOUSE_RECORDS = 100
+MAX_FEATURE_MAGNITUDE = 1_000_000.0
+MAX_RAW_COORDINATE = 100_000.0
+MAX_EVENT_TIME = 9_000_000_000_000_000.0
 
 
 # Single Source of Truth for Mouse Statistical Features
@@ -77,6 +80,13 @@ def sanitize_mouse_records(records: list, max_records: int = MAX_MOUSE_RECORDS) 
             continue
         if not all(math.isfinite(value) for value in (numeric_time, numeric_x, numeric_y)):
             continue
+        if (
+            numeric_time < 0
+            or numeric_time > MAX_EVENT_TIME
+            or abs(numeric_x) > MAX_RAW_COORDINATE
+            or abs(numeric_y) > MAX_RAW_COORDINATE
+        ):
+            continue
         valid_records.append({
             "time": numeric_time,
             "x": numeric_x,
@@ -119,13 +129,12 @@ def compute_statistical_features(records: list) -> dict:
 
     # Coordinate auto-normalization:
     # If coordinates are in pixel space (> 1.0), normalize to [0, 1] screen coordinates
-    max_x = max(xs) if xs else 1.0
-    max_y = max(ys) if ys else 1.0
-    if max_x > 1.0 or max_y > 1.0:
-        scale_w = max(1920.0, max_x)
-        scale_h = max(1080.0, max_y)
-        xs = [x / scale_w for x in xs]
-        ys = [y / scale_h for y in ys]
+    max_abs_x = max((abs(x) for x in xs), default=1.0)
+    max_abs_y = max((abs(y) for y in ys), default=1.0)
+    scale_w = max(1920.0, max_abs_x) if max_abs_x > 1.0 else 1.0
+    scale_h = max(1080.0, max_abs_y) if max_abs_y > 1.0 else 1.0
+    xs = [max(0.0, min(1.0, x / scale_w)) for x in xs]
+    ys = [max(0.0, min(1.0, y / scale_h)) for y in ys]
 
     duration = max(1.0, float(times[-1] - times[0]))
 
@@ -256,7 +265,7 @@ def compute_statistical_features(records: list) -> dict:
     total_time = sum(dts) if dts else 1e-9
     idle_time_ratio = float(idle_time / (total_time + 1e-9))
 
-    return {
+    stats = {
         "point_count": len(valid_records),
         "move_point_count": len(move_records),
         "duration_ms": duration,
@@ -284,6 +293,14 @@ def compute_statistical_features(records: list) -> dict:
         "speed_skewness": speed_skewness,
         "idle_time_ratio": idle_time_ratio,
     }
+    for key, value in stats.items():
+        if key in ("point_count", "move_point_count"):
+            continue
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            numeric = 0.0
+        stats[key] = max(-MAX_FEATURE_MAGNITUDE, min(MAX_FEATURE_MAGNITUDE, numeric))
+    return stats
 
 
 def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> list:
@@ -298,18 +315,22 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> 
     if len(moves) < chunk_size + 1:
         return []
 
-    max_x = max(record["x"] for record in moves)
-    max_y = max(record["y"] for record in moves)
-    scale_w = max(1920.0, max_x) if max_x > 1.0 else 1.0
-    scale_h = max(1080.0, max_y) if max_y > 1.0 else 1.0
+    max_abs_x = max(abs(record["x"]) for record in moves)
+    max_abs_y = max(abs(record["y"]) for record in moves)
+    scale_w = max(1920.0, max_abs_x) if max_abs_x > 1.0 else 1.0
+    scale_h = max(1080.0, max_abs_y) if max_abs_y > 1.0 else 1.0
 
     feature_rows = []
     prev_speed_x = 0.0
     prev_speed_y = 0.0
     for previous, current in zip(moves, moves[1:]):
         dt = max(0.001, (current["time"] - previous["time"]) / 1000.0)
-        dx = (current["x"] - previous["x"]) / scale_w
-        dy = (current["y"] - previous["y"]) / scale_h
+        previous_x = max(0.0, min(1.0, previous["x"] / scale_w))
+        previous_y = max(0.0, min(1.0, previous["y"] / scale_h))
+        current_x = max(0.0, min(1.0, current["x"] / scale_w))
+        current_y = max(0.0, min(1.0, current["y"] / scale_h))
+        dx = current_x - previous_x
+        dy = current_y - previous_y
         distance = math.sqrt(dx * dx + dy * dy)
         speed_x = dx / dt
         speed_y = dy / dt
@@ -317,7 +338,10 @@ def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> 
         acceleration = math.sqrt(
             (speed_x - prev_speed_x) ** 2 + (speed_y - prev_speed_y) ** 2
         ) / dt
-        feature_rows.append([dx, dy, speed_x, speed_y, speed, acceleration, distance, dt])
+        feature_rows.append([
+            max(-MAX_FEATURE_MAGNITUDE, min(MAX_FEATURE_MAGNITUDE, value))
+            for value in (dx, dy, speed_x, speed_y, speed, acceleration, distance, dt)
+        ])
         prev_speed_x = speed_x
         prev_speed_y = speed_y
 

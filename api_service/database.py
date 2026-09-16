@@ -31,12 +31,13 @@ MONGO_DB = os.environ.get("MONGO_DB", "bot_detection")
 
 _client = None
 _db = None
+_indexes_ready = False
 _connect_lock = threading.Lock()
 _retry_after = 0.0
 
 def get_db():
     """Lazy-initialize MongoDB connection with retry logic."""
-    global _client, _db, _retry_after
+    global _client, _db, _indexes_ready, _retry_after
     if _db is not None:
         return _db
     if time.monotonic() < _retry_after:
@@ -57,7 +58,7 @@ def get_db():
             )
             _client.admin.command("ping")
             _db = _client[MONGO_DB]
-            _ensure_indexes(_db)
+            _indexes_ready = _ensure_indexes(_db)
             logger.info(f"[DB] Connected to MongoDB database: {MONGO_DB}")
             return _db
         except Exception as e:
@@ -66,20 +67,25 @@ def get_db():
                 _client.close()
             _client = None
             _db = None
+            _indexes_ready = False
             _retry_after = time.monotonic() + 10.0
             return None
 
 
 def is_database_ready() -> bool:
     """Ping MongoDB so readiness detects a stale or disconnected client."""
-    global _client, _db, _retry_after
+    global _client, _db, _indexes_ready, _retry_after
     db = get_db()
     client = _client
     if db is None or client is None:
         return False
     try:
         client.admin.command("ping")
-        return True
+        if not _indexes_ready:
+            with _connect_lock:
+                if _db is db:
+                    _indexes_ready = _ensure_indexes(db)
+        return _indexes_ready
     except Exception as exc:
         logger.warning(f"[DB] MongoDB readiness ping failed: {exc}")
         with _connect_lock:
@@ -87,6 +93,7 @@ def is_database_ready() -> bool:
             if _client is client:
                 _client = None
                 _db = None
+                _indexes_ready = False
                 _retry_after = time.monotonic() + 1.0
                 try:
                     client.close()
@@ -97,6 +104,7 @@ def is_database_ready() -> bool:
 
 def _ensure_indexes(db):
     """Create indexes for efficient queries."""
+    all_ready = True
     indexes = [
         (db["detection_results"], "created_at_-1", [("created_at", -1)], {"expireAfterSeconds": 86400 * 30}),
         (db["detection_results"], "sessionId_1", [("sessionId", 1)], {"unique": True}),
@@ -109,7 +117,16 @@ def _ensure_indexes(db):
         try:
             existing = collection.index_information().get(name)
             existing_keys = [tuple(item) for item in (existing or {}).get("key", [])]
-            options_match = all(existing.get(key) == value for key, value in options.items()) if existing else False
+            managed_defaults = {
+                "unique": False,
+                "sparse": False,
+                "expireAfterSeconds": None,
+                "partialFilterExpression": None,
+            }
+            options_match = bool(existing) and all(
+                existing.get(key, default) == options.get(key, default)
+                for key, default in managed_defaults.items()
+            )
 
             if existing and (existing_keys != keys or not options_match):
                 logger.info(f"[DB] Rebuilding index {name} with updated options")
@@ -134,7 +151,9 @@ def _ensure_indexes(db):
             if not existing:
                 collection.create_index(keys, name=name, **options)
         except Exception as e:
+            all_ready = False
             logger.warning(f"[DB] Index creation warning for {name}: {e}")
+    return all_ready
 
 
 def _writes_are_blocked(db, session_id: str) -> bool:
@@ -282,10 +301,13 @@ def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
         results = []
         for doc in cursor:
             # Convert datetime to epoch ms for frontend compatibility
-            if "created_at" in doc and doc["created_at"]:
-                doc["received_at"] = int(doc.get("updated_at", doc["created_at"]).timestamp() * 1000)
-            if "updated_at" in doc and doc["updated_at"]:
-                doc["updated_at"] = int(doc["updated_at"].timestamp() * 1000)
+            created_at = doc.get("created_at")
+            updated_at = doc.get("updated_at")
+            effective_time = updated_at or created_at
+            if effective_time and hasattr(effective_time, "timestamp"):
+                doc["received_at"] = int(effective_time.timestamp() * 1000)
+            if updated_at and hasattr(updated_at, "timestamp"):
+                doc["updated_at"] = int(updated_at.timestamp() * 1000)
             results.append(doc)
         return results
     except Exception as e:

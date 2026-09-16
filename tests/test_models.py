@@ -71,6 +71,43 @@ class TestTabularClassifier:
         assert classifier.load(str(path)) is False
         assert classifier.is_fitted is False
 
+    def test_load_rejects_artifact_claiming_fitted_without_fitted_objects(self, tmp_path):
+        path = tmp_path / "false-ready.joblib"
+        joblib.dump(
+            {
+                "model": XGBClassifier(),
+                "scaler": StandardScaler(),
+                "fitted": True,
+                "features": [],
+            },
+            path,
+        )
+
+        classifier = TabularBotClassifier()
+
+        assert classifier.load(str(path)) is False
+        assert classifier.is_fitted is False
+
+    def test_fitted_model_round_trip_remains_available(self, tmp_path):
+        path = tmp_path / "trained.joblib"
+        features = ["a", "b", "c"]
+        classifier = TabularBotClassifier(n_estimators=3, max_depth=2)
+        classifier.fit(
+            np.array([[0, 0, 0], [1, 1, 1], [0.1, 0.2, 0.1], [0.9, 0.8, 0.9]]),
+            np.array([0, 1, 0, 1]),
+            feature_names=features,
+        )
+        classifier.save(str(path))
+
+        loaded = TabularBotClassifier()
+
+        assert loaded.load(str(path)) is True
+        assert loaded.is_fitted is True
+
+        incompatible = TabularBotClassifier()
+        assert incompatible.load(str(path), expected_feature_names=["x", "y", "z"]) is False
+        assert incompatible.is_fitted is False
+
     def test_dimension_mismatch_resilience(self):
         clf = TabularBotClassifier(n_estimators=5)
         X_train = np.random.randn(20, 50).astype(np.float32)

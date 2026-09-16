@@ -246,7 +246,7 @@ def test_rate_limiter_does_not_clear_active_clients_at_capacity():
     import time
     from api_service.main import _rate_limit_records, check_rate_limit
 
-    now = time.time()
+    now = time.monotonic()
     _rate_limit_records.clear()
     for index in range(10000):
         _rate_limit_records[f"192.0.2.{index}"] = [now]
@@ -512,6 +512,23 @@ def test_raw_endpoint_does_not_resurrect_missing_db_session(client, monkeypatch)
             retained = [event for event in telemetry_buffer if event.get("sessionId") != "deleted-raw"]
             telemetry_buffer.clear()
             telemetry_buffer.extend(retained)
+
+
+def test_raw_and_detail_endpoints_report_database_query_failure(client, monkeypatch):
+    class FailingDetections:
+        def find_one(self, *_args, **_kwargs):
+            raise RuntimeError("query interrupted")
+
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {"detection_results": FailingDetections()},
+    )
+
+    raw = client.get("/api/v1/telemetry/raw/session", headers=READ_HEADERS)
+    detail = client.get("/api/v1/sessions/session/detail", headers=READ_HEADERS)
+
+    assert raw.status_code == 503
+    assert detail.status_code == 503
 
 
 def test_graph_topology_has_no_dangling_edges(client):

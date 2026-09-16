@@ -145,7 +145,7 @@ class TabularBotClassifier:
             "features": self.feature_names,
         }, path)
 
-    def load(self, path: str) -> bool:
+    def load(self, path: str, expected_feature_names: list = None) -> bool:
         if os.path.exists(path):
             try:
                 data = joblib.load(path)
@@ -153,11 +153,23 @@ class TabularBotClassifier:
                 self.scaler = data.get("scaler", StandardScaler())
                 self.is_fitted = data.get("fitted", False)
                 self.feature_names = data.get("features", [])
-                return bool(
+                scaler_dim = int(getattr(self.scaler, "n_features_in_", 0) or 0)
+                model_dim = int(getattr(self.model, "n_features_in_", 0) or 0)
+                artifact_valid = bool(
                     self.is_fitted
                     and hasattr(self.scaler, "transform")
                     and hasattr(self.model, "predict_proba")
+                    and scaler_dim > 0
+                    and model_dim == scaler_dim
+                    and (not self.feature_names or len(self.feature_names) == scaler_dim)
+                    and (
+                        expected_feature_names is None
+                        or self.feature_names == list(expected_feature_names)
+                    )
                 )
+                if not artifact_valid:
+                    self.is_fitted = False
+                return artifact_valid
             except Exception:
                 self.is_fitted = False
                 return False

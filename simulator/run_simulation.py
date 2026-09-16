@@ -28,6 +28,8 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
 
     correct_human = 0
     correct_bot = 0
+    suspect_human = 0
+    suspect_bot = 0
     latencies = []
 
     # 1. Test Humans
@@ -40,8 +42,11 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
             dt = (time.perf_counter() - t0) * 1000
             latencies.append(dt)
             data = res.json()
-            if not data.get("is_bot", True):
+            verdict = str(data.get("verdict") or "").upper()
+            if verdict == "HUMAN":
                 correct_human += 1
+            elif verdict == "SUSPECT":
+                suspect_human += 1
             else:
                 print(f"  [False Positive #{i+1}] Human classified as Bot! Prob: {data.get('bot_probability')}")
         except Exception as e:
@@ -59,8 +64,11 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
             dt = (time.perf_counter() - t0) * 1000
             latencies.append(dt)
             data = res.json()
-            if data.get("is_bot", False):
+            verdict = str(data.get("verdict") or "").upper()
+            if verdict == "BOT":
                 correct_bot += 1
+            elif verdict == "SUSPECT":
+                suspect_bot += 1
             else:
                 print(f"  [Evasion #{i+1}] {b_type} Bot bypassed detector! Prob: {data.get('bot_probability')}")
         except Exception as e:
@@ -69,8 +77,17 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
     print("\n--- BENCHMARK SUMMARY ---")
     print(f"Human Accuracy (True Negative): {correct_human}/{n_samples} ({correct_human/n_samples*100:.1f}%)")
     print(f"Bot Detection Rate (Recall):     {correct_bot}/{n_samples} ({correct_bot/n_samples*100:.1f}%)")
+    print(f"Suspect Human / Bot:             {suspect_human} / {suspect_bot}")
     if latencies:
         print(f"Average Latency:                {sum(latencies)/len(latencies):.2f} ms")
+    return {
+        "human_correct": correct_human,
+        "bot_correct": correct_bot,
+        "human_suspect": suspect_human,
+        "bot_suspect": suspect_bot,
+        "successful_requests": len(latencies),
+        "average_latency_ms": sum(latencies) / len(latencies) if latencies else None,
+    }
 
 
 def run_playwright_test(target_url: str, headless: bool = True):

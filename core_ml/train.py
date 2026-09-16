@@ -131,6 +131,8 @@ def resolve_training_indices(labels, splits, seed: int = SEED):
     generated_test = len(idx_test) == 0
 
     try:
+        if not generated_test and len(np.unique(labels[idx_test])) != 2:
+            raise ValueError("Official test split must contain both labels")
         if generated_test:
             remaining, idx_test = train_test_split(
                 indices, test_size=0.15, stratify=labels, random_state=seed

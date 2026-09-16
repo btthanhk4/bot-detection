@@ -170,7 +170,9 @@ def get_experiment_indices(y, splits):
     split_array = np.asarray(splits)
     idx_test = np.flatnonzero(split_array == "test")
     idx_train = np.flatnonzero(split_array != "test")
-    if len(idx_test) and len(idx_train) and len(np.unique(y[idx_test])) == 2:
+    if len(idx_test):
+        if not len(idx_train) or len(np.unique(y[idx_test])) != 2:
+            raise ValueError("Official test split must contain both labels and leave training data")
         return idx_train, idx_test
     return train_test_split(
         np.arange(len(y)), test_size=0.30, stratify=y, random_state=SEED

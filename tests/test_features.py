@@ -87,6 +87,18 @@ class TestEnvFeatures:
         assert vec3.shape == (len(ENV_FEATURE_NAMES),)
         assert not np.isnan(vec3).any()
 
+    def test_extreme_environment_values_stay_finite(self):
+        vec = extract_env_vector(
+            {
+                "hardwareConcurrency": 10**400,
+                "deviceMemory": -(10**400),
+                "screenResolution": [10**400, 10**400],
+            },
+            {"heuristicScore": 10**400},
+        )
+
+        assert np.isfinite(vec).all()
+
 
 class TestMouseFeatures:
     def test_statistical_features_synthetic_points(self):
@@ -192,3 +204,32 @@ class TestMouseFeatures:
         assert stats["duration_ms"] == 300.0  # 400 - 100
         assert stats["mean_speed"] > 0
         assert not np.isnan(stats["mean_speed"])
+
+    def test_extreme_mouse_coordinates_stay_finite_and_bounded(self):
+        records = [
+            {
+                "time": i,
+                "x": (-1 if i % 2 else 1) * 10**300,
+                "y": (-1 if i % 3 else 1) * 10**300,
+                "type": "move",
+            }
+            for i in range(30)
+        ]
+
+        stats = compute_statistical_features(records)
+        vector = extract_mouse_stat_vector(stats)
+
+        assert np.isfinite(vector).all()
+        assert np.max(np.abs(vector)) <= 1_000_000.0
+
+    def test_extreme_mouse_outlier_does_not_poison_valid_window(self):
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        records.append({"time": 1000, "x": 10**300, "y": 10**300, "type": "move"})
+
+        stats = compute_statistical_features(records)
+
+        assert stats["move_point_count"] == 30
+        assert stats["mean_speed"] > 0

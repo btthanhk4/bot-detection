@@ -6,6 +6,7 @@ from pymongo.errors import DuplicateKeyError
 from api_service.database import (
     _ensure_indexes,
     delete_all_sessions,
+    get_recent_results,
     is_database_ready,
     save_detection_result,
 )
@@ -38,8 +39,9 @@ def test_ensure_indexes_rebuilds_conflicting_options():
     )
     deleted = FakeCollection()
 
-    _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
+    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
 
+    assert ready is True
     assert detections.dropped == ["created_at_-1", "sessionId_1"]
     assert detections.indexes["created_at_-1"]["expireAfterSeconds"] == 86400 * 30
     assert detections.indexes["sessionId_1"]["unique"] is True
@@ -60,10 +62,25 @@ def test_ensure_indexes_keeps_matching_indexes():
         {"expires_at_1": {"key": [("expires_at", 1)], "expireAfterSeconds": 0}}
     )
 
-    _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
+    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
 
+    assert ready is True
     assert detections.dropped == []
     assert deleted.dropped == []
+
+
+def test_ensure_indexes_removes_unwanted_unique_option():
+    detections = FakeCollection(
+        {"verdict_1": {"key": [("verdict", 1)], "unique": True}}
+    )
+
+    ready = _ensure_indexes(
+        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+    )
+
+    assert ready is True
+    assert "verdict_1" in detections.dropped
+    assert detections.indexes["verdict_1"].get("unique", False) is False
 
 
 def test_ensure_indexes_restores_previous_index_when_rebuild_fails():
@@ -77,10 +94,11 @@ def test_ensure_indexes_restores_previous_index_when_rebuild_fails():
         {"sessionId_1": {"key": [("sessionId", 1)], "unique": False}}
     )
 
-    _ensure_indexes(
+    ready = _ensure_indexes(
         {"detection_results": detections, "deleted_sessions": FakeCollection()}
     )
 
+    assert ready is False
     assert detections.indexes["sessionId_1"]["unique"] is False
     assert detections.dropped == ["sessionId_1"]
 
@@ -134,6 +152,34 @@ def test_delete_all_keeps_fail_closed_block_when_delete_fails(monkeypatch):
     assert len(control.updates) == 1
 
 
+def test_recent_results_falls_back_to_created_time_for_legacy_null_update(monkeypatch):
+    from datetime import datetime, timezone
+
+    created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class Cursor(list):
+        def sort(self, *_args):
+            return self
+
+        def limit(self, _limit):
+            return self
+
+    class LegacyCollection:
+        def find(self, *_args, **_kwargs):
+            return Cursor(
+                [{"sessionId": "legacy", "created_at": created_at, "updated_at": None}]
+            )
+
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {"detection_results": LegacyCollection()},
+    )
+
+    results = get_recent_results()
+
+    assert results[0]["received_at"] == int(created_at.timestamp() * 1000)
+
+
 def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):
     import api_service.database as database_module
 
@@ -160,6 +206,26 @@ def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):
     assert database_module._client is None
     assert database_module._db is None
     assert database_module._retry_after > 0.0
+
+
+def test_readiness_retries_failed_index_setup(monkeypatch):
+    import api_service.database as database_module
+
+    class Admin:
+        def command(self, _name):
+            return {"ok": 1}
+
+    database = {
+        "detection_results": FakeCollection(),
+        "deleted_sessions": FakeCollection(),
+    }
+    monkeypatch.setattr(database_module, "_client", SimpleNamespace(admin=Admin()))
+    monkeypatch.setattr(database_module, "_db", database)
+    monkeypatch.setattr(database_module, "_indexes_ready", False)
+
+    assert is_database_ready() is True
+    assert database_module._indexes_ready is True
+    assert database["detection_results"].indexes["sessionId_1"]["unique"] is True
 
 
 class MemoryCollection:

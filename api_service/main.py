@@ -26,6 +26,8 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
 
 
 logger = logging.getLogger("bot_detection.api")
@@ -102,7 +104,11 @@ lstm_model = MouseTrajectoryLSTM()
 lstm_loaded = lstm_model.load_weights(lstm_weights_path)
 
 tabular_model = TabularBotClassifier()
-tabular_loaded = tabular_model.load(tabular_weights_path)
+tabular_feature_names = list(ENV_FEATURE_NAMES) + list(STATISTICAL_FEATURE_NAMES)
+tabular_loaded = tabular_model.load(
+    tabular_weights_path,
+    expected_feature_names=tabular_feature_names,
+)
 
 ensemble_detector = EnsembleBotDetector(
     lstm_model=lstm_model,
@@ -191,7 +197,9 @@ def check_rate_limit(client_ip: str) -> bool:
     """Returns True if within rate limit, False if rate limit exceeded."""
     if settings.RATE_LIMIT_PER_MINUTE <= 0:
         return True
-    now = time.time()
+    # Sliding windows measure elapsed time; wall-clock changes must not reset
+    # or indefinitely extend a client's limit window.
+    now = time.monotonic()
     cutoff = now - 60.0
     with _rate_limit_lock:
         if client_ip not in _rate_limit_records and len(_rate_limit_records) >= 10000:
@@ -637,10 +645,14 @@ def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
     from api_service.database import get_db
     db = get_db()
     if db is not None:
-        doc = db["detection_results"].find_one(
-            {"sessionId": session_id},
-            {"_id": 0, "sessionId": 1, "mouse_trajectory": 1, "fingerprint": 1, "botd": 1},
-        )
+        try:
+            doc = db["detection_results"].find_one(
+                {"sessionId": session_id},
+                {"_id": 0, "sessionId": 1, "mouse_trajectory": 1, "fingerprint": 1, "botd": 1},
+            )
+        except Exception as exc:
+            logger.warning("Raw telemetry query failed: %s", exc)
+            raise HTTPException(status_code=503, detail="Database query failed")
         if doc:
             return {
                 "sessionId": session_id,
@@ -713,10 +725,14 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
-    doc = db["detection_results"].find_one(
-        {"sessionId": session_id},
-        {"_id": 0}
-    )
+    try:
+        doc = db["detection_results"].find_one(
+            {"sessionId": session_id},
+            {"_id": 0}
+        )
+    except Exception as exc:
+        logger.warning("Session detail query failed: %s", exc)
+        raise HTTPException(status_code=503, detail="Database query failed")
     if not doc:
         raise HTTPException(status_code=404, detail="Session not found")
 

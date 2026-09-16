@@ -80,8 +80,29 @@ async function testDestroyAbortsStatusRequest() {
   assert.strictEqual(collector.abortControllers.size, 0);
 }
 
+async function testPagehideBeaconUsesCorsSafelistedContentType() {
+  const collector = new BotCollector({ endpointUrl: 'https://api.example/telemetry' });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  let beaconBlob = null;
+  global.navigator = {
+    sendBeacon: (_url, blob) => {
+      beaconBlob = blob;
+      return true;
+    },
+  };
+
+  const sent = await collector.sendTelemetry('pagehide');
+
+  assert.strictEqual(sent, true);
+  assert.ok(beaconBlob, 'pagehide should use sendBeacon when available');
+  assert.strictEqual(beaconBlob.type, 'text/plain;charset=utf-8');
+  delete global.navigator;
+}
+
 testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
+  .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {
     console.error(error);

@@ -101,3 +101,19 @@ def test_training_split_recovers_when_real_validation_and_test_are_missing():
     assert set(val_idx).isdisjoint(test_idx)
     assert set(labels[val_idx]) == {0, 1}
     assert set(labels[test_idx]) == {0, 1}
+
+
+def test_training_rejects_one_class_official_test_instead_of_reporting_fake_auc():
+    labels = np.array([0, 1, 0, 1, 0])
+    splits = np.array(["train", "train", "val", "val", "test"])
+
+    with pytest.raises(ValueError, match="too small or imbalanced"):
+        resolve_training_indices(labels, splits)
+
+
+def test_experiments_do_not_mix_invalid_official_test_back_into_training():
+    labels = np.array([0, 1, 0, 1, 0])
+    splits = np.array(["train", "train", "val", "val", "test"])
+
+    with pytest.raises(ValueError, match="Official test split"):
+        get_experiment_indices(labels, splits)
