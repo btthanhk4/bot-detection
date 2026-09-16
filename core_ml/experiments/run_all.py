@@ -167,16 +167,57 @@ def prepare_data(dataset_root=None):
 
 def get_experiment_indices(y, splits):
     """Return one shared leakage-safe split for every comparable experiment."""
+    y = np.asarray(y)
     split_array = np.asarray(splits)
+    if y.ndim != 1 or split_array.ndim != 1 or len(y) != len(split_array):
+        raise ValueError("Labels and split metadata must be one-dimensional and aligned")
+    if len(np.unique(y)) != 2:
+        raise ValueError("Experiments require both human and bot labels")
     idx_test = np.flatnonzero(split_array == "test")
     idx_train = np.flatnonzero(split_array != "test")
     if len(idx_test):
-        if not len(idx_train) or len(np.unique(y[idx_test])) != 2:
-            raise ValueError("Official test split must contain both labels and leave training data")
+        if len(np.unique(y[idx_train])) != 2 or len(np.unique(y[idx_test])) != 2:
+            raise ValueError("Official test split and its training pool must both contain both labels")
         return idx_train, idx_test
     return train_test_split(
         np.arange(len(y)), test_size=0.30, stratify=y, random_state=SEED
     )
+
+
+def get_fit_validation_indices(y, splits, idx_train):
+    """Use a valid published validation split or derive one from shared training data."""
+    y = np.asarray(y)
+    split_array = np.asarray(splits)
+    idx_train = np.asarray(idx_train, dtype=int)
+    if len(y) != len(split_array):
+        raise ValueError("Labels and split metadata must be aligned")
+
+    shared_train = set(idx_train.tolist())
+    idx_fit = np.asarray(
+        [index for index in np.flatnonzero(split_array == "train") if index in shared_train],
+        dtype=int,
+    )
+    idx_val = np.asarray(
+        [index for index in np.flatnonzero(split_array == "val") if index in shared_train],
+        dtype=int,
+    )
+    published_split_is_usable = (
+        len(idx_fit) > 0
+        and len(idx_val) > 0
+        and len(np.unique(y[idx_fit])) == 2
+        and len(np.unique(y[idx_val])) == 2
+    )
+    if published_split_is_usable:
+        return idx_fit, idx_val
+
+    try:
+        return train_test_split(
+            idx_train, test_size=0.20, stratify=y[idx_train], random_state=SEED
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "Shared training data is too small or imbalanced for a validation split"
+        ) from exc
 
 
 def load_real_by_scenario(real_root, scenario, include_phase2=True):
@@ -471,14 +512,26 @@ def experiment_early_detection(all_records, y, feature_names, idx_train, idx_tes
 # ============================================================
 # EXPERIMENT 6: Inference Latency
 # ============================================================
-def experiment_inference_latency(X, model_trained):
+def experiment_inference_latency(X, model_trained, iterations=100, warmup_runs=10):
     print("\n" + "=" * 60)
     print("  E6: INFERENCE LATENCY BENCHMARK")
     print("=" * 60)
 
+    X = np.asarray(X)
+    iterations = int(iterations)
+    warmup_runs = int(warmup_runs)
+    if X.ndim != 2 or len(X) == 0:
+        raise ValueError("Latency benchmark requires a non-empty 2D feature matrix")
+    if iterations <= 0 or warmup_runs < 0:
+        raise ValueError("Latency benchmark iterations must be positive and warmup non-negative")
+
+    sample_count = min(iterations, len(X))
+    for i in range(warmup_runs):
+        model_trained.predict_proba(X[i % len(X)])
+
     # XGBoost single sample
     times_xgb = []
-    for i in range(min(100, len(X))):
+    for i in range(sample_count):
         start = time.perf_counter()
         model_trained.predict_proba(X[i])
         elapsed = (time.perf_counter() - start) * 1000
@@ -490,13 +543,16 @@ def experiment_inference_latency(X, model_trained):
     times_lstm = []
     lstm.eval()
     with torch.no_grad():
-        for _ in range(100):
+        for _ in range(warmup_runs):
+            lstm(dummy_chunk)
+        for _ in range(iterations):
             start = time.perf_counter()
             lstm(dummy_chunk)
             elapsed = (time.perf_counter() - start) * 1000
             times_lstm.append(elapsed)
 
     latency_results = {
+        "iterations": {"xgboost": sample_count, "lstm": iterations, "warmup": warmup_runs},
         "xgboost_ms": {"mean": round(np.mean(times_xgb), 3), "p50": round(np.median(times_xgb), 3), "p95": round(np.percentile(times_xgb, 95), 3), "p99": round(np.percentile(times_xgb, 99), 3)},
         "lstm_ms": {"mean": round(np.mean(times_lstm), 3), "p50": round(np.median(times_lstm), 3), "p95": round(np.percentile(times_lstm, 95), 3), "p99": round(np.percentile(times_lstm, 99), 3)},
     }
@@ -547,7 +603,7 @@ def experiment_roc_analysis(X, y, feature_names, idx_tr, idx_val, idx_te):
             "tpr": tpr_curve.tolist(),
             "thresholds": thres_curve.tolist(),
         }
-    except Exception:
+    except ValueError:
         pass
 
     RESULTS["E7_roc_analysis"] = {
@@ -680,12 +736,7 @@ def main(dataset_root=None):
     X, y, feature_names, all_records, all_telemetries, splits = prepare_data(dataset_root=dataset_root)
     print(f"  Dataset: {len(y)} samples ({sum(y==0)} Human, {sum(y==1)} Bot), {len(feature_names)} features")
     idx_train, idx_test = get_experiment_indices(y, splits)
-    idx_fit = np.flatnonzero(splits == "train")
-    idx_val = np.flatnonzero(splits == "val")
-    if not len(idx_val) or len(np.unique(y[idx_val])) < 2:
-        idx_fit, idx_val = train_test_split(
-            idx_train, test_size=0.20, stratify=y[idx_train], random_state=SEED
-        )
+    idx_fit, idx_val = get_fit_validation_indices(y, splits, idx_train)
     print(f"  Shared split: train={len(idx_train)} | independent test={len(idx_test)}")
     RESULTS["metadata"] = {
         "seed": SEED,

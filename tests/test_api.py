@@ -481,6 +481,21 @@ def test_buffered_telemetry_is_requeued_when_inference_fails(monkeypatch):
         telemetry_buffer.clear()
 
 
+def test_failed_replay_does_not_evict_newer_event_when_buffer_refills():
+    from api_service.main import _requeue_buffered_event, telemetry_buffer, _telemetry_buffer_lock
+
+    newer_events = [{"sessionId": f"new-{index}"} for index in range(telemetry_buffer.maxlen)]
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.extend(newer_events)
+
+    assert _requeue_buffered_event({"sessionId": "old-failed"}) is False
+
+    with _telemetry_buffer_lock:
+        assert list(telemetry_buffer) == newer_events
+        telemetry_buffer.clear()
+
+
 def test_delete_requires_admin_token(client, monkeypatch):
     from api_service.main import graph_builder, telemetry_buffer, _telemetry_buffer_lock
     from api_service.config import settings

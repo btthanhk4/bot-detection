@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pytest
 from pymongo.errors import DuplicateKeyError
 from api_service.database import (
     _ensure_indexes,
@@ -242,13 +243,25 @@ def test_save_waits_for_required_indexes_on_real_cached_database(monkeypatch):
     monkeypatch.setattr(database_module, "_indexes_ready", False)
     monkeypatch.setattr(database_module, "get_db", lambda: database)
 
-    result = save_detection_result(
-        {"sessionId": "wait-for-index", "visitorId": "visitor"},
-        {"verdict": "HUMAN"},
-    )
+    with pytest.raises(database_module.DatabasePersistenceError, match="indexes"):
+        save_detection_result(
+            {"sessionId": "wait-for-index", "visitorId": "visitor"},
+            {"verdict": "HUMAN"},
+        )
 
-    assert result is None
     assert detections.docs == {}
+
+
+def test_save_reports_unavailable_database_as_retryable(monkeypatch):
+    import api_service.database as database_module
+
+    monkeypatch.setattr(database_module, "get_db", lambda: None)
+
+    with pytest.raises(database_module.DatabasePersistenceError, match="unavailable"):
+        save_detection_result(
+            {"sessionId": "retry-later", "visitorId": "visitor"},
+            {"verdict": "HUMAN"},
+        )
 
 
 class MemoryCollection:

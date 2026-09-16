@@ -9,7 +9,13 @@ from core_ml.train import (
     predict_lstm_sessions,
     resolve_training_indices,
 )
-from core_ml.experiments.run_all import get_experiment_indices, to_json_safe, truncate_moves
+from core_ml.experiments.run_all import (
+    experiment_inference_latency,
+    get_experiment_indices,
+    get_fit_validation_indices,
+    to_json_safe,
+    truncate_moves,
+)
 
 
 def _session(session_id, label, source="phase2", split="unspecified", records=None):
@@ -71,6 +77,24 @@ def test_experiments_share_published_test_split():
 
     assert train_idx.tolist() == [0, 1, 2, 3]
     assert test_idx.tolist() == [4, 5]
+
+
+def test_experiment_validation_falls_back_when_published_train_has_one_label():
+    labels = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+    splits = np.array(["train", "train", "val", "val", "train", "train", "test", "test"])
+    shared_train, _ = get_experiment_indices(labels, splits)
+
+    fit_idx, val_idx = get_fit_validation_indices(labels, splits, shared_train)
+
+    assert set(fit_idx).isdisjoint(val_idx)
+    assert set(fit_idx) | set(val_idx) == set(shared_train)
+    assert set(labels[fit_idx]) == {0, 1}
+    assert set(labels[val_idx]) == {0, 1}
+
+
+def test_latency_benchmark_rejects_empty_feature_matrix():
+    with pytest.raises(ValueError, match="non-empty 2D"):
+        experiment_inference_latency(np.empty((0, 3)), object(), iterations=1, warmup_runs=0)
 
 
 def test_truncate_moves_filters_non_move_and_malformed_records():

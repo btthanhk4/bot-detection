@@ -152,6 +152,16 @@ def _clear_in_memory_sessions():
         telemetry_buffer.clear()
 
 
+def _requeue_buffered_event(data: dict):
+    """Put a failed replay back only when doing so cannot evict newer data."""
+    with _telemetry_buffer_lock:
+        if len(telemetry_buffer) < telemetry_buffer.maxlen:
+            telemetry_buffer.appendleft(data)
+            return True
+    logger.warning("Telemetry replay queue filled concurrently; dropping oldest failed event")
+    return False
+
+
 def _flush_telemetry_buffer(max_events: Optional[int] = None):
     """Persist a bounded batch after MongoDB recovers without duplicate flushers."""
     if not _telemetry_flush_lock.acquire(blocking=False):
@@ -174,8 +184,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 persisted = bool(save_detection_result(data, analysis))
             except Exception:
                 logger.exception("Buffered telemetry replay failed")
-                with _telemetry_buffer_lock:
-                    telemetry_buffer.appendleft(data)
+                _requeue_buffered_event(data)
                 break
 
             if persisted:
@@ -190,8 +199,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
             # A live database can intentionally reject stale/tombstoned data;
             # discard it. On an outage, restore the event and retry later.
             if not is_database_ready():
-                with _telemetry_buffer_lock:
-                    telemetry_buffer.appendleft(data)
+                _requeue_buffered_event(data)
                 break
     finally:
         _telemetry_flush_lock.release()

@@ -215,16 +215,16 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
     Uses upsert on sessionId to update existing sessions (multiple heartbeats).
     Skips if sessionId was recently deleted (blacklisted).
     Returns the inserted/updated document ID, or None when the write is
-    intentionally rejected/unavailable. Raises DatabasePersistenceError when
-    an attempted write fails.
+    intentionally rejected. Raises DatabasePersistenceError when persistence
+    is unavailable or an attempted write fails.
     """
     db = get_db()
     if db is None:
-        return None
+        raise DatabasePersistenceError("Database is unavailable")
     # Real connections must not accept writes until required uniqueness/TTL
     # guarantees are installed. Test doubles are intentionally unaffected.
     if db is _db and not _indexes_ready:
-        return None
+        raise DatabasePersistenceError("Required database indexes are unavailable")
 
     try:
         session_id = str(telemetry.get("sessionId") or f"unknown_{uuid.uuid4().hex}")[:128]
