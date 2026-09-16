@@ -5,6 +5,7 @@ Unit tests for core ML models and multi-modal ensemble.
 import math
 import joblib
 import numpy as np
+import pytest
 import torch
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
@@ -121,6 +122,19 @@ class TestTabularClassifier:
         # More features (truncation should trigger)
         p_long = clf.predict_proba(np.random.randn(70))
         assert 0.0 <= p_long <= 1.0
+
+    def test_fitted_runtime_failure_is_not_hidden_as_neutral_probability(self, monkeypatch):
+        clf = TabularBotClassifier(n_estimators=5)
+        X_train = np.random.randn(20, 4).astype(np.float32)
+        clf.fit(X_train, np.array([0, 1] * 10))
+
+        def fail_transform(_values):
+            raise RuntimeError("broken scaler")
+
+        monkeypatch.setattr(clf.scaler, "transform", fail_transform)
+
+        with pytest.raises(RuntimeError, match="broken scaler"):
+            clf.predict_proba(X_train[0])
 
 
 class TestBehavioralLSTM:

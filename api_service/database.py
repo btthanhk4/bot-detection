@@ -38,6 +38,8 @@ _retry_after = 0.0
 
 BSON_INT64_MIN = -(2**63)
 BSON_INT64_MAX = 2**63 - 1
+EVENT_SEQUENCE_LIMIT = 999_999
+EVENT_ORDER_SCALE = EVENT_SEQUENCE_LIMIT + 1
 
 
 class DatabasePersistenceError(RuntimeError):
@@ -247,7 +249,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             raw_timestamp = raw_received_at
         normalized_event_timestamp = None
         try:
-            sequence = max(0, min(int(raw_sequence or 0), 999))
+            sequence = max(0, min(int(raw_sequence or 0), EVENT_SEQUENCE_LIMIT))
         except (TypeError, ValueError, OverflowError):
             sequence = 0
         try:
@@ -259,13 +261,13 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                     received_at = max(0, min(int(raw_received_at), 9_000_000_000_000))
                     timestamp = max(received_at - 86_400_000, min(timestamp, received_at + 300_000))
                 normalized_event_timestamp = timestamp
-                event_order = timestamp * 1000 + sequence
+                event_order = timestamp * EVENT_ORDER_SCALE + sequence
             else:
                 # Backward compatibility for callers that only provide sequence.
                 event_order = max(0, min(int(raw_sequence), 9007199254740991))
         except (TypeError, ValueError, OverflowError):
             normalized_event_timestamp = int(now.timestamp() * 1000)
-            event_order = normalized_event_timestamp * 1000 + sequence
+            event_order = normalized_event_timestamp * EVENT_ORDER_SCALE + sequence
 
         verdict = str(analysis.get("verdict") or "UNKNOWN")[:32].upper()
         if verdict not in {"HUMAN", "BOT", "SUSPECT"}:
@@ -291,14 +293,37 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "mouse_trajectory": sanitized_records[-200:],
             "event_order": event_order,
             "event_timestamp": normalized_event_timestamp,
+            "event_sequence": sequence,
             "updated_at": now,
         }
 
         visitor_id = telemetry.get("visitorId")
+        if normalized_event_timestamp is None:
+            event_order_filter = {
+                "$or": [{"event_order": {"$lte": event_order}}, {"event_order": {"$exists": False}}]
+            }
+        else:
+            # Compare timestamp and sequence independently so changing the packed
+            # event_order scale remains compatible with documents from older releases.
+            event_order_filter = {
+                "$or": [
+                    {"event_timestamp": {"$lt": normalized_event_timestamp}},
+                    {
+                        "event_timestamp": normalized_event_timestamp,
+                        "event_sequence": {"$lte": sequence},
+                    },
+                    {
+                        # MongoDB's null match also covers documents where this
+                        # field is absent, preserving sequence-only legacy rows.
+                        "event_timestamp": None,
+                        "event_order": {"$lte": event_order},
+                    },
+                ]
+            }
         update_filter = {
             "sessionId": session_id,
             "$and": [
-                {"$or": [{"event_order": {"$lte": event_order}}, {"event_order": {"$exists": False}}]},
+                event_order_filter,
                 {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
             ],
         }
@@ -323,6 +348,44 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
     except Exception as e:
         logger.error(f"[DB] Save failed: {e}")
         raise DatabasePersistenceError("Failed to persist detection result") from e
+
+
+def get_graph_seed_events(limit: int = 10000) -> Optional[List[dict]]:
+    """Load recent persisted telemetry in chronological order for graph recovery."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        cursor = db["detection_results"].find(
+            {},
+            {
+                "_id": 0,
+                "sessionId": 1,
+                "visitorId": 1,
+                "client_ip": 1,
+                "pageUrl": 1,
+                "fingerprint": 1,
+                "botd": 1,
+                "mouse_trajectory": 1,
+                "updated_at": 1,
+            },
+        ).sort("updated_at", -1).limit(max(1, min(int(limit), 10000)))
+        documents = list(cursor)
+        return [
+            {
+                "sessionId": doc.get("sessionId"),
+                "visitorId": doc.get("visitorId"),
+                "client_ip": doc.get("client_ip"),
+                "pageUrl": doc.get("pageUrl"),
+                "fingerprint": doc.get("fingerprint") or {},
+                "botd": doc.get("botd") or {},
+                "mouse": {"records": doc.get("mouse_trajectory") or []},
+            }
+            for doc in reversed(documents)
+        ]
+    except Exception as exc:
+        logger.error(f"[DB] Graph seed query failed: {exc}")
+        return None
 
 
 def get_recent_results(limit: int = 50) -> Optional[List[dict]]:

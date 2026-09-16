@@ -10,6 +10,7 @@ Dataset Loader & Synthetic Telemetry Generator (Optimized v3)
 """
 
 import json
+import logging
 import math
 import os
 import random
@@ -17,6 +18,9 @@ import re
 import hashlib
 from dataclasses import dataclass
 from core_ml.features.mouse_features import records_to_chunks as _canonical_records_to_chunks
+
+
+logger = logging.getLogger("bot_detection.dataset")
 
 
 @dataclass
@@ -309,6 +313,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
             continue
         
         try:
+            invalid_json_lines = 0
             with open(fpath, "r", encoding="utf-8") as f:
                 for line_num, line in enumerate(f):
                     line = line.strip()
@@ -317,6 +322,10 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                     try:
                         record = json.loads(line)
                     except json.JSONDecodeError:
+                        invalid_json_lines += 1
+                        continue
+                    if not isinstance(record, dict):
+                        invalid_json_lines += 1
                         continue
                     
                     session_id = record.get("session_id", "")
@@ -353,10 +362,16 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                     )
                     sessions.append(session if with_metadata else (mouse_records, label))
                     seen_sessions[session_id] = label
+            if invalid_json_lines:
+                logger.warning(
+                    "Skipped %d malformed Phase 2 rows in %s",
+                    invalid_json_lines,
+                    os.path.basename(fpath),
+                )
         except DatasetLabelConflictError:
             raise
         except Exception as e:
-            print(f"  Warning: Error loading Phase 2 file {os.path.basename(fpath)}: {e}")
+            logger.warning("Error loading Phase 2 file %s: %s", os.path.basename(fpath), e)
             continue
     
     return sessions
@@ -402,6 +417,7 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                             label_map[session_id] = (1, split)  # moderate_bot, advanced_bot
 
     # Load Phase 1 sessions
+    phase1_load_errors = 0
     if os.path.isdir(phase1_data):
         for session_id in os.listdir(phase1_data):
             session_dir = os.path.join(phase1_data, session_id)
@@ -438,8 +454,16 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                     scenario=scenario,
                 ))
                 seen_session_ids.add(session_id)
-            except (json.JSONDecodeError, Exception):
+            except (OSError, json.JSONDecodeError, TypeError, AttributeError, ValueError):
+                phase1_load_errors += 1
                 continue
+
+    if phase1_load_errors:
+        logger.warning(
+            "Skipped %d malformed Phase 1 sessions in scenario %s",
+            phase1_load_errors,
+            scenario,
+        )
 
     # ===== Phase 2: MongoDB JSON-lines with REAL timestamps =====
     if include_phase2:

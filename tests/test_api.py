@@ -56,6 +56,62 @@ def test_health_detects_runtime_inference_failure(client, monkeypatch):
     assert response.json()["inference_ready"] is False
 
 
+def test_health_probe_contains_enough_mouse_data_to_execute_lstm(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+    observed = {}
+
+    def inspect_probe(payload):
+        observed["move_count"] = len(payload["mouse"]["records"])
+        return {"bot_probability": 0.5}
+
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", inspect_probe)
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert observed["move_count"] >= 25
+
+
+def test_graph_can_be_hydrated_from_persisted_sessions(monkeypatch):
+    from api_service.main import _hydrate_graph_from_database, graph_builder
+
+    events = [{
+        "sessionId": "restored-session",
+        "visitorId": "restored-device",
+        "client_ip": "203.0.113.10",
+        "pageUrl": "/restored",
+        "mouse": {"records": []},
+    }]
+    monkeypatch.setattr("api_service.database.get_graph_seed_events", lambda limit: events)
+
+    try:
+        assert _hydrate_graph_from_database() is True
+        assert set(graph_builder.session_map) == {"restored-session"}
+        assert set(graph_builder.device_map) == {"restored-device"}
+        assert set(graph_builder.ip_map) == {"203.0.113.10"}
+    finally:
+        graph_builder.clear()
+
+
+def test_application_lifespan_starts_hydration_and_stops_maintenance(monkeypatch):
+    import api_service.main as main_module
+
+    calls = []
+
+    def hydrate():
+        calls.append("hydrate")
+        return True
+
+    async def maintenance():
+        calls.append("maintenance")
+        await asyncio.Future()
+
+    monkeypatch.setattr(main_module, "_hydrate_graph_from_database", hydrate)
+    monkeypatch.setattr(main_module, "_maintenance_loop", maintenance)
+
+    with TestClient(main_module.app):
+        assert calls == ["hydrate", "maintenance"]
+
+
 def test_detect_bot_human(client):
     payload = {
         "sessionId": "sess_test_human",

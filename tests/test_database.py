@@ -275,9 +275,15 @@ class MemoryCollection:
     def update_one(self, query, update, upsert=False):
         doc = self.docs.get(query.get("sessionId"))
         incoming = update["$set"]
+        if doc and incoming.get("event_timestamp") is not None and doc.get("event_timestamp") is not None:
+            stored_order = (doc["event_timestamp"], doc.get("event_sequence", 999_999))
+            incoming_order = (incoming["event_timestamp"], incoming.get("event_sequence", 0))
+            order_matches = stored_order <= incoming_order
+        else:
+            order_matches = bool(doc and doc.get("event_order", -1) <= incoming["event_order"])
         matches = bool(
             doc
-            and doc.get("event_order", -1) <= incoming["event_order"]
+            and order_matches
             and doc.get("visitorId", incoming.get("visitorId")) == incoming.get("visitorId")
         )
         if matches:
@@ -332,6 +338,77 @@ def test_newer_timestamp_allows_sequence_restart(monkeypatch):
     assert save_detection_result(reloaded, {"verdict": "HUMAN"})
     assert save_detection_result(delayed, {"verdict": "BOT"}) is None
     assert detections.docs["reused"]["verdict"] == "HUMAN"
+
+
+def test_large_sequence_values_preserve_order_within_same_millisecond(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    base = {"sessionId": "long-session", "visitorId": "v1", "timestamp": 1000}
+    assert save_detection_result({**base, "sequence": 999}, {"verdict": "SUSPECT"})
+    assert save_detection_result({**base, "sequence": 1000}, {"verdict": "HUMAN"})
+    assert save_detection_result({**base, "sequence": 999}, {"verdict": "BOT"}) is None
+    assert detections.docs["long-session"]["verdict"] == "HUMAN"
+
+
+def test_new_ordering_accepts_newer_timestamp_from_legacy_document(monkeypatch):
+    detections = MemoryCollection()
+    detections.docs["legacy"] = {
+        "sessionId": "legacy",
+        "visitorId": "v1",
+        "event_timestamp": 1000,
+        "event_order": 1_000_005,
+        "verdict": "SUSPECT",
+    }
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    assert save_detection_result(
+        {"sessionId": "legacy", "visitorId": "v1", "timestamp": 1001, "sequence": 0},
+        {"verdict": "HUMAN"},
+    )
+    assert detections.docs["legacy"]["verdict"] == "HUMAN"
+
+
+def test_timestamped_event_upgrades_sequence_only_legacy_document(monkeypatch):
+    detections = MemoryCollection()
+    detections.docs["sequence-only"] = {
+        "sessionId": "sequence-only",
+        "visitorId": "v1",
+        "event_timestamp": None,
+        "event_order": 12,
+        "verdict": "SUSPECT",
+    }
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    assert save_detection_result(
+        {"sessionId": "sequence-only", "visitorId": "v1", "timestamp": 1000, "sequence": 0},
+        {"verdict": "HUMAN"},
+    )
+    assert detections.docs["sequence-only"]["event_timestamp"] == 1000
 
 
 def test_event_timestamp_is_bounded_by_server_receive_time(monkeypatch):

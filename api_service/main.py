@@ -4,6 +4,7 @@ Serves real-time bot detection inference using the trained Multi-Modal Ensemble
 and provides endpoints for telemetry ingestion & graph analysis.
 """
 
+import asyncio
 import collections
 import ipaddress
 import json
@@ -13,6 +14,7 @@ import os
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any
 from urllib.parse import urlsplit
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
@@ -82,10 +84,23 @@ class RequestBodyLimitMiddleware:
             response = JSONResponse(status_code=413, content={"detail": "Request payload too large"})
             await response(scope, receive, send)
 
+@asynccontextmanager
+async def app_lifespan(_app):
+    await run_in_threadpool(_hydrate_graph_from_database)
+    maintenance_task = asyncio.create_task(_maintenance_loop())
+    try:
+        yield
+    finally:
+        maintenance_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await maintenance_task
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Bot detection using browser heuristics, mouse dynamics, and tabular ML",
     version=settings.VERSION,
+    lifespan=app_lifespan,
 )
 
 app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BYTES)
@@ -133,6 +148,31 @@ _telemetry_flush_lock = threading.Lock()
 # Sliding-window rate limiter per client IP
 _rate_limit_lock = threading.Lock()
 _rate_limit_records = collections.defaultdict(list)
+
+
+def _hydrate_graph_from_database() -> bool:
+    """Rebuild process-local graph state from the latest persisted sessions."""
+    from api_service.database import get_graph_seed_events
+
+    events = get_graph_seed_events(limit=settings.MAX_GRAPH_SESSIONS)
+    if events is None:
+        logger.warning("Graph hydration skipped because MongoDB is unavailable")
+        return False
+
+    graph_builder.clear()
+    for event in events:
+        graph_builder.add_telemetry_event(
+            event, ip_address=event.get("client_ip") or "127.0.0.1"
+        )
+    logger.info("Hydrated graph with %d persisted sessions", len(events))
+    return True
+
+
+async def _maintenance_loop():
+    """Retry buffered persistence independently of incoming request traffic."""
+    while True:
+        await asyncio.sleep(settings.MAINTENANCE_INTERVAL_SECONDS)
+        await run_in_threadpool(_flush_telemetry_buffer)
 
 
 def _purge_session_from_memory(session_id: str) -> bool:
@@ -239,7 +279,7 @@ class TelemetryPayload(BaseModel):
     visitorId: Optional[str] = Field(default=None, max_length=128)
     action: Optional[str] = Field(default="telemetry", max_length=64)
     timestamp: Optional[int] = None
-    sequence: Optional[int] = Field(default=None, ge=0, le=9007199254740991)
+    sequence: Optional[int] = Field(default=None, ge=0, le=999999)
     pageUrl: Optional[str] = Field(default=None, max_length=2048)
     referrer: Optional[str] = Field(default=None, max_length=2048)
     fingerprint: Optional[Dict[str, Any]] = None
@@ -345,7 +385,11 @@ def health_check():
     runtime_ready = False
     if tabular_loaded and lstm_loaded:
         try:
-            probe = ensemble_detector.predict({})
+            probe_records = [
+                {"time": index * 16, "x": index / 100, "y": 0.2, "type": "move"}
+                for index in range(25)
+            ]
+            probe = ensemble_detector.predict({"mouse": {"records": probe_records}})
             probability = float(probe.get("bot_probability"))
             runtime_ready = math.isfinite(probability) and 0.0 <= probability <= 1.0
         except Exception:

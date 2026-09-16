@@ -100,12 +100,12 @@ class TabularBotClassifier:
         if x_arr.shape[1] != expected_dim:
             return 0.5
 
-        try:
-            x_scaled = self.scaler.transform(x_arr)
-            probas = self.model.predict_proba(x_scaled)
-            return float(probas[0, 1])
-        except Exception:
-            return 0.5
+        x_scaled = self.scaler.transform(x_arr)
+        probas = self.model.predict_proba(x_scaled)
+        probability = float(probas[0, 1])
+        if not np.isfinite(probability):
+            raise RuntimeError("Tabular model returned a non-finite probability")
+        return max(0.0, min(1.0, probability))
 
     def predict_batch(self, X: np.ndarray) -> np.ndarray:
         """Predict probabilities for multiple samples."""
@@ -124,11 +124,11 @@ class TabularBotClassifier:
         if X_arr.shape[1] != expected_dim:
             return np.full(X_arr.shape[0], 0.5)
 
-        try:
-            X_scaled = self.scaler.transform(X_arr)
-            return self.model.predict_proba(X_scaled)[:, 1]
-        except Exception:
-            return np.full(X_arr.shape[0], 0.5)
+        X_scaled = self.scaler.transform(X_arr)
+        probabilities = np.asarray(self.model.predict_proba(X_scaled)[:, 1], dtype=np.float32)
+        if not np.all(np.isfinite(probabilities)):
+            raise RuntimeError("Tabular model returned non-finite probabilities")
+        return np.clip(probabilities, 0.0, 1.0)
 
     def get_feature_importances(self) -> dict:
         if not self.is_fitted:

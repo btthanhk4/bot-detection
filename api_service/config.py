@@ -70,6 +70,7 @@ class Settings:
     # Capacity limits & Protection
     MAX_BUFFER_SIZE: int = _env_int("BOT_MAX_TELEMETRY_BUFFER", 1000, 1)
     MAX_GRAPH_SESSIONS: int = _env_int("BOT_MAX_GRAPH_SESSIONS", 10000, 1)
+    MAINTENANCE_INTERVAL_SECONDS: int = _env_int("BOT_MAINTENANCE_INTERVAL_SECONDS", 10, 1, 3600)
     RATE_LIMIT_PER_MINUTE: int = _env_int("BOT_RATE_LIMIT_PER_MINUTE", 240, 0)
     MAX_PAYLOAD_BYTES: int = _env_int("BOT_MAX_PAYLOAD_BYTES", 262144, 1024)
 

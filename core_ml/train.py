@@ -480,6 +480,7 @@ def main(dataset_root=None):
     # ================================================================
     # PHASE 5: Train Behavioral BiLSTM
     # ================================================================
+    lstm_trained = False
     if all_chunks:
         X_chunks_tensor = torch.stack(all_chunks)
         y_chunks_tensor = torch.tensor(all_chunk_labels, dtype=torch.float32)
@@ -511,6 +512,7 @@ def main(dataset_root=None):
         if len(train_idx) and len(val_idx):
             train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
                        epochs=30, patience=7)
+            lstm_trained = True
             lstm_path = os.path.join(weights_dir, "behavioral_lstm.pt")
             lstm_model.save_weights(lstm_path)
             print(f"    Saved LSTM Weights -> {lstm_path}")
@@ -543,7 +545,7 @@ def main(dataset_root=None):
         evaluate_metrics(y_set, probas, prefix=f"[{name}] ")
 
     # LSTM evaluation on sessions, matching production aggregation.
-    if all_chunks:
+    if all_chunks and lstm_trained:
         print("\n  --- Val Set (BiLSTM by session) ---")
         lstm_val_true, lstm_val_preds = predict_lstm_sessions(
             lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_val, y_tab
