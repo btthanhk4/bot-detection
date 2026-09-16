@@ -6,6 +6,7 @@ and provides endpoints for telemetry ingestion & graph analysis.
 
 import asyncio
 import collections
+import hashlib
 import ipaddress
 import json
 import logging
@@ -37,6 +38,41 @@ logger = logging.getLogger("bot_detection.api")
 
 class RequestBodyTooLarge(Exception):
     pass
+
+
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_model_bundle(weights_dir: str, expected_feature_names: list) -> bool:
+    """Verify model hashes and feature contract when a bundle manifest exists."""
+    manifest_path = os.path.join(weights_dir, "model_manifest.json")
+    if not os.path.exists(manifest_path):
+        logger.warning("Model manifest is missing; loading legacy artifacts")
+        return True
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as stream:
+            manifest = json.load(stream)
+        if manifest.get("schema_version") != 1:
+            raise ValueError("unsupported manifest schema")
+        if manifest.get("feature_names") != list(expected_feature_names):
+            raise ValueError("feature schema mismatch")
+        artifacts = manifest.get("artifacts") or {}
+        for filename in ("tabular_model.joblib", "behavioral_lstm.pt"):
+            expected_hash = artifacts.get(filename)
+            artifact_path = os.path.join(weights_dir, filename)
+            if not expected_hash or not os.path.isfile(artifact_path):
+                raise ValueError(f"missing artifact metadata for {filename}")
+            if not secrets.compare_digest(_file_sha256(artifact_path), expected_hash):
+                raise ValueError(f"artifact hash mismatch for {filename}")
+        return True
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        logger.exception("Model bundle verification failed")
+        return False
 
 
 def _reject_non_finite_json(value: str):
@@ -118,13 +154,14 @@ app.add_middleware(
 weights_dir = settings.WEIGHTS_DIR
 lstm_weights_path = os.path.join(weights_dir, "behavioral_lstm.pt")
 tabular_weights_path = os.path.join(weights_dir, "tabular_model.joblib")
+tabular_feature_names = list(ENV_FEATURE_NAMES) + list(STATISTICAL_FEATURE_NAMES)
+model_bundle_valid = _verify_model_bundle(weights_dir, tabular_feature_names)
 
 lstm_model = MouseTrajectoryLSTM()
-lstm_loaded = lstm_model.load_weights(lstm_weights_path)
+lstm_loaded = model_bundle_valid and lstm_model.load_weights(lstm_weights_path)
 
 tabular_model = TabularBotClassifier()
-tabular_feature_names = list(ENV_FEATURE_NAMES) + list(STATISTICAL_FEATURE_NAMES)
-tabular_loaded = tabular_model.load(
+tabular_loaded = model_bundle_valid and tabular_model.load(
     tabular_weights_path,
     expected_feature_names=tabular_feature_names,
 )
@@ -444,6 +481,7 @@ def health_check():
             "lstm": lstm_loaded,
             "gnn_offline": False,
         },
+        "model_bundle_valid": model_bundle_valid,
         "inference_ready": runtime_ready,
         "database": database_ready,
     }

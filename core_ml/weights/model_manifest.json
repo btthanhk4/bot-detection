@@ -1,0 +1,124 @@
+{
+  "artifacts": {
+    "behavioral_lstm.pt": "166db17b8cc47b834e1a4e11f3bb1a5e1344d268397e33d981f2ee2e7ae47d78",
+    "tabular_model.joblib": "a29bac2c38135d3b84493e70c977cdfab404c2a07e20306a9db11cc354ed8d27"
+  },
+  "bundle_id": "dac7ecf89d4f4edbaf8688df9bc8fd6e",
+  "created_at": "2026-09-16T16:09:23.784840+00:00",
+  "feature_names": [
+    "heuristic_score",
+    "flagged_count",
+    "flag_webdriver",
+    "flag_distinctive_props",
+    "flag_virtual_gpu",
+    "flag_plugins_inconsistency",
+    "flag_languages_inconsistency",
+    "flag_window_size",
+    "flag_error_trace",
+    "flag_has_process",
+    "flag_platform_mismatch",
+    "flag_headless_ua",
+    "cpu_cores",
+    "device_memory_gb",
+    "color_depth",
+    "pixel_ratio",
+    "plugins_length",
+    "max_touch_points",
+    "screen_width",
+    "screen_height",
+    "screen_ratio",
+    "fonts_count",
+    "has_audio",
+    "has_canvas",
+    "is_virtual_concurrency",
+    "is_desktop_chrome_zero_plugins",
+    "touch_desktop_mismatch",
+    "low_screen_resolution",
+    "no_audio_support",
+    "low_font_count",
+    "mean_speed",
+    "std_speed",
+    "max_speed",
+    "mean_accel",
+    "std_accel",
+    "straightness",
+    "pause_ratio",
+    "direction_changes_x",
+    "direction_changes_y",
+    "jerk_mean",
+    "angular_entropy",
+    "curvature_mean",
+    "curvature_std",
+    "time_regularity",
+    "velocity_autocorrelation",
+    "accel_zero_crossing_rate",
+    "movement_efficiency",
+    "click_to_move_ratio",
+    "speed_skewness",
+    "idle_time_ratio"
+  ],
+  "schema_version": 1,
+  "training": {
+    "evaluation_threshold": 0.5,
+    "dataset": {
+      "fingerprint_sha256": "440765434bd0ac1110a75db9fcfd79545baa353a5833e9aef1e1bef4646830bf",
+      "label_counts": {
+        "bot": 490,
+        "human": 259
+      },
+      "session_count": 749,
+      "source_counts": {
+        "real": 449,
+        "synthetic": 300
+      },
+      "split_counts": {
+        "test": 90,
+        "train": 599,
+        "val": 60
+      },
+      "unique_trajectory_count": 749
+    },
+    "metrics": {
+      "lstm": {
+        "test": {
+          "accuracy": 0.9666666666666667,
+          "f1": 0.9777777777777777,
+          "precision": 0.9565217391304348,
+          "recall": 1.0,
+          "roc_auc": 1.0
+        },
+        "val": {
+          "accuracy": 0.95,
+          "f1": 0.968421052631579,
+          "precision": 0.9387755102040817,
+          "recall": 1.0,
+          "roc_auc": 0.9968944099378882
+        }
+      },
+      "tabular": {
+        "test": {
+          "accuracy": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "roc_auc": 1.0
+        },
+        "train": {
+          "accuracy": 0.998330550918197,
+          "f1": 0.9986754966887417,
+          "precision": 1.0,
+          "recall": 0.9973544973544973,
+          "roc_auc": 1.0
+        },
+        "val": {
+          "accuracy": 1.0,
+          "f1": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "roc_auc": 1.0
+        }
+      }
+    },
+    "seed": 42
+  }
+}

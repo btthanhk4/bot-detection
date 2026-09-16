@@ -18,6 +18,7 @@ import hashlib
 import json
 import argparse
 import uuid
+from datetime import datetime, timezone
 import numpy as np
 
 # Ensure utf-8 encoding for Windows console
@@ -57,13 +58,79 @@ torch.manual_seed(SEED)
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 
 
-def publish_model_artifacts(tabular_model, lstm_model, weights_dir: str):
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dict:
+    """Reject trajectory leakage and return a reproducible dataset summary."""
+    if not (len(telemetries) == len(labels) == len(splits)):
+        raise ValueError("Telemetry, label, and split counts must match")
+
+    trajectory_owners = {}
+    rows = []
+    split_counts = {}
+    label_counts = {"human": 0, "bot": 0}
+    source_counts = {"real": 0, "synthetic": 0}
+    for telemetry, raw_label, raw_split in zip(telemetries, labels, splits):
+        label = int(raw_label)
+        split = str(raw_split)
+        records = (telemetry.get("mouse") or {}).get("records") or []
+        signature = records_signature(records)
+        previous = trajectory_owners.get(signature)
+        if previous is not None:
+            previous_split, previous_label = previous
+            if previous_label != label:
+                raise ValueError("Conflicting labels detected for one trajectory")
+            if previous_split != split:
+                raise ValueError(
+                    f"Trajectory leakage detected between {previous_split} and {split}"
+                )
+            raise ValueError(f"Duplicate trajectory detected in {split} split")
+        trajectory_owners[signature] = (split, label)
+        split_counts[split] = split_counts.get(split, 0) + 1
+        label_counts["bot" if label else "human"] += 1
+        source = "real" if str(telemetry.get("sessionId", "")).startswith("real_") else "synthetic"
+        source_counts[source] += 1
+        rows.append(
+            "|".join([
+                str(telemetry.get("sessionId") or ""),
+                str(label),
+                split,
+                signature,
+            ])
+        )
+
+    fingerprint = hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()
+    return {
+        "fingerprint_sha256": fingerprint,
+        "session_count": len(telemetries),
+        "unique_trajectory_count": len(trajectory_owners),
+        "split_counts": dict(sorted(split_counts.items())),
+        "label_counts": label_counts,
+        "source_counts": source_counts,
+    }
+
+
+def publish_model_artifacts(
+    tabular_model,
+    lstm_model,
+    weights_dir: str,
+    *,
+    feature_names: list = None,
+    training_metadata: dict = None,
+):
     """Publish both ensemble artifacts together and roll back partial replaces."""
     os.makedirs(weights_dir, exist_ok=True)
     token = f"{os.getpid()}-{uuid.uuid4().hex}"
     final_paths = [
         os.path.join(weights_dir, "tabular_model.joblib"),
         os.path.join(weights_dir, "behavioral_lstm.pt"),
+        os.path.join(weights_dir, "model_manifest.json"),
     ]
     staged_paths = [f"{path}.{token}.tmp" for path in final_paths]
     backup_paths = [f"{path}.{token}.bak" for path in final_paths]
@@ -72,6 +139,20 @@ def publish_model_artifacts(tabular_model, lstm_model, weights_dir: str):
     try:
         tabular_model.save(staged_paths[0])
         lstm_model.save_weights(staged_paths[1])
+        manifest = {
+            "schema_version": 1,
+            "bundle_id": uuid.uuid4().hex,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "feature_names": list(feature_names or []),
+            "artifacts": {
+                "tabular_model.joblib": _file_sha256(staged_paths[0]),
+                "behavioral_lstm.pt": _file_sha256(staged_paths[1]),
+            },
+            "training": training_metadata or {},
+        }
+        with open(staged_paths[2], "w", encoding="utf-8") as stream:
+            json.dump(manifest, stream, ensure_ascii=True, indent=2, sort_keys=True)
+            stream.write("\n")
         for final_path, backup_path in zip(final_paths, backup_paths):
             if os.path.exists(final_path):
                 os.replace(final_path, backup_path)
@@ -428,6 +509,9 @@ def main(dataset_root=None):
 
     print(f"  Total samples: {len(all_telemetries)} (Humans: {all_labels.count(0)}, Bots: {all_labels.count(1)})")
 
+    dataset_audit = audit_training_dataset(all_telemetries, all_labels, all_splits)
+    print(f"  Dataset fingerprint: {dataset_audit['fingerprint_sha256'][:16]}...")
+
     # ================================================================
     # PHASE 2: Feature Extraction
     # ================================================================
@@ -569,6 +653,8 @@ def main(dataset_root=None):
     print("  EVALUATION RESULTS")
     print("=" * 60)
 
+    training_metrics = {"tabular": {}, "lstm": {}}
+
     # Tabular evaluation
     for name, X_set, y_set in [
         ("Train", X_train_tab, y_train_tab),
@@ -577,7 +663,9 @@ def main(dataset_root=None):
     ]:
         print(f"\n  --- {name} Set (Tabular XGBoost) ---")
         probas = tabular_model.predict_batch(X_set)
-        evaluate_metrics(y_set, probas, prefix=f"[{name}] ")
+        training_metrics["tabular"][name.lower()] = evaluate_metrics(
+            y_set, probas, prefix=f"[{name}] "
+        )
 
     # LSTM evaluation on sessions, matching production aggregation.
     if all_chunks and lstm_trained:
@@ -586,16 +674,38 @@ def main(dataset_root=None):
             lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_val, y_tab
         )
         if len(lstm_val_true):
-            evaluate_metrics(lstm_val_true, lstm_val_preds, prefix="[Val LSTM] ")
+            training_metrics["lstm"]["val"] = evaluate_metrics(
+                lstm_val_true, lstm_val_preds, prefix="[Val LSTM] "
+            )
         if len(idx_test):
             lstm_test_true, lstm_test_preds = predict_lstm_sessions(
                 lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_test, y_tab
             )
             if len(lstm_test_true):
                 print("\n  --- Test Set (BiLSTM by session) ---")
-                evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
+                training_metrics["lstm"]["test"] = evaluate_metrics(
+                    lstm_test_true, lstm_test_preds, prefix="[Test LSTM] "
+                )
 
-    publish_model_artifacts(tabular_model, lstm_model, weights_dir)
+    serializable_metrics = {
+        model: {
+            split: {name: float(value) for name, value in values.items()}
+            for split, values in model_metrics.items()
+        }
+        for model, model_metrics in training_metrics.items()
+    }
+    publish_model_artifacts(
+        tabular_model,
+        lstm_model,
+        weights_dir,
+        feature_names=feature_names,
+        training_metadata={
+            "seed": SEED,
+            "evaluation_threshold": 0.5,
+            "dataset": dataset_audit,
+            "metrics": serializable_metrics,
+        },
+    )
     print(f"\n  Published ensemble artifacts -> {weights_dir}")
     print("\n" + "=" * 60)
     print("  TRAINING COMPLETE")

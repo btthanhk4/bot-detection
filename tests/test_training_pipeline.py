@@ -1,9 +1,12 @@
+import json
+
 import numpy as np
 import pytest
 import torch
 
 from core_ml.dataset.loader import RealMouseSession
 from core_ml.train import (
+    audit_training_dataset,
     assign_real_session_splits,
     deduplicate_real_sessions,
     predict_lstm_sessions,
@@ -148,10 +151,23 @@ def test_model_artifacts_are_published_as_a_pair(tmp_path):
         def save_weights(self, path):
             self.save(path)
 
-    publish_model_artifacts(Artifact("tabular-new"), Artifact("lstm-new"), str(tmp_path))
+    publish_model_artifacts(
+        Artifact("tabular-new"),
+        Artifact("lstm-new"),
+        str(tmp_path),
+        feature_names=["feature-a"],
+        training_metadata={"dataset": {"session_count": 2}},
+    )
 
     assert (tmp_path / "tabular_model.joblib").read_text() == "tabular-new"
     assert (tmp_path / "behavioral_lstm.pt").read_text() == "lstm-new"
+    manifest = json.loads((tmp_path / "model_manifest.json").read_text())
+    assert manifest["feature_names"] == ["feature-a"]
+    assert manifest["training"]["dataset"]["session_count"] == 2
+    assert set(manifest["artifacts"]) == {
+        "tabular_model.joblib",
+        "behavioral_lstm.pt",
+    }
 
 
 def test_model_artifact_staging_failure_preserves_existing_pair(tmp_path):
@@ -175,6 +191,44 @@ def test_model_artifact_staging_failure_preserves_existing_pair(tmp_path):
     assert tabular_path.read_text() == "tabular-old"
     assert lstm_path.read_text() == "lstm-old"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_dataset_audit_is_deterministic_and_counts_sources():
+    telemetry = [
+        {"sessionId": "synthetic_1", "mouse": {"records": [{"x": 1}]}},
+        {"sessionId": "real_1", "mouse": {"records": [{"x": 2}]}},
+    ]
+
+    first = audit_training_dataset(telemetry, [0, 1], ["train", "test"])
+    second = audit_training_dataset(
+        list(reversed(telemetry)), [1, 0], ["test", "train"]
+    )
+
+    assert first == second
+    assert first["session_count"] == 2
+    assert first["source_counts"] == {"real": 1, "synthetic": 1}
+
+
+def test_dataset_audit_rejects_cross_split_trajectory_leakage():
+    records = [{"time": 0, "x": 0.1, "y": 0.2, "type": "move"}]
+    telemetry = [
+        {"sessionId": "one", "mouse": {"records": records}},
+        {"sessionId": "two", "mouse": {"records": records}},
+    ]
+
+    with pytest.raises(ValueError, match="leakage"):
+        audit_training_dataset(telemetry, [0, 0], ["train", "test"])
+
+
+def test_dataset_audit_rejects_conflicting_labels():
+    records = [{"time": 0, "x": 0.1, "y": 0.2, "type": "move"}]
+    telemetry = [
+        {"sessionId": "one", "mouse": {"records": records}},
+        {"sessionId": "two", "mouse": {"records": records}},
+    ]
+
+    with pytest.raises(ValueError, match="Conflicting labels"):
+        audit_training_dataset(telemetry, [0, 1], ["train", "train"])
 
 
 def test_experiments_do_not_mix_invalid_official_test_back_into_training():

@@ -2,8 +2,11 @@
 Integration tests for FastAPI inference & telemetry service.
 """
 
-import pytest
 import asyncio
+import hashlib
+import json
+
+import pytest
 from fastapi.testclient import TestClient
 from api_service.main import app
 
@@ -23,6 +26,30 @@ def client():
 
 
 READ_HEADERS = {"X-Read-Token": "test-read-token"}
+
+
+def test_model_bundle_verification_detects_tampering(tmp_path):
+    from api_service.main import _verify_model_bundle
+
+    artifacts = {}
+    for filename, content in (
+        ("tabular_model.joblib", b"tabular"),
+        ("behavioral_lstm.pt", b"lstm"),
+    ):
+        (tmp_path / filename).write_bytes(content)
+        artifacts[filename] = hashlib.sha256(content).hexdigest()
+    (tmp_path / "model_manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "feature_names": ["feature-a"],
+            "artifacts": artifacts,
+        }),
+        encoding="utf-8",
+    )
+
+    assert _verify_model_bundle(str(tmp_path), ["feature-a"]) is True
+    (tmp_path / "behavioral_lstm.pt").write_bytes(b"tampered")
+    assert _verify_model_bundle(str(tmp_path), ["feature-a"]) is False
 
 
 def test_index_endpoint(client):
