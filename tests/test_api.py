@@ -304,6 +304,16 @@ def test_invalid_telemetry_is_rejected(client):
     assert res.status_code == 400
 
 
+def test_non_finite_json_numbers_are_rejected(client):
+    response = client.post(
+        "/api/v1/telemetry",
+        content=b'{"sessionId":"s","visitorId":"v","fingerprint":{"value":NaN}}',
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+
+
 def test_telemetry_requires_visitor_id(client):
     res = client.post("/api/v1/telemetry", json={"sessionId": "session-without-visitor"})
     assert res.status_code == 422
@@ -371,6 +381,33 @@ def test_database_outage_uses_fallback_buffer(client, monkeypatch):
     monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
     session_id = "database-outage-event"
+    try:
+        response = client.post(
+            "/api/v1/telemetry",
+            json={"sessionId": session_id, "visitorId": "visitor"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["recorded"] is True
+        assert response.json()["buffered"] is True
+        with _telemetry_buffer_lock:
+            assert any(event.get("sessionId") == session_id for event in telemetry_buffer)
+    finally:
+        with _telemetry_buffer_lock:
+            retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
+            telemetry_buffer.clear()
+            telemetry_buffer.extend(retained)
+
+
+def test_database_write_exception_is_buffered_even_when_ping_is_healthy(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    def fail_write(_data, _analysis):
+        raise RuntimeError("primary stepped down")
+
+    monkeypatch.setattr("api_service.database.save_detection_result", fail_write)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+    session_id = "write-exception-event"
     try:
         response = client.post(
             "/api/v1/telemetry",

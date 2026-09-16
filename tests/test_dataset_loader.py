@@ -228,6 +228,31 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
 
         assert [item["time"] for item in records] == [0, 13, 40]
 
+    def test_phase2_preserves_event_order_when_timestamps_move_backwards(self):
+        record = {
+            "mousemove_total_behaviour": "[m(10,10)][m(20,20)][m(30,30)]",
+            "mousemove_times": "1000,900,1100",
+            "mousemove_client_height_width": "(100,100)",
+        }
+
+        records = parse_phase2_record(record)
+
+        assert [item["time"] for item in records] == [0, 0, 100]
+        assert [item["x"] for item in records] == [0.1, 0.2, 0.3]
+
+    def test_dataset_parsers_skip_non_finite_coordinates(self):
+        phase1 = parse_movement_notation("[m(nan,10)][m(20,20)]")
+        phase2 = parse_phase2_record({
+            "mousemove_total_behaviour": "[m(inf,10)][m(20,20)]",
+            "mousemove_times": "1000,1020",
+            "mousemove_client_height_width": "(100,100)",
+        })
+
+        assert len(phase1) == 1
+        assert len(phase2) == 1
+        assert phase1[0]["x"] >= 0
+        assert phase2[0]["x"] == 0.2
+
     def test_loader_rejects_duplicate_trajectory_with_conflicting_labels(self, tmp_path):
         scenario = "humans_and_moderate_bots"
         data_root = tmp_path / "phase1" / "data" / "mouse_movements" / scenario

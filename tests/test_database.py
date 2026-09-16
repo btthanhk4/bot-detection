@@ -228,6 +228,29 @@ def test_readiness_retries_failed_index_setup(monkeypatch):
     assert database["detection_results"].indexes["sessionId_1"]["unique"] is True
 
 
+def test_save_waits_for_required_indexes_on_real_cached_database(monkeypatch):
+    import api_service.database as database_module
+
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    database = {
+        "detection_results": detections,
+        "deleted_sessions": empty,
+        "service_control": empty,
+    }
+    monkeypatch.setattr(database_module, "_db", database)
+    monkeypatch.setattr(database_module, "_indexes_ready", False)
+    monkeypatch.setattr(database_module, "get_db", lambda: database)
+
+    result = save_detection_result(
+        {"sessionId": "wait-for-index", "visitorId": "visitor"},
+        {"verdict": "HUMAN"},
+    )
+
+    assert result is None
+    assert detections.docs == {}
+
+
 class MemoryCollection:
     def __init__(self):
         self.docs = {}
@@ -250,7 +273,7 @@ class MemoryCollection:
 
     def insert_one(self, doc):
         if doc["sessionId"] in self.docs:
-            raise DuplicateKeyError()
+            raise DuplicateKeyError("duplicate sessionId")
         self.docs[doc["sessionId"]] = dict(doc)
         return SimpleNamespace(inserted_id=doc["sessionId"])
 
@@ -328,6 +351,44 @@ def test_event_timestamp_is_bounded_by_server_receive_time(monkeypatch):
     assert save_detection_result(future, {"verdict": "SUSPECT"})
     assert save_detection_result(later, {"verdict": "HUMAN"})
     assert detections.docs["clock-skew"]["verdict"] == "HUMAN"
+    assert detections.docs["clock-skew"]["event_timestamp"] == 2_001_000 + 300_000
+
+
+def test_save_sanitizes_nested_values_that_bson_cannot_encode(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+    telemetry = {
+        "sessionId": "bson-safe",
+        "visitorId": "visitor",
+        "timestamp": 10**400,
+        "received_at": 2_000_000,
+        "fingerprint": {
+            "huge": 10**400,
+            "notFinite": float("inf"),
+            "$unsafe.key": {"nested": [float("nan")]},
+        },
+    }
+
+    assert save_detection_result(
+        telemetry,
+        {"verdict": "human", "bot_probability": float("nan"), "confidence": float("inf")},
+    )
+    stored = detections.docs["bson-safe"]
+    assert stored["verdict"] == "HUMAN"
+    assert stored["bot_probability"] == 0.0
+    assert stored["confidence"] == 0.0
+    assert stored["event_timestamp"] == 2_000_000 + 300_000
+    assert stored["fingerprint"]["huge"] == 2**63 - 1
+    assert stored["fingerprint"]["notFinite"] == 0.0
+    assert "_unsafe_key" in stored["fingerprint"]
 
 
 def test_zero_timestamp_is_not_replaced_by_receive_time(monkeypatch):

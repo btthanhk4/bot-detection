@@ -58,6 +58,8 @@ def parse_movement_notation(notation: str) -> list:
                     y = float(parts[1])
                 except ValueError:
                     continue
+                if not math.isfinite(x) or not math.isfinite(y):
+                    continue
 
                 # Deterministic timestamp estimation based on distance
                 # (Fitts's law-inspired: larger movements take more time)
@@ -167,6 +169,12 @@ def parse_phase2_record(record: dict) -> list:
             event_idx += 1
         else:
             t = None  # Will use fallback below
+
+        # Browser clocks and exported rows can occasionally move backwards.
+        # Preserve event order rather than letting downstream sorting reshape
+        # the original trajectory.
+        if t is not None and records:
+            t = max(last_time, t)
         
         if action == 'm':
             parts = args.split(',')
@@ -175,6 +183,8 @@ def parse_phase2_record(record: dict) -> list:
                     x = float(parts[0])
                     y = float(parts[1])
                 except ValueError:
+                    continue
+                if not math.isfinite(x) or not math.isfinite(y):
                     continue
                 
                 if t is None:

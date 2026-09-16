@@ -10,6 +10,7 @@ Collections:
 
 import os
 import logging
+import math
 import threading
 import time
 import uuid
@@ -34,6 +35,48 @@ _db = None
 _indexes_ready = False
 _connect_lock = threading.Lock()
 _retry_after = 0.0
+
+BSON_INT64_MIN = -(2**63)
+BSON_INT64_MAX = 2**63 - 1
+
+
+class DatabasePersistenceError(RuntimeError):
+    """Raised when a database write fails rather than being intentionally rejected."""
+
+
+def _sanitize_bson_value(value, depth: int = 0):
+    """Bound untrusted nested values to a BSON-safe, dashboard-safe subset."""
+    if depth > 4:
+        return None
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return max(BSON_INT64_MIN, min(BSON_INT64_MAX, value))
+    if isinstance(value, float):
+        return max(-1e12, min(1e12, value)) if math.isfinite(value) else 0.0
+    if isinstance(value, str):
+        return value[:4096]
+    if isinstance(value, dict):
+        sanitized = {}
+        for raw_key, item in list(value.items())[:100]:
+            key = str(raw_key)[:128].replace(".", "_")
+            if key.startswith("$"):
+                key = "_" + key[1:]
+            sanitized[key] = _sanitize_bson_value(item, depth + 1)
+        return sanitized
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_bson_value(item, depth + 1) for item in value[:100]]
+    return str(value)[:4096]
+
+
+def _safe_probability(value, default: float = 0.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        numeric = default
+    if not math.isfinite(numeric):
+        numeric = default
+    return round(max(0.0, min(1.0, numeric)), 4)
 
 def get_db():
     """Lazy-initialize MongoDB connection with retry logic."""
@@ -171,10 +214,16 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
     Save a detection result to MongoDB.
     Uses upsert on sessionId to update existing sessions (multiple heartbeats).
     Skips if sessionId was recently deleted (blacklisted).
-    Returns the inserted/updated document ID or None on failure.
+    Returns the inserted/updated document ID, or None when the write is
+    intentionally rejected/unavailable. Raises DatabasePersistenceError when
+    an attempted write fails.
     """
     db = get_db()
     if db is None:
+        return None
+    # Real connections must not accept writes until required uniqueness/TTL
+    # guarantees are installed. Test doubles are intentionally unaffected.
+    if db is _db and not _indexes_ready:
         return None
 
     try:
@@ -196,6 +245,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         raw_received_at = telemetry.get("received_at")
         if raw_timestamp is None:
             raw_timestamp = raw_received_at
+        normalized_event_timestamp = None
         try:
             sequence = max(0, min(int(raw_sequence or 0), 999))
         except (TypeError, ValueError, OverflowError):
@@ -208,33 +258,39 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 if raw_received_at is not None:
                     received_at = max(0, min(int(raw_received_at), 9_000_000_000_000))
                     timestamp = max(received_at - 86_400_000, min(timestamp, received_at + 300_000))
+                normalized_event_timestamp = timestamp
                 event_order = timestamp * 1000 + sequence
             else:
                 # Backward compatibility for callers that only provide sequence.
                 event_order = max(0, min(int(raw_sequence), 9007199254740991))
         except (TypeError, ValueError, OverflowError):
-            event_order = int(now.timestamp() * 1000) * 1000 + sequence
+            normalized_event_timestamp = int(now.timestamp() * 1000)
+            event_order = normalized_event_timestamp * 1000 + sequence
 
+        verdict = str(analysis.get("verdict") or "UNKNOWN")[:32].upper()
+        if verdict not in {"HUMAN", "BOT", "SUSPECT"}:
+            verdict = "UNKNOWN"
         doc = {
             "sessionId": session_id,
             "visitorId": telemetry.get("visitorId"),
             "client_ip": telemetry.get("client_ip"),
             "pageUrl": telemetry.get("pageUrl"),
             "referrer": telemetry.get("referrer"),
-            "verdict": analysis.get("verdict", "UNKNOWN"),
-            "bot_probability": round(analysis.get("bot_probability", 0), 4),
-            "is_bot": analysis.get("is_bot", False),
-            "confidence": round(analysis.get("confidence", 0), 4),
-            "breakdown": analysis.get("breakdown", {}),
-            "reasons": analysis.get("reasons", []),
+            "verdict": verdict,
+            "bot_probability": _safe_probability(analysis.get("bot_probability")),
+            "is_bot": verdict == "BOT",
+            "confidence": _safe_probability(analysis.get("confidence")),
+            "breakdown": _sanitize_bson_value(analysis.get("breakdown", {})),
+            "reasons": _sanitize_bson_value(analysis.get("reasons", [])),
             "mouse_points_captured": captured_count,
-            # Store raw fingerprint + botd for detail panel
-            "fingerprint": telemetry.get("fingerprint") or {},
-            "botd": telemetry.get("botd") or {},
+            # Preserve detail data without allowing malformed nested values to
+            # make the whole BSON write fail.
+            "fingerprint": _sanitize_bson_value(telemetry.get("fingerprint") or {}),
+            "botd": _sanitize_bson_value(telemetry.get("botd") or {}),
             "mouse_stats": mouse_stats,
             "mouse_trajectory": sanitized_records[-200:],
             "event_order": event_order,
-            "event_timestamp": telemetry.get("timestamp"),
+            "event_timestamp": normalized_event_timestamp,
             "updated_at": now,
         }
 
@@ -266,7 +322,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         return session_id
     except Exception as e:
         logger.error(f"[DB] Save failed: {e}")
-        return None
+        raise DatabasePersistenceError("Failed to persist detection result") from e
 
 
 def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
@@ -306,9 +362,11 @@ def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
             effective_time = updated_at or created_at
             if effective_time and hasattr(effective_time, "timestamp"):
                 doc["received_at"] = int(effective_time.timestamp() * 1000)
+            if created_at and hasattr(created_at, "timestamp"):
+                doc["created_at"] = int(created_at.timestamp() * 1000)
             if updated_at and hasattr(updated_at, "timestamp"):
                 doc["updated_at"] = int(updated_at.timestamp() * 1000)
-            results.append(doc)
+            results.append(_sanitize_bson_value(doc))
         return results
     except Exception as e:
         logger.error(f"[DB] Query failed: {e}")
@@ -397,7 +455,7 @@ def get_summary_stats() -> Optional[dict]:
             stats["total"] += count
             stats["by_verdict"][verdict] = {
                 "count": count,
-                "avg_probability": round(r.get("avg_probability", 0), 4),
+                "avg_probability": _safe_probability(r.get("avg_probability")),
             }
             if verdict == "HUMAN":
                 stats["humans"] = count

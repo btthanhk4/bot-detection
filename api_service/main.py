@@ -37,6 +37,10 @@ class RequestBodyTooLarge(Exception):
     pass
 
 
+def _reject_non_finite_json(value: str):
+    raise ValueError(f"Non-finite JSON number is not allowed: {value}")
+
+
 class RequestBodyLimitMiddleware:
     """Reject oversized streamed bodies before FastAPI buffers them."""
 
@@ -424,10 +428,13 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         body_bytes = await request.body()
         if len(body_bytes) > settings.MAX_PAYLOAD_BYTES:
             raise HTTPException(status_code=413, detail="Request payload too large")
-        data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+        data = json.loads(
+            body_bytes.decode("utf-8"),
+            parse_constant=_reject_non_finite_json,
+        ) if body_bytes else {}
     except HTTPException:
         raise
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="Telemetry body must be a valid JSON object")
 
     if not isinstance(data, dict):
@@ -448,6 +455,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     # Run AI analysis and save to MongoDB
     persisted = False
+    persistence_failed = False
     try:
         analysis = await run_in_threadpool(ensemble_detector.predict, data)
         from api_service.database import save_detection_result
@@ -455,17 +463,20 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     except Exception:
         logger.exception("Telemetry analysis or persistence failed")
         persisted = False
+        persistence_failed = True
 
     # Keep a best-effort copy only during a real database outage. Rejected
     # tombstoned/stale events must not reappear from this fallback buffer.
     buffered = False
     if not persisted:
-        try:
-            from api_service.database import is_database_ready
-            database_ready = bool(await run_in_threadpool(is_database_ready))
-        except Exception:
-            database_ready = False
-        if not database_ready:
+        database_ready = False
+        if not persistence_failed:
+            try:
+                from api_service.database import is_database_ready
+                database_ready = bool(await run_in_threadpool(is_database_ready))
+            except Exception:
+                database_ready = False
+        if persistence_failed or not database_ready:
             with _telemetry_buffer_lock:
                 telemetry_buffer.append(data)
             buffered = True
@@ -642,7 +653,7 @@ def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
     """
     Returns the raw telemetry data for a specific session, including mouse records.
     """
-    from api_service.database import get_db
+    from api_service.database import get_db, _sanitize_bson_value
     db = get_db()
     if db is not None:
         try:
@@ -657,8 +668,8 @@ def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
             return {
                 "sessionId": session_id,
                 "mouse": {"records": doc.get("mouse_trajectory") or []},
-                "fingerprint": doc.get("fingerprint") or {},
-                "botd": doc.get("botd") or {},
+                "fingerprint": _sanitize_bson_value(doc.get("fingerprint") or {}),
+                "botd": _sanitize_bson_value(doc.get("botd") or {}),
                 "raw_keys": list(doc.keys()),
             }
         raise HTTPException(status_code=404, detail="Session not found")
@@ -720,7 +731,7 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
     Returns comprehensive analysis detail for a specific session.
     Includes AI breakdown, fingerprint, botd detectors, mouse stats, and reasons.
     """
-    from api_service.database import get_db
+    from api_service.database import get_db, _sanitize_bson_value
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
@@ -738,8 +749,8 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
 
     # Convert datetime objects
     for key in ["created_at", "updated_at"]:
-        if key in doc and doc[key]:
+        if key in doc and doc[key] and hasattr(doc[key], "timestamp"):
             doc[key] = int(doc[key].timestamp() * 1000)
 
     doc["mouse_trajectory"] = (doc.get("mouse_trajectory") or [])[:200]
-    return doc
+    return _sanitize_bson_value(doc)
