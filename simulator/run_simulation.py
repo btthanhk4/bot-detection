@@ -90,7 +90,11 @@ def benchmark_api(endpoint: str, n_samples: int = 20):
     }
 
 
-def run_playwright_test(target_url: str, headless: bool = True):
+def run_playwright_test(
+    target_url: str,
+    detect_endpoint: str = "http://127.0.0.1:8000/api/v1/detect",
+    headless: bool = True,
+):
     """
     Launches Playwright headless browser, interacts with target web page,
     and tests if the bot-collector script flags the automated session.
@@ -99,7 +103,13 @@ def run_playwright_test(target_url: str, headless: bool = True):
         from playwright.sync_api import sync_playwright
     except ImportError:
         print("Playwright not installed in current environment. Install via 'pip install playwright'.")
-        return
+        return {
+            "collector_loaded": False,
+            "verdict": "ERROR",
+            "bot_probability": None,
+            "fallback": True,
+            "error": "Playwright is not installed",
+        }
 
     print(f"\n=== RUNNING PLAYWRIGHT BOT TEST AGAINST: {target_url} ===")
     with sync_playwright() as p:
@@ -110,26 +120,57 @@ def run_playwright_test(target_url: str, headless: bool = True):
         print("Navigating to page...")
         try:
             page.goto(target_url, timeout=15000)
+            collector_status = page.evaluate(
+                r"""async (detectUrl) => {
+                    if (typeof window.BotCollector === 'undefined') {
+                        return { loaded: false };
+                    }
+                    const collector = new window.BotCollector({
+                        detectUrl,
+                        endpointUrl: detectUrl.replace(/\/detect$/, '/telemetry'),
+                        autoSendInterval: 0,
+                    });
+                    await collector.start();
+                    window.__botSimulationCollector = collector;
+                    return { loaded: true };
+                }""",
+                detect_endpoint,
+            )
+            if not collector_status.get("loaded"):
+                raise RuntimeError("BotCollector is not loaded on the target page")
+
             print("Page loaded successfully. Simulating bot clicks...")
 
             # Move mouse rapidly in straight lines
-            for i in range(5):
-                page.mouse.move(100 + i * 150, 200 + i * 50)
+            for i in range(30):
+                page.mouse.move(100 + (i % 12) * 80, 200 + (i % 8) * 35)
                 time.sleep(0.02)
             page.mouse.click(600, 350)
-            time.sleep(1)
-
-            # Check if BotCollector is present in window
-            collector_status = page.evaluate("""() => {
-                if (typeof window.BotCollector !== 'undefined') {
-                    return 'BotCollector loaded';
-                }
-                return 'BotCollector not loaded on page';
-            }""")
-            print(f"Telemetry Status on page: {collector_status}")
+            result = page.evaluate(
+                """async () => window.__botSimulationCollector.checkBotStatus('playwright_test')"""
+            )
+            verdict = str(result.get("verdict") or "UNKNOWN").upper()
+            print(
+                "Detection result: "
+                f"verdict={verdict}, probability={result.get('bot_probability')}"
+            )
+            return {
+                "collector_loaded": True,
+                "verdict": verdict,
+                "bot_probability": result.get("bot_probability"),
+                "fallback": bool(result.get("fallback", False)),
+                "detected": verdict in {"BOT", "SUSPECT"},
+            }
 
         except Exception as e:
             print(f"Navigation/Interaction error: {e}")
+            return {
+                "collector_loaded": False,
+                "verdict": "ERROR",
+                "bot_probability": None,
+                "fallback": True,
+                "error": str(e),
+            }
         finally:
             browser.close()
 
@@ -147,4 +188,4 @@ if __name__ == "__main__":
     if args.mode == "benchmark":
         benchmark_api(args.endpoint, n_samples=args.samples)
     elif args.mode == "browser":
-        run_playwright_test(args.url, headless=args.headless)
+        run_playwright_test(args.url, detect_endpoint=args.endpoint, headless=args.headless)

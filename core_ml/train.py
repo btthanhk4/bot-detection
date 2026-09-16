@@ -17,6 +17,7 @@ import random
 import hashlib
 import json
 import argparse
+import uuid
 import numpy as np
 
 # Ensure utf-8 encoding for Windows console
@@ -54,6 +55,41 @@ torch.manual_seed(SEED)
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
+
+
+def publish_model_artifacts(tabular_model, lstm_model, weights_dir: str):
+    """Publish both ensemble artifacts together and roll back partial replaces."""
+    os.makedirs(weights_dir, exist_ok=True)
+    token = f"{os.getpid()}-{uuid.uuid4().hex}"
+    final_paths = [
+        os.path.join(weights_dir, "tabular_model.joblib"),
+        os.path.join(weights_dir, "behavioral_lstm.pt"),
+    ]
+    staged_paths = [f"{path}.{token}.tmp" for path in final_paths]
+    backup_paths = [f"{path}.{token}.bak" for path in final_paths]
+    replaced = []
+
+    try:
+        tabular_model.save(staged_paths[0])
+        lstm_model.save_weights(staged_paths[1])
+        for final_path, backup_path in zip(final_paths, backup_paths):
+            if os.path.exists(final_path):
+                os.replace(final_path, backup_path)
+        for staged_path, final_path in zip(staged_paths, final_paths):
+            os.replace(staged_path, final_path)
+            replaced.append(final_path)
+    except Exception:
+        for final_path in replaced:
+            if os.path.exists(final_path):
+                os.remove(final_path)
+        for final_path, backup_path in zip(final_paths, backup_paths):
+            if os.path.exists(backup_path):
+                os.replace(backup_path, final_path)
+        raise
+    finally:
+        for path in staged_paths + backup_paths:
+            if os.path.exists(path):
+                os.remove(path)
 
 
 def records_signature(records: list) -> str:
@@ -473,9 +509,6 @@ def main(dataset_root=None):
         scale_pos_weight=sum(y_train_tab == 0) / max(1, sum(y_train_tab == 1)),
     )
     train_tabular(tabular_model, X_train_tab, y_train_tab, X_val_tab, y_val_tab, feature_names=feature_names)
-    tabular_path = os.path.join(weights_dir, "tabular_model.joblib")
-    tabular_model.save(tabular_path)
-    print(f"    Saved Tabular Model -> {tabular_path}")
 
     # ================================================================
     # PHASE 5: Train Behavioral BiLSTM
@@ -513,14 +546,16 @@ def main(dataset_root=None):
             train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
                        epochs=30, patience=7)
             lstm_trained = True
-            lstm_path = os.path.join(weights_dir, "behavioral_lstm.pt")
-            lstm_model.save_weights(lstm_path)
-            print(f"    Saved LSTM Weights -> {lstm_path}")
         else:
             print("    Insufficient session-separated chunks; leaving LSTM untrained.")
     else:
         print("    No LSTM chunks available for training.")
         lstm_model = MouseTrajectoryLSTM()
+
+    if not lstm_trained:
+        raise RuntimeError(
+            "LSTM training did not complete; existing ensemble artifacts were preserved"
+        )
 
     # A GNN requires observed device/IP/target relationships. The public mouse
     # dataset has none, so synthesizing graph edges from labels would leak the
@@ -560,6 +595,8 @@ def main(dataset_root=None):
                 print("\n  --- Test Set (BiLSTM by session) ---")
                 evaluate_metrics(lstm_test_true, lstm_test_preds, prefix="[Test LSTM] ")
 
+    publish_model_artifacts(tabular_model, lstm_model, weights_dir)
+    print(f"\n  Published ensemble artifacts -> {weights_dir}")
     print("\n" + "=" * 60)
     print("  TRAINING COMPLETE")
     print("=" * 60)

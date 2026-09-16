@@ -144,6 +144,8 @@ graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
 _telemetry_buffer_lock = threading.Lock()
 _telemetry_flush_lock = threading.Lock()
+_health_cache_lock = threading.Lock()
+_health_cache = {"checked_at": 0.0, "database": False, "inference_ready": False}
 
 # Sliding-window rate limiter per client IP
 _rate_limit_lock = threading.Lock()
@@ -172,7 +174,12 @@ async def _maintenance_loop():
     """Retry buffered persistence independently of incoming request traffic."""
     while True:
         await asyncio.sleep(settings.MAINTENANCE_INTERVAL_SECONDS)
-        await run_in_threadpool(_flush_telemetry_buffer)
+        try:
+            await run_in_threadpool(_flush_telemetry_buffer)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Telemetry maintenance iteration failed")
 
 
 def _purge_session_from_memory(session_id: str) -> bool:
@@ -192,11 +199,14 @@ def _clear_in_memory_sessions():
         telemetry_buffer.clear()
 
 
-def _requeue_buffered_event(data: dict):
+def _requeue_buffered_event(data: dict, *, front: bool = True):
     """Put a failed replay back only when doing so cannot evict newer data."""
     with _telemetry_buffer_lock:
         if len(telemetry_buffer) < telemetry_buffer.maxlen:
-            telemetry_buffer.appendleft(data)
+            if front:
+                telemetry_buffer.appendleft(data)
+            else:
+                telemetry_buffer.append(data)
             return True
     logger.warning("Telemetry replay queue filled concurrently; dropping oldest failed event")
     return False
@@ -221,9 +231,28 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
 
             try:
                 analysis = ensemble_detector.predict(data)
+            except Exception:
+                retry_count = int(data.get("_replay_attempts", 0)) + 1
+                if retry_count <= settings.MAX_TELEMETRY_RETRIES:
+                    data["_replay_attempts"] = retry_count
+                    _requeue_buffered_event(data, front=False)
+                    logger.exception(
+                        "Buffered telemetry inference failed (attempt %d/%d)",
+                        retry_count,
+                        settings.MAX_TELEMETRY_RETRIES,
+                    )
+                else:
+                    logger.exception(
+                        "Dropping buffered telemetry after %d failed inference attempts",
+                        retry_count,
+                    )
+                continue
+
+            data.pop("_replay_attempts", None)
+            try:
                 persisted = bool(save_detection_result(data, analysis))
             except Exception:
-                logger.exception("Buffered telemetry replay failed")
+                logger.exception("Buffered telemetry persistence failed")
                 _requeue_buffered_event(data)
                 break
 
@@ -380,20 +409,33 @@ def index():
 @app.get("/healthz")
 def health_check():
     """Standard health check endpoint for load balancers and container orchestrators."""
-    from api_service.database import is_database_ready
-    database_ready = is_database_ready()
-    runtime_ready = False
-    if tabular_loaded and lstm_loaded:
-        try:
-            probe_records = [
-                {"time": index * 16, "x": index / 100, "y": 0.2, "type": "move"}
-                for index in range(25)
-            ]
-            probe = ensemble_detector.predict({"mouse": {"records": probe_records}})
-            probability = float(probe.get("bot_probability"))
-            runtime_ready = math.isfinite(probability) and 0.0 <= probability <= 1.0
-        except Exception:
-            logger.exception("Model inference health probe failed")
+    now = time.monotonic()
+    with _health_cache_lock:
+        cache_fresh = now - _health_cache["checked_at"] <= settings.HEALTH_CACHE_SECONDS
+        if cache_fresh:
+            database_ready = _health_cache["database"]
+            runtime_ready = _health_cache["inference_ready"]
+        else:
+            from api_service.database import is_database_ready
+
+            database_ready = is_database_ready()
+            runtime_ready = False
+            if tabular_loaded and lstm_loaded:
+                try:
+                    probe_records = [
+                        {"time": index * 16, "x": index / 100, "y": 0.2, "type": "move"}
+                        for index in range(25)
+                    ]
+                    probe = ensemble_detector.predict({"mouse": {"records": probe_records}})
+                    probability = float(probe.get("bot_probability"))
+                    runtime_ready = math.isfinite(probability) and 0.0 <= probability <= 1.0
+                except Exception:
+                    logger.exception("Model inference health probe failed")
+            _health_cache.update({
+                "checked_at": now,
+                "database": database_ready,
+                "inference_ready": runtime_ready,
+            })
     content = {
         "status": "healthy" if (runtime_ready and database_ready) else "degraded",
         "timestamp": int(time.time() * 1000),
@@ -635,7 +677,7 @@ def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200), _read=D
                     "prob": doc.get("bot_probability", 0),
                 }
     except Exception:
-        pass
+        logger.exception("Failed to load graph session verdicts")
 
     for sid, idx in session_items:
         sv = session_verdicts.get(sid, {})

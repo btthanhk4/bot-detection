@@ -7,6 +7,7 @@ from core_ml.train import (
     assign_real_session_splits,
     deduplicate_real_sessions,
     predict_lstm_sessions,
+    publish_model_artifacts,
     resolve_training_indices,
 )
 from core_ml.experiments.run_all import (
@@ -133,6 +134,47 @@ def test_training_rejects_one_class_official_test_instead_of_reporting_fake_auc(
 
     with pytest.raises(ValueError, match="too small or imbalanced"):
         resolve_training_indices(labels, splits)
+
+
+def test_model_artifacts_are_published_as_a_pair(tmp_path):
+    class Artifact:
+        def __init__(self, content):
+            self.content = content
+
+        def save(self, path):
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write(self.content)
+
+        def save_weights(self, path):
+            self.save(path)
+
+    publish_model_artifacts(Artifact("tabular-new"), Artifact("lstm-new"), str(tmp_path))
+
+    assert (tmp_path / "tabular_model.joblib").read_text() == "tabular-new"
+    assert (tmp_path / "behavioral_lstm.pt").read_text() == "lstm-new"
+
+
+def test_model_artifact_staging_failure_preserves_existing_pair(tmp_path):
+    class TabularArtifact:
+        def save(self, path):
+            with open(path, "w", encoding="utf-8") as stream:
+                stream.write("tabular-new")
+
+    class BrokenLstmArtifact:
+        def save_weights(self, _path):
+            raise RuntimeError("save failed")
+
+    tabular_path = tmp_path / "tabular_model.joblib"
+    lstm_path = tmp_path / "behavioral_lstm.pt"
+    tabular_path.write_text("tabular-old")
+    lstm_path.write_text("lstm-old")
+
+    with pytest.raises(RuntimeError, match="save failed"):
+        publish_model_artifacts(TabularArtifact(), BrokenLstmArtifact(), str(tmp_path))
+
+    assert tabular_path.read_text() == "tabular-old"
+    assert lstm_path.read_text() == "lstm-old"
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_experiments_do_not_mix_invalid_official_test_back_into_training():

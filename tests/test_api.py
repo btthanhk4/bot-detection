@@ -10,9 +10,10 @@ from api_service.main import app
 
 @pytest.fixture
 def client():
-    from api_service.main import _rate_limit_records
+    from api_service.main import _health_cache, _rate_limit_records
     from api_service.config import settings
     _rate_limit_records.clear()
+    _health_cache["checked_at"] = 0.0
     original_read_token = settings.READ_TOKEN
     settings.READ_TOKEN = "test-read-token"
     try:
@@ -71,6 +72,25 @@ def test_health_probe_contains_enough_mouse_data_to_execute_lstm(client, monkeyp
     assert observed["move_count"] >= 25
 
 
+def test_health_probe_is_cached(client, monkeypatch):
+    calls = {"database": 0, "inference": 0}
+
+    def database_ready():
+        calls["database"] += 1
+        return True
+
+    def predict(_payload):
+        calls["inference"] += 1
+        return {"bot_probability": 0.5}
+
+    monkeypatch.setattr("api_service.database.is_database_ready", database_ready)
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", predict)
+
+    assert client.get("/health").status_code == 200
+    assert client.get("/health").status_code == 200
+    assert calls == {"database": 1, "inference": 1}
+
+
 def test_graph_can_be_hydrated_from_persisted_sessions(monkeypatch):
     from api_service.main import _hydrate_graph_from_database, graph_builder
 
@@ -110,6 +130,29 @@ def test_application_lifespan_starts_hydration_and_stops_maintenance(monkeypatch
 
     with TestClient(main_module.app):
         assert calls == ["hydrate", "maintenance"]
+
+
+def test_maintenance_loop_survives_failed_iteration(monkeypatch):
+    import api_service.main as main_module
+
+    calls = []
+
+    async def no_wait(_seconds):
+        return None
+
+    async def run_iteration(_function):
+        calls.append("flush")
+        if len(calls) == 1:
+            raise RuntimeError("temporary maintenance failure")
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main_module.asyncio, "sleep", no_wait)
+    monkeypatch.setattr(main_module, "run_in_threadpool", run_iteration)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(main_module._maintenance_loop())
+
+    assert calls == ["flush", "flush"]
 
 
 def test_detect_bot_human(client):
@@ -534,6 +577,40 @@ def test_buffered_telemetry_is_requeued_when_inference_fails(monkeypatch):
 
     with _telemetry_buffer_lock:
         assert list(telemetry_buffer) == [event]
+        telemetry_buffer.clear()
+
+
+def test_poisoned_replay_does_not_block_later_events(monkeypatch):
+    from api_service.main import (
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        telemetry_buffer,
+    )
+
+    poisoned = {"sessionId": "poisoned"}
+    healthy = {"sessionId": "healthy"}
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.extend([poisoned, healthy])
+
+    def predict(data):
+        if data["sessionId"] == "poisoned":
+            raise RuntimeError("bad event")
+        return {"verdict": "HUMAN"}
+
+    persisted = []
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", predict)
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda data, _analysis: persisted.append(data["sessionId"]) or data["sessionId"],
+    )
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+
+    _flush_telemetry_buffer()
+
+    assert persisted == ["healthy"]
+    with _telemetry_buffer_lock:
+        assert [event["sessionId"] for event in telemetry_buffer] == ["poisoned"]
         telemetry_buffer.clear()
 
 

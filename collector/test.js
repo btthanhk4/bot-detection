@@ -110,9 +110,46 @@ async function testPagehideBeaconUsesCorsSafelistedContentType() {
   }
 }
 
+async function testPagehideUsesUtf8ByteLengthAndSequenceWraps() {
+  const collector = new BotCollector({ endpointUrl: '/telemetry' });
+  collector.cachedFingerprint = {
+    visitorId: 'visitor',
+    components: { userAgent: 'đ'.repeat(40000) },
+  };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  collector.sequence = 999999;
+  collector.mouseRecorder.records = Array.from({ length: 100 }, (_, i) => ({
+    time: i * 16, x: i / 100, y: 0.2, type: 'move',
+  }));
+  let body = null;
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: {
+      sendBeacon: (_url, blob) => {
+        body = blob;
+        return true;
+      },
+    },
+  });
+
+  try {
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), true);
+    assert.ok(body.size < 65536, 'UTF-8 payload should be trimmed below beacon limit');
+    assert.strictEqual(collector.sequence, 0, 'sequence should wrap at the API limit');
+  } finally {
+    if (originalNavigator) {
+      Object.defineProperty(global, 'navigator', originalNavigator);
+    } else {
+      delete global.navigator;
+    }
+  }
+}
+
 testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
+  .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {
     console.error(error);

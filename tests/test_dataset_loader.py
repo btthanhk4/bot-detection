@@ -160,6 +160,26 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert by_id["test-bot"].label == 1
         assert all(session.source == "phase1" for session in sessions)
 
+    def test_unknown_phase1_label_is_not_coerced_to_bot(self, tmp_path):
+        scenario = "humans_and_moderate_bots"
+        session_dir = (
+            tmp_path / "phase1" / "data" / "mouse_movements" / scenario / "typo-label"
+        )
+        annotations = tmp_path / "phase1" / "annotations" / scenario
+        session_dir.mkdir(parents=True)
+        annotations.mkdir(parents=True)
+        notation = "".join(f"[m({i},{i})]" for i in range(12))
+        (session_dir / "mouse_movements.json").write_text(
+            json.dumps({"total_behaviour": notation}), encoding="utf-8"
+        )
+        (annotations / "train").write_text("typo-label humna\n", encoding="utf-8")
+
+        sessions = load_real_dataset(
+            str(tmp_path), scenario=scenario, include_phase2=False, with_metadata=True
+        )
+
+        assert sessions == []
+
     def test_phase2_invalid_duplicate_does_not_hide_valid_session(self, tmp_path):
         data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
         data_dir.mkdir(parents=True)
@@ -181,6 +201,28 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert len(sessions) == 1
         assert sessions[0].session_id == "same-session"
         assert len(sessions[0].records) == 12
+
+    def test_unknown_phase2_annotation_does_not_fall_back_to_file_label(self, tmp_path):
+        data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "bots"
+        annotation_dir = tmp_path / "phase2" / "annotations" / "scenario"
+        data_dir.mkdir(parents=True)
+        annotation_dir.mkdir(parents=True)
+        record = {
+            "session_id": "unknown-label",
+            "mousemove_total_behaviour": "".join(f"[m({i},{i})]" for i in range(12)),
+        }
+        (data_dir / "mouse_movements_moderate_bots.json").write_text(
+            json.dumps(record), encoding="utf-8"
+        )
+        (annotation_dir / "labels").write_text(
+            "unknown-label definitely_human\n", encoding="utf-8"
+        )
+
+        sessions = load_phase2_dataset(
+            str(tmp_path), scenario="humans_and_moderate_bots", with_metadata=True
+        )
+
+        assert sessions == []
 
     def test_phase2_rejects_duplicate_session_id_with_conflicting_labels(self, tmp_path):
         notation = "".join(f"[m({i},{i})]" for i in range(12))

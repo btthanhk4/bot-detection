@@ -37,6 +37,16 @@ class DatasetLabelConflictError(ValueError):
     """Raised when one dataset session ID is assigned incompatible labels."""
 
 
+def _annotation_label(raw_label: str):
+    """Map only documented labels; malformed annotations must not become bots."""
+    normalized = str(raw_label).strip().lower()
+    if normalized == "human":
+        return 0
+    if normalized in {"bot", "moderate_bot", "advanced_bot"}:
+        return 1
+    return None
+
+
 # ---------- Real Dataset Parser ----------
 
 def parse_movement_notation(notation: str) -> list:
@@ -292,12 +302,18 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                                 sid, label_str = parts
                                 # Remove suffix like _0, _1, _2 to get base session_id
                                 base_sid = re.sub(r'_\d+$', '', sid)
-                                if "human" in label_str:
-                                    label_map[sid] = 0
-                                    label_map[base_sid] = 0
-                                else:
-                                    label_map[sid] = 1
-                                    label_map[base_sid] = 1
+                                label = _annotation_label(label_str)
+                                if label is None:
+                                    logger.warning(
+                                        "Ignoring unknown Phase 2 label %r for %s",
+                                        label_str,
+                                        sid,
+                                    )
+                                    label_map[sid] = None
+                                    label_map[base_sid] = None
+                                    continue
+                                label_map[sid] = label
+                                label_map[base_sid] = label
     
     # Load data files
     data_files = [(os.path.join(phase2_root, "data", "mouse_movements", "humans", "mouse_movements_humans.json"), 0)]
@@ -333,6 +349,8 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         continue
 
                     label = label_map.get(session_id, default_label)
+                    if label is None:
+                        continue
                     if session_id in seen_sessions:
                         if seen_sessions[session_id] != label:
                             raise DatasetLabelConflictError(
@@ -340,28 +358,34 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                             )
                         continue
                     
-                    # Parse mouse records with REAL timestamps
-                    mouse_records = parse_phase2_record(record)
-                    if len(mouse_records) < 10:
+                    try:
+                        # Parse mouse records with REAL timestamps
+                        mouse_records = parse_phase2_record(record)
+                        if len(mouse_records) < 10:
+                            continue
+
+                        # Cap at 5000 records per session to keep training fast.
+                        if len(mouse_records) > 5000:
+                            mouse_records = mouse_records[-5000:]
+
+                        session = RealMouseSession(
+                            records=mouse_records,
+                            label=label,
+                            session_id=session_id,
+                            source="phase2",
+                            split="unspecified",
+                            scenario=scenario or "all",
+                        )
+                        sessions.append(session if with_metadata else (mouse_records, label))
+                        seen_sessions[session_id] = label
+                    except (TypeError, ValueError, OverflowError):
+                        invalid_json_lines += 1
+                        logger.warning(
+                            "Skipped malformed Phase 2 row %d in %s",
+                            line_num + 1,
+                            os.path.basename(fpath),
+                        )
                         continue
-                    
-                    # Cap at 5000 records per session to keep training fast
-                    # (Phase 2 sessions can have 34K+ records). Production uses a
-                    # rolling recent window, so retain the tail rather than start.
-                    if len(mouse_records) > 5000:
-                        mouse_records = mouse_records[-5000:]
-                    
-                    # Determine label from annotation or fallback to file-based label
-                    session = RealMouseSession(
-                        records=mouse_records,
-                        label=label,
-                        session_id=session_id,
-                        source="phase2",
-                        split="unspecified",
-                        scenario=scenario or "all",
-                    )
-                    sessions.append(session if with_metadata else (mouse_records, label))
-                    seen_sessions[session_id] = label
             if invalid_json_lines:
                 logger.warning(
                     "Skipped %d malformed Phase 2 rows in %s",
@@ -370,7 +394,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                 )
         except DatasetLabelConflictError:
             raise
-        except Exception as e:
+        except OSError as e:
             logger.warning("Error loading Phase 2 file %s: %s", os.path.basename(fpath), e)
             continue
     
@@ -411,10 +435,15 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                     parts = line.split()
                     if len(parts) == 2:
                         session_id, label_str = parts
-                        if label_str == "human":
-                            label_map[session_id] = (0, split)
-                        else:
-                            label_map[session_id] = (1, split)  # moderate_bot, advanced_bot
+                        label = _annotation_label(label_str)
+                        if label is None:
+                            logger.warning(
+                                "Ignoring unknown Phase 1 label %r for %s",
+                                label_str,
+                                session_id,
+                            )
+                            continue
+                        label_map[session_id] = (label, split)
 
     # Load Phase 1 sessions
     phase1_load_errors = 0

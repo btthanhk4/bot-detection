@@ -369,7 +369,7 @@ def get_graph_seed_events(limit: int = 10000) -> Optional[List[dict]]:
                 "mouse_trajectory": 1,
                 "updated_at": 1,
             },
-        ).sort("updated_at", -1).limit(max(1, min(int(limit), 10000)))
+        ).sort("updated_at", -1).limit(max(1, min(int(limit), 100000)))
         documents = list(cursor)
         return [
             {

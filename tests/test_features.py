@@ -2,7 +2,10 @@
 Unit tests for mouse and environment feature extraction modules.
 """
 
+import math
+
 import numpy as np
+import pytest
 import torch
 
 from core_ml.features.env_features import (
@@ -204,6 +207,18 @@ class TestMouseFeatures:
         assert stats["duration_ms"] == 300.0  # 400 - 100
         assert stats["mean_speed"] > 0
         assert not np.isnan(stats["mean_speed"])
+
+    def test_curvature_keeps_segment_alignment_after_stationary_point(self):
+        records = [
+            {"time": 0, "x": 0.0, "y": 0.0, "type": "move"},
+            {"time": 10, "x": 0.0, "y": 0.0, "type": "move"},
+            {"time": 20, "x": 0.1, "y": 0.0, "type": "move"},
+            {"time": 30, "x": 0.1, "y": 1.0, "type": "move"},
+        ]
+
+        stats = compute_statistical_features(records)
+
+        assert stats["curvature_mean"] == pytest.approx(math.pi / 2, rel=1e-4)
 
     def test_extreme_mouse_coordinates_stay_finite_and_bounded(self):
         records = [

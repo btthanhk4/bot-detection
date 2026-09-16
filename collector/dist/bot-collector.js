@@ -801,12 +801,14 @@
       // The API rebuilds canonical chunks from raw records. Sending overlapping
       // windows can push a mature session beyond the request-size limit.
       delete mouseData.chunks;
+      const sequence = this.sequence;
+      this.sequence = (this.sequence + 1) % 1000000;
 
       return {
         sessionId: this.sessionId,
         action,
         timestamp: Date.now(),
-        sequence: this.sequence++,
+        sequence,
         pageUrl: typeof window !== 'undefined' ? window.location.href : '',
         referrer: typeof document !== 'undefined' ? document.referrer : '',
         visitorId: this.cachedFingerprint.visitorId,
@@ -855,10 +857,19 @@
         let body = JSON.stringify(payload);
 
         // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
-        if (action === 'pagehide' && body.length > 60000 && payload.mouse) {
+        if (action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse) {
           payload.mouse.records = (payload.mouse.records || []).slice(-40);
           payload.mouse.chunks = (payload.mouse.chunks || []).slice(-2);
           payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
+          body = JSON.stringify(payload);
+        }
+        // Fingerprint fields such as user-agent or font lists can also dominate
+        // an unload payload. The init/heartbeat requests already sent this data.
+        if (action === 'pagehide' && new Blob([body]).size > 60000) {
+          payload.fingerprint = {};
+          if (payload.botd && Array.isArray(payload.botd.reasons)) {
+            payload.botd.reasons = payload.botd.reasons.slice(0, 10);
+          }
           body = JSON.stringify(payload);
         }
 

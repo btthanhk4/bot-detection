@@ -142,6 +142,7 @@ def compute_statistical_features(records: list) -> dict:
     dxs, dys, dts = [], [], []
     speeds, accels = [], []
     angles = []
+    moving_segments = []
 
     for i in range(1, len(move_records)):
         dt = max(0.001, (times[i] - times[i - 1]) / 1000.0)  # in seconds
@@ -156,7 +157,9 @@ def compute_statistical_features(records: list) -> dict:
         speeds.append(speed)
 
         if dist > 1e-6:
-            angles.append(math.atan2(dy, dx))
+            angle = math.atan2(dy, dx)
+            angles.append(angle)
+            moving_segments.append((angle, dist))
 
     for i in range(1, len(speeds)):
         dt = dts[i]
@@ -195,11 +198,12 @@ def compute_statistical_features(records: list) -> dict:
 
     # 1. Curvature: angle change / distance at each point (3-point formula)
     curvatures = []
-    for i in range(1, len(angles)):
-        angle_diff = abs(angles[i] - angles[i - 1])
+    for i in range(1, len(moving_segments)):
+        angle, seg_dist = moving_segments[i]
+        previous_angle, _ = moving_segments[i - 1]
+        angle_diff = abs(angle - previous_angle)
         if angle_diff > math.pi:
             angle_diff = 2 * math.pi - angle_diff
-        seg_dist = math.sqrt(dxs[i]**2 + dys[i]**2) if i < len(dxs) else 1e-6
         curvature = angle_diff / (seg_dist + 1e-6)
         curvatures.append(curvature)
 
