@@ -7,14 +7,37 @@ import os
 from typing import List
 
 
+def _env_int(name: str, default: int, minimum: int, maximum: int = None) -> int:
+    raw_value = os.getenv(name, str(default))
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer, got {raw_value!r}") from exc
+    if value < minimum or (maximum is not None and value > maximum):
+        upper = f" and <= {maximum}" if maximum is not None else ""
+        raise ValueError(f"{name} must be >= {minimum}{upper}, got {value}")
+    return value
+
+
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw_value = os.getenv(name, str(default))
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number, got {raw_value!r}") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}, got {value}")
+    return value
+
+
 class Settings:
     PROJECT_NAME: str = "Silkmoon Bot & Fraud Detection Core API"
     VERSION: str = "1.0.0"
 
     # Server binding
     HOST: str = os.getenv("BOT_API_HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("BOT_API_PORT", "8000"))
-    WORKERS: int = int(os.getenv("BOT_API_WORKERS", "1"))
+    PORT: int = _env_int("BOT_API_PORT", 8000, 1, 65535)
+    WORKERS: int = _env_int("BOT_API_WORKERS", 1, 1)
 
     # Model paths
     WEIGHTS_DIR: str = os.getenv(
@@ -38,15 +61,15 @@ class Settings:
     ]
 
     # Classification Thresholds
-    THRESHOLD: float = float(os.getenv("BOT_DECISION_THRESHOLD", "0.70"))
-    SUSPECT_THRESHOLD: float = float(os.getenv("BOT_SUSPECT_THRESHOLD", "0.45"))
-    MIN_MOUSE_POINTS_FOR_BOT: int = int(os.getenv("BOT_MIN_MOUSE_POINTS_FOR_BOT", "24"))
+    THRESHOLD: float = _env_float("BOT_DECISION_THRESHOLD", 0.70, 0.0, 1.0)
+    SUSPECT_THRESHOLD: float = _env_float("BOT_SUSPECT_THRESHOLD", 0.45, 0.0, THRESHOLD)
+    MIN_MOUSE_POINTS_FOR_BOT: int = _env_int("BOT_MIN_MOUSE_POINTS_FOR_BOT", 24, 0)
 
     # Capacity limits & Protection
-    MAX_BUFFER_SIZE: int = int(os.getenv("BOT_MAX_TELEMETRY_BUFFER", "1000"))
-    MAX_GRAPH_SESSIONS: int = int(os.getenv("BOT_MAX_GRAPH_SESSIONS", "10000"))
-    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("BOT_RATE_LIMIT_PER_MINUTE", "240"))
-    MAX_PAYLOAD_BYTES: int = int(os.getenv("BOT_MAX_PAYLOAD_BYTES", "262144"))
+    MAX_BUFFER_SIZE: int = _env_int("BOT_MAX_TELEMETRY_BUFFER", 1000, 1)
+    MAX_GRAPH_SESSIONS: int = _env_int("BOT_MAX_GRAPH_SESSIONS", 10000, 1)
+    RATE_LIMIT_PER_MINUTE: int = _env_int("BOT_RATE_LIMIT_PER_MINUTE", 240, 0)
+    MAX_PAYLOAD_BYTES: int = _env_int("BOT_MAX_PAYLOAD_BYTES", 262144, 1024)
 
 
 settings = Settings()

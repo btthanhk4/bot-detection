@@ -41,7 +41,10 @@ def _deterministic_hash_feature(text: str, modulo: int = 1000) -> float:
     """Produces a deterministic float in [0.0, 1.0) for a given string across any process run."""
     if not text:
         return 0.0
-    md5_int = int(hashlib.md5(str(text).encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+    # This is a stable feature projection, not a cryptographic or integrity hash.
+    md5_int = int(hashlib.md5(
+        str(text).encode("utf-8", errors="ignore"), usedforsecurity=False
+    ).hexdigest()[:8], 16)
     return float(md5_int % modulo) / float(modulo)
 
 

@@ -3,9 +3,7 @@ Unit tests for core ML models and multi-modal ensemble.
 """
 
 import math
-import os
 import numpy as np
-import pytest
 import torch
 
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -41,7 +39,17 @@ class TestTabularClassifier:
         assert not clf.is_fitted
         p = clf.predict_proba(np.zeros(50))
         assert 0.0 <= p <= 1.0
+        assert clf.predict_proba(np.zeros((1, 50))) == p
+        assert clf.predict_proba(np.zeros((2, 50))) == 0.5
         assert clf.predict_proba(None) == 0.5
+
+    def test_batch_predict_accepts_single_vector(self):
+        clf = TabularBotClassifier()
+
+        probabilities = clf.predict_batch(np.zeros(50))
+
+        assert probabilities.shape == (1,)
+        assert probabilities[0] == 0.5
 
     def test_dimension_mismatch_resilience(self):
         clf = TabularBotClassifier(n_estimators=5)

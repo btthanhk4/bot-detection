@@ -21,6 +21,8 @@ from core_ml.dataset.loader import generate_synthetic_telemetry
 
 
 def benchmark_api(endpoint: str, n_samples: int = 20):
+    if n_samples <= 0:
+        raise ValueError("n_samples must be greater than zero")
     print(f"\n=== BENCHMARKING INFERENCE API: {endpoint} ===")
     print(f"Sending {n_samples} Human and {n_samples} Bot payloads...")
 

@@ -11,7 +11,7 @@ import os
 import secrets
 import threading
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from fastapi import Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -176,9 +176,15 @@ def _is_trusted_proxy(host: str) -> bool:
         return False
     try:
         address = ipaddress.ip_address(host)
-        return any(address in ipaddress.ip_network(value, strict=False) for value in settings.TRUSTED_PROXIES)
     except ValueError:
         return False
+    for value in settings.TRUSTED_PROXIES:
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def get_client_ip(request: Request) -> str:
@@ -358,10 +364,6 @@ async def receive_telemetry(request: Request):
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
 
-    # Best-effort local cache; MongoDB remains the persistent source of truth.
-    with _telemetry_buffer_lock:
-        telemetry_buffer.append(data)
-
     # Run AI analysis and save to MongoDB
     persisted = False
     try:
@@ -371,6 +373,20 @@ async def receive_telemetry(request: Request):
     except Exception:
         persisted = False
 
+    # Keep a best-effort copy only during a real database outage. Rejected
+    # tombstoned/stale events must not reappear from this fallback buffer.
+    buffered = False
+    if not persisted:
+        try:
+            from api_service.database import is_database_ready
+            database_ready = bool(await run_in_threadpool(is_database_ready))
+        except Exception:
+            database_ready = False
+        if not database_ready:
+            with _telemetry_buffer_lock:
+                telemetry_buffer.append(data)
+            buffered = True
+
     # Only persisted telemetry is eligible for graph aggregation. This keeps
     # stale/foreign heartbeats rejected by MongoDB out of the live topology.
     if persisted:
@@ -379,7 +395,12 @@ async def receive_telemetry(request: Request):
         except Exception:
             pass
 
-    return {"status": "success" if persisted else "degraded", "recorded": True, "persisted": persisted}
+    return {
+        "status": "success" if persisted else "degraded",
+        "recorded": persisted or buffered,
+        "persisted": persisted,
+        "buffered": buffered,
+    }
 
 
 @app.get("/api/v1/telemetry/recent")

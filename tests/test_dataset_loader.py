@@ -200,6 +200,17 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert len(sessions[0].records) == 5000
         assert sessions[0].records[0]["time"] == 2
 
+    def test_phase2_invalid_timestamp_does_not_shift_later_events(self):
+        record = {
+            "mousemove_total_behaviour": "[m(10,10)][m(20,20)][m(30,30)]",
+            "mousemove_times": "1000,invalid,1040",
+            "mousemove_client_height_width": "(100,100)",
+        }
+
+        records = parse_phase2_record(record)
+
+        assert [item["time"] for item in records] == [0, 13, 40]
+
     def test_loader_rejects_duplicate_trajectory_with_conflicting_labels(self, tmp_path):
         scenario = "humans_and_moderate_bots"
         data_root = tmp_path / "phase1" / "data" / "mouse_movements" / scenario

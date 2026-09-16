@@ -170,6 +170,17 @@ def test_untrusted_client_cannot_spoof_forwarded_ip(client):
     assert res.json()["client_ip"] != "198.51.100.99"
 
 
+def test_invalid_proxy_entry_does_not_disable_valid_network(monkeypatch):
+    from api_service.config import settings
+    from api_service.main import _is_trusted_proxy
+
+    monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
+    monkeypatch.setattr(settings, "TRUSTED_PROXIES", ["invalid-cidr", "172.16.0.0/12"])
+
+    assert _is_trusted_proxy("172.18.0.5") is True
+    assert _is_trusted_proxy("203.0.113.5") is False
+
+
 def test_rate_limiter_blocks_excessive_traffic(client, monkeypatch):
     from api_service.config import settings
     monkeypatch.setattr("api_service.main._is_trusted_proxy", lambda _host: True)
@@ -263,6 +274,48 @@ def test_chunked_payload_is_limited_before_buffering():
     scope = {"type": "http", "method": "POST", "headers": [(b"transfer-encoding", b"chunked")]}
     asyncio.run(RequestBodyLimitMiddleware(consume_body, max_bytes=10)(scope, receive, send))
     assert any(message.get("status") == 413 for message in sent)
+
+
+def test_rejected_telemetry_is_not_added_to_fallback_buffer(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+    session_id = "rejected-tombstoned-event"
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": session_id, "visitorId": "visitor"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["recorded"] is False
+    assert response.json()["buffered"] is False
+    with _telemetry_buffer_lock:
+        assert all(event.get("sessionId") != session_id for event in telemetry_buffer)
+
+
+def test_database_outage_uses_fallback_buffer(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
+    session_id = "database-outage-event"
+    try:
+        response = client.post(
+            "/api/v1/telemetry",
+            json={"sessionId": session_id, "visitorId": "visitor"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["recorded"] is True
+        assert response.json()["buffered"] is True
+        with _telemetry_buffer_lock:
+            assert any(event.get("sessionId") == session_id for event in telemetry_buffer)
+    finally:
+        with _telemetry_buffer_lock:
+            retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
+            telemetry_buffer.clear()
+            telemetry_buffer.extend(retained)
 
 
 def test_delete_requires_admin_token(client, monkeypatch):

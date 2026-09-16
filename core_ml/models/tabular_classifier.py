@@ -77,17 +77,22 @@ class TabularBotClassifier:
 
         # Clean NaN/Inf for numerical stability
         x_arr = np.nan_to_num(np.asarray(x_vector, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
+        if x_arr.ndim == 1:
+            sample = x_arr
+        elif x_arr.ndim == 2 and x_arr.shape[0] == 1:
+            sample = x_arr[0]
+        else:
+            return 0.5
 
         if not self.is_fitted:
             # Fallback heuristic: feature 0 is usually heuristic_score, feature 2 is flag_webdriver
-            if len(x_arr) > 0:
-                h_score = float(x_arr[0])
-                flag_wd = float(x_arr[2]) if len(x_arr) > 2 else 0.0
+            if len(sample) > 0:
+                h_score = float(sample[0])
+                flag_wd = float(sample[2]) if len(sample) > 2 else 0.0
                 return min(1.0, h_score * 0.7 + flag_wd * 0.9)
             return 0.5
 
-        if x_arr.ndim == 1:
-            x_arr = x_arr.reshape(1, -1)
+        x_arr = sample.reshape(1, -1)
 
         # A mismatched schema means these weights are not compatible. Silently
         # padding/truncating would attach values to the wrong feature names.
@@ -108,6 +113,10 @@ class TabularBotClassifier:
             return np.array([], dtype=np.float32)
 
         X_arr = np.nan_to_num(np.asarray(X, dtype=np.float32), nan=0.0, posinf=100.0, neginf=-100.0)
+        if X_arr.ndim == 1:
+            X_arr = X_arr.reshape(1, -1)
+        elif X_arr.ndim != 2:
+            return np.array([], dtype=np.float32)
         if not self.is_fitted:
             return np.full(X_arr.shape[0], 0.5)
 

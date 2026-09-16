@@ -16,8 +16,6 @@ import random
 import re
 import hashlib
 from dataclasses import dataclass
-import numpy as np
-
 from core_ml.features.mouse_features import records_to_chunks as _canonical_records_to_chunks
 
 
@@ -143,18 +141,24 @@ def parse_phase2_record(record: dict) -> list:
     # Parse real timestamps (comma-separated epoch milliseconds)
     timestamps = []
     if times_str:
-        timestamps = [int(t.strip()) for t in times_str.split(',') if t.strip().isdigit()]
+        for raw_timestamp in times_str.split(','):
+            try:
+                timestamps.append(int(raw_timestamp.strip()))
+            except (TypeError, ValueError):
+                # Preserve the event position; dropping one value shifts every
+                # subsequent timestamp onto the wrong mouse action.
+                timestamps.append(None)
     
-    has_real_timestamps = len(timestamps) > 0
+    has_real_timestamps = any(timestamp is not None for timestamp in timestamps)
     
     records = []
     event_idx = 0  # Index into timestamps (1:1 with ALL events, not just moves)
     last_x, last_y = 0.0, 0.0
-    last_time = timestamps[0] if timestamps else 0
+    last_time = next((timestamp for timestamp in timestamps if timestamp is not None), 0)
     
     for action, args in actions:
         # Consume real timestamp for this event (all event types share the same timestamp array)
-        if has_real_timestamps and event_idx < len(timestamps):
+        if event_idx < len(timestamps):
             t = timestamps[event_idx]
             event_idx += 1
         else:
