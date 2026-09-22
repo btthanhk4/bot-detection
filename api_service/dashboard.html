@@ -1136,7 +1136,7 @@ body::before { display: none; }
 .traffic-table tbody tr,
 .traffic-table tbody tr.row-bot,
 .traffic-table tbody tr.row-suspect { background: transparent; }
-.traffic-table tbody tr { cursor: default; }
+.traffic-table tbody tr { cursor: pointer; }
 
 .traffic-table tbody tr:hover,
 .traffic-table tbody tr.row-bot:hover { background: #f9fafb; cursor: default; }
@@ -2587,7 +2587,7 @@ function renderTrafficTable() {
     const page = s.pageUrl ? s.pageUrl.replace(/https?:\/\/[^\/]+/, '') || '/' : '--';
     const isSelected = s.sessionId === selectedId;
 
-    return `<tr class="${rowClass}" data-idx="${idx}" style="${isSelected ? 'outline:1px solid var(--accent-green)' : ''}">
+    return `<tr class="${rowClass}" data-idx="${idx}" onclick="selectSession(${idx}, false)" style="cursor:pointer;${isSelected ? 'outline:1px solid var(--accent-green)' : ''}" title="Bấm để xem quỹ đạo chuột">
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
