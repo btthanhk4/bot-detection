@@ -2,6 +2,8 @@
 Unit tests for ClickFraudGraphBuilder graph construction and memory bounds.
 """
 
+import pytest
+
 from core_ml.features.graph_builder import ClickFraudGraphBuilder, _deterministic_hash_feature
 
 
@@ -164,3 +166,18 @@ class TestGraphBuilder:
         assert len(builder.edges_session_target) == 1
         assert builder.ip_features[0][2] == 1.0
         assert builder.target_features[0][1] == 1.0
+
+    def test_heartbeat_without_mouse_refreshes_heuristic_feature(self):
+        builder = ClickFraudGraphBuilder(max_sessions=10)
+        base = {
+            "sessionId": "changing-heuristic",
+            "visitorId": "device",
+            "mouse": {"records": []},
+        }
+        builder.add_telemetry_event({**base, "botd": {"heuristicScore": 0.1}})
+        first_score = float(builder.session_features[0][-2])
+
+        builder.add_telemetry_event({**base, "botd": {"heuristicScore": 0.9}})
+
+        assert first_score == pytest.approx(0.1)
+        assert float(builder.session_features[0][-2]) == pytest.approx(0.9)

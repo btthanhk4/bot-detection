@@ -237,13 +237,13 @@ class ClickFraudGraphBuilder:
                 snapshot["session_feature"] = sess_feat
             else:
                 sess_idx = self.session_map[session_id]
-                # Update session features with new mouse data
-                if records:
-                    m_stats = compute_statistical_features(records)
-                    # Collector heartbeats contain a rolling snapshot, not a delta.
-                    sess_feat = self._build_session_feature(m_stats, botd, len(records))
-                    self.session_features[sess_idx] = sess_feat
-                    snapshot["session_feature"] = sess_feat
+                # Collector heartbeats contain a rolling snapshot, not a delta.
+                # Recompute even without movement because heuristic flags can
+                # change independently of mouse data.
+                m_stats = compute_statistical_features(records)
+                sess_feat = self._build_session_feature(m_stats, botd, len(records))
+                self.session_features[sess_idx] = sess_feat
+                snapshot["session_feature"] = sess_feat
 
             self.session_labels[sess_idx] = snapshot["label"]
 

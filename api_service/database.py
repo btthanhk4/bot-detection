@@ -223,6 +223,18 @@ def _ensure_indexes(db):
         try:
             detections = db["detection_results"]
             if "created_at_-1" in detections.index_information():
+                # TTL indexes ignore documents without their indexed date.
+                # Backfill legacy rows before removing the old protection.
+                detections.update_many(
+                    {
+                        "$or": [
+                            {"updated_at": {"$exists": False}},
+                            {"updated_at": None},
+                        ],
+                        "created_at": {"$type": "date"},
+                    },
+                    [{"$set": {"updated_at": "$created_at"}}],
+                )
                 detections.drop_index("created_at_-1")
         except Exception as e:
             all_ready = False

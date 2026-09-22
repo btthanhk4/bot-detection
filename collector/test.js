@@ -146,6 +146,35 @@ async function testPagehideUsesUtf8ByteLengthAndSequenceWraps() {
   }
 }
 
+async function testPagehideFetchFallbackAvoidsCorsPreflight() {
+  const collector = new BotCollector({ endpointUrl: 'https://api.example/telemetry' });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  let fetchOptions = null;
+  global.fetch = async (_url, options) => {
+    fetchOptions = options;
+    return { ok: true };
+  };
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: { sendBeacon: () => false },
+  });
+
+  try {
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), true);
+    assert.strictEqual(fetchOptions.keepalive, true);
+    assert.strictEqual(fetchOptions.headers['Content-Type'], 'text/plain;charset=UTF-8');
+  } finally {
+    collector.destroy();
+    if (originalNavigator) {
+      Object.defineProperty(global, 'navigator', originalNavigator);
+    } else {
+      delete global.navigator;
+    }
+  }
+}
+
 async function testFailedHeartbeatRetriesLatestSnapshot() {
   let attempts = 0;
   global.fetch = async () => ({ ok: ++attempts >= 2 });
@@ -165,11 +194,57 @@ async function testFailedHeartbeatRetriesLatestSnapshot() {
   collector.destroy();
 }
 
+async function testOlderRetryCannotDiscardNewerFailedSnapshot() {
+  let attempts = 0;
+  let resolveOldRetry = null;
+  global.fetch = async () => {
+    attempts++;
+    if (attempts === 1 || attempts === 3) return { ok: false };
+    if (attempts === 2) {
+      return new Promise((resolve) => {
+        resolveOldRetry = () => resolve({ ok: true });
+      });
+    }
+    return { ok: true };
+  };
+  const collector = new BotCollector({
+    endpointUrl: '/telemetry',
+    autoSendInterval: 0,
+    retryBaseDelay: 100,
+    maxRetryAttempts: 2,
+  });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('older'), false);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.ok(resolveOldRetry, 'the older retry should be in flight');
+
+  assert.strictEqual(await collector.sendTelemetry('newer'), false);
+  const newerPending = collector.pendingRetry;
+  assert.strictEqual(JSON.parse(newerPending.body).action, 'newer');
+
+  resolveOldRetry();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(
+    collector.pendingRetry,
+    newerPending,
+    'an older retry completion must preserve the newer failed snapshot',
+  );
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.strictEqual(attempts, 4);
+  assert.strictEqual(collector.pendingRetry, null);
+  collector.destroy();
+}
+
 testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
+  .then(testPagehideFetchFallbackAvoidsCorsPreflight)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
+  .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {
     console.error(error);

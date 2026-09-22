@@ -475,8 +475,8 @@ def index():
         "status": "online",
         "service": "Bot Detection Core",
         "models": {
-            "behavioral_lstm": "ready" if lstm_loaded else "untrained_fallback",
-            "tabular_xgboost": "ready" if tabular_loaded else "fallback_heuristic",
+            "behavioral_lstm": "ready" if lstm_loaded else "unavailable",
+            "tabular_xgboost": "ready" if tabular_loaded else "unavailable",
             "hetero_gnn": "not_trained_without_real_graph_data",
         },
         "graph_node_counts": {
@@ -604,7 +604,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         ) if body_bytes else {}
     except HTTPException:
         raise
-    except (UnicodeDecodeError, ValueError):
+    except (UnicodeDecodeError, ValueError, RecursionError):
         raise HTTPException(status_code=400, detail="Telemetry body must be a valid JSON object")
 
     if not isinstance(data, dict):

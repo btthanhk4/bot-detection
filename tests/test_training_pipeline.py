@@ -188,6 +188,17 @@ def test_training_refuses_to_publish_when_real_dataset_is_missing(tmp_path):
         )
 
 
+def test_synthetic_diagnostic_cannot_overwrite_production_bundle(tmp_path):
+    missing_dataset = tmp_path / "missing-dataset"
+
+    with pytest.raises(RuntimeError, match="separate --weights-dir"):
+        train_main(
+            dataset_root=str(missing_dataset),
+            device="cpu",
+            allow_synthetic_only=True,
+        )
+
+
 def test_training_requires_both_real_labels(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "core_ml.train.load_real_dataset",
@@ -200,6 +211,13 @@ def test_training_requires_both_real_labels(tmp_path, monkeypatch):
             device="cpu",
             allow_synthetic_only=False,
         )
+
+
+def test_training_dataset_audit_rejects_non_binary_labels():
+    telemetry = {"sessionId": "invalid-label", "mouse": {"records": []}}
+
+    with pytest.raises(ValueError, match="binary"):
+        audit_training_dataset([telemetry], [2], ["train"])
 
 
 def test_model_artifacts_are_published_as_a_pair(tmp_path):

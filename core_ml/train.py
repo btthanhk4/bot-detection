@@ -88,6 +88,8 @@ def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dic
     source_counts = {"real": 0, "synthetic": 0}
     for telemetry, raw_label, raw_split in zip(telemetries, labels, splits):
         label = int(raw_label)
+        if label not in (0, 1):
+            raise ValueError(f"Training labels must be binary, got {raw_label!r}")
         split = str(raw_split)
         records = (telemetry.get("mouse") or {}).get("records") or []
         signature = records_signature(records)
@@ -457,14 +459,15 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def main(dataset_root=None, device="auto", allow_synthetic_only=False):
+def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
     print(f"  TRAINING DEVICE: {training_device.type.upper()}")
     print("=" * 60)
 
-    weights_dir = os.path.join(os.path.dirname(__file__), "weights")
+    production_weights_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "weights"))
+    weights_dir = os.path.abspath(weights_dir or production_weights_dir)
     os.makedirs(weights_dir, exist_ok=True)
 
     # ================================================================
@@ -492,6 +495,15 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False):
         raise RuntimeError(
             "No real labeled sessions were loaded; refusing to publish a synthetic-only "
             "model. Check --dataset-root or pass --allow-synthetic-only for diagnostics."
+        )
+    if (
+        not real_sessions
+        and allow_synthetic_only
+        and os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir)
+    ):
+        raise RuntimeError(
+            "Synthetic-only diagnostics require a separate --weights-dir and cannot "
+            "overwrite the production model bundle."
         )
     if real_sessions and not allow_synthetic_only:
         real_labels = {session.label for session in real_sessions}
@@ -754,6 +766,11 @@ if __name__ == "__main__":
     parser.add_argument("--dataset-root", default=os.getenv("BOT_DATASET_ROOT", ""))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument(
+        "--weights-dir",
+        default="",
+        help="Artifact output directory; required outside production for synthetic-only diagnostics",
+    )
+    parser.add_argument(
         "--allow-synthetic-only",
         action="store_true",
         help="Allow a diagnostic synthetic-only model; never use this artifact in production",
@@ -763,4 +780,5 @@ if __name__ == "__main__":
         dataset_root=args.dataset_root,
         device=args.device,
         allow_synthetic_only=args.allow_synthetic_only,
+        weights_dir=args.weights_dir or None,
     )

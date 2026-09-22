@@ -18,6 +18,7 @@ class FakeCollection:
         self.indexes = dict(indexes or {})
         self.dropped = []
         self.created = []
+        self.updates = []
 
     def index_information(self):
         return self.indexes
@@ -29,6 +30,10 @@ class FakeCollection:
     def create_index(self, keys, name, **options):
         self.created.append((name, keys, options))
         self.indexes[name] = {"key": keys, **options}
+
+    def update_many(self, query, update):
+        self.updates.append((query, update))
+        return SimpleNamespace(modified_count=0)
 
 
 def test_ensure_indexes_rebuilds_conflicting_options():
@@ -46,8 +51,26 @@ def test_ensure_indexes_rebuilds_conflicting_options():
     assert detections.dropped == ["sessionId_1", "created_at_-1"]
     assert detections.indexes["updated_at_-1"]["expireAfterSeconds"] == 86400 * 30
     assert "created_at_-1" not in detections.indexes
+    assert len(detections.updates) == 1
     assert detections.indexes["sessionId_1"]["unique"] is True
     assert deleted.indexes["expires_at_1"]["expireAfterSeconds"] == 0
+
+
+def test_ensure_indexes_keeps_legacy_ttl_when_timestamp_backfill_fails():
+    class BackfillFailureCollection(FakeCollection):
+        def update_many(self, query, update):
+            raise RuntimeError("migration failed")
+
+    detections = BackfillFailureCollection(
+        {"created_at_-1": {"key": [("created_at", -1)], "expireAfterSeconds": 86400 * 30}}
+    )
+
+    ready = _ensure_indexes(
+        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+    )
+
+    assert ready is False
+    assert "created_at_-1" in detections.indexes
 
 
 def test_ensure_indexes_keeps_matching_indexes():

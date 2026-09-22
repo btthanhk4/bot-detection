@@ -91,6 +91,16 @@ def test_index_endpoint(client):
     assert "graph_node_counts" in data
 
 
+def test_index_does_not_claim_fallback_inference_when_models_are_missing(client, monkeypatch):
+    monkeypatch.setattr("api_service.main.lstm_loaded", False)
+    monkeypatch.setattr("api_service.main.tabular_loaded", False)
+
+    models = client.get("/").json()["models"]
+
+    assert models["behavioral_lstm"] == "unavailable"
+    assert models["tabular_xgboost"] == "unavailable"
+
+
 def test_health_endpoint(client):
     res = client.get("/health")
     assert res.status_code in (200, 503)
@@ -514,6 +524,23 @@ def test_summary_reports_database_query_failure(client, monkeypatch):
 def test_invalid_telemetry_is_rejected(client):
     res = client.post("/api/v1/telemetry", content=b"not-json", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400
+
+
+def test_excessively_nested_telemetry_is_rejected(client):
+    nested = "[" * 2000 + "0" + "]" * 2000
+    body = (
+        '{"sessionId":"deep-json","visitorId":"visitor","fingerprint":{"nested":'
+        + nested
+        + "}}"
+    )
+
+    response = client.post(
+        "/api/v1/telemetry",
+        content=body.encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
 
 
 def test_non_finite_json_numbers_are_rejected(client):

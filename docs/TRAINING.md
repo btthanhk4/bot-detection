@@ -16,6 +16,13 @@ loaded or the real data does not contain both human and bot labels.
 `--allow-synthetic-only` exists only for diagnostics and its output must not
 be deployed.
 
+Synthetic-only diagnostics must use a separate artifact directory so they
+cannot overwrite the production bundle:
+
+```bash
+python -m core_ml.train --allow-synthetic-only --weights-dir /tmp/bot-diagnostic-model
+```
+
 ## Google Colab GPU
 
 Select a GPU runtime first, then run:

@@ -875,6 +875,9 @@
         if (!pending || this.destroyed || pending.lifecycleVersion !== this.lifecycleVersion) return;
 
         const sent = await this.transmitTelemetry(pending.body, 'retry');
+        // A heartbeat may have installed a newer snapshot while this request was
+        // in flight. The older completion must not clear or replace that retry.
+        if (this.pendingRetry !== pending) return;
         if (sent) {
           this.pendingRetry = null;
         } else {
@@ -895,7 +898,13 @@
 
         const res = await this.fetchWithTimeout(this.endpointUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            // Keep the unload fallback CORS-safelisted. A JSON content type can
+            // trigger a preflight that the browser cancels while leaving a page.
+            'Content-Type': action === 'pagehide'
+              ? 'text/plain;charset=UTF-8'
+              : 'application/json',
+          },
           body,
           keepalive: action === 'pagehide',
         });
