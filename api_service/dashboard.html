@@ -1419,6 +1419,184 @@ body::before { display: none; }
   .verdict-hero-conf { width: 100%; margin-left: 0; }
 }
 
+/* Iconography and readability refinement */
+:root {
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+}
+
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ui-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.header-logo .ui-icon { width: 19px; height: 19px; }
+.header-subtitle { color: var(--text-muted); font-size: 12px; }
+.status-indicator,
+.header-clock { color: var(--text-secondary); }
+
+.kpi-icon .ui-icon { width: 18px; height: 18px; }
+.kpi-label { color: var(--text-muted); font-size: 12px; }
+.kpi-extra { color: var(--text-muted); font-size: 12px; }
+
+.panel-title {
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.panel-title .ui-icon,
+.drawer-title .ui-icon,
+.drawer-section-title .ui-icon { color: var(--text-muted); }
+
+.drawer-title,
+.drawer-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-title { font-size: 15px; }
+.drawer-section-title { font-size: 13px; }
+.model-detail-icon { display: flex; align-items: center; justify-content: center; }
+.model-detail-icon .ui-icon { width: 17px; height: 17px; }
+
+.traffic-table thead th {
+  color: #475569;
+  font-size: 11px;
+}
+.traffic-table tbody td { color: var(--text-secondary); font-size: 13px; }
+.traffic-table tbody td span { font-size: 12px !important; }
+.time-text,
+.ip-text,
+.page-text { color: var(--text-secondary); font-size: 12px; }
+
+.model-bar-label,
+.model-bar-value { font-size: 12px; }
+.graph-stat-label,
+.drawer-field-label,
+.drawer-stat-label { color: var(--text-muted); font-size: 10px; }
+.drawer-field-value,
+.model-detail-name { font-size: 12px; }
+.model-detail-desc,
+.drawer-explain,
+.verdict-explain { color: var(--text-muted); font-size: 11px; }
+
+.simulate-btn,
+.delete-all-btn,
+.view-btn,
+.delete-btn,
+.drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.delete-btn { opacity: 1; }
+.delete-all-btn .ui-icon,
+.drawer-delete-session .ui-icon { width: 13px; height: 13px; }
+.drawer-close .ui-icon { width: 16px; height: 16px; }
+
+.simulate-btn {
+  font-size: 0;
+  white-space: nowrap;
+}
+.simulate-btn::before,
+.view-btn::before,
+.delete-btn:not(.drawer-delete-session)::before,
+.drawer-reason-icon::before,
+.reason-icon::before {
+  content: '';
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+.simulate-btn::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2M20 14h2M15 13v2M9 13v2'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 8V4H8'/%3E%3Crect width='16' height='12' x='4' y='8' rx='2'/%3E%3Cpath d='M2 14h2M20 14h2M15 13v2M9 13v2'/%3E%3C/svg%3E");
+}
+.simulate-btn.human-btn::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 21a8 8 0 0 1 13.292-6'/%3E%3Ccircle cx='10' cy='8' r='5'/%3E%3Cpath d='m16 19 2 2 4-4'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 21a8 8 0 0 1 13.292-6'/%3E%3Ccircle cx='10' cy='8' r='5'/%3E%3Cpath d='m16 19 2 2 4-4'/%3E%3C/svg%3E");
+}
+.simulate-btn::after { content: 'Giả lập Bot'; font-size: 11px; }
+.simulate-btn.human-btn::after { content: 'Giả lập Human'; }
+.simulate-btn:disabled::after { content: 'Đang gửi...'; }
+
+.view-btn {
+  min-width: 66px;
+  font-size: 0;
+  white-space: nowrap;
+}
+.view-btn::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21 21-4.34-4.34'/%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21 21-4.34-4.34'/%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3C/svg%3E");
+}
+.view-btn::after { content: 'Hồ sơ'; font-size: 11px; }
+
+.delete-btn:not(.drawer-delete-session) {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  font-size: 0 !important;
+}
+.delete-btn:not(.drawer-delete-session)::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.drawer-reason-icon,
+.reason-icon { font-size: 0 !important; color: var(--accent-orange); }
+.drawer-reason-icon::before,
+.reason-icon::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4M12 17h.01'/%3E%3C/svg%3E");
+}
+.drawer-reason-item.critical .drawer-reason-icon { color: var(--accent-red); }
+
+.detector-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.badge-live::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.gauge-svg path:first-of-type { stroke: #e2e8f0 !important; }
+#donutChart,
+#timelineChart { filter: saturate(0.78); }
+#graphCanvas { background: #1e293b !important; filter: saturate(0.82); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
@@ -1427,11 +1605,38 @@ body::before { display: none; }
 </head>
 <body>
 
+<!-- Lucide static v1.47.0 (ISC). Downloaded and embedded to avoid runtime CDN dependencies. -->
+<svg class="icon-sprite" aria-hidden="true">
+  <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="icon-radio-tower" viewBox="0 0 24 24"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/></symbol>
+  <symbol id="icon-user-check" viewBox="0 0 24 24"><path d="M2 21a8 8 0 0 1 13.292-6"/><circle cx="10" cy="8" r="5"/><path d="m16 19 2 2 4-4"/></symbol>
+  <symbol id="icon-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="icon-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="icon-network" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></symbol>
+  <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+  <symbol id="icon-mouse" viewBox="0 0 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/></symbol>
+  <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="icon-chart-column" viewBox="0 0 24 24"><path d="M5 21v-6"/><path d="M12 21V3"/><path d="M19 21V9"/></symbol>
+  <symbol id="icon-chart-spline" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16c.5-2 1.5-7 4-7 2 0 2 3 4 3 2.5 0 4.5-5 5-7"/></symbol>
+  <symbol id="icon-brain-circuit" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/></symbol>
+  <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+  <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="icon-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="icon-dna" viewBox="0 0 24 24"><path d="m10 16 1.5 1.5"/><path d="m14 8-1.5-1.5"/><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993"/><path d="m16.5 10.5 1 1"/><path d="m17 6-2.891-2.891"/><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="m20 9 .891.891"/><path d="M3.109 14.109 4 15"/><path d="m6.5 12.5 1 1"/><path d="m7 18 2.891 2.891"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/></symbol>
+  <symbol id="icon-fingerprint" viewBox="0 0 24 24"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></symbol>
+  <symbol id="icon-flag" viewBox="0 0 24 24"><path d="M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"/></symbol>
+  <symbol id="icon-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
+  <symbol id="icon-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+  <symbol id="icon-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+</svg>
+
 <!-- ═══════ HEADER ═══════ -->
 <header class="header">
   <div class="header-inner">
     <div class="header-brand">
-      <div class="header-logo">🛡</div>
+      <div class="header-logo"><svg class="ui-icon"><use href="#icon-shield"></use></svg></div>
       <div>
         <div class="header-title">SilkMoon Bot Detection</div>
         <div class="header-subtitle">Security Operations Center — Real-time Monitoring</div>
@@ -1439,8 +1644,8 @@ body::before { display: none; }
     </div>
     <div class="header-status">
       <div style="display:flex;gap:8px;">
-        <button class="simulate-btn human-btn" onclick="simulateHuman(event)" title="Gửi dữ liệu người thật giả lập">✓ Giả lập Human</button>
-        <button class="simulate-btn" onclick="simulateBot(event)" title="Gửi dữ liệu bot giả lập">🤖 Giả lập Bot</button>
+        <button class="simulate-btn human-btn" onclick="simulateHuman(event)" title="Gửi dữ liệu người thật giả lập">Giả lập Human</button>
+        <button class="simulate-btn" onclick="simulateBot(event)" title="Gửi dữ liệu bot giả lập">Giả lập Bot</button>
       </div>
       <div class="status-indicator">
         <span class="status-dot" id="statusDot"></span>
@@ -1456,7 +1661,7 @@ body::before { display: none; }
 
   <!-- ALERT BANNER -->
   <div class="alert-banner" id="alertBanner">
-    <span class="alert-icon">🚨</span>
+    <span class="alert-icon"><svg class="ui-icon"><use href="#icon-alert"></use></svg></span>
     <span class="alert-text" id="alertText">Bot Activity Detected!</span>
     <span class="alert-time" id="alertTime"></span>
   </div>
@@ -1464,37 +1669,37 @@ body::before { display: none; }
   <!-- KPI ROW -->
   <div class="kpi-grid">
     <div class="kpi-card cyan animate-in">
-      <div class="kpi-icon">📡</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-radio-tower"></use></svg></div>
       <div class="kpi-label">Tổng phiên thu thập</div>
       <div class="kpi-value" id="kpiTotalSessions">0</div>
       <div class="kpi-extra" id="kpiTotalExtra">Buffered events</div>
     </div>
     <div class="kpi-card green animate-in">
-      <div class="kpi-icon">✅</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-user-check"></use></svg></div>
       <div class="kpi-label">Người thật (Human)</div>
       <div class="kpi-value" id="kpiHumanCount">0</div>
       <div class="kpi-extra" id="kpiHumanRate">--</div>
     </div>
     <div class="kpi-card red animate-in">
-      <div class="kpi-icon">🤖</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-bot"></use></svg></div>
       <div class="kpi-label">Bot phát hiện</div>
       <div class="kpi-value" id="kpiBotCount">0</div>
       <div class="kpi-extra" id="kpiBotRate">--</div>
     </div>
     <div class="kpi-card orange animate-in">
-      <div class="kpi-icon">⚠️</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-alert"></use></svg></div>
       <div class="kpi-label">Nghi vấn (Suspect)</div>
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
     </div>
     <div class="kpi-card purple animate-in">
-      <div class="kpi-icon">🕸️</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-network"></use></svg></div>
       <div class="kpi-label">Nút đồ thị GNN</div>
       <div class="kpi-value" id="kpiGraphNodes">0</div>
       <div class="kpi-extra" id="kpiGraphEdges">0 edges</div>
     </div>
     <div class="kpi-card blue animate-in">
-      <div class="kpi-icon">⏱️</div>
+      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-gauge"></use></svg></div>
       <div class="kpi-label">Độ trễ trung bình</div>
       <div class="kpi-value" id="kpiAvgLatency">--</div>
       <div class="kpi-extra">ms / inference</div>
@@ -1512,8 +1717,8 @@ body::before { display: none; }
           Luồng truy cập thời gian thực
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="delete-all-btn" onclick="deleteAllSessions()" title="Xóa tất cả sessions">🗑️ Xóa tất cả</button>
-          <span class="panel-badge badge-live">● LIVE</span>
+          <button class="delete-all-btn" onclick="deleteAllSessions()" title="Xóa tất cả sessions"><svg class="ui-icon"><use href="#icon-trash"></use></svg>Xóa tất cả</button>
+          <span class="panel-badge badge-live">LIVE</span>
           <span class="panel-badge badge-count" id="trafficCount">0 sessions</span>
         </div>
       </div>
@@ -1545,7 +1750,7 @@ body::before { display: none; }
       <!-- MOUSE TRAJECTORY -->
       <div class="panel animate-in">
         <div class="panel-header">
-          <div class="panel-title">🖱️ Quỹ đạo chuột (Mouse Trajectory)</div>
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg>Quỹ đạo chuột (Mouse Trajectory)</div>
         </div>
         <div class="trajectory-canvas-wrapper">
           <canvas id="trajectoryCanvas"></canvas>
@@ -1559,7 +1764,7 @@ body::before { display: none; }
       <!-- RISK GAUGE -->
       <div class="panel animate-in">
         <div class="panel-header">
-          <div class="panel-title">🎯 Điểm rủi ro phiên đang chọn</div>
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-target"></use></svg>Điểm rủi ro phiên đang chọn</div>
         </div>
         <div class="gauge-wrapper">
           <svg class="gauge-svg" viewBox="0 0 160 100">
@@ -1589,7 +1794,7 @@ body::before { display: none; }
   <div class="mid-grid">
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title">📊 Phân bố phân loại</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-column"></use></svg>Phân bố phân loại</div>
       </div>
       <div class="chart-donut-wrapper">
         <canvas id="donutChart"></canvas>
@@ -1597,7 +1802,7 @@ body::before { display: none; }
     </div>
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title">📈 Luồng truy cập theo khoảng thời gian</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-spline"></use></svg>Luồng truy cập theo khoảng thời gian</div>
       </div>
       <div style="padding:1rem 1.35rem;height:220px;">
         <canvas id="timelineChart"></canvas>
@@ -1611,7 +1816,7 @@ body::before { display: none; }
     <!-- MODEL BREAKDOWN -->
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title">🧠 Đóng góp từng mô hình AI</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Đóng góp từng mô hình AI</div>
       </div>
       <div class="model-bars-wrapper" id="modelBars">
         <div class="model-bar">
@@ -1642,7 +1847,7 @@ body::before { display: none; }
     <!-- GRAPH TOPOLOGY (Interactive Visualization) -->
     <div class="panel animate-in" style="grid-column: span 2;">
       <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="panel-title">🕸️ Đồ thị quan hệ GNN (Interactive Graph)</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-network"></use></svg>Đồ thị quan hệ GNN (Interactive Graph)</div>
         <div style="display:flex;gap:6px;align-items:center;">
           <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);display:inline-block;"></span>Device
@@ -1689,7 +1894,7 @@ body::before { display: none; }
     <!-- DETECTION REASONS -->
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title">📋 Lý do phát hiện (Detection Reasons)</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg>Lý do phát hiện (Detection Reasons)</div>
       </div>
       <div class="reasons-list" id="reasonsList">
         <div class="empty-state">Bấm vào phiên Bot để xem lý do phát hiện</div>
@@ -1705,16 +1910,16 @@ body::before { display: none; }
   <div class="drawer-content">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title">🔍 Phân tích chi tiết phiên</div>
+        <div class="drawer-title"><svg class="ui-icon"><use href="#icon-search"></use></svg>Phân tích chi tiết phiên</div>
         <div class="drawer-subtitle" id="drawerSessionId">--</div>
       </div>
-      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+      <button class="drawer-close" onclick="closeDrawer()" title="Đóng"><svg class="ui-icon"><use href="#icon-x"></use></svg></button>
     </div>
     <div class="drawer-body">
 
       <!-- SECTION 1: Overview -->
       <div class="drawer-section">
-        <div class="drawer-section-title">📌 Thông tin phiên</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-pin"></use></svg>Thông tin phiên</div>
         <div class="drawer-grid-2">
           <div class="drawer-field">
             <div class="drawer-field-label">Session ID</div>
@@ -1745,7 +1950,7 @@ body::before { display: none; }
 
       <!-- SECTION 2: AI Verdict -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🤖 Kết luận AI</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-bot"></use></svg>Kết luận AI</div>
         <div class="verdict-hero" id="dVerdictHero">
           <div class="verdict-hero-badge" id="dVerdictBadge">--</div>
           <div class="verdict-hero-prob">
@@ -1763,7 +1968,7 @@ body::before { display: none; }
 
       <!-- SECTION 3: Model Breakdown -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🧠 Phân tích đa mô hình (Ensemble Fusion)</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Phân tích đa mô hình (Ensemble Fusion)</div>
         <div class="drawer-explain">
           Hệ thống kết hợp <strong>3 mô hình AI</strong> độc lập, mỗi mô hình đánh giá khía cạnh khác nhau.
           Trọng số được tự điều chỉnh dựa trên độ tin cậy của từng mô hình.
@@ -1771,7 +1976,7 @@ body::before { display: none; }
 
         <div class="model-detail-card" id="dModelLSTM">
           <div class="model-detail-header">
-            <div class="model-detail-icon">🧬</div>
+            <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-dna"></use></svg></div>
             <div>
               <div class="model-detail-name">LSTM BiGRU — Hành vi chuột</div>
               <div class="model-detail-desc">Phân tích quỹ đạo, tốc độ, gia tốc di chuột. Bot có quỹ đạo thẳng và đều, người có quỹ đạo cong tự nhiên.</div>
@@ -1786,7 +1991,7 @@ body::before { display: none; }
 
         <div class="model-detail-card" id="dModelTab">
           <div class="model-detail-header">
-            <div class="model-detail-icon">📊</div>
+            <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-fingerprint"></use></svg></div>
             <div>
               <div class="model-detail-name">XGBoost — Fingerprint & Môi trường</div>
               <div class="model-detail-desc">Phân tích phần cứng (CPU, RAM, GPU), trình duyệt, plugin, độ phân giải, canvas hash, audio hash, v.v.</div>
@@ -1801,7 +2006,7 @@ body::before { display: none; }
 
         <div class="model-detail-card" id="dModelHeur">
           <div class="model-detail-header">
-            <div class="model-detail-icon">🛡️</div>
+            <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg></div>
             <div>
               <div class="model-detail-name">BotD Heuristic — Kiểm tra tự động</div>
               <div class="model-detail-desc">Kiểm tra WebDriver, Selenium, PhantomJS, Puppeteer, distinctive properties, plugins inconsistency.</div>
@@ -1822,13 +2027,13 @@ body::before { display: none; }
 
       <!-- SECTION 4: Detection Reasons -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🚩 Lý do phát hiện</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-flag"></use></svg>Lý do phát hiện</div>
         <div id="dReasonsList" class="drawer-reasons"></div>
       </div>
 
       <!-- SECTION 5: Mouse Stats -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🖱️ Thống kê hành vi chuột</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg>Thống kê hành vi chuột</div>
         <div class="drawer-grid-3" id="dMouseStats">
           <div class="drawer-stat-card">
             <div class="drawer-stat-value" id="dMouseCount">0</div>
@@ -1859,19 +2064,19 @@ body::before { display: none; }
 
       <!-- SECTION 6: Device Fingerprint -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🖥️ Dấu vân tay thiết bị (Fingerprint)</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-monitor"></use></svg>Dấu vân tay thiết bị (Fingerprint)</div>
         <div class="drawer-grid-2" id="dFingerprintGrid"></div>
       </div>
 
       <!-- SECTION 7: BotD Detectors -->
       <div class="drawer-section">
-        <div class="drawer-section-title">🛡️ BotD Heuristic Detectors</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg>BotD Heuristic Detectors</div>
         <div class="drawer-detectors" id="dDetectorsList"></div>
       </div>
 
       <!-- SECTION 8: Actions -->
       <div class="drawer-section" style="display:flex;gap:10px;justify-content:flex-end;align-items:center;background:rgba(10,14,26,0.6);border-bottom:none">
-        <button class="delete-btn" style="padding:7px 14px;font-size:0.75rem;opacity:0.9" onclick="deleteCurrentDrawerSession()">🗑️ Xóa phiên này</button>
+        <button class="delete-btn drawer-delete-session" style="padding:7px 14px;font-size:0.75rem;opacity:0.9" onclick="deleteCurrentDrawerSession()"><svg class="ui-icon"><use href="#icon-trash"></use></svg>Xóa phiên này</button>
         <button class="delete-all-btn" style="padding:7px 14px;background:rgba(99,117,171,0.12);border-color:var(--border-subtle);color:var(--text-primary)" onclick="closeDrawer()">Đóng hồ sơ</button>
       </div>
 
@@ -1991,7 +2196,7 @@ const VERDICT_COLORS = {
   UNKNOWN: '#8b95b0',
 };
 const NODE_RADIUS = { device: 14, ip: 12, session: 10, target: 9 };
-const NODE_ICONS = { device: '💻', ip: '🌐', session: '📄', target: '🎯' };
+const NODE_ICONS = { device: 'D', ip: 'IP', session: 'S', target: 'T' };
 
 function initForceGraph() {
   const canvas = document.getElementById('graphCanvas');
@@ -2268,7 +2473,7 @@ async function fetchGraphStats() {
     document.getElementById('gFraudRings').textContent = rings;
     if (rings > 0) {
       document.getElementById('gFraudRings').style.color = 'var(--accent-red)';
-      document.getElementById('gFraudLabel').textContent = '⚠ Fraud Ring!';
+      document.getElementById('gFraudLabel').textContent = 'Fraud Ring detected';
       document.getElementById('gFraudLabel').style.color = 'var(--accent-red)';
     } else {
       document.getElementById('gFraudRings').style.color = 'var(--accent-green)';
@@ -2375,7 +2580,7 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
-      <td><span class="verdict-badge ${verdictClass}">${v === 'HUMAN' ? '✓' : v === 'BOT' ? '✕' : '?'} ${v}</span></td>
+      <td><span class="verdict-badge ${verdictClass}">${v}</span></td>
       <td>
         <div class="risk-bar-container">
           <div class="risk-bar-fill" style="width:${probPct}%;background:${barColor}"></div>
@@ -2387,8 +2592,8 @@ function renderTrafficTable() {
       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(tabScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${tabScore}%</span></td>
       <td>
         <div style="display:flex;gap:4px;align-items:center;">
-          <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx});" title="Xem hồ sơ phân tích">🔍 Hồ sơ</button>
-          <button class="delete-btn" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa">✕</button>
+          <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx});" title="Xem hồ sơ phân tích">Hồ sơ</button>
+          <button class="delete-btn" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa"></button>
         </div>
       </td>
     </tr>`;
@@ -2495,7 +2700,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
   hero.className = 'verdict-hero ' + (v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect');
-  document.getElementById('dVerdictBadge').textContent = (v === 'HUMAN' ? '✓ HUMAN' : v === 'BOT' ? '✕ BOT' : '? SUSPECT');
+  document.getElementById('dVerdictBadge').textContent = v;
   document.getElementById('dBotProb').textContent = (prob * 100).toFixed(1) + '%';
   document.getElementById('dBotProb').style.color = v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
   document.getElementById('dConfBar').style.width = (conf * 100).toFixed(0) + '%';
@@ -2567,13 +2772,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 4. Detection Reasons
   const reasonsDiv = document.getElementById('dReasonsList');
   if (reasons.length === 0) {
-    reasonsDiv.innerHTML = `<div class="reason-none">✓ Không phát hiện bất thường nào.</div>`;
+    reasonsDiv.innerHTML = `<div class="reason-none">Không phát hiện bất thường nào.</div>`;
   } else {
     reasonsDiv.innerHTML = reasons.map(r => {
       const reason = String(r);
       const isCrit = reason.toLowerCase().includes('critical') || reason.toLowerCase().includes('webdriver');
       return `<div class="drawer-reason-item ${isCrit ? 'critical' : ''}">
-        <span class="drawer-reason-icon">${isCrit ? '🚨' : '⚠️'}</span>
+        <span class="drawer-reason-icon"></span>
         <span>${escapeHtml(reason)}</span>
       </div>`;
     }).join('');
@@ -2629,7 +2834,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   ];
   detList.innerHTML = detectors.map(d => `
     <div class="detector-badge ${d.flagged ? 'flagged' : 'safe'}" title="${d.desc}">
-      <span>${d.flagged ? '✕' : '✓'}</span>
+      <span class="detector-status-dot"></span>
       <span>${d.name}</span>
       <span style="opacity:0.6;font-size:0.62rem">(${d.flagged ? 'PHÁT HIỆN' : 'HỢP LỆ'})</span>
     </div>
@@ -2664,7 +2869,7 @@ function updateGauge(s) {
   document.getElementById('gaugeValue').textContent = pct.toFixed(1) + '%';
 
   const v = (s.verdict || '').toUpperCase();
-  const label = v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? '⚠ BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
+  const label = v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? 'BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
   document.getElementById('gaugeLabel').textContent = label;
   document.getElementById('gaugeLabel').style.fill =
     v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
@@ -2677,7 +2882,7 @@ function updateReasons(s) {
   if (reasons.length === 0) {
     const v = (s.verdict || '').toUpperCase();
     if (v === 'HUMAN') {
-      container.innerHTML = '<div class="empty-state" style="color:var(--accent-green)">✓ Phiên này an toàn — không phát hiện dấu hiệu bot</div>';
+      container.innerHTML = '<div class="empty-state" style="color:var(--accent-green)">Phiên này an toàn — không phát hiện dấu hiệu bot</div>';
     } else {
       container.innerHTML = '<div class="empty-state">Không có lý do cụ thể</div>';
     }
@@ -2688,7 +2893,7 @@ function updateReasons(s) {
     const reason = String(r);
     const isCrit = reason.toLowerCase().includes('critical') || reason.toLowerCase().includes('webdriver');
     return `<div class="reason-item">
-      <span class="reason-icon ${isCrit ? 'crit' : 'warn'}">${isCrit ? '🚨' : '⚠️'}</span>
+      <span class="reason-icon ${isCrit ? 'crit' : 'warn'}"></span>
       <span>${escapeHtml(reason)}</span>
     </div>`;
   }).join('');
@@ -3033,7 +3238,7 @@ function checkAlerts() {
     const banner = document.getElementById('alertBanner');
     banner.classList.add('show');
     document.getElementById('alertText').textContent =
-      `🚨 Phát hiện ${bots} phiên Bot! Hệ thống đang theo dõi hoạt động đáng ngờ.`;
+      `Phát hiện ${bots} phiên Bot. Hệ thống đang theo dõi hoạt động đáng ngờ.`;
     document.getElementById('alertTime').textContent =
       new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
@@ -3132,7 +3337,7 @@ async function simulateBot(event) {
     setTimeout(() => pollAll(), 500);
   } catch(e) { console.error('Simulate bot error:', e); }
 
-  setTimeout(() => { btn.disabled = false; btn.textContent = '🤖 Giả lập Bot'; }, 2000);
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Giả lập Bot'; }, 2000);
 }
 
 async function simulateHuman(event) {
@@ -3172,7 +3377,7 @@ async function simulateHuman(event) {
     setTimeout(() => pollAll(), 500);
   } catch(e) { console.error('Simulate human error:', e); }
 
-  setTimeout(() => { btn.disabled = false; btn.textContent = '✓ Giả lập Human'; }, 2000);
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Giả lập Human'; }, 2000);
 }
 
 // ──── Enhanced Polling Loop ────
