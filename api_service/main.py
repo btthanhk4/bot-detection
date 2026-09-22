@@ -753,8 +753,26 @@ def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200), _read=D
             "device_count": len(graph_builder.device_map),
             "ip_count": len(graph_builder.ip_map),
             "session_count": len(graph_builder.session_map),
-            "edges_count": len(graph_builder.edges_device_session) + len(graph_builder.edges_session_ip) + len(graph_builder.edges_session_target),
-            "suspected_coordinated_rings": 1 if (len(graph_builder.session_map) > 10 and len(graph_builder.device_map) < len(graph_builder.session_map) * 0.3) else 0,
+            "target_count": len(graph_builder.target_map),
+            "edges_count": (
+                len(graph_builder.edges_device_session)
+                + len(graph_builder.edges_session_ip)
+                + len(graph_builder.edges_session_target)
+            ),
+            "visible_device_count": len(device_items),
+            "visible_ip_count": len(ip_items),
+            "visible_session_count": len(session_items),
+            "visible_target_count": len(target_items),
+            "visible_edges_count": (
+                len(edge_dev_sess) + len(edge_ip_sess) + len(edge_tgt_sess)
+            ),
+            "suspected_coordinated_rings": 1
+            if (
+                len(graph_builder.session_map) > 10
+                and len(graph_builder.device_map)
+                < len(graph_builder.session_map) * 0.3
+            )
+            else 0,
         }
 
     # Build nodes (outside lock)

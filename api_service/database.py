@@ -682,8 +682,10 @@ def get_summary_stats() -> Optional[dict]:
                 stats["humans"] = count
             elif verdict == "BOT":
                 stats["bots"] = count
-            elif verdict == "SUSPECT":
-                stats["suspects"] = count
+            else:
+                # Unknown or legacy verdicts must remain represented so the
+                # category counts always add up to the reported total.
+                stats["suspects"] += count
         return stats
     except Exception as e:
         logger.error(f"[DB] Stats failed: {e}")

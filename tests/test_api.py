@@ -495,6 +495,11 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert 'id="timelineRange"' in res.text
     assert '<option value="1440">24 giờ</option>' in res.text
     assert "?window_minutes=${requestedRange}" in res.text
+    assert "/api/v1/stats/summary" in res.text
+    assert "/api/v1/graph/topology?max_nodes=30" in res.text
+    assert "table-layout: fixed" in res.text
+    assert "new ResizeObserver(resizeCanvas)" in res.text
+    assert "let lastBotCount = null" in res.text
     assert "MAX_TIMELINE_INTERVALS" not in res.text
     assert "suggestedMax: 1" in res.text
     assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
@@ -1026,3 +1031,6 @@ def test_graph_topology_has_no_dangling_edges(client):
     data = res.json()
     node_ids = {node["id"] for node in data["nodes"]}
     assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in data["edges"])
+    assert data["stats"]["visible_session_count"] <= 1
+    assert data["stats"]["visible_edges_count"] == len(data["edges"])
+    assert "target_count" in data["stats"]

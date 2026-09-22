@@ -8,6 +8,7 @@ from api_service.database import (
     _ensure_indexes,
     delete_all_sessions,
     get_recent_results,
+    get_summary_stats,
     get_traffic_timeline,
     is_database_ready,
     save_detection_result,
@@ -271,6 +272,33 @@ def test_traffic_timeline_fills_empty_minutes_and_preserves_large_counts(monkeyp
     }
     assert all(bucket["total"] == 0 for bucket in timeline["buckets"][:-1])
     assert collection.pipeline[0]["$match"]["$or"][0]["created_at"]["$gte"] < current_time
+
+
+def test_summary_counts_unknown_verdicts_as_suspect(monkeypatch):
+    class SummaryCollection:
+        def aggregate(self, _pipeline):
+            return [
+                {"_id": "HUMAN", "count": 2, "avg_probability": 0.1},
+                {"_id": "BOT", "count": 1, "avg_probability": 0.9},
+                {"_id": "SUSPECT", "count": 3, "avg_probability": 0.5},
+                {"_id": None, "count": 4, "avg_probability": None},
+            ]
+
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {"detection_results": SummaryCollection()},
+    )
+
+    summary = get_summary_stats()
+
+    assert summary["total"] == 10
+    assert summary["humans"] == 2
+    assert summary["bots"] == 1
+    assert summary["suspects"] == 7
+    assert (
+        summary["humans"] + summary["bots"] + summary["suspects"]
+        == summary["total"]
+    )
 
 
 def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):

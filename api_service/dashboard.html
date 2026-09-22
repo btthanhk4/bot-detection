@@ -1138,12 +1138,34 @@ body::before { display: none; }
 
 .table-scroll {
   max-height: 470px;
+  overflow: auto;
   scrollbar-color: #d1d5db transparent;
 }
 .table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .table-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 
-.traffic-table { min-width: 960px; }
+.traffic-table {
+  min-width: 1000px;
+  table-layout: fixed;
+}
+.traffic-table th:nth-child(1),
+.traffic-table td:nth-child(1) { width: 96px; }
+.traffic-table th:nth-child(2),
+.traffic-table td:nth-child(2) { width: 132px; }
+.traffic-table th:nth-child(3),
+.traffic-table td:nth-child(3) { width: auto; }
+.traffic-table th:nth-child(4),
+.traffic-table td:nth-child(4) { width: 112px; }
+.traffic-table th:nth-child(5),
+.traffic-table td:nth-child(5) { width: 112px; }
+.traffic-table th:nth-child(6),
+.traffic-table td:nth-child(6) { width: 72px; }
+.traffic-table th:nth-child(7),
+.traffic-table td:nth-child(7) { width: 82px; }
+.traffic-table th:nth-child(8),
+.traffic-table td:nth-child(8) { width: 86px; }
+.traffic-table th:nth-child(9),
+.traffic-table td:nth-child(9) { width: 132px; }
 .traffic-table thead th {
   padding: 10px 12px;
   color: var(--text-muted);
@@ -1167,6 +1189,26 @@ body::before { display: none; }
   color: var(--text-secondary);
   border-bottom-color: rgba(0, 0, 0, 0.06);
   font-size: 12px;
+}
+
+.traffic-table .page-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bottom-grid { align-items: start; }
+
+.graph-scope {
+  padding: 3px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: #fafafa;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .time-text,
@@ -1766,7 +1808,7 @@ body::before { display: none; }
               <th>Chuột</th>
               <th>LSTM</th>
               <th>Tabular</th>
-              <th style="width:40px"></th>
+              <th aria-label="Thao tác"></th>
             </tr>
           </thead>
           <tbody id="trafficBody">
@@ -1889,7 +1931,8 @@ body::before { display: none; }
     <div class="panel animate-in" style="grid-column: span 2;">
       <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
         <div class="panel-title"><svg class="ui-icon"><use href="#icon-network"></use></svg>Đồ thị quan hệ GNN (Interactive Graph)</div>
-        <div style="display:flex;gap:6px;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+          <span class="graph-scope" id="graphScopeLabel">30 phiên gần nhất</span>
           <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);display:inline-block;"></span>Device
           </span>
@@ -1908,22 +1951,22 @@ body::before { display: none; }
         <canvas id="graphCanvas" width="800" height="420" style="width:100%;height:420px;border-radius:0 0 var(--radius) var(--radius);background:rgba(10,14,26,0.6);cursor:grab;"></canvas>
         <div id="graphTooltip" style="display:none;position:absolute;padding:8px 12px;background:rgba(26,31,53,0.95);border:1px solid var(--border-subtle);border-radius:8px;font-size:0.7rem;color:var(--text-primary);pointer-events:none;z-index:20;max-width:260px;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:0.6rem 1rem;">
+      <div class="graph-stats-grid">
         <div class="graph-stat-item">
           <div class="graph-stat-value" id="gDevices">0</div>
-          <div class="graph-stat-label">Thiết bị</div>
+          <div class="graph-stat-label">Thiết bị hiển thị</div>
         </div>
         <div class="graph-stat-item">
           <div class="graph-stat-value" id="gIPs" style="color:var(--accent-green)">0</div>
-          <div class="graph-stat-label">Địa chỉ IP</div>
+          <div class="graph-stat-label">IP hiển thị</div>
         </div>
         <div class="graph-stat-item">
           <div class="graph-stat-value" id="gSessions" style="color:var(--accent-green)">0</div>
-          <div class="graph-stat-label">Phiên</div>
+          <div class="graph-stat-label">Phiên hiển thị</div>
         </div>
         <div class="graph-stat-item">
           <div class="graph-stat-value" id="gEdges" style="color:var(--accent-orange)">0</div>
-          <div class="graph-stat-label">Cạnh liên kết</div>
+          <div class="graph-stat-label">Cạnh hiển thị</div>
         </div>
         <div class="graph-stat-item">
           <div class="graph-stat-value" id="gFraudRings" style="color:var(--accent-green)">0</div>
@@ -2135,6 +2178,7 @@ const POLL_INTERVAL = 3000;
 
 let allSessions = [];
 let trafficTimeline = null;
+let classificationSummary = null;
 const TIMELINE_RANGES = new Set([30, 60, 120, 240, 360, 720, 1440]);
 let selectedTimelineMinutes = 60;
 let timelineRequestVersion = 0;
@@ -2247,12 +2291,35 @@ function initForceGraph() {
   const canvas = document.getElementById('graphCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * (window.devicePixelRatio || 1);
-  canvas.height = rect.height * (window.devicePixelRatio || 1);
-  const W = rect.width, H = rect.height;
-  const dpr = window.devicePixelRatio || 1;
-  ctx.scale(dpr, dpr);
+  let W = 0;
+  let H = 0;
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const nextW = Math.max(1, rect.width);
+    const nextH = Math.max(1, rect.height);
+    const dpr = window.devicePixelRatio || 1;
+    if (nextW === W && nextH === H && canvas.width === Math.round(nextW * dpr)) return;
+
+    const previousW = W;
+    const previousH = H;
+    W = nextW;
+    H = nextH;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    graphNodes.forEach(node => {
+      const radius = NODE_RADIUS[node.type] || 10;
+      const scaledX = previousW > 0 ? (node.x / previousW) * W : W / 2;
+      const scaledY = previousH > 0 ? (node.y / previousH) * H : H / 2;
+      node.x = Math.max(radius + 8, Math.min(W - radius - 8, scaledX));
+      node.y = Math.max(radius + 8, Math.min(H - radius - 8, scaledY));
+    });
+  }
+
+  resizeCanvas();
+  const graphResizeObserver = new ResizeObserver(resizeCanvas);
+  graphResizeObserver.observe(canvas);
 
   // Force simulation
   function simulate() {
@@ -2266,14 +2333,22 @@ function initForceGraph() {
       return;
     }
 
-    // Build adjacency for force
+    // Build adjacency once per frame for force, hover, and label decisions.
     const nodeMap = {};
+    const hoveredNeighbors = new Set();
     graphNodes.forEach((n, i) => { n._i = i; nodeMap[n.id] = n; });
+    graphEdges.forEach(edge => {
+      if (graphHoverNode?.id === edge.source) hoveredNeighbors.add(edge.target);
+      if (graphHoverNode?.id === edge.target) hoveredNeighbors.add(edge.source);
+    });
 
     // Apply forces
-    const k = 0.008; // spring constant
-    const repulsion = 2200;
-    const damping = 0.88;
+    const crowded = graphNodes.length > 36;
+    const k = crowded ? 0.012 : 0.009;
+    const repulsion = crowded ? 1100 : 1800;
+    const damping = 0.84;
+    const centerStrength = crowded ? 0.005 : 0.0025;
+    const targetDistance = crowded ? 68 : 92;
     const centerX = W / 2, centerY = H / 2;
 
     // Repulsion (all pairs)
@@ -2295,7 +2370,7 @@ function initForceGraph() {
       if (!a || !b) return;
       let dx = b.x - a.x, dy = b.y - a.y;
       let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      let force = (dist - 100) * k;
+      let force = (dist - targetDistance) * k;
       let fx = (dx / dist) * force, fy = (dy / dist) * force;
       if (!a._dragging) { a.vx = (a.vx || 0) + fx; a.vy = (a.vy || 0) + fy; }
       if (!b._dragging) { b.vx = (b.vx || 0) - fx; b.vy = (b.vy || 0) - fy; }
@@ -2304,16 +2379,24 @@ function initForceGraph() {
     // Center gravity + apply velocity
     graphNodes.forEach(n => {
       if (n._dragging) return;
-      n.vx = (n.vx || 0) + (centerX - n.x) * 0.001;
-      n.vy = (n.vy || 0) + (centerY - n.y) * 0.001;
-      n.vx *= damping;
-      n.vy *= damping;
+      n.vx = ((n.vx || 0) + (centerX - n.x) * centerStrength) * damping;
+      n.vy = ((n.vy || 0) + (centerY - n.y) * centerStrength) * damping;
+      n.vx = Math.max(-4, Math.min(4, n.vx));
+      n.vy = Math.max(-4, Math.min(4, n.vy));
       n.x += n.vx;
       n.y += n.vy;
-      // Bounds
+
+      // Bounce at the canvas edge instead of accumulating force in a pile.
       const r = NODE_RADIUS[n.type] || 10;
-      n.x = Math.max(r + 5, Math.min(W - r - 5, n.x));
-      n.y = Math.max(r + 5, Math.min(H - r - 5, n.y));
+      const pad = r + 10;
+      if (n.x < pad || n.x > W - pad) {
+        n.x = Math.max(pad, Math.min(W - pad, n.x));
+        n.vx *= -0.35;
+      }
+      if (n.y < pad || n.y > H - pad) {
+        n.y = Math.max(pad, Math.min(H - pad, n.y));
+        n.vy *= -0.35;
+      }
     });
 
     // ── Draw ──
@@ -2352,10 +2435,7 @@ function initForceGraph() {
       }
 
       const isHovered = graphHoverNode && graphHoverNode.id === n.id;
-      const isConnected = graphHoverNode && graphEdges.some(e =>
-        (e.source === graphHoverNode.id && e.target === n.id) ||
-        (e.target === graphHoverNode.id && e.source === n.id)
-      );
+      const isConnected = graphHoverNode && hoveredNeighbors.has(n.id);
       const dimmed = graphHoverNode && !isHovered && !isConnected;
 
       // Glow effect for hovered
@@ -2385,12 +2465,16 @@ function initForceGraph() {
       ctx.textBaseline = 'middle';
       ctx.fillText(NODE_ICONS[n.type] || '●', n.x, n.y);
 
-      // Label
-      if (isHovered || !dimmed) {
+      // Dense graphs stay readable by revealing labels on hover. For small
+      // graphs, keep labels visible as before.
+      if (isHovered || !crowded) {
         ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.1)' : 'rgba(232,236,244,0.7)';
         ctx.font = '9px Inter, sans-serif';
-        ctx.textBaseline = 'top';
-        ctx.fillText(n.label, n.x, n.y + r + 3);
+        const textWidth = ctx.measureText(n.label).width;
+        const labelX = Math.max(textWidth / 2 + 4, Math.min(W - textWidth / 2 - 4, n.x));
+        const drawAbove = n.y + r + 15 > H;
+        ctx.textBaseline = drawAbove ? 'bottom' : 'top';
+        ctx.fillText(n.label, labelX, drawAbove ? n.y - r - 3 : n.y + r + 3);
       }
     });
 
@@ -2439,8 +2523,10 @@ function initForceGraph() {
       html += `<div style="margin-top:2px;color:var(--text-muted);">${conns} kết nối</div>`;
       tooltip.innerHTML = html;
       tooltip.style.display = 'block';
-      tooltip.style.left = (mx + 16) + 'px';
-      tooltip.style.top = (my - 10) + 'px';
+      const tooltipLeft = Math.min(mx + 16, canvas.clientWidth - tooltip.offsetWidth - 8);
+      const tooltipTop = Math.min(my - 10, canvas.clientHeight - tooltip.offsetHeight - 8);
+      tooltip.style.left = Math.max(8, tooltipLeft) + 'px';
+      tooltip.style.top = Math.max(8, tooltipTop) + 'px';
     } else {
       tooltip.style.display = 'none';
     }
@@ -2480,8 +2566,9 @@ function initForceGraph() {
 }
 
 async function fetchGraphStats() {
-  // Fetch topology for visualization
-  const topoData = await fetchJSON(API_BASE + '/api/v1/graph/topology');
+  // Keep the interactive canvas readable while the counters still report the
+  // complete in-memory graph.
+  const topoData = await fetchJSON(API_BASE + '/api/v1/graph/topology?max_nodes=30');
   if (topoData && topoData.nodes) {
     const canvas = document.getElementById('graphCanvas');
     const rect = canvas ? canvas.getBoundingClientRect() : { width: 800, height: 420 };
@@ -2505,12 +2592,15 @@ async function fetchGraphStats() {
 
     // Update stats
     const stats = topoData.stats || {};
-    document.getElementById('gDevices').textContent = stats.device_count || 0;
-    document.getElementById('gIPs').textContent = stats.ip_count || 0;
-    document.getElementById('gSessions').textContent = stats.session_count || 0;
-    document.getElementById('gEdges').textContent = stats.edges_count || 0;
+    document.getElementById('gDevices').textContent = stats.visible_device_count || 0;
+    document.getElementById('gIPs').textContent = stats.visible_ip_count || 0;
+    document.getElementById('gSessions').textContent = stats.visible_session_count || 0;
+    document.getElementById('gEdges').textContent = stats.visible_edges_count || 0;
+    document.getElementById('graphScopeLabel').textContent =
+      `${stats.visible_session_count || 0} phiên gần nhất`;
 
-    const totalNodes = (stats.device_count || 0) + (stats.ip_count || 0) + (stats.session_count || 0);
+    const totalNodes = (stats.device_count || 0) + (stats.ip_count || 0) +
+      (stats.session_count || 0) + (stats.target_count || 0);
     document.getElementById('kpiGraphNodes').textContent = totalNodes;
     document.getElementById('kpiGraphEdges').textContent = (stats.edges_count || 0) + ' edges';
 
@@ -2529,13 +2619,15 @@ async function fetchGraphStats() {
     // Fallback: fetch stats only
     const data = await fetchJSON(API_BASE + '/api/v1/graph/stats');
     if (!data) return;
-    const totalNodes = (data.device_count || 0) + (data.ip_count || 0) + (data.session_count || 0);
+    const totalNodes = (data.device_count || 0) + (data.ip_count || 0) +
+      (data.session_count || 0) + (data.target_count || 0);
     document.getElementById('kpiGraphNodes').textContent = totalNodes;
     document.getElementById('kpiGraphEdges').textContent = (data.edges_count || 0) + ' edges';
-    document.getElementById('gDevices').textContent = data.device_count || 0;
-    document.getElementById('gIPs').textContent = data.ip_count || 0;
-    document.getElementById('gSessions').textContent = data.session_count || 0;
-    document.getElementById('gEdges').textContent = data.edges_count || 0;
+    document.getElementById('graphScopeLabel').textContent = 'Không tải được topology';
+    document.getElementById('gDevices').textContent = '—';
+    document.getElementById('gIPs').textContent = '—';
+    document.getElementById('gSessions').textContent = '—';
+    document.getElementById('gEdges').textContent = '—';
   }
 }
 
@@ -2559,28 +2651,59 @@ async function fetchRecentTelemetry() {
     }
   }
 
-  const totalBuffered = (data && data.total_buffered) ? data.total_buffered : allSessions.length;
-
-  animateValue(document.getElementById('kpiTotalSessions'), totalBuffered);
-  document.getElementById('kpiTotalExtra').textContent = allSessions.length + ' phiên gần nhất';
   document.getElementById('trafficCount').textContent = allSessions.length + ' sessions';
+  updateClassificationKPIs();
+}
 
-  // Compute KPI stats
-  let humans = 0, bots = 0, suspects = 0;
-  allSessions.forEach(s => {
-    const v = (s.verdict || '').toUpperCase();
-    if (v === 'HUMAN') humans++;
-    else if (v === 'BOT') bots++;
-    else suspects++;
-  });
+async function fetchClassificationSummary() {
+  const data = await fetchJSON(API_BASE + '/api/v1/stats/summary');
+  if (!data) return;
 
-  const total = allSessions.length || 1;
+  const total = Number(data.total);
+  const humans = Number(data.humans);
+  const bots = Number(data.bots);
+  const suspects = Number(data.suspects);
+  if (![total, humans, bots, suspects].every(Number.isFinite)) return;
+
+  classificationSummary = {
+    total: Math.max(0, total),
+    humans: Math.max(0, humans),
+    bots: Math.max(0, bots),
+    suspects: Math.max(0, suspects),
+  };
+  updateClassificationKPIs();
+}
+
+function updateClassificationKPIs() {
+  let humans = 0;
+  let bots = 0;
+  let suspects = 0;
+
+  if (classificationSummary) {
+    ({ humans, bots, suspects } = classificationSummary);
+  } else {
+    allSessions.forEach(s => {
+      const verdict = (s.verdict || '').toUpperCase();
+      if (verdict === 'HUMAN') humans++;
+      else if (verdict === 'BOT') bots++;
+      else suspects++;
+    });
+  }
+
+  const total = classificationSummary
+    ? classificationSummary.total
+    : humans + bots + suspects;
+  const denominator = total || 1;
+  animateValue(document.getElementById('kpiTotalSessions'), total);
+  document.getElementById('kpiTotalExtra').textContent = classificationSummary
+    ? 'toàn bộ dữ liệu'
+    : `${allSessions.length} phiên gần nhất`;
   animateValue(document.getElementById('kpiHumanCount'), humans);
-  document.getElementById('kpiHumanRate').textContent = (humans / total * 100).toFixed(1) + '% tỷ lệ';
+  document.getElementById('kpiHumanRate').textContent = (humans / denominator * 100).toFixed(1) + '% tỷ lệ';
   animateValue(document.getElementById('kpiBotCount'), bots);
-  document.getElementById('kpiBotRate').textContent = (bots / total * 100).toFixed(1) + '% tỷ lệ';
+  document.getElementById('kpiBotRate').textContent = (bots / denominator * 100).toFixed(1) + '% tỷ lệ';
   animateValue(document.getElementById('kpiSuspectCount'), suspects);
-  document.getElementById('kpiSuspectRate').textContent = (suspects / total * 100).toFixed(1) + '% tỷ lệ';
+  document.getElementById('kpiSuspectRate').textContent = (suspects / denominator * 100).toFixed(1) + '% tỷ lệ';
 }
 
 // ──── Traffic Table (flicker-free) ────
@@ -2611,6 +2734,18 @@ async function changeTimelineRange(value) {
 }
 
 let _lastTableHTML = '';
+function formatPageLabel(pageUrl) {
+  if (!pageUrl) return '--';
+  try {
+    const parsed = new URL(pageUrl, window.location.origin);
+    return (parsed.pathname || '/') + (parsed.search ? '?…' : '');
+  } catch (_) {
+    const value = String(pageUrl);
+    const queryIndex = value.indexOf('?');
+    return queryIndex >= 0 ? value.slice(0, queryIndex) + '?…' : value;
+  }
+}
+
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
@@ -2644,7 +2779,7 @@ function renderTrafficTable() {
 
     const timeStr = s.received_at ? new Date(s.received_at).toLocaleTimeString('vi-VN', {hour12: false}) : '--';
     const ip = s.client_ip || '--';
-    const page = s.pageUrl ? s.pageUrl.replace(/https?:\/\/[^\/]+/, '') || '/' : '--';
+    const page = formatPageLabel(s.pageUrl);
     const isSelected = s.sessionId === selectedId;
 
     return `<tr class="${rowClass}" data-idx="${idx}" onclick="selectSession(${idx}, false)" style="cursor:pointer;${isSelected ? 'outline:1px solid var(--accent-green)' : ''}" title="Bấm để xem quỹ đạo chuột">
@@ -2927,7 +3062,7 @@ function updateModelBars(s) {
 
   const w = bd.weights_used || {};
   document.getElementById('weightsInfo').textContent =
-    `LSTM: ${((w.w_lstm || 0) * 100).toFixed(0)}% | Tab: ${((w.w_tabular || 0) * 100).toFixed(0)}% | Heur: ${((w.w_heuristic || 0) * 100).toFixed(0)}%`;
+    `LSTM: ${((w.w_lstm || 0) * 100).toFixed(1)}% | Tab: ${((w.w_tabular || 0) * 100).toFixed(1)}% | Heur: ${((w.w_heuristic || 0) * 100).toFixed(1)}%`;
 }
 
 function updateGauge(s) {
@@ -3314,13 +3449,17 @@ function initTimelineChart() {
 function updateCharts() {
   if (!donutChart || !timelineChart) return;
 
-  let humans = 0, bots = 0, suspects = 0;
-  allSessions.forEach(s => {
-    const v = (s.verdict || '').toUpperCase();
-    if (v === 'HUMAN') humans++;
-    else if (v === 'BOT') bots++;
-    else suspects++;
-  });
+  let humans = classificationSummary?.humans || 0;
+  let bots = classificationSummary?.bots || 0;
+  let suspects = classificationSummary?.suspects || 0;
+  if (!classificationSummary) {
+    allSessions.forEach(s => {
+      const verdict = (s.verdict || '').toUpperCase();
+      if (verdict === 'HUMAN') humans++;
+      else if (verdict === 'BOT') bots++;
+      else suspects++;
+    });
+  }
 
   donutChart.data.datasets[0].data = [humans, bots, suspects];
   donutChart.update('none');
@@ -3346,10 +3485,17 @@ function animateValue(el, newVal) {
 }
 
 // ──── Alert Banner ────
-let lastBotCount = 0;
+let lastBotCount = null;
 function checkAlerts() {
   let bots = 0;
   allSessions.forEach(s => { if ((s.verdict || '').toUpperCase() === 'BOT') bots++; });
+
+  // Establish a baseline on page load; historical bot sessions are not a new
+  // real-time alert.
+  if (lastBotCount === null) {
+    lastBotCount = bots;
+    return;
+  }
 
   if (bots > lastBotCount && bots > 0) {
     const banner = document.getElementById('alertBanner');
@@ -3501,6 +3647,7 @@ async function simulateHuman(event) {
 let activePoll = null;
 let nextGraphPollAt = 0;
 let nextTimelinePollAt = 0;
+let nextSummaryPollAt = 0;
 function pollAll() {
   if (activePoll) return activePoll;
   if (document.hidden) return Promise.resolve();
@@ -3509,6 +3656,10 @@ function pollAll() {
   if (now >= nextTimelinePollAt) {
     requests.push(fetchTrafficTimeline());
     nextTimelinePollAt = now + 10000;
+  }
+  if (now >= nextSummaryPollAt) {
+    requests.push(fetchClassificationSummary());
+    nextSummaryPollAt = now + 15000;
   }
   if (now >= nextGraphPollAt) {
     requests.push(fetchGraphStats());
@@ -3536,6 +3687,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     nextGraphPollAt = 0;
     nextTimelinePollAt = 0;
+    nextSummaryPollAt = 0;
     pollAll();
   }
 });

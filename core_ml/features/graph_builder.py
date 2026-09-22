@@ -339,11 +339,13 @@ class ClickFraudGraphBuilder:
             device_cnt = len(self.device_map)
             ip_cnt = len(self.ip_map)
             session_cnt = len(self.session_map)
+            target_cnt = len(self.target_map)
             edges_cnt = len(self.edges_device_session) + len(self.edges_session_ip) + len(self.edges_session_target)
             return {
                 "device_count": device_cnt,
                 "ip_count": ip_cnt,
                 "session_count": session_cnt,
+                "target_count": target_cnt,
                 "edges_count": edges_cnt,
                 "pruned_sessions": self.pruned_sessions,
                 "suspected_coordinated_rings": 1 if (session_cnt > 10 and device_cnt < session_cnt * 0.3) else 0,

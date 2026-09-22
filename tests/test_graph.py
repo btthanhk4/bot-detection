@@ -55,6 +55,7 @@ class TestGraphBuilder:
         assert len(builder.session_map) == 3
         assert len(builder.ip_map) == 2
         assert len(builder.target_map) == 2
+        assert builder.get_stats()["target_count"] == 2
 
         tensors = builder.to_torch_tensors()
         assert tensors["x_dict"]["device"].shape[0] == 2
