@@ -11,7 +11,9 @@ from core_ml.train import (
     deduplicate_real_sessions,
     predict_lstm_sessions,
     publish_model_artifacts,
+    resolve_training_device,
     resolve_training_indices,
+    train_lstm,
 )
 from core_ml.experiments.run_all import (
     experiment_inference_latency,
@@ -137,6 +139,41 @@ def test_training_rejects_one_class_official_test_instead_of_reporting_fake_auc(
 
     with pytest.raises(ValueError, match="too small or imbalanced"):
         resolve_training_indices(labels, splits)
+
+
+def test_training_device_selection_is_explicit(monkeypatch):
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    assert resolve_training_device("auto").type == "cpu"
+    assert resolve_training_device("cpu").type == "cpu"
+    with pytest.raises(RuntimeError, match="CUDA was requested"):
+        resolve_training_device("cuda")
+    with pytest.raises(ValueError, match="auto, cpu, cuda"):
+        resolve_training_device("quantum")
+
+
+def test_lstm_training_keeps_cpu_runtime_supported():
+    from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+
+    model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+    X_train = torch.zeros(4, 24, 8)
+    y_train = torch.tensor([0.0, 1.0, 0.0, 1.0])
+    X_val = torch.ones(2, 24, 8)
+    y_val = torch.tensor([0.0, 1.0])
+
+    train_lstm(
+        model,
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        epochs=1,
+        batch_size=2,
+        patience=1,
+        device="cpu",
+    )
+
+    assert next(model.parameters()).device.type == "cpu"
 
 
 def test_model_artifacts_are_published_as_a_pair(tmp_path):

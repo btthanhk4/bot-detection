@@ -6,7 +6,6 @@ and provides endpoints for telemetry ingestion & graph analysis.
 
 import asyncio
 import collections
-import hashlib
 import ipaddress
 import json
 import logging
@@ -28,6 +27,7 @@ from api_service.config import settings
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.model_bundle import ModelBundleError, verify_model_bundle
 from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
@@ -38,41 +38,6 @@ logger = logging.getLogger("bot_detection.api")
 
 class RequestBodyTooLarge(Exception):
     pass
-
-
-def _file_sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _verify_model_bundle(weights_dir: str, expected_feature_names: list) -> bool:
-    """Verify model hashes and feature contract when a bundle manifest exists."""
-    manifest_path = os.path.join(weights_dir, "model_manifest.json")
-    if not os.path.exists(manifest_path):
-        logger.warning("Model manifest is missing; loading legacy artifacts")
-        return True
-    try:
-        with open(manifest_path, "r", encoding="utf-8") as stream:
-            manifest = json.load(stream)
-        if manifest.get("schema_version") != 1:
-            raise ValueError("unsupported manifest schema")
-        if manifest.get("feature_names") != list(expected_feature_names):
-            raise ValueError("feature schema mismatch")
-        artifacts = manifest.get("artifacts") or {}
-        for filename in ("tabular_model.joblib", "behavioral_lstm.pt"):
-            expected_hash = artifacts.get(filename)
-            artifact_path = os.path.join(weights_dir, filename)
-            if not expected_hash or not os.path.isfile(artifact_path):
-                raise ValueError(f"missing artifact metadata for {filename}")
-            if not secrets.compare_digest(_file_sha256(artifact_path), expected_hash):
-                raise ValueError(f"artifact hash mismatch for {filename}")
-        return True
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        logger.exception("Model bundle verification failed")
-        return False
 
 
 def _reject_non_finite_json(value: str):
@@ -155,7 +120,13 @@ weights_dir = settings.WEIGHTS_DIR
 lstm_weights_path = os.path.join(weights_dir, "behavioral_lstm.pt")
 tabular_weights_path = os.path.join(weights_dir, "tabular_model.joblib")
 tabular_feature_names = list(ENV_FEATURE_NAMES) + list(STATISTICAL_FEATURE_NAMES)
-model_bundle_valid = _verify_model_bundle(weights_dir, tabular_feature_names)
+try:
+    model_manifest = verify_model_bundle(weights_dir, tabular_feature_names)
+    model_bundle_valid = True
+except ModelBundleError:
+    logger.exception("Model bundle verification failed")
+    model_manifest = {}
+    model_bundle_valid = False
 
 lstm_model = MouseTrajectoryLSTM()
 lstm_loaded = model_bundle_valid and lstm_model.load_weights(lstm_weights_path)
@@ -180,6 +151,7 @@ graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 # Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
 _telemetry_buffer_lock = threading.Lock()
+_telemetry_buffer_stats = {"dropped_total": 0}
 _telemetry_flush_lock = threading.Lock()
 _health_cache_lock = threading.Lock()
 _health_cache = {"checked_at": 0.0, "database": False, "inference_ready": False}
@@ -199,11 +171,25 @@ def _hydrate_graph_from_database() -> bool:
         return False
 
     graph_builder.clear()
+    hydrated_count = 0
+    skipped_count = 0
     for event in events:
-        graph_builder.add_telemetry_event(
-            event, ip_address=event.get("client_ip") or "127.0.0.1"
-        )
-    logger.info("Hydrated graph with %d persisted sessions", len(events))
+        try:
+            graph_builder.add_telemetry_event(
+                event, ip_address=event.get("client_ip") or "127.0.0.1"
+            )
+            hydrated_count += 1
+        except Exception:
+            skipped_count += 1
+            logger.exception(
+                "Skipped malformed graph seed event for session %r",
+                event.get("sessionId") if isinstance(event, dict) else None,
+            )
+    logger.info(
+        "Hydrated graph with %d persisted sessions (%d skipped)",
+        hydrated_count,
+        skipped_count,
+    )
     return True
 
 
@@ -236,6 +222,31 @@ def _clear_in_memory_sessions():
         telemetry_buffer.clear()
 
 
+def _record_telemetry_drop(reason: str):
+    with _telemetry_buffer_lock:
+        _telemetry_buffer_stats["dropped_total"] += 1
+        dropped_total = _telemetry_buffer_stats["dropped_total"]
+    logger.warning("Dropped telemetry event (%s); dropped_total=%d", reason, dropped_total)
+
+
+def _buffer_telemetry(data: dict) -> bool:
+    """Append recent telemetry while making bounded-buffer loss observable."""
+    dropped_oldest = False
+    with _telemetry_buffer_lock:
+        if len(telemetry_buffer) >= telemetry_buffer.maxlen:
+            telemetry_buffer.popleft()
+            _telemetry_buffer_stats["dropped_total"] += 1
+            dropped_oldest = True
+            dropped_total = _telemetry_buffer_stats["dropped_total"]
+        telemetry_buffer.append(data)
+    if dropped_oldest:
+        logger.warning(
+            "Telemetry buffer full; dropped oldest event (dropped_total=%d)",
+            dropped_total,
+        )
+    return True
+
+
 def _requeue_buffered_event(data: dict, *, front: bool = True):
     """Put a failed replay back only when doing so cannot evict newer data."""
     with _telemetry_buffer_lock:
@@ -245,7 +256,7 @@ def _requeue_buffered_event(data: dict, *, front: bool = True):
             else:
                 telemetry_buffer.append(data)
             return True
-    logger.warning("Telemetry replay queue filled concurrently; dropping oldest failed event")
+    _record_telemetry_drop("replay queue filled concurrently")
     return False
 
 
@@ -283,6 +294,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                         "Dropping buffered telemetry after %d failed inference attempts",
                         retry_count,
                     )
+                    _record_telemetry_drop("inference retry limit exceeded")
                 continue
 
             data.pop("_replay_attempts", None)
@@ -485,6 +497,12 @@ def health_check():
         "inference_ready": runtime_ready,
         "database": database_ready,
     }
+    with _telemetry_buffer_lock:
+        content["telemetry_buffer"] = {
+            "queued": len(telemetry_buffer),
+            "capacity": telemetry_buffer.maxlen,
+            "dropped_total": _telemetry_buffer_stats["dropped_total"],
+        }
     return JSONResponse(content=content, status_code=200 if content["status"] == "healthy" else 503)
 
 
@@ -609,9 +627,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             except Exception:
                 database_ready = False
         if persistence_failed or not database_ready:
-            with _telemetry_buffer_lock:
-                telemetry_buffer.append(data)
-            buffered = True
+            buffered = _buffer_telemetry(data)
 
     # Only persisted telemetry is eligible for graph aggregation. This keeps
     # stale/foreign heartbeats rejected by MongoDB out of the live topology.

@@ -1,0 +1,8 @@
+# Google Colab already provides a CUDA-enabled PyTorch build. Do not install
+# requirements.txt there because its CPU-only PyTorch pin is for production.
+numpy>=1.26.0
+scipy>=1.13.0
+pandas>=2.2.0
+scikit-learn==1.5.2
+xgboost>=2.1.0,<4
+joblib>=1.4.0

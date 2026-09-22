@@ -46,6 +46,7 @@ from core_ml.features.mouse_features import (
     STATISTICAL_FEATURE_NAMES,
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+from core_ml.model_bundle import file_sha256
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 # Reproducibility
@@ -53,17 +54,25 @@ SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 
 
-def _file_sha256(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def resolve_training_device(requested: str = "auto") -> torch.device:
+    """Resolve an explicit training device without silently ignoring CUDA requests."""
+    normalized = str(requested or "auto").strip().lower()
+    if normalized == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if normalized == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested but no CUDA-enabled PyTorch runtime is available")
+        return torch.device("cuda")
+    if normalized == "cpu":
+        return torch.device("cpu")
+    raise ValueError("Training device must be one of: auto, cpu, cuda")
 
 
 def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dict:
@@ -151,8 +160,8 @@ def publish_model_artifacts(
             "created_at": datetime.now(timezone.utc).isoformat(),
             "feature_names": list(feature_names or []),
             "artifacts": {
-                "tabular_model.joblib": _file_sha256(staged_paths[0]),
-                "behavioral_lstm.pt": _file_sha256(staged_paths[1]),
+                "tabular_model.joblib": file_sha256(staged_paths[0]),
+                "behavioral_lstm.pt": file_sha256(staged_paths[1]),
             },
             "training": training_metadata or {},
         }
@@ -290,9 +299,13 @@ def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.nda
 
 
 def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
-               epochs=30, batch_size=32, lr=0.002, patience=7):
+               epochs=30, batch_size=32, lr=0.002, patience=7, device="auto"):
     """Train LSTM with early stopping and LR scheduling."""
-    print("--> Training Behavioral BiLSTM Model...")
+    training_device = resolve_training_device(device)
+    lstm_model.to(training_device)
+    X_val_device = X_val.to(training_device)
+    y_val_device = y_val.to(training_device)
+    print(f"--> Training Behavioral BiLSTM Model on {training_device.type.upper()}...")
 
     train_dataset = TensorDataset(X_train, y_train)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
@@ -309,6 +322,8 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
     for epoch in range(epochs):
         total_loss = 0.0
         for batch_x, batch_y in train_loader:
+            batch_x = batch_x.to(training_device)
+            batch_y = batch_y.to(training_device)
             optimizer.zero_grad()
             preds = lstm_model(batch_x)
             bce_loss = criterion(preds.squeeze(-1), batch_y)
@@ -325,8 +340,8 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
         # Validation
         lstm_model.eval()
         with torch.no_grad():
-            val_preds = lstm_model(X_val).squeeze(-1)
-            val_loss = criterion(val_preds, y_val).item()
+            val_preds = lstm_model(X_val_device).squeeze(-1)
+            val_loss = criterion(val_preds, y_val_device).item()
         lstm_model.train()
 
         # Early stopping
@@ -442,9 +457,11 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def main(dataset_root=None):
+def main(dataset_root=None, device="auto"):
+    training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
+    print(f"  TRAINING DEVICE: {training_device.type.upper()}")
     print("=" * 60)
 
     weights_dir = os.path.join(os.path.dirname(__file__), "weights")
@@ -634,7 +651,7 @@ def main(dataset_root=None):
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
         if len(train_idx) and len(val_idx):
             train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
-                       epochs=30, patience=7)
+                       epochs=30, patience=7, device=training_device.type)
             lstm_trained = True
         else:
             print("    Insufficient session-separated chunks; leaving LSTM untrained.")
@@ -702,11 +719,12 @@ def main(dataset_root=None):
     }
     publish_model_artifacts(
         tabular_model,
-        lstm_model,
+        lstm_model.cpu(),
         weights_dir,
         feature_names=feature_names,
         training_metadata={
             "seed": SEED,
+            "training_device": training_device.type,
             "evaluation_threshold": 0.5,
             "dataset": dataset_audit,
             "metrics": serializable_metrics,
@@ -721,5 +739,6 @@ def main(dataset_root=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train bot detection models")
     parser.add_argument("--dataset-root", default=os.getenv("BOT_DATASET_ROOT", ""))
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     args = parser.parse_args()
-    main(dataset_root=args.dataset_root)
+    main(dataset_root=args.dataset_root, device=args.device)

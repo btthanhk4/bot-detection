@@ -29,7 +29,7 @@ READ_HEADERS = {"X-Read-Token": "test-read-token"}
 
 
 def test_model_bundle_verification_detects_tampering(tmp_path):
-    from api_service.main import _verify_model_bundle
+    from core_ml.model_bundle import ModelBundleError, verify_model_bundle
 
     artifacts = {}
     for filename, content in (
@@ -47,9 +47,17 @@ def test_model_bundle_verification_detects_tampering(tmp_path):
         encoding="utf-8",
     )
 
-    assert _verify_model_bundle(str(tmp_path), ["feature-a"]) is True
+    assert verify_model_bundle(str(tmp_path), ["feature-a"])["schema_version"] == 1
     (tmp_path / "behavioral_lstm.pt").write_bytes(b"tampered")
-    assert _verify_model_bundle(str(tmp_path), ["feature-a"]) is False
+    with pytest.raises(ModelBundleError, match="hash mismatch"):
+        verify_model_bundle(str(tmp_path), ["feature-a"])
+
+
+def test_model_bundle_requires_manifest_by_default(tmp_path):
+    from core_ml.model_bundle import ModelBundleError, verify_model_bundle
+
+    with pytest.raises(ModelBundleError, match="manifest is missing"):
+        verify_model_bundle(str(tmp_path), [])
 
 
 def test_index_endpoint(client):
@@ -69,6 +77,8 @@ def test_health_endpoint(client):
     assert "models_loaded" in data
     assert "database" in data
     assert "inference_ready" in data
+    assert data["telemetry_buffer"]["capacity"] > 0
+    assert data["telemetry_buffer"]["dropped_total"] >= 0
 
 
 def test_health_detects_runtime_inference_failure(client, monkeypatch):
@@ -135,6 +145,27 @@ def test_graph_can_be_hydrated_from_persisted_sessions(monkeypatch):
         assert set(graph_builder.session_map) == {"restored-session"}
         assert set(graph_builder.device_map) == {"restored-device"}
         assert set(graph_builder.ip_map) == {"203.0.113.10"}
+    finally:
+        graph_builder.clear()
+
+
+def test_graph_hydration_skips_one_malformed_seed_without_aborting(monkeypatch):
+    from api_service.main import _hydrate_graph_from_database, graph_builder
+
+    events = [
+        None,
+        {
+            "sessionId": "valid-after-malformed",
+            "visitorId": "device",
+            "client_ip": "203.0.113.11",
+            "mouse": {"records": []},
+        },
+    ]
+    monkeypatch.setattr("api_service.database.get_graph_seed_events", lambda limit: events)
+
+    try:
+        assert _hydrate_graph_from_database() is True
+        assert "valid-after-malformed" in graph_builder.session_map
     finally:
         graph_builder.clear()
 
@@ -642,17 +673,48 @@ def test_poisoned_replay_does_not_block_later_events(monkeypatch):
 
 
 def test_failed_replay_does_not_evict_newer_event_when_buffer_refills():
-    from api_service.main import _requeue_buffered_event, telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import (
+        _requeue_buffered_event,
+        _telemetry_buffer_stats,
+        telemetry_buffer,
+        _telemetry_buffer_lock,
+    )
 
     newer_events = [{"sessionId": f"new-{index}"} for index in range(telemetry_buffer.maxlen)]
     with _telemetry_buffer_lock:
         telemetry_buffer.clear()
         telemetry_buffer.extend(newer_events)
 
+    dropped_before = _telemetry_buffer_stats["dropped_total"]
     assert _requeue_buffered_event({"sessionId": "old-failed"}) is False
+    assert _telemetry_buffer_stats["dropped_total"] == dropped_before + 1
 
     with _telemetry_buffer_lock:
         assert list(telemetry_buffer) == newer_events
+        telemetry_buffer.clear()
+
+
+def test_full_telemetry_buffer_reports_oldest_event_drop():
+    from api_service.main import (
+        _buffer_telemetry,
+        _telemetry_buffer_stats,
+        telemetry_buffer,
+        _telemetry_buffer_lock,
+    )
+
+    existing = [{"sessionId": f"old-{index}"} for index in range(telemetry_buffer.maxlen)]
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.extend(existing)
+        dropped_before = _telemetry_buffer_stats["dropped_total"]
+
+    assert _buffer_telemetry({"sessionId": "newest"}) is True
+
+    with _telemetry_buffer_lock:
+        assert len(telemetry_buffer) == telemetry_buffer.maxlen
+        assert telemetry_buffer[0]["sessionId"] == "old-1"
+        assert telemetry_buffer[-1]["sessionId"] == "newest"
+        assert _telemetry_buffer_stats["dropped_total"] == dropped_before + 1
         telemetry_buffer.clear()
 
 

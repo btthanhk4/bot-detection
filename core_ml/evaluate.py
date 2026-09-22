@@ -16,13 +16,13 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from api_service.main import _verify_model_bundle
 from core_ml.dataset.loader import load_real_dataset
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.model_bundle import verify_model_bundle
 from core_ml.train import (
     assign_real_session_splits,
     deduplicate_real_sessions,
@@ -62,18 +62,9 @@ def classification_metrics(labels, probabilities, threshold: float) -> dict:
     }
 
 
-def _load_manifest(weights_dir: str) -> dict:
-    manifest_path = os.path.join(weights_dir, "model_manifest.json")
-    with open(manifest_path, "r", encoding="utf-8") as stream:
-        return json.load(stream)
-
-
 def _load_detector(weights_dir: str, threshold: float) -> tuple[EnsembleBotDetector, dict]:
     feature_names = list(ENV_FEATURE_NAMES) + list(STATISTICAL_FEATURE_NAMES)
-    if not _verify_model_bundle(weights_dir, feature_names):
-        raise RuntimeError("Model bundle verification failed")
-
-    manifest = _load_manifest(weights_dir)
+    manifest = verify_model_bundle(weights_dir, feature_names)
     tabular = TabularBotClassifier()
     lstm = MouseTrajectoryLSTM()
     if not tabular.load(
