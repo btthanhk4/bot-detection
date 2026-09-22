@@ -909,14 +909,14 @@ body::before {
   --accent-cyan: #2563eb;
   --accent-blue: #2563eb;
   --accent-purple: #2563eb;
-  --accent-green: #2563eb;
+  --accent-green: #16a34a;
   --accent-orange: #d97706;
   --accent-red: #dc2626;
   --accent-yellow: #d97706;
 
   --gradient-hero: #f5f6f8;
   --gradient-cyan: #2563eb;
-  --gradient-green: #2563eb;
+  --gradient-green: #16a34a;
   --gradient-red: #dc2626;
   --gradient-orange: #d97706;
   --gradient-purple: #2563eb;
@@ -1136,9 +1136,10 @@ body::before { display: none; }
 .traffic-table tbody tr,
 .traffic-table tbody tr.row-bot,
 .traffic-table tbody tr.row-suspect { background: transparent; }
+.traffic-table tbody tr { cursor: default; }
 
 .traffic-table tbody tr:hover,
-.traffic-table tbody tr.row-bot:hover { background: #f9fafb; }
+.traffic-table tbody tr.row-bot:hover { background: #f9fafb; cursor: default; }
 
 .traffic-table tbody td {
   padding: 11px 12px;
@@ -1154,7 +1155,7 @@ body::before { display: none; }
 .verdict-badge {
   position: relative;
   padding: 3px 7px;
-  border-radius: 4px;
+  border-radius: 999px;
   font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 600;
@@ -1171,9 +1172,9 @@ body::before { display: none; }
 }
 
 .verdict-human {
-  color: var(--accent-blue);
-  background: rgba(37, 99, 235, 0.06);
-  border-color: rgba(37, 99, 235, 0.22);
+  color: var(--accent-green);
+  background: rgba(22, 163, 74, 0.07);
+  border-color: rgba(22, 163, 74, 0.24);
 }
 
 .verdict-bot {
@@ -1352,8 +1353,8 @@ body::before { display: none; }
 .verdict-hero.human { background: rgba(37, 99, 235, 0.04); border-color: rgba(37, 99, 235, 0.2); }
 .verdict-hero.bot { background: rgba(220, 38, 38, 0.04); border-color: rgba(220, 38, 38, 0.2); }
 .verdict-hero.suspect { background: rgba(217, 119, 6, 0.05); border-color: rgba(217, 119, 6, 0.22); }
-.verdict-hero-badge { border-radius: 4px; font-size: 15px; font-weight: 600; }
-.verdict-hero.human .verdict-hero-badge { color: var(--accent-blue); background: rgba(37, 99, 235, 0.07); }
+.verdict-hero-badge { border-radius: 999px; font-size: 15px; font-weight: 600; }
+.verdict-hero.human .verdict-hero-badge { color: var(--accent-green); background: rgba(22, 163, 74, 0.08); }
 .verdict-hero.bot .verdict-hero-badge { color: var(--accent-red); background: rgba(220, 38, 38, 0.06); }
 .verdict-hero.suspect .verdict-hero-badge { color: var(--accent-orange); background: rgba(217, 119, 6, 0.07); }
 .verdict-prob-value { font-weight: 600; }
@@ -1832,12 +1833,12 @@ body::before { display: none; }
         <div class="model-bar">
           <span class="model-bar-label">LSTM BiGRU</span>
           <div class="model-bar-track"><div class="model-bar-fill" id="barLSTM" style="width:0%;background:var(--gradient-cyan)"></div></div>
-          <span class="model-bar-value" style="color:var(--accent-cyan)" id="valLSTM">--</span>
+          <span class="model-bar-value" style="color:var(--accent-green)" id="valLSTM">--</span>
         </div>
         <div class="model-bar">
           <span class="model-bar-label">XGBoost</span>
           <div class="model-bar-track"><div class="model-bar-fill" id="barTabular" style="width:0%;background:var(--gradient-purple)"></div></div>
-          <span class="model-bar-value" style="color:var(--accent-purple)" id="valTabular">--</span>
+          <span class="model-bar-value" style="color:var(--accent-green)" id="valTabular">--</span>
         </div>
         <div class="model-bar">
           <span class="model-bar-label">Heuristic</span>
@@ -1883,11 +1884,11 @@ body::before { display: none; }
           <div class="graph-stat-label">Thiết bị</div>
         </div>
         <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gIPs" style="color:var(--accent-blue)">0</div>
+          <div class="graph-stat-value" id="gIPs" style="color:var(--accent-green)">0</div>
           <div class="graph-stat-label">Địa chỉ IP</div>
         </div>
         <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gSessions" style="color:var(--accent-purple)">0</div>
+          <div class="graph-stat-value" id="gSessions" style="color:var(--accent-green)">0</div>
           <div class="graph-stat-label">Phiên</div>
         </div>
         <div class="graph-stat-item">
@@ -2586,7 +2587,7 @@ function renderTrafficTable() {
     const page = s.pageUrl ? s.pageUrl.replace(/https?:\/\/[^\/]+/, '') || '/' : '--';
     const isSelected = s.sessionId === selectedId;
 
-    return `<tr class="${rowClass}" data-idx="${idx}" onclick="selectSession(${idx})" style="cursor:pointer;${isSelected ? 'outline:1px solid var(--accent-cyan)' : ''}" title="Bấm để xem phân tích chi tiết">
+    return `<tr class="${rowClass}" data-idx="${idx}" style="${isSelected ? 'outline:1px solid var(--accent-green)' : ''}">
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
@@ -2597,12 +2598,12 @@ function renderTrafficTable() {
         </div>
         <div class="risk-pct" style="color:${barColor}">${probPct}%</div>
       </td>
-      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${mousePoints > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)'}">${mousePoints}</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${mousePoints > 0 ? 'var(--accent-green)' : 'var(--text-muted)'}">${mousePoints}</span></td>
       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(lstmScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${lstmScore}%</span></td>
       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(tabScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${tabScore}%</span></td>
       <td>
         <div style="display:flex;gap:4px;align-items:center;">
-          <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx});" title="Xem hồ sơ phân tích">Hồ sơ</button>
+          <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx}, true);" title="Xem hồ sơ phân tích">Hồ sơ</button>
           <button class="delete-btn" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa"></button>
         </div>
       </td>
@@ -2617,7 +2618,7 @@ function renderTrafficTable() {
 }
 
 // ──── Session Selection ────
-async function selectSession(idx) {
+async function selectSession(idx, openDetails = false) {
   const session = allSessions[idx];
   if (!session) return;
   selectedSession = session;
@@ -2626,7 +2627,7 @@ async function selectSession(idx) {
   // Highlight selected row
   document.querySelectorAll('.traffic-table tbody tr').forEach(r => r.style.outline = 'none');
   const row = document.querySelector(`tr[data-idx="${idx}"]`);
-  if (row) row.style.outline = '1px solid var(--accent-cyan)';
+  if (row) row.style.outline = '1px solid var(--accent-green)';
 
   updateModelBars(session);
   updateGauge(session);
@@ -2643,8 +2644,8 @@ async function selectSession(idx) {
   if (selectionVersion !== sessionSelectionVersion || selectedSession?.sessionId !== session.sessionId) return;
   drawTrajectory(session, rawMouse);
 
-  // Open drawer with comprehensive details
-  openSessionDrawer(idx, rawMouse, session, selectionVersion);
+  // Open details only from the explicit profile button.
+  if (openDetails) openSessionDrawer(idx, rawMouse, session, selectionVersion);
 }
 
 function closeDrawer() {
