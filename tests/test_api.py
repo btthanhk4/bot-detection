@@ -490,6 +490,10 @@ def test_get_bot_collector_sdk(client):
 def test_dashboard_uses_only_real_mouse_trajectory(client):
     res = client.get("/dashboard")
     assert res.status_code == 200
+    assert "<title>DATACAT</title>" in res.text
+    assert "/api/v1/traffic/timeline" in res.text
+    assert "MAX_TIMELINE_INTERVALS" not in res.text
+    assert "suggestedMax: 1" in res.text
     assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
     assert "sessionSelectionVersion" in res.text
     assert "models.tabular && models.lstm" in res.text
@@ -509,6 +513,38 @@ def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Database query failed"
+
+
+def test_traffic_timeline_returns_fixed_one_hour_window(client, monkeypatch):
+    timeline = {
+        "window_start": 1_000,
+        "window_end": 3_601_000,
+        "bucket_minutes": 1,
+        "buckets": [
+            {"start": 1_000, "human": 700, "suspect": 200, "bot": 100, "total": 1000}
+        ],
+    }
+    monkeypatch.setattr(
+        "api_service.database.get_traffic_timeline",
+        lambda window_minutes, bucket_minutes: timeline,
+    )
+
+    response = client.get("/api/v1/traffic/timeline", headers=READ_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == timeline
+
+
+def test_traffic_timeline_reports_database_query_failure(client, monkeypatch):
+    monkeypatch.setattr(
+        "api_service.database.get_traffic_timeline",
+        lambda window_minutes, bucket_minutes: None,
+    )
+
+    response = client.get("/api/v1/traffic/timeline", headers=READ_HEADERS)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Traffic timeline query failed"
 
 
 def test_summary_reports_database_query_failure(client, monkeypatch):
@@ -561,6 +597,7 @@ def test_telemetry_requires_visitor_id(client):
 def test_monitoring_endpoints_require_read_token(client):
     assert client.get("/api/v1/graph/stats").status_code == 401
     assert client.get("/api/v1/telemetry/recent").status_code == 401
+    assert client.get("/api/v1/traffic/timeline").status_code == 401
 
 
 def test_oversized_payload_is_rejected(client):

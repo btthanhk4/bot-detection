@@ -694,6 +694,17 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
     return {"total_buffered": total, "returned": len(results), "sessions": results}
 
 
+@app.get("/api/v1/traffic/timeline")
+def get_traffic_timeline(_read=Depends(require_read_access)):
+    """Return one-minute session counts for the latest 60-minute window."""
+    from api_service.database import get_traffic_timeline as query_traffic_timeline
+
+    timeline = query_traffic_timeline(window_minutes=60, bucket_minutes=1)
+    if timeline is None:
+        raise HTTPException(status_code=503, detail="Traffic timeline query failed")
+    return timeline
+
+
 @app.get("/api/v1/graph/stats")
 def get_graph_stats(_read=Depends(require_read_access)):
     """

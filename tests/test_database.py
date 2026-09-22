@@ -8,6 +8,7 @@ from api_service.database import (
     _ensure_indexes,
     delete_all_sessions,
     get_recent_results,
+    get_traffic_timeline,
     is_database_ready,
     save_detection_result,
 )
@@ -224,6 +225,51 @@ def test_recent_results_falls_back_to_created_time_for_legacy_null_update(monkey
     results = get_recent_results()
 
     assert results[0]["received_at"] == int(created_at.timestamp() * 1000)
+
+
+def test_traffic_timeline_fills_empty_minutes_and_preserves_large_counts(monkeypatch):
+    from datetime import datetime, timezone
+
+    current_time = datetime(2026, 9, 22, 16, 45, 30, tzinfo=timezone.utc)
+    active_bucket = int(
+        datetime(2026, 9, 22, 16, 45, tzinfo=timezone.utc).timestamp() * 1000
+    )
+
+    class TimelineCollection:
+        def __init__(self):
+            self.pipeline = None
+
+        def aggregate(self, pipeline, allowDiskUse=False):
+            self.pipeline = pipeline
+            assert allowDiskUse is False
+            return [
+                {
+                    "_id": active_bucket,
+                    "total": 1000,
+                    "human": 700,
+                    "bot": 100,
+                }
+            ]
+
+    collection = TimelineCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {"detection_results": collection},
+    )
+
+    timeline = get_traffic_timeline(now=current_time)
+
+    assert timeline["bucket_minutes"] == 1
+    assert len(timeline["buckets"]) == 60
+    assert timeline["buckets"][-1] == {
+        "start": active_bucket,
+        "human": 700,
+        "suspect": 200,
+        "bot": 100,
+        "total": 1000,
+    }
+    assert all(bucket["total"] == 0 for bucket in timeline["buckets"][:-1])
+    assert collection.pipeline[0]["$match"]["$or"][0]["created_at"]["$gte"] < current_time
 
 
 def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):

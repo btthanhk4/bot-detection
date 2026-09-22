@@ -172,6 +172,12 @@ def _ensure_indexes(db):
         (db["detection_results"], "sessionId_1", [("sessionId", 1)], {"unique": True}),
         (db["detection_results"], "verdict_1", [("verdict", 1)], {}),
         (db["detection_results"], "visitorId_1", [("visitorId", 1)], {}),
+        (
+            db["detection_results"],
+            "created_at_1_verdict_1",
+            [("created_at", 1), ("verdict", 1)],
+            {},
+        ),
         (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {"expireAfterSeconds": RETENTION_SECONDS}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
     ]
@@ -476,6 +482,114 @@ def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
         return results
     except Exception as e:
         logger.error(f"[DB] Query failed: {e}")
+        return None
+
+
+def get_traffic_timeline(
+    window_minutes: int = 60,
+    bucket_minutes: int = 1,
+    now: Optional[datetime] = None,
+) -> Optional[dict]:
+    """Aggregate newly-created sessions into fixed UTC time buckets."""
+    db = get_db()
+    if db is None:
+        return None
+
+    try:
+        window_minutes = max(1, min(int(window_minutes), 1440))
+        bucket_minutes = max(1, min(int(bucket_minutes), 60))
+        bucket_count = max(1, math.ceil(window_minutes / bucket_minutes))
+        bucket_ms = bucket_minutes * 60_000
+
+        current_time = now or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        now_ms = int(current_time.timestamp() * 1000)
+        window_end_ms = ((now_ms // bucket_ms) + 1) * bucket_ms
+        window_start_ms = window_end_ms - bucket_count * bucket_ms
+        window_start = datetime.fromtimestamp(window_start_ms / 1000, timezone.utc)
+        window_end = datetime.fromtimestamp(window_end_ms / 1000, timezone.utc)
+
+        # created_at is server-generated when a session first appears, so an
+        # active session is counted once instead of moving between buckets on
+        # every heartbeat. updated_at is only a compatibility fallback.
+        pipeline = [
+            {
+                "$match": {
+                    "$or": [
+                        {"created_at": {"$gte": window_start, "$lt": window_end}},
+                        {
+                            "created_at": None,
+                            "updated_at": {"$gte": window_start, "$lt": window_end},
+                        },
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "event_time": {"$ifNull": ["$created_at", "$updated_at"]},
+                    "verdict": {"$toUpper": {"$ifNull": ["$verdict", "SUSPECT"]}},
+                }
+            },
+            {
+                "$project": {
+                    "bucket_start": {
+                        "$subtract": [
+                            {"$toLong": "$event_time"},
+                            {"$mod": [{"$toLong": "$event_time"}, bucket_ms]},
+                        ]
+                    },
+                    "verdict": 1,
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$bucket_start",
+                    "total": {"$sum": 1},
+                    "human": {
+                        "$sum": {"$cond": [{"$eq": ["$verdict", "HUMAN"]}, 1, 0]}
+                    },
+                    "bot": {
+                        "$sum": {"$cond": [{"$eq": ["$verdict", "BOT"]}, 1, 0]}
+                    },
+                }
+            },
+            {"$sort": {"_id": 1}},
+        ]
+
+        counts = {}
+        for row in db["detection_results"].aggregate(pipeline, allowDiskUse=False):
+            bucket_start = int(row.get("_id", 0))
+            if bucket_start < window_start_ms or bucket_start >= window_end_ms:
+                continue
+            total = max(0, int(row.get("total", 0)))
+            human = max(0, int(row.get("human", 0)))
+            bot = max(0, int(row.get("bot", 0)))
+            suspect = max(0, total - human - bot)
+            counts[bucket_start] = {
+                "human": human,
+                "suspect": suspect,
+                "bot": bot,
+                "total": total,
+            }
+
+        buckets = []
+        for index in range(bucket_count):
+            bucket_start = window_start_ms + index * bucket_ms
+            values = counts.get(
+                bucket_start,
+                {"human": 0, "suspect": 0, "bot": 0, "total": 0},
+            )
+            buckets.append({"start": bucket_start, **values})
+
+        return {
+            "window_start": window_start_ms,
+            "window_end": window_end_ms,
+            "bucket_minutes": bucket_minutes,
+            "buckets": buckets,
+        }
+    except Exception as e:
+        logger.error(f"[DB] Traffic timeline query failed: {e}")
         return None
 
 
