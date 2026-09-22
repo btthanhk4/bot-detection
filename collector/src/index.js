@@ -23,6 +23,10 @@ export class BotCollector {
     this.sequence = 0;
     this.sendPromise = null;
     this.abortControllers = new Set();
+    this.retryTimer = null;
+    this.pendingRetry = null;
+    this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
+    this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
   }
 
@@ -82,6 +86,7 @@ export class BotCollector {
     this.timer = null;
     this.initPromise = null;
     this.sendPromise = null;
+    this.clearPendingRetry();
     for (const controller of this.abortControllers) controller.abort();
     this.abortControllers.clear();
     if (typeof window !== 'undefined') {
@@ -147,6 +152,58 @@ export class BotCollector {
     }
   }
 
+  clearPendingRetry() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.pendingRetry = null;
+  }
+
+  scheduleRetry(body, lifecycleVersion, attempt = 1) {
+    if (
+      this.destroyed ||
+      lifecycleVersion !== this.lifecycleVersion ||
+      attempt > this.maxRetryAttempts
+    ) return;
+
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.pendingRetry = { body, lifecycleVersion, attempt };
+    const delay = this.retryBaseDelay * Math.pow(2, attempt - 1);
+    this.retryTimer = setTimeout(async () => {
+      this.retryTimer = null;
+      const pending = this.pendingRetry;
+      if (!pending || this.destroyed || pending.lifecycleVersion !== this.lifecycleVersion) return;
+
+      const sent = await this.transmitTelemetry(pending.body, 'retry');
+      if (sent) {
+        this.pendingRetry = null;
+      } else {
+        this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1);
+      }
+    }, delay);
+  }
+
+  async transmitTelemetry(body, action) {
+    try {
+      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        // text/plain is CORS-safelisted, so a cross-origin unload beacon does
+        // not depend on an asynchronous preflight that the browser may cancel.
+        const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
+        const success = navigator.sendBeacon(this.endpointUrl, blob);
+        if (success) return true;
+      }
+
+      const res = await this.fetchWithTimeout(this.endpointUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: action === 'pagehide',
+      });
+      return res.ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async _sendTelemetry(action, lifecycleVersion) {
     try {
       const payload = await this.getPayload(action);
@@ -172,21 +229,15 @@ export class BotCollector {
         body = JSON.stringify(payload);
       }
 
-      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-        // text/plain is CORS-safelisted, so a cross-origin unload beacon does
-        // not depend on an asynchronous preflight that the browser may cancel.
-        const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
-        const success = navigator.sendBeacon(this.endpointUrl, blob);
-        if (success) return true;
+      const sent = await this.transmitTelemetry(body, action);
+      if (sent && action !== 'pagehide') {
+        this.clearPendingRetry();
+      } else if (!sent && action !== 'pagehide') {
+        // Heartbeats are cumulative snapshots. Keeping only the latest failed
+        // body bounds memory while allowing transient network failures to heal.
+        this.scheduleRetry(body, lifecycleVersion);
       }
-
-      const res = await this.fetchWithTimeout(this.endpointUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: action === 'pagehide',
-      });
-      return res.ok;
+      return sent;
     } catch (e) {
       return false;
     }

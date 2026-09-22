@@ -100,8 +100,24 @@ jobs:
 
             deployed_marker=".git/bot-detection-deployed-sha"
             previous_sha="$(cat "$deployed_marker" 2>/dev/null || git rev-parse HEAD)"
+            deployment_started=0
+            rollback_on_error() {
+              status=$?
+              trap - EXIT
+              if [ "$status" -ne 0 ] && [ "$deployment_started" -eq 1 ]; then
+                set +e
+                echo "Deployment failed; rolling back to $previous_sha"
+                git checkout --detach "$previous_sha"
+                docker compose up -d --build --remove-orphans
+                docker compose ps
+              fi
+              exit "$status"
+            }
+            trap rollback_on_error EXIT
+
             git fetch --prune origin main
             git cat-file -e "${DEPLOY_SHA}^{commit}"
+            deployment_started=1
             git checkout --detach "$DEPLOY_SHA"
 
             export BOT_ADMIN_TOKEN
@@ -115,6 +131,7 @@ jobs:
               if printf '%s' "$health" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
                 echo "Deployment is healthy: $health"
                 printf '%s\n' "$DEPLOY_SHA" > "$deployed_marker"
+                trap - EXIT
                 exit 0
               fi
 
@@ -124,8 +141,4 @@ jobs:
 
             echo "Deployment health check failed"
             docker compose logs --tail=100 bot-detection-core
-            echo "Rolling back to $previous_sha"
-            git checkout --detach "$previous_sha"
-            docker compose up -d --build --remove-orphans
-            docker compose ps
             exit 1

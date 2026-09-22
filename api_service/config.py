@@ -75,6 +75,7 @@ class Settings:
     HEALTH_CACHE_SECONDS: int = _env_int("BOT_HEALTH_CACHE_SECONDS", 10, 0, 300)
     RATE_LIMIT_PER_MINUTE: int = _env_int("BOT_RATE_LIMIT_PER_MINUTE", 240, 0)
     MAX_PAYLOAD_BYTES: int = _env_int("BOT_MAX_PAYLOAD_BYTES", 262144, 1024)
+    DATA_RETENTION_DAYS: int = _env_int("BOT_DATA_RETENTION_DAYS", 30, 1, 3650)
 
 
 settings = Settings()

@@ -37,8 +37,15 @@ def verify_model_bundle(
     except (OSError, TypeError, json.JSONDecodeError) as exc:
         raise ModelBundleError("Model manifest cannot be read") from exc
 
-    if manifest.get("schema_version") != 1:
+    if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
         raise ModelBundleError("Unsupported model manifest schema")
+    bundle_id = manifest.get("bundle_id")
+    if (
+        not isinstance(bundle_id, str)
+        or len(bundle_id) != 32
+        or any(character not in "0123456789abcdef" for character in bundle_id)
+    ):
+        raise ModelBundleError("Model manifest bundle_id is missing or invalid")
     if manifest.get("feature_names") != list(expected_feature_names):
         raise ModelBundleError("Model feature schema does not match runtime")
 

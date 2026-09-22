@@ -95,6 +95,14 @@ async def app_lifespan(_app):
         maintenance_task.cancel()
         with suppress(asyncio.CancelledError):
             await maintenance_task
+        try:
+            # Persist anything that arrived during a transient outage before a
+            # rolling deployment removes this process.
+            await run_in_threadpool(_flush_telemetry_buffer)
+        finally:
+            from api_service.database import close_database
+
+            await run_in_threadpool(close_database)
 
 
 app = FastAPI(
@@ -146,6 +154,7 @@ ensemble_detector = EnsembleBotDetector(
     lstm_available=lstm_loaded,
     tabular_available=tabular_loaded,
 )
+model_bundle_id = str(model_manifest.get("bundle_id") or "")
 graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
 # Small best-effort cache for requests received while MongoDB is unavailable.
@@ -222,6 +231,18 @@ def _clear_in_memory_sessions():
         telemetry_buffer.clear()
 
 
+def _require_inference_models():
+    """Reject inference when the complete, verified ensemble is unavailable."""
+    if not (model_bundle_valid and tabular_loaded and lstm_loaded):
+        raise HTTPException(status_code=503, detail="Inference models are unavailable")
+
+
+def _attach_model_metadata(result: dict) -> dict:
+    """Make every decision traceable to the exact deployed model bundle."""
+    result["model_bundle_id"] = model_bundle_id
+    return result
+
+
 def _record_telemetry_drop(reason: str):
     with _telemetry_buffer_lock:
         _telemetry_buffer_stats["dropped_total"] += 1
@@ -229,8 +250,13 @@ def _record_telemetry_drop(reason: str):
     logger.warning("Dropped telemetry event (%s); dropped_total=%d", reason, dropped_total)
 
 
-def _buffer_telemetry(data: dict) -> bool:
+def _buffer_telemetry(data: dict, analysis: Optional[dict] = None) -> bool:
     """Append recent telemetry while making bounded-buffer loss observable."""
+    buffered_data = dict(data)
+    if analysis is not None:
+        # Reuse the decision already returned for this event. Re-running the
+        # model during database recovery wastes CPU and can change the verdict.
+        buffered_data["_buffered_analysis"] = dict(analysis)
     dropped_oldest = False
     with _telemetry_buffer_lock:
         if len(telemetry_buffer) >= telemetry_buffer.maxlen:
@@ -238,7 +264,7 @@ def _buffer_telemetry(data: dict) -> bool:
             _telemetry_buffer_stats["dropped_total"] += 1
             dropped_oldest = True
             dropped_total = _telemetry_buffer_stats["dropped_total"]
-        telemetry_buffer.append(data)
+        telemetry_buffer.append(buffered_data)
     if dropped_oldest:
         logger.warning(
             "Telemetry buffer full; dropped oldest event (dropped_total=%d)",
@@ -277,31 +303,37 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                     break
                 data = telemetry_buffer.popleft()
 
-            try:
-                analysis = ensemble_detector.predict(data)
-            except Exception:
-                retry_count = int(data.get("_replay_attempts", 0)) + 1
-                if retry_count <= settings.MAX_TELEMETRY_RETRIES:
-                    data["_replay_attempts"] = retry_count
-                    _requeue_buffered_event(data, front=False)
-                    logger.exception(
-                        "Buffered telemetry inference failed (attempt %d/%d)",
-                        retry_count,
-                        settings.MAX_TELEMETRY_RETRIES,
-                    )
-                else:
-                    logger.exception(
-                        "Dropping buffered telemetry after %d failed inference attempts",
-                        retry_count,
-                    )
-                    _record_telemetry_drop("inference retry limit exceeded")
-                continue
+            analysis = data.pop("_buffered_analysis", None)
+            if not isinstance(analysis, dict):
+                try:
+                    analysis = ensemble_detector.predict(data)
+                    _attach_model_metadata(analysis)
+                except Exception:
+                    retry_count = int(data.get("_replay_attempts", 0)) + 1
+                    if retry_count <= settings.MAX_TELEMETRY_RETRIES:
+                        data["_replay_attempts"] = retry_count
+                        _requeue_buffered_event(data, front=False)
+                        logger.exception(
+                            "Buffered telemetry inference failed (attempt %d/%d)",
+                            retry_count,
+                            settings.MAX_TELEMETRY_RETRIES,
+                        )
+                    else:
+                        logger.exception(
+                            "Dropping buffered telemetry after %d failed inference attempts",
+                            retry_count,
+                        )
+                        _record_telemetry_drop("inference retry limit exceeded")
+                    continue
+            else:
+                _attach_model_metadata(analysis)
 
             data.pop("_replay_attempts", None)
             try:
                 persisted = bool(save_detection_result(data, analysis))
             except Exception:
                 logger.exception("Buffered telemetry persistence failed")
+                data["_buffered_analysis"] = analysis
                 _requeue_buffered_event(data)
                 break
 
@@ -317,6 +349,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
             # A live database can intentionally reject stale/tombstoned data;
             # discard it. On an outage, restore the event and retry later.
             if not is_database_ready():
+                data["_buffered_analysis"] = analysis
                 _requeue_buffered_event(data)
                 break
     finally:
@@ -494,6 +527,7 @@ def health_check():
             "gnn_offline": False,
         },
         "model_bundle_valid": model_bundle_valid,
+        "model_bundle_id": model_bundle_id,
         "inference_ready": runtime_ready,
         "database": database_ready,
     }
@@ -524,33 +558,19 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
             detail="Rate limit exceeded. Too many requests from this IP.",
             headers={"Retry-After": "60"},
         )
+    _require_inference_models()
     data = payload.model_dump()
 
     start_t = time.perf_counter()
     try:
         result = await run_in_threadpool(ensemble_detector.predict, data)
-    except Exception as e:
+    except Exception as exc:
         logger.exception("Detection inference failed")
-        result = {
-            "is_bot": False,
-            "verdict": "SUSPECT",
-            "bot_probability": 0.50,
-            "confidence": 0.0,
-            "reasons": [f"Server processing fallback: {type(e).__name__}"],
-            "breakdown": {
-                "behavioral_lstm_score": 0.5,
-                "tabular_score": 0.5,
-                "heuristic_score": 0.0,
-                "has_enough_mouse_data": False,
-                "mouse_points": 0,
-                "records_received": 0,
-                "decision_deferred": True,
-                "minimum_mouse_points": settings.MIN_MOUSE_POINTS_FOR_BOT,
-            },
-        }
+        raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
 
     latency_ms = round((time.perf_counter() - start_t) * 1000, 2)
 
+    _attach_model_metadata(result)
     result["latency_ms"] = latency_ms
     result["client_ip"] = client_ip
     result["sessionId"] = data.get("sessionId")
@@ -600,18 +620,28 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     if not data.get("visitorId"):
         raise HTTPException(status_code=422, detail="visitorId is required")
 
+    _require_inference_models()
+
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
 
-    # Run AI analysis and save to MongoDB
+    # Run AI analysis before persistence. Model failures are not database
+    # outages and must not fill the persistence retry buffer with poison data.
+    try:
+        analysis = await run_in_threadpool(ensemble_detector.predict, data)
+        _attach_model_metadata(analysis)
+    except Exception as exc:
+        logger.exception("Telemetry inference failed")
+        raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
+
+    # Save the analyzed event to MongoDB.
     persisted = False
     persistence_failed = False
     try:
-        analysis = await run_in_threadpool(ensemble_detector.predict, data)
         from api_service.database import save_detection_result
         persisted = bool(await run_in_threadpool(save_detection_result, data, analysis))
     except Exception:
-        logger.exception("Telemetry analysis or persistence failed")
+        logger.exception("Telemetry persistence failed")
         persisted = False
         persistence_failed = True
 
@@ -627,7 +657,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             except Exception:
                 database_ready = False
         if persistence_failed or not database_ready:
-            buffered = _buffer_telemetry(data)
+            buffered = _buffer_telemetry(data, analysis)
 
     # Only persisted telemetry is eligible for graph aggregation. This keeps
     # stale/foreign heartbeats rejected by MongoDB out of the live topology.
@@ -643,6 +673,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         "recorded": persisted or buffered,
         "persisted": persisted,
         "buffered": buffered,
+        "model_bundle_id": model_bundle_id,
     }
 
 

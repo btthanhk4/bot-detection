@@ -14,10 +14,13 @@ services:
       - BOT_DECISION_THRESHOLD=0.70
       - BOT_SUSPECT_THRESHOLD=0.45
       - BOT_MIN_MOUSE_POINTS_FOR_BOT=24
+      - BOT_DATA_RETENTION_DAYS=${BOT_DATA_RETENTION_DAYS:-30}
       - BOT_TRUST_PROXY_HEADERS=true
       - BOT_TRUSTED_PROXIES=172.16.0.0/12
       - BOT_ADMIN_TOKEN=${BOT_ADMIN_TOKEN:-}
       - BOT_READ_TOKEN=${BOT_READ_TOKEN:-}
+      - MONGO_URI=${MONGO_URI:-mongodb://silkmoon-mongodb:27017}
+      - MONGO_DB=${MONGO_DB:-bot_detection}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

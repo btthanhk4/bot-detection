@@ -2642,13 +2642,17 @@ async function simulateHuman(event) {
 
 // ──── Enhanced Polling Loop ────
 let activePoll = null;
+let nextGraphPollAt = 0;
 function pollAll() {
   if (activePoll) return activePoll;
-  activePoll = Promise.all([
-      fetchHealth(),
-      fetchGraphStats(),
-      fetchRecentTelemetry(),
-    ])
+  if (document.hidden) return Promise.resolve();
+  const now = Date.now();
+  const requests = [fetchHealth(), fetchRecentTelemetry()];
+  if (now >= nextGraphPollAt) {
+    requests.push(fetchGraphStats());
+    nextGraphPollAt = now + 15000;
+  }
+  activePoll = Promise.all(requests)
     .then(() => {
       updateCharts();
       checkAlerts();
@@ -2666,6 +2670,12 @@ initForceGraph();
 pollAll();
 // Poll every 3 seconds
 setInterval(pollAll, POLL_INTERVAL);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    nextGraphPollAt = 0;
+    pollAll();
+  }
+});
 </script>
 
 </body>

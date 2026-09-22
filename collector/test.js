@@ -146,10 +146,30 @@ async function testPagehideUsesUtf8ByteLengthAndSequenceWraps() {
   }
 }
 
+async function testFailedHeartbeatRetriesLatestSnapshot() {
+  let attempts = 0;
+  global.fetch = async () => ({ ok: ++attempts >= 2 });
+  const collector = new BotCollector({
+    endpointUrl: '/telemetry',
+    autoSendInterval: 0,
+    retryBaseDelay: 1,
+    maxRetryAttempts: 2,
+  });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.strictEqual(attempts, 2);
+  assert.strictEqual(collector.pendingRetry, null);
+  collector.destroy();
+}
+
 testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
+  .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {
     console.error(error);

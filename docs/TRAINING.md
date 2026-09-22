@@ -11,6 +11,11 @@ python -m pip install -r requirements-dev.txt
 python -m core_ml.train --dataset-root /path/to/web_bot_detection_dataset --device cpu
 ```
 
+Training fails before writing artifacts when no real labeled sessions are
+loaded or the real data does not contain both human and bot labels.
+`--allow-synthetic-only` exists only for diagnostics and its output must not
+be deployed.
+
 ## Google Colab GPU
 
 Select a GPU runtime first, then run:

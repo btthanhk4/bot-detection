@@ -14,6 +14,7 @@ from core_ml.train import (
     resolve_training_device,
     resolve_training_indices,
     train_lstm,
+    main as train_main,
 )
 from core_ml.experiments.run_all import (
     experiment_inference_latency,
@@ -174,6 +175,31 @@ def test_lstm_training_keeps_cpu_runtime_supported():
     )
 
     assert next(model.parameters()).device.type == "cpu"
+
+
+def test_training_refuses_to_publish_when_real_dataset_is_missing(tmp_path):
+    missing_dataset = tmp_path / "missing-dataset"
+
+    with pytest.raises(RuntimeError, match="No real labeled sessions"):
+        train_main(
+            dataset_root=str(missing_dataset),
+            device="cpu",
+            allow_synthetic_only=False,
+        )
+
+
+def test_training_requires_both_real_labels(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "core_ml.train.load_real_dataset",
+        lambda *_args, **_kwargs: [_session("human-only", 0)],
+    )
+
+    with pytest.raises(RuntimeError, match="both human and bot"):
+        train_main(
+            dataset_root=str(tmp_path),
+            device="cpu",
+            allow_synthetic_only=False,
+        )
 
 
 def test_model_artifacts_are_published_as_a_pair(tmp_path):

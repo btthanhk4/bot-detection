@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from pymongo.errors import DuplicateKeyError
+from api_service.config import settings
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
     compute_statistical_features,
@@ -40,6 +41,7 @@ BSON_INT64_MIN = -(2**63)
 BSON_INT64_MAX = 2**63 - 1
 EVENT_SEQUENCE_LIMIT = 999_999
 EVENT_ORDER_SCALE = EVENT_SEQUENCE_LIMIT + 1
+RETENTION_SECONDS = settings.DATA_RETENTION_DAYS * 86400
 
 
 class DatabasePersistenceError(RuntimeError):
@@ -117,6 +119,22 @@ def get_db():
             return None
 
 
+def close_database():
+    """Close the current client and reset cached connection state."""
+    global _client, _db, _indexes_ready, _retry_after
+    with _connect_lock:
+        client = _client
+        _client = None
+        _db = None
+        _indexes_ready = False
+        _retry_after = 0.0
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            logger.exception("[DB] Failed to close MongoDB client cleanly")
+
+
 def is_database_ready() -> bool:
     """Ping MongoDB so readiness detects a stale or disconnected client."""
     global _client, _db, _indexes_ready, _retry_after
@@ -151,11 +169,10 @@ def _ensure_indexes(db):
     """Create indexes for efficient queries."""
     all_ready = True
     indexes = [
-        (db["detection_results"], "created_at_-1", [("created_at", -1)], {"expireAfterSeconds": 86400 * 30}),
         (db["detection_results"], "sessionId_1", [("sessionId", 1)], {"unique": True}),
         (db["detection_results"], "verdict_1", [("verdict", 1)], {}),
         (db["detection_results"], "visitorId_1", [("visitorId", 1)], {}),
-        (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {}),
+        (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {"expireAfterSeconds": RETENTION_SECONDS}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
     ]
     for collection, name, keys, options in indexes:
@@ -198,6 +215,18 @@ def _ensure_indexes(db):
         except Exception as e:
             all_ready = False
             logger.warning(f"[DB] Index creation warning for {name}: {e}")
+
+    # Older releases expired active sessions from their creation time. Keep
+    # that protection until the replacement updated_at TTL index is ready,
+    # then remove it so active sessions retain a full retention window.
+    if all_ready:
+        try:
+            detections = db["detection_results"]
+            if "created_at_-1" in detections.index_information():
+                detections.drop_index("created_at_-1")
+        except Exception as e:
+            all_ready = False
+            logger.warning(f"[DB] Obsolete index cleanup warning for created_at_-1: {e}")
     return all_ready
 
 
@@ -282,6 +311,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "bot_probability": _safe_probability(analysis.get("bot_probability")),
             "is_bot": verdict == "BOT",
             "confidence": _safe_probability(analysis.get("confidence")),
+            "model_bundle_id": str(analysis.get("model_bundle_id") or "")[:128],
             "breakdown": _sanitize_bson_value(analysis.get("breakdown", {})),
             "reasons": _sanitize_bson_value(analysis.get("reasons", [])),
             "mouse_points_captured": captured_count,
@@ -407,6 +437,7 @@ def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
                 "bot_probability": 1,
                 "is_bot": 1,
                 "confidence": 1,
+                "model_bundle_id": 1,
                 "breakdown": 1,
                 "reasons": 1,
                 "mouse_points_captured": 1,

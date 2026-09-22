@@ -41,6 +41,7 @@ def test_model_bundle_verification_detects_tampering(tmp_path):
     (tmp_path / "model_manifest.json").write_text(
         json.dumps({
             "schema_version": 1,
+            "bundle_id": "0123456789abcdef0123456789abcdef",
             "feature_names": ["feature-a"],
             "artifacts": artifacts,
         }),
@@ -51,6 +52,27 @@ def test_model_bundle_verification_detects_tampering(tmp_path):
     (tmp_path / "behavioral_lstm.pt").write_bytes(b"tampered")
     with pytest.raises(ModelBundleError, match="hash mismatch"):
         verify_model_bundle(str(tmp_path), ["feature-a"])
+
+
+def test_model_bundle_requires_traceable_bundle_id(tmp_path):
+    from core_ml.model_bundle import ModelBundleError, verify_model_bundle
+
+    artifacts = {}
+    for filename in ("tabular_model.joblib", "behavioral_lstm.pt"):
+        content = filename.encode("utf-8")
+        (tmp_path / filename).write_bytes(content)
+        artifacts[filename] = hashlib.sha256(content).hexdigest()
+    (tmp_path / "model_manifest.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "feature_names": [],
+            "artifacts": artifacts,
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ModelBundleError, match="bundle_id"):
+        verify_model_bundle(str(tmp_path), [])
 
 
 def test_model_bundle_requires_manifest_by_default(tmp_path):
@@ -241,8 +263,41 @@ def test_detect_bot_human(client):
     assert "is_bot" in data
     assert "bot_probability" in data
     assert "latency_ms" in data
+    assert data["model_bundle_id"]
     assert 0 <= data["latency_ms"] < 2000
     assert data["sessionId"] == "sess_test_human"
+
+
+def test_detect_reports_inference_failure_as_unavailable(client, monkeypatch):
+    def fail_inference(_payload):
+        raise RuntimeError("runtime failure")
+
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", fail_inference)
+
+    response = client.post("/api/v1/detect", json={})
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Inference temporarily unavailable"
+
+
+def test_telemetry_does_not_buffer_inference_failures(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    def fail_inference(_payload):
+        raise RuntimeError("runtime failure")
+
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", fail_inference)
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": "inference-failure", "visitorId": "visitor"},
+    )
+
+    assert response.status_code == 503
+    with _telemetry_buffer_lock:
+        assert not telemetry_buffer
 
 
 def test_detect_bot_flagged(client):
@@ -581,6 +636,51 @@ def test_database_write_exception_is_buffered_even_when_ping_is_healthy(client, 
             retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
             telemetry_buffer.clear()
             telemetry_buffer.extend(retained)
+
+
+def test_buffered_telemetry_reuses_original_inference(client, monkeypatch):
+    from api_service.main import (
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        telemetry_buffer,
+    )
+
+    decisions = {"count": 0}
+
+    def predict(_data):
+        decisions["count"] += 1
+        return {"verdict": "HUMAN", "bot_probability": 0.1}
+
+    monkeypatch.setattr("api_service.main.ensemble_detector.predict", predict)
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda _data, _analysis: (_ for _ in ()).throw(RuntimeError("temporary outage")),
+    )
+    session_id = "reuse-original-analysis"
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": session_id, "visitorId": "visitor"},
+    )
+    assert response.status_code == 200
+    assert response.json()["buffered"] is True
+    assert decisions["count"] == 1
+
+    persisted = []
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda data, analysis: persisted.append((data["sessionId"], analysis["verdict"]))
+        or data["sessionId"],
+    )
+    monkeypatch.setattr(
+        "api_service.main.ensemble_detector.predict",
+        lambda _data: (_ for _ in ()).throw(AssertionError("inference must not run again")),
+    )
+
+    _flush_telemetry_buffer()
+
+    assert persisted == [(session_id, "HUMAN")]
+    with _telemetry_buffer_lock:
+        assert all(event.get("sessionId") != session_id for event in telemetry_buffer)
 
 
 def test_buffered_telemetry_is_flushed_after_database_recovery(monkeypatch):

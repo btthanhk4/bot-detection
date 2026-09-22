@@ -43,8 +43,9 @@ def test_ensure_indexes_rebuilds_conflicting_options():
     ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
 
     assert ready is True
-    assert detections.dropped == ["created_at_-1", "sessionId_1"]
-    assert detections.indexes["created_at_-1"]["expireAfterSeconds"] == 86400 * 30
+    assert detections.dropped == ["sessionId_1", "created_at_-1"]
+    assert detections.indexes["updated_at_-1"]["expireAfterSeconds"] == 86400 * 30
+    assert "created_at_-1" not in detections.indexes
     assert detections.indexes["sessionId_1"]["unique"] is True
     assert deleted.indexes["expires_at_1"]["expireAfterSeconds"] == 0
 
@@ -52,8 +53,8 @@ def test_ensure_indexes_rebuilds_conflicting_options():
 def test_ensure_indexes_keeps_matching_indexes():
     detections = FakeCollection(
         {
-            "created_at_-1": {
-                "key": [("created_at", -1)],
+            "updated_at_-1": {
+                "key": [("updated_at", -1)],
                 "expireAfterSeconds": 86400 * 30,
             },
             "sessionId_1": {"key": [("sessionId", 1)], "unique": True},
@@ -68,6 +69,27 @@ def test_ensure_indexes_keeps_matching_indexes():
     assert ready is True
     assert detections.dropped == []
     assert deleted.dropped == []
+
+
+def test_ensure_indexes_migrates_retention_from_creation_to_last_activity():
+    detections = FakeCollection(
+        {
+            "created_at_-1": {
+                "key": [("created_at", -1)],
+                "expireAfterSeconds": 86400 * 30,
+            },
+            "updated_at_-1": {"key": [("updated_at", -1)]},
+        }
+    )
+
+    ready = _ensure_indexes(
+        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+    )
+
+    assert ready is True
+    assert detections.dropped == ["updated_at_-1", "created_at_-1"]
+    assert detections.indexes["updated_at_-1"]["expireAfterSeconds"] == 86400 * 30
+    assert "created_at_-1" not in detections.indexes
 
 
 def test_ensure_indexes_removes_unwanted_unique_option():
@@ -207,6 +229,31 @@ def test_readiness_clears_stale_connection_for_reconnect(monkeypatch):
     assert database_module._client is None
     assert database_module._db is None
     assert database_module._retry_after > 0.0
+
+
+def test_close_database_resets_cached_connection(monkeypatch):
+    import api_service.database as database_module
+
+    class Client:
+        def __init__(self):
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    client = Client()
+    monkeypatch.setattr(database_module, "_client", client)
+    monkeypatch.setattr(database_module, "_db", {"cached": "database"})
+    monkeypatch.setattr(database_module, "_indexes_ready", True)
+    monkeypatch.setattr(database_module, "_retry_after", 123.0)
+
+    database_module.close_database()
+
+    assert client.closed is True
+    assert database_module._client is None
+    assert database_module._db is None
+    assert database_module._indexes_ready is False
+    assert database_module._retry_after == 0.0
 
 
 def test_readiness_retries_failed_index_setup(monkeypatch):

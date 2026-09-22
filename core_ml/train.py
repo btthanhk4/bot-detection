@@ -457,7 +457,7 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def main(dataset_root=None, device="auto"):
+def main(dataset_root=None, device="auto", allow_synthetic_only=False):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -486,7 +486,20 @@ def main(dataset_root=None, device="auto"):
         n_real_b = sum(1 for session in real_sessions if session.label == 1)
         print(f"  Loaded {len(real_sessions)} real sessions ({n_real_h} Human + {n_real_b} Bot)")
     else:
-        print("  Real dataset not found. Using synthetic data only.")
+        print("  Real dataset not found.")
+
+    if not real_sessions and not allow_synthetic_only:
+        raise RuntimeError(
+            "No real labeled sessions were loaded; refusing to publish a synthetic-only "
+            "model. Check --dataset-root or pass --allow-synthetic-only for diagnostics."
+        )
+    if real_sessions and not allow_synthetic_only:
+        real_labels = {session.label for session in real_sessions}
+        if real_labels != {0, 1}:
+            raise RuntimeError(
+                "Real training data must contain both human and bot sessions; "
+                f"found labels {sorted(real_labels)}."
+            )
 
     # 1b. Generate synthetic data (reduced ratio since real data is now larger)
     print("  Generating synthetic training samples...")
@@ -740,5 +753,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train bot detection models")
     parser.add_argument("--dataset-root", default=os.getenv("BOT_DATASET_ROOT", ""))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument(
+        "--allow-synthetic-only",
+        action="store_true",
+        help="Allow a diagnostic synthetic-only model; never use this artifact in production",
+    )
     args = parser.parse_args()
-    main(dataset_root=args.dataset_root, device=args.device)
+    main(
+        dataset_root=args.dataset_root,
+        device=args.device,
+        allow_synthetic_only=args.allow_synthetic_only,
+    )
