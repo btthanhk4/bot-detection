@@ -1109,6 +1109,26 @@ body::before { display: none; }
   letter-spacing: 0.04em;
 }
 
+.timeline-range-select {
+  min-width: 112px;
+  height: 30px;
+  padding: 0 28px 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  font: 500 12px/1 var(--font-sans);
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.timeline-range-select:hover { border-color: #9ca3af; }
+.timeline-range-select:focus-visible {
+  border-color: var(--accent-green);
+  outline: 2px solid rgba(22, 163, 74, 0.14);
+  outline-offset: 1px;
+}
+
 .badge-live,
 .badge-count {
   color: var(--accent-blue);
@@ -1814,7 +1834,16 @@ body::before { display: none; }
     </div>
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-spline"></use></svg>Lưu lượng phiên trong 60 phút gần nhất</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-spline"></use></svg>Lưu lượng phiên</div>
+        <select id="timelineRange" class="timeline-range-select" aria-label="Khoảng thời gian biểu đồ" onchange="changeTimelineRange(this.value)">
+          <option value="30">30 phút</option>
+          <option value="60" selected>1 giờ</option>
+          <option value="120">2 giờ</option>
+          <option value="240">4 giờ</option>
+          <option value="360">6 giờ</option>
+          <option value="720">12 giờ</option>
+          <option value="1440">24 giờ</option>
+        </select>
       </div>
       <div style="padding:1rem 1.35rem;height:220px;">
         <canvas id="timelineChart"></canvas>
@@ -2106,6 +2135,9 @@ const POLL_INTERVAL = 3000;
 
 let allSessions = [];
 let trafficTimeline = null;
+const TIMELINE_RANGES = new Set([30, 60, 120, 240, 360, 720, 1440]);
+let selectedTimelineMinutes = 60;
+let timelineRequestVersion = 0;
 let selectedSession = null;
 let readTokenPrompted = false;
 let sessionSelectionVersion = 0;
@@ -2553,10 +2585,29 @@ async function fetchRecentTelemetry() {
 
 // ──── Traffic Table (flicker-free) ────
 async function fetchTrafficTimeline() {
-  const data = await fetchJSON(API_BASE + '/api/v1/traffic/timeline');
-  if (data && Array.isArray(data.buckets) && data.buckets.length > 0) {
+  const requestedRange = selectedTimelineMinutes;
+  const requestVersion = ++timelineRequestVersion;
+  const data = await fetchJSON(
+    API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}`
+  );
+  if (
+    requestVersion === timelineRequestVersion &&
+    requestedRange === selectedTimelineMinutes &&
+    data &&
+    Array.isArray(data.buckets) &&
+    data.buckets.length > 0
+  ) {
     trafficTimeline = data;
   }
+}
+
+async function changeTimelineRange(value) {
+  const range = Number(value);
+  if (!TIMELINE_RANGES.has(range) || range === selectedTimelineMinutes) return;
+  selectedTimelineMinutes = range;
+  nextTimelinePollAt = 0;
+  await fetchTrafficTimeline();
+  updateCharts();
 }
 
 let _lastTableHTML = '';
@@ -3113,6 +3164,28 @@ function formatTimelineTime(epochMs) {
   });
 }
 
+function formatTimelineLabel(epochMs) {
+  if (selectedTimelineMinutes < 720) return formatTimelineTime(epochMs);
+  return new Date(epochMs).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).replace(',', '');
+}
+
+function formatTimelineDateTime(epochMs) {
+  return new Date(epochMs).toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 function formatTrafficAxis(value) {
   const count = Number(value) || 0;
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
@@ -3223,7 +3296,7 @@ function initTimelineChart() {
               const bucket = trafficTimeline.buckets[items[0].dataIndex];
               if (!bucket) return items[0].label || '';
               const bucketMs = (trafficTimeline.bucket_minutes || 1) * 60_000;
-              return `${formatTimelineTime(bucket.start)}–${formatTimelineTime(bucket.start + bucketMs)}`;
+              return `${formatTimelineDateTime(bucket.start)}–${formatTimelineDateTime(bucket.start + bucketMs)}`;
             },
             label: item => `${item.dataset.label}: ${Number(item.parsed.y || 0).toLocaleString('vi-VN')}`,
             footer: items => {
@@ -3256,7 +3329,7 @@ function updateCharts() {
     ? trafficTimeline.buckets
     : [];
 
-  timelineChart.data.labels = buckets.map(bucket => formatTimelineTime(bucket.start));
+  timelineChart.data.labels = buckets.map(bucket => formatTimelineLabel(bucket.start));
   timelineChart.data.datasets[0].data = buckets.map(bucket => Math.max(0, Number(bucket.human) || 0));
   timelineChart.data.datasets[1].data = buckets.map(bucket => Math.max(0, Number(bucket.suspect) || 0));
   timelineChart.data.datasets[2].data = buckets.map(bucket => Math.max(0, Number(bucket.bot) || 0));

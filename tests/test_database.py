@@ -259,6 +259,7 @@ def test_traffic_timeline_fills_empty_minutes_and_preserves_large_counts(monkeyp
 
     timeline = get_traffic_timeline(now=current_time)
 
+    assert timeline["window_minutes"] == 60
     assert timeline["bucket_minutes"] == 1
     assert len(timeline["buckets"]) == 60
     assert timeline["buckets"][-1] == {

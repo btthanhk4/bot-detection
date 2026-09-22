@@ -585,6 +585,7 @@ def get_traffic_timeline(
         return {
             "window_start": window_start_ms,
             "window_end": window_end_ms,
+            "window_minutes": window_minutes,
             "bucket_minutes": bucket_minutes,
             "buckets": buckets,
         }

@@ -492,6 +492,9 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert res.status_code == 200
     assert "<title>DATACAT</title>" in res.text
     assert "/api/v1/traffic/timeline" in res.text
+    assert 'id="timelineRange"' in res.text
+    assert '<option value="1440">24 giờ</option>' in res.text
+    assert "?window_minutes=${requestedRange}" in res.text
     assert "MAX_TIMELINE_INTERVALS" not in res.text
     assert "suggestedMax: 1" in res.text
     assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
@@ -515,24 +518,72 @@ def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
     assert response.json()["detail"] == "Database query failed"
 
 
-def test_traffic_timeline_returns_fixed_one_hour_window(client, monkeypatch):
+def test_traffic_timeline_defaults_to_one_hour_window(client, monkeypatch):
     timeline = {
         "window_start": 1_000,
         "window_end": 3_601_000,
+        "window_minutes": 60,
         "bucket_minutes": 1,
         "buckets": [
             {"start": 1_000, "human": 700, "suspect": 200, "bot": 100, "total": 1000}
         ],
     }
-    monkeypatch.setattr(
-        "api_service.database.get_traffic_timeline",
-        lambda window_minutes, bucket_minutes: timeline,
-    )
+    query_args = {}
+
+    def fake_timeline(window_minutes, bucket_minutes):
+        query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
+        return timeline
+
+    monkeypatch.setattr("api_service.database.get_traffic_timeline", fake_timeline)
 
     response = client.get("/api/v1/traffic/timeline", headers=READ_HEADERS)
 
     assert response.status_code == 200
     assert response.json() == timeline
+    assert query_args == {"window_minutes": 60, "bucket_minutes": 1}
+
+
+@pytest.mark.parametrize(
+    ("window_minutes", "expected_bucket_minutes"),
+    [(30, 1), (120, 2), (240, 5), (360, 5), (720, 10), (1440, 15)],
+)
+def test_traffic_timeline_uses_adaptive_buckets(
+    client,
+    monkeypatch,
+    window_minutes,
+    expected_bucket_minutes,
+):
+    query_args = {}
+
+    def fake_timeline(window_minutes, bucket_minutes):
+        query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
+        return {
+            "window_minutes": window_minutes,
+            "bucket_minutes": bucket_minutes,
+            "buckets": [],
+        }
+
+    monkeypatch.setattr("api_service.database.get_traffic_timeline", fake_timeline)
+
+    response = client.get(
+        f"/api/v1/traffic/timeline?window_minutes={window_minutes}",
+        headers=READ_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert query_args == {
+        "window_minutes": window_minutes,
+        "bucket_minutes": expected_bucket_minutes,
+    }
+
+
+def test_traffic_timeline_rejects_out_of_range_windows(client):
+    assert client.get(
+        "/api/v1/traffic/timeline?window_minutes=29", headers=READ_HEADERS
+    ).status_code == 422
+    assert client.get(
+        "/api/v1/traffic/timeline?window_minutes=1441", headers=READ_HEADERS
+    ).status_code == 422
 
 
 def test_traffic_timeline_reports_database_query_failure(client, monkeypatch):
