@@ -194,6 +194,46 @@ async function testFailedHeartbeatRetriesLatestSnapshot() {
   collector.destroy();
 }
 
+async function testUnchangedHeartbeatIsCoalescedUntilIdleDeadline() {
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts++;
+    return { ok: true };
+  };
+  const collector = new BotCollector({
+    endpointUrl: '/telemetry',
+    autoSendInterval: 0,
+    idleHeartbeatInterval: 60000,
+  });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('init'), true);
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(attempts, 1, 'an unchanged heartbeat should not issue another request');
+
+  collector.mouseRecorder.records.push({ time: 16, x: 0.1, y: 0.2, type: 'move' });
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(attempts, 2, 'new activity must be sent immediately');
+
+  collector.lastSuccessfulSendAt -= 60001;
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(attempts, 3, 'idle sessions should still send a bounded keepalive');
+  collector.destroy();
+}
+
+async function testRetryAfterIsRespectedAndBounded() {
+  global.fetch = async () => ({
+    ok: false,
+    headers: { get: (name) => name === 'Retry-After' ? '600' : null },
+  });
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0 });
+
+  assert.strictEqual(await collector.transmitTelemetry('{}', 'heartbeat'), false);
+  assert.strictEqual(collector.retryAfterMs, 300000, 'server backoff should be capped at five minutes');
+  collector.destroy();
+}
+
 async function testOlderRetryCannotDiscardNewerFailedSnapshot() {
   let attempts = 0;
   let resolveOldRetry = null;
@@ -243,6 +283,8 @@ testRestartDuringFingerprinting()
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
+  .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)
+  .then(testRetryAfterIsRespectedAndBounded)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
   .then(() => console.log('collector lifecycle tests: OK'))

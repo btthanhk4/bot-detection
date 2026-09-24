@@ -47,6 +47,7 @@ from core_ml.features.mouse_features import (
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.model_bundle import file_sha256
+from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 # Reproducibility
@@ -59,6 +60,16 @@ if torch.cuda.is_available():
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
+PRODUCTION_DECISION_THRESHOLD = 0.70
+PRODUCTION_SUSPECT_THRESHOLD = 0.45
+RELEASE_MINIMUM_METRICS = {
+    "roc_auc": 0.80,
+    "precision": 0.75,
+    "recall": 0.75,
+}
+RELEASE_MAXIMUM_METRICS = {
+    "false_positive_rate": 0.20,
+}
 
 
 def resolve_training_device(requested: str = "auto") -> torch.device:
@@ -380,6 +391,7 @@ def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=N
 def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
     """Compute and print all classification metrics."""
     y_pred = (y_pred_proba >= threshold).astype(int)
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     metrics = {}
     try:
         metrics["roc_auc"] = roc_auc_score(y_true, y_pred_proba)
@@ -389,18 +401,49 @@ def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
     metrics["precision"] = precision_score(y_true, y_pred, zero_division=0)
     metrics["recall"] = recall_score(y_true, y_pred, zero_division=0)
     metrics["accuracy"] = np.mean(y_true == y_pred)
-
-    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    metrics["false_positive_rate"] = cm[0, 1] / max(1, cm[0, 0] + cm[0, 1])
 
     print(f"    {prefix}ROC-AUC:   {metrics['roc_auc']:.4f}")
     print(f"    {prefix}F1-Score:  {metrics['f1']:.4f}")
     print(f"    {prefix}Precision: {metrics['precision']:.4f}")
     print(f"    {prefix}Recall:    {metrics['recall']:.4f}")
     print(f"    {prefix}Accuracy:  {metrics['accuracy']:.4f}")
+    print(f"    {prefix}FPR:       {metrics['false_positive_rate']:.4f}")
     print(f"    {prefix}Confusion Matrix:")
     print(f"      [[TN={cm[0,0]:3d}  FP={cm[0,1]:3d}]")
     print(f"       [FN={cm[1,0]:3d}  TP={cm[1,1]:3d}]]")
     return metrics
+
+
+def validate_release_metrics(
+    metrics: dict,
+    minimums: dict = None,
+    maximums: dict = None,
+) -> None:
+    """Refuse to publish an ensemble that misses minimum held-out quality targets."""
+    required = minimums or RELEASE_MINIMUM_METRICS
+    failures = []
+    for name, minimum in required.items():
+        try:
+            value = float(metrics[name])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            failures.append(f"{name}=missing")
+            continue
+        if not np.isfinite(value) or value < minimum:
+            failures.append(f"{name}={value:.4f} < {minimum:.4f}")
+    if failures:
+        raise RuntimeError("Model release gate failed: " + ", ".join(failures))
+    ceilings = maximums or RELEASE_MAXIMUM_METRICS
+    for name, maximum in ceilings.items():
+        try:
+            value = float(metrics[name])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            failures.append(f"{name}=missing")
+            continue
+        if not np.isfinite(value) or value > maximum:
+            failures.append(f"{name}={value:.4f} > {maximum:.4f}")
+    if failures:
+        raise RuntimeError("Model release gate failed: " + ", ".join(failures))
 
 
 def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, session_indices, labels):
@@ -688,6 +731,31 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     lstm_test_true, lstm_test_preds, prefix="[Test LSTM] "
                 )
 
+    # Evaluate the exact fusion policy used by the API instead of publishing
+    # solely from individual-model metrics at a different threshold.
+    production_detector = EnsembleBotDetector(
+        tabular_model=tabular_model,
+        lstm_model=lstm_model,
+        threshold=PRODUCTION_DECISION_THRESHOLD,
+        suspect_threshold=PRODUCTION_SUSPECT_THRESHOLD,
+        tabular_available=True,
+        lstm_available=True,
+    )
+    ensemble_probabilities = np.asarray([
+        production_detector.predict(all_telemetries[index])["bot_probability"]
+        for index in idx_test
+    ])
+    print("\n  --- Test Set (Production Ensemble) ---")
+    training_metrics["ensemble"] = {
+        "test": evaluate_metrics(
+            y_test_tab,
+            ensemble_probabilities,
+            threshold=PRODUCTION_DECISION_THRESHOLD,
+            prefix="[Test Ensemble] ",
+        )
+    }
+    validate_release_metrics(training_metrics["ensemble"]["test"])
+
     serializable_metrics = {
         model: {
             split: {name: float(value) for name, value in values.items()}
@@ -703,7 +771,11 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         training_metadata={
             "seed": SEED,
             "training_device": training_device.type,
-            "evaluation_threshold": 0.5,
+            "individual_model_evaluation_threshold": 0.5,
+            "production_decision_threshold": PRODUCTION_DECISION_THRESHOLD,
+            "production_suspect_threshold": PRODUCTION_SUSPECT_THRESHOLD,
+            "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
+            "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,
             "dataset": dataset_audit,
             "metrics": serializable_metrics,
         },

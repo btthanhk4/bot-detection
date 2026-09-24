@@ -117,10 +117,11 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
     s_ratio = float(sw / sh) if sh > 0 else 1.777
 
     fonts = safe_float(fp.get("fontsCount"), 0.0)
+    unavailable_hashes = {"", "unsupported", "error", "timeout", "none", "null", "undefined"}
     a_hash = fp.get("audioHash")
-    has_audio = 1.0 if (a_hash and str(a_hash).lower() not in ("unsupported", "error", "none", "")) else 0.0
+    has_audio = 1.0 if str(a_hash or "").strip().lower() not in unavailable_hashes else 0.0
     c_hash = fp.get("canvasHash")
-    has_canvas = 1.0 if (c_hash and str(c_hash).lower() not in ("unsupported", "error", "none", "")) else 0.0
+    has_canvas = 1.0 if str(c_hash or "").strip().lower() not in unavailable_hashes else 0.0
 
     # Consistency indicators (FP-Inconsistent)
     is_virtual_concurrency = 1.0 if cpu <= 1 or (cpu == 2 and mem >= 16) else 0.0

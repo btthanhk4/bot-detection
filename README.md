@@ -227,7 +227,8 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
       const collector = new window.BotCollector({
         endpointUrl: 'https://<API_URL>/api/v1/telemetry',
         detectUrl: 'https://<API_URL>/api/v1/detect',
-        autoSendInterval: 5000
+        autoSendInterval: 15000,
+        idleHeartbeatInterval: 60000
       });
       await collector.init();
     }

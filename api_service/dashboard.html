@@ -158,6 +158,7 @@ body::before {
 }
 
 .status-dot.offline { background: var(--accent-red); box-shadow: 0 0 8px rgba(255, 61, 113, 0.6); animation: none; }
+.status-dot.degraded { background: var(--accent-orange); box-shadow: none; animation: none; }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -954,6 +955,7 @@ body::before { display: none; }
 }
 
 .status-dot.offline { background: var(--accent-red); box-shadow: none; }
+.status-dot.degraded { background: var(--accent-orange); box-shadow: none; }
 .header-clock { color: var(--text-secondary); font-size: 12px; }
 
 .main {
@@ -2039,7 +2041,7 @@ body::before { display: none; }
    ═══════════════════════════════════════════════════ */
 
 const API_BASE = window.location.origin;
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL = 5000;
 
 let allSessions = [];
 let trafficTimeline = null;
@@ -2074,6 +2076,18 @@ function sessionRevision(session) {
     breakdown.behavioral_lstm_score ?? '',
     breakdown.tabular_score ?? '',
   ].join('|');
+}
+
+async function refreshSelectedTrajectory(session, selectionVersion = sessionSelectionVersion) {
+  if (!session || !session.sessionId) return;
+  const rawData = await fetchJSON(
+    API_BASE + '/api/v1/telemetry/raw/' + encodeURIComponent(session.sessionId)
+  );
+  if (
+    selectionVersion !== sessionSelectionVersion ||
+    selectedSession?.sessionId !== session.sessionId
+  ) return;
+  drawTrajectory(session, rawData && rawData.mouse ? rawData.mouse : null);
 }
 
 function parseScreenResolution(value) {
@@ -2117,7 +2131,7 @@ setInterval(updateClock, 100);
 updateClock();
 
 // ──── API Fetchers ────
-async function fetchJSON(url, authenticated = true) {
+async function fetchJSON(url, authenticated = true, acceptedStatuses = []) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
@@ -2129,7 +2143,7 @@ async function fetchJSON(url, authenticated = true) {
       sessionStorage.removeItem('bot_read_token');
       readTokenPrompted = false;
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok && !acceptedStatuses.includes(res.status)) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
     console.warn('Fetch error:', url, e);
@@ -2140,13 +2154,18 @@ async function fetchJSON(url, authenticated = true) {
 }
 
 async function fetchHealth() {
-  const data = await fetchJSON(API_BASE + '/health', false);
+  const data = await fetchJSON(API_BASE + '/health', false, [503]);
   if (data && data.status === 'healthy') {
     document.getElementById('statusDot').className = 'status-dot';
     const models = data.models_loaded || {};
     const allLoaded = models.tabular && models.lstm;
     document.getElementById('statusText').textContent =
       allLoaded ? 'All Models Online' : 'Partial Models';
+  } else if (data) {
+    document.getElementById('statusDot').className = 'status-dot degraded';
+    document.getElementById('statusText').textContent = data.inference_ready
+      ? 'Models Online / Database Degraded'
+      : 'Inference Degraded';
   } else {
     document.getElementById('statusDot').className = 'status-dot offline';
     document.getElementById('statusText').textContent = 'OFFLINE';
@@ -2172,6 +2191,7 @@ async function fetchRecentTelemetry() {
           updateModelBars(selectedSession);
           updateGauge(selectedSession);
           updateReasons(selectedSession);
+          refreshSelectedTrajectory(selectedSession);
         }
       }
       renderTrafficTable();
@@ -3231,7 +3251,8 @@ initTimelineChart();
 
 // Initial load
 pollAll();
-// Poll every 3 seconds
+// Five seconds is frequent enough for an operational view without multiplying
+// MongoDB reads across every open dashboard tab.
 setInterval(pollAll, POLL_INTERVAL);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {

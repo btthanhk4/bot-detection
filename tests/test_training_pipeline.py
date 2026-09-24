@@ -14,6 +14,7 @@ from core_ml.train import (
     resolve_training_device,
     resolve_training_indices,
     train_lstm,
+    validate_release_metrics,
     main as train_main,
 )
 from core_ml.experiments.run_all import (
@@ -151,6 +152,25 @@ def test_training_device_selection_is_explicit(monkeypatch):
         resolve_training_device("cuda")
     with pytest.raises(ValueError, match="auto, cpu, cuda"):
         resolve_training_device("quantum")
+
+
+def test_model_release_gate_rejects_missing_or_weak_metrics():
+    passing = {
+        "roc_auc": 0.90,
+        "precision": 0.80,
+        "recall": 0.85,
+        "false_positive_rate": 0.10,
+    }
+    validate_release_metrics(passing)
+
+    with pytest.raises(RuntimeError, match="recall"):
+        validate_release_metrics({**passing, "recall": 0.20})
+    with pytest.raises(RuntimeError, match="precision=missing"):
+        invalid = dict(passing)
+        invalid.pop("precision")
+        validate_release_metrics(invalid)
+    with pytest.raises(RuntimeError, match="false_positive_rate"):
+        validate_release_metrics({**passing, "false_positive_rate": 0.50})
 
 
 def test_lstm_training_keeps_cpu_runtime_supported():

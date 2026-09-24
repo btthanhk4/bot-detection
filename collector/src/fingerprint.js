@@ -209,7 +209,8 @@ export async function getFingerprintComponents() {
     fontsList: fonts,
   };
 
-  // Generate deterministic visitorId hash (high-entropy: 16 components)
+  // Keep transient probe failures out of identity. Audio rendering can time out
+  // depending on browser load even when the underlying device is unchanged.
   const rawId = [
     components.userAgent,
     components.platform,
@@ -221,7 +222,6 @@ export async function getFingerprintComponents() {
     components.canvasHash,
     components.webglVendor,
     components.webglRenderer,
-    components.audioHash,
     components.fontsCount,
     components.language,
     components.pluginsLength,

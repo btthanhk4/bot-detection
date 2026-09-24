@@ -12,7 +12,11 @@ export class BotCollector {
     this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
     this.detectUrl = options.detectUrl || '/api/v1/detect';
     this.sessionId = options.sessionId || this.generateSessionId();
-    this.autoSendInterval = options.autoSendInterval !== undefined ? options.autoSendInterval : 5000;
+    this.autoSendInterval = options.autoSendInterval !== undefined ? options.autoSendInterval : 15000;
+    this.idleHeartbeatInterval = Math.max(
+      this.autoSendInterval,
+      Number(options.idleHeartbeatInterval ?? 60000) || 60000,
+    );
     this.mouseRecorder = new MouseRecorder();
     this.cachedFingerprint = null;
     this.cachedBotd = null;
@@ -25,6 +29,9 @@ export class BotCollector {
     this.abortControllers = new Set();
     this.retryTimer = null;
     this.pendingRetry = null;
+    this.lastSentActivitySignature = null;
+    this.lastSuccessfulSendAt = 0;
+    this.retryAfterMs = 0;
     this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
     this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
@@ -122,6 +129,22 @@ export class BotCollector {
     };
   }
 
+  getActivitySignature(payload) {
+    const mouse = payload && payload.mouse ? payload.mouse : {};
+    const records = Array.isArray(mouse.records) ? mouse.records : [];
+    const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
+    const lastRecord = records.length ? records[records.length - 1] : {};
+    const lastScroll = scrollEvents.length ? scrollEvents[scrollEvents.length - 1] : {};
+    return [
+      payload.pageUrl || '',
+      records.length,
+      lastRecord.time ?? '',
+      lastRecord.type || '',
+      scrollEvents.length,
+      lastScroll.time ?? '',
+    ].join('|');
+  }
+
   /**
    * Send telemetry asynchronously via sendBeacon or fetch
    */
@@ -167,7 +190,11 @@ export class BotCollector {
 
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.pendingRetry = { body, lifecycleVersion, attempt };
-    const delay = this.retryBaseDelay * Math.pow(2, attempt - 1);
+    const delay = Math.max(
+      this.retryBaseDelay * Math.pow(2, attempt - 1),
+      this.retryAfterMs,
+    );
+    this.retryAfterMs = 0;
     this.retryTimer = setTimeout(async () => {
       this.retryTimer = null;
       const pending = this.pendingRetry;
@@ -207,6 +234,14 @@ export class BotCollector {
         body,
         keepalive: action === 'pagehide',
       });
+      if (!res.ok && res.headers && typeof res.headers.get === 'function') {
+        const retryAfterSeconds = Number(res.headers.get('Retry-After'));
+        if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+          this.retryAfterMs = Math.min(300000, Math.ceil(retryAfterSeconds * 1000));
+        }
+      } else if (res.ok) {
+        this.retryAfterMs = 0;
+      }
       return res.ok;
     } catch (e) {
       return false;
@@ -219,6 +254,11 @@ export class BotCollector {
       if (action !== 'pagehide' && (this.destroyed || lifecycleVersion !== this.lifecycleVersion)) {
         return false;
       }
+      const activitySignature = this.getActivitySignature(payload);
+      const unchangedHeartbeat = action === 'heartbeat'
+        && activitySignature === this.lastSentActivitySignature
+        && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
+      if (unchangedHeartbeat) return true;
       let body = JSON.stringify(payload);
 
       // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
@@ -240,6 +280,8 @@ export class BotCollector {
 
       const sent = await this.transmitTelemetry(body, action);
       if (sent && action !== 'pagehide') {
+        this.lastSentActivitySignature = activitySignature;
+        this.lastSuccessfulSendAt = Date.now();
         this.clearPendingRetry();
       } else if (!sent && action !== 'pagehide') {
         // Heartbeats are cumulative snapshots. Keeping only the latest failed

@@ -454,6 +454,9 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert "sessionStorage.removeItem('bot_read_token');" in res.text
     assert "http://159.223.91.163/san-pham" not in res.text
     assert "data.sessions.map(sessionRevision)" in res.text
+    assert "refreshSelectedTrajectory(selectedSession)" in res.text
+    assert "Models Online / Database Degraded" in res.text
+    assert "const POLL_INTERVAL = 5000" in res.text
     assert "function parseScreenResolution(value)" in res.text
     assert "for (let i = 0; i < 40; i++)" in res.text
     assert "await Promise.all([fetchClassificationSummary(), fetchTrafficTimeline()])" in res.text

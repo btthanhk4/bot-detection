@@ -77,6 +77,13 @@ class TestEnvFeatures:
         assert len(vec_empty) == len(ENV_FEATURE_NAMES)
         assert not np.isnan(vec_empty).any()
 
+    @pytest.mark.parametrize("audio_hash", [None, "", "unsupported", "error", "timeout", "null", "undefined"])
+    def test_unavailable_audio_hash_is_not_reported_as_supported(self, audio_hash):
+        vec = extract_env_vector({"audioHash": audio_hash}, {})
+
+        assert vec[ENV_FEATURE_NAMES.index("has_audio")] == 0.0
+        assert vec[ENV_FEATURE_NAMES.index("no_audio_support")] == 1.0
+
     def test_env_features_array_resolution(self):
         # Supports array/tuple format [width, height]
         fp_arr = {"screenResolution": [2560, 1440]}
