@@ -1,7 +1,7 @@
 /**
  * Lightweight Browser & Device Fingerprint Extractor
  * Inspired by FingerprintJS (https://github.com/fingerprintjs/fingerprintjs)
- * Collects ~40 browser/hardware signals and generates a deterministic visitor ID hash.
+ * Collects 25 browser/hardware fields and generates a deterministic visitor ID hash.
  */
 
 // Simple 32-bit FNV-1a hash

@@ -12,11 +12,9 @@ from xgboost import XGBClassifier
 
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.models.gnn_detector import HeteroClickFraudGNN
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
-from core_ml.features.graph_builder import SESSION_FEATURE_DIM
 
 
 class TestTabularClassifier:
@@ -152,41 +150,6 @@ class TestBehavioralLSTM:
         # Empty chunks
         assert model.predict_session_proba(None) == 0.5
         assert model.predict_session_proba(torch.zeros(0, 24, 8)) == 0.5
-
-
-class TestHeteroGNN:
-    def test_gnn_forward(self):
-        gnn = HeteroClickFraudGNN(hidden_dim=32)
-        x_dict = {
-            "device": torch.randn(2, len(ENV_FEATURE_NAMES)),
-            "ip": torch.randn(3, 3),
-            "session": torch.randn(4, len(STATISTICAL_FEATURE_NAMES) + 2),
-            "target": torch.randn(1, 2),
-        }
-        edge_index_dict = {
-            ("device", "operates", "session"): torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
-            ("ip", "originates", "session"): torch.tensor([[0, 1], [0, 1]], dtype=torch.long),
-            ("target", "targeted_by", "session"): torch.tensor([[0, 0], [0, 1]], dtype=torch.long),
-        }
-        logits = gnn(x_dict, edge_index_dict)
-        assert logits.shape == (4, 2)
-
-        probs = gnn.predict_session_probabilities(x_dict, edge_index_dict)
-        assert probs.shape == (4,)
-        assert ((probs >= 0.0) & (probs <= 1.0)).all()
-
-    def test_gnn_missing_keys_resilience(self):
-        gnn = HeteroClickFraudGNN(hidden_dim=32, num_layers=2)
-        # x_dict missing 'target' and 'ip' keys completely
-        partial_x_dict = {
-            "device": torch.randn(2, len(ENV_FEATURE_NAMES)),
-            "session": torch.randn(2, SESSION_FEATURE_DIM),
-        }
-        # edge_dict is empty
-        empty_edge_dict = {}
-        logits = gnn(partial_x_dict, empty_edge_dict)
-        assert logits.shape == (2, 2)
-        assert not torch.isnan(logits).any()
 
 
 class TestEnsembleDetector:

@@ -1,7 +1,7 @@
 /**
  * BotD Client-Side Heuristic Detectors
  * Inspired by BotD (https://github.com/fingerprintjs/BotD)
- * Implements 18 heuristic tests for browser automation, headless environments, and spoofing.
+ * Implements 13 heuristic tests for browser automation, headless environments, and spoofing.
  */
 
 export function runBotDetectors(components = {}) {

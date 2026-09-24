@@ -31,14 +31,14 @@ def _env_float(name: str, default: float, minimum: float, maximum: float) -> flo
 
 
 class Settings:
-    PROJECT_NAME: str = "Silkmoon Bot & Fraud Detection Core API"
+    PROJECT_NAME: str = "DATACAT Bot Detection API"
     VERSION: str = "1.0.0"
 
     # Server binding
     HOST: str = os.getenv("BOT_API_HOST", "0.0.0.0")
     PORT: int = _env_int("BOT_API_PORT", 8000, 1, 65535)
-    # Graph, fallback buffering, and rate limiting are process-local. Running
-    # more than one worker would split those guarantees across processes.
+    # Fallback buffering and rate limiting are process-local. Running more than
+    # one worker would split those guarantees across processes.
     WORKERS: int = _env_int("BOT_API_WORKERS", 1, 1, 1)
 
     # Model paths
@@ -69,7 +69,6 @@ class Settings:
 
     # Capacity limits & Protection
     MAX_BUFFER_SIZE: int = _env_int("BOT_MAX_TELEMETRY_BUFFER", 1000, 1)
-    MAX_GRAPH_SESSIONS: int = _env_int("BOT_MAX_GRAPH_SESSIONS", 10000, 1, 100000)
     MAX_TELEMETRY_RETRIES: int = _env_int("BOT_MAX_TELEMETRY_RETRIES", 3, 0, 100)
     MAINTENANCE_INTERVAL_SECONDS: int = _env_int("BOT_MAINTENANCE_INTERVAL_SECONDS", 10, 1, 3600)
     HEALTH_CACHE_SECONDS: int = _env_int("BOT_HEALTH_CACHE_SECONDS", 10, 0, 300)

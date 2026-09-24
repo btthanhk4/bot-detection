@@ -88,7 +88,6 @@ def test_index_endpoint(client):
     data = res.json()
     assert data["status"] == "online"
     assert "models" in data
-    assert "graph_node_counts" in data
 
 
 def test_index_does_not_claim_fallback_inference_when_models_are_missing(client, monkeypatch):
@@ -160,66 +159,19 @@ def test_health_probe_is_cached(client, monkeypatch):
     assert calls == {"database": 1, "inference": 1}
 
 
-def test_graph_can_be_hydrated_from_persisted_sessions(monkeypatch):
-    from api_service.main import _hydrate_graph_from_database, graph_builder
-
-    events = [{
-        "sessionId": "restored-session",
-        "visitorId": "restored-device",
-        "client_ip": "203.0.113.10",
-        "pageUrl": "/restored",
-        "mouse": {"records": []},
-    }]
-    monkeypatch.setattr("api_service.database.get_graph_seed_events", lambda limit: events)
-
-    try:
-        assert _hydrate_graph_from_database() is True
-        assert set(graph_builder.session_map) == {"restored-session"}
-        assert set(graph_builder.device_map) == {"restored-device"}
-        assert set(graph_builder.ip_map) == {"203.0.113.10"}
-    finally:
-        graph_builder.clear()
-
-
-def test_graph_hydration_skips_one_malformed_seed_without_aborting(monkeypatch):
-    from api_service.main import _hydrate_graph_from_database, graph_builder
-
-    events = [
-        None,
-        {
-            "sessionId": "valid-after-malformed",
-            "visitorId": "device",
-            "client_ip": "203.0.113.11",
-            "mouse": {"records": []},
-        },
-    ]
-    monkeypatch.setattr("api_service.database.get_graph_seed_events", lambda limit: events)
-
-    try:
-        assert _hydrate_graph_from_database() is True
-        assert "valid-after-malformed" in graph_builder.session_map
-    finally:
-        graph_builder.clear()
-
-
-def test_application_lifespan_starts_hydration_and_stops_maintenance(monkeypatch):
+def test_application_lifespan_starts_and_stops_maintenance(monkeypatch):
     import api_service.main as main_module
 
     calls = []
-
-    def hydrate():
-        calls.append("hydrate")
-        return True
 
     async def maintenance():
         calls.append("maintenance")
         await asyncio.Future()
 
-    monkeypatch.setattr(main_module, "_hydrate_graph_from_database", hydrate)
     monkeypatch.setattr(main_module, "_maintenance_loop", maintenance)
 
     with TestClient(main_module.app):
-        assert calls == ["hydrate", "maintenance"]
+        assert calls == ["maintenance"]
 
 
 def test_maintenance_loop_survives_failed_iteration(monkeypatch):
@@ -366,15 +318,6 @@ def test_telemetry_beacon_text_plain_ingestion(client, monkeypatch):
     assert data["recorded"] is True
 
 
-def test_graph_stats(client):
-    res = client.get("/api/v1/graph/stats", headers=READ_HEADERS)
-    assert res.status_code == 200
-    data = res.json()
-    assert "device_count" in data
-    assert "ip_count" in data
-    assert "session_count" in data
-
-
 def test_reverse_proxy_ip_forwarding(client, monkeypatch):
     monkeypatch.setattr(
         "api_service.main._is_trusted_proxy",
@@ -496,10 +439,10 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert '<option value="1440">24 giờ</option>' in res.text
     assert "?window_minutes=${requestedRange}" in res.text
     assert "/api/v1/stats/summary" in res.text
-    assert "/api/v1/graph/topology?max_nodes=30" in res.text
     assert "table-layout: fixed" in res.text
-    assert "new ResizeObserver(resizeCanvas)" in res.text
-    assert "let lastBotCount = null" in res.text
+    assert "/api/v1/graph/" not in res.text
+    assert "let previousBotSessions = null" in res.text
+    assert "!previousBotSessions.has(sessionId)" in res.text
     assert "MAX_TIMELINE_INTERVALS" not in res.text
     assert "suggestedMax: 1" in res.text
     assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
@@ -510,6 +453,10 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert "let activePoll = null" in res.text
     assert "sessionStorage.removeItem('bot_read_token');" in res.text
     assert "http://159.223.91.163/san-pham" not in res.text
+    assert "data.sessions.map(sessionRevision)" in res.text
+    assert "function parseScreenResolution(value)" in res.text
+    assert "for (let i = 0; i < 40; i++)" in res.text
+    assert "await Promise.all([fetchClassificationSummary(), fetchTrafficTimeline()])" in res.text
 
 
 def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
@@ -521,6 +468,27 @@ def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == "Database query failed"
+
+
+def test_recent_telemetry_reports_database_total_with_compatibility_alias(
+    client, monkeypatch
+):
+    monkeypatch.setattr("api_service.database.get_db", lambda: object())
+    monkeypatch.setattr(
+        "api_service.database.get_recent_results",
+        lambda limit: [{"sessionId": "session-1"}],
+    )
+    monkeypatch.setattr("api_service.database.get_total_count", lambda: 7)
+
+    response = client.get("/api/v1/telemetry/recent", headers=READ_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 7,
+        "total_buffered": 7,
+        "returned": 1,
+        "sessions": [{"sessionId": "session-1"}],
+    }
 
 
 def test_traffic_timeline_defaults_to_one_hour_window(client, monkeypatch):
@@ -651,7 +619,6 @@ def test_telemetry_requires_visitor_id(client):
 
 
 def test_monitoring_endpoints_require_read_token(client):
-    assert client.get("/api/v1/graph/stats").status_code == 401
     assert client.get("/api/v1/telemetry/recent").status_code == 401
     assert client.get("/api/v1/traffic/timeline").status_code == 401
 
@@ -815,22 +782,15 @@ def test_buffered_telemetry_is_flushed_after_database_recovery(monkeypatch):
         telemetry_buffer.clear()
         telemetry_buffer.append(event)
     persisted = []
-    graphed = []
     monkeypatch.setattr("api_service.main.ensemble_detector.predict", lambda _data: {"verdict": "HUMAN"})
     monkeypatch.setattr(
         "api_service.database.save_detection_result",
         lambda data, _analysis: persisted.append(data["sessionId"]) or data["sessionId"],
     )
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
-    monkeypatch.setattr(
-        "api_service.main.graph_builder.add_telemetry_event",
-        lambda data, ip_address: graphed.append((data["sessionId"], ip_address)),
-    )
-
     _flush_telemetry_buffer()
 
     assert persisted == ["replay-session"]
-    assert graphed == [("replay-session", "192.0.2.1")]
     with _telemetry_buffer_lock:
         assert not telemetry_buffer
 
@@ -939,12 +899,11 @@ def test_full_telemetry_buffer_reports_oldest_event_drop():
 
 
 def test_delete_requires_admin_token(client, monkeypatch):
-    from api_service.main import graph_builder, telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
     from api_service.config import settings
     original_token = settings.ADMIN_TOKEN
     settings.ADMIN_TOKEN = "test-secret"
     monkeypatch.setattr("api_service.database.delete_all_sessions", lambda: 3)
-    graph_builder.add_telemetry_event({"sessionId": "delete-all-memory", "visitorId": "device"})
     with _telemetry_buffer_lock:
         telemetry_buffer.append({"sessionId": "delete-all-memory"})
     try:
@@ -952,7 +911,6 @@ def test_delete_requires_admin_token(client, monkeypatch):
         res = client.delete("/api/v1/sessions", headers={"X-Admin-Token": "test-secret"})
         assert res.status_code == 200
         assert res.json()["count"] == 3
-        assert graph_builder.get_stats()["session_count"] == 0
         with _telemetry_buffer_lock:
             assert len(telemetry_buffer) == 0
     finally:
@@ -961,12 +919,11 @@ def test_delete_requires_admin_token(client, monkeypatch):
 
 def test_delete_session_purges_in_memory_data(client, monkeypatch):
     from api_service.config import settings
-    from api_service.main import graph_builder, telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
 
     original_token = settings.ADMIN_TOKEN
     settings.ADMIN_TOKEN = "test-secret"
     monkeypatch.setattr("api_service.database.delete_session", lambda _session_id: False)
-    graph_builder.add_telemetry_event({"sessionId": "memory-only", "visitorId": "device"})
     with _telemetry_buffer_lock:
         telemetry_buffer.append({"sessionId": "memory-only"})
     try:
@@ -975,7 +932,6 @@ def test_delete_session_purges_in_memory_data(client, monkeypatch):
             headers={"X-Admin-Token": "test-secret"},
         )
         assert response.status_code == 200
-        assert "memory-only" not in graph_builder.session_map
         with _telemetry_buffer_lock:
             assert all(event.get("sessionId") != "memory-only" for event in telemetry_buffer)
     finally:
@@ -1023,14 +979,3 @@ def test_raw_and_detail_endpoints_report_database_query_failure(client, monkeypa
 
     assert raw.status_code == 503
     assert detail.status_code == 503
-
-
-def test_graph_topology_has_no_dangling_edges(client):
-    res = client.get("/api/v1/graph/topology?max_nodes=1", headers=READ_HEADERS)
-    assert res.status_code == 200
-    data = res.json()
-    node_ids = {node["id"] for node in data["nodes"]}
-    assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in data["edges"])
-    assert data["stats"]["visible_session_count"] <= 1
-    assert data["stats"]["visible_edges_count"] == len(data["edges"])
-    assert "target_count" in data["stats"]

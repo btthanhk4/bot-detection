@@ -183,7 +183,7 @@ body::before {
 /* ═══════ KPI ROW ═══════ */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -529,7 +529,7 @@ body::before {
 /* ═══════ BOTTOM ROW ═══════ */
 .bottom-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
 }
 
@@ -574,36 +574,6 @@ body::before {
 
 .model-bars-wrapper {
   padding: 1rem 0;
-}
-
-/* Graph stats */
-.graph-stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-  padding: 1rem 1.35rem;
-}
-
-.graph-stat-item {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: var(--radius-sm);
-  padding: 0.8rem;
-  text-align: center;
-}
-
-.graph-stat-value {
-  font-family: var(--font-mono);
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: var(--accent-cyan);
-}
-
-.graph-stat-label {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: 0.2rem;
 }
 
 /* Reasons list */
@@ -1201,16 +1171,6 @@ body::before { display: none; }
 
 .bottom-grid { align-items: start; }
 
-.graph-scope {
-  padding: 3px 7px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  color: var(--text-muted);
-  background: #fafafa;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
 .time-text,
 .ip-text,
 .page-text { color: var(--text-secondary); font-size: 11px; }
@@ -1284,42 +1244,6 @@ body::before { display: none; }
 .model-detail-fill,
 .conf-bar-fill { border-radius: 2px; }
 .model-bar-value { color: var(--text-secondary) !important; font-size: 11px; }
-
-#graphCanvas {
-  background: #fafafa !important;
-  border-radius: 0 !important;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-#graphTooltip {
-  color: var(--text-primary) !important;
-  background: rgba(255, 255, 255, 0.98) !important;
-  border-color: var(--border-subtle) !important;
-  border-radius: 4px !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
-  backdrop-filter: none !important;
-}
-
-.graph-stats-grid {
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0;
-  padding: 0;
-}
-
-.graph-stat-item {
-  padding: 14px 10px;
-  background: transparent;
-  border-right: 1px solid var(--border-subtle);
-  border-radius: 0;
-}
-.graph-stat-item:last-child { border-right: 0; }
-.graph-stat-value {
-  color: var(--text-primary) !important;
-  font-family: var(--font-sans);
-  font-size: 20px;
-  font-weight: 600;
-}
-.graph-stat-label { color: #9ca3af; font-size: 10px; }
 
 .reasons-list { padding: 10px 16px 14px; }
 .reason-item { color: var(--text-secondary); border-bottom-color: rgba(0, 0, 0, 0.06); }
@@ -1452,8 +1376,6 @@ body::before { display: none; }
   .mid-grid,
   .bottom-grid { grid-template-columns: minmax(0, 1fr); }
   .bottom-grid > .panel[style*="grid-column"] { grid-column: auto !important; }
-  .graph-stats-grid { grid-template-columns: repeat(3, 1fr); }
-  .graph-stat-item { border-bottom: 1px solid var(--border-subtle); }
 }
 
 @media (max-width: 640px) {
@@ -1475,7 +1397,6 @@ body::before { display: none; }
   .kpi-card.blue .kpi-value { font-size: 32px; }
   .panel-header { align-items: flex-start; gap: 8px; }
   .panel-header > div:last-child { flex-wrap: wrap; justify-content: flex-end; }
-  .graph-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .drawer-content { width: 100%; max-width: 100vw; }
   .drawer-grid-2,
   .drawer-grid-3 { grid-template-columns: minmax(0, 1fr); }
@@ -1556,7 +1477,6 @@ body::before { display: none; }
 
 .model-bar-label,
 .model-bar-value { font-size: 12px; }
-.graph-stat-label,
 .drawer-field-label,
 .drawer-stat-label { color: var(--text-muted); font-size: 10px; }
 .drawer-field-value,
@@ -1664,7 +1584,6 @@ body::before { display: none; }
 .gauge-svg path:first-of-type { stroke: #e2e8f0 !important; }
 #donutChart,
 #timelineChart { filter: saturate(0.78); }
-#graphCanvas { background: #1e293b !important; filter: saturate(0.82); }
 
 @media (max-width: 640px) {
   .header-inner { min-height: 68px; }
@@ -1765,12 +1684,6 @@ body::before { display: none; }
       <div class="kpi-label">Nghi vấn (Suspect)</div>
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
-    </div>
-    <div class="kpi-card purple animate-in">
-      <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-network"></use></svg></div>
-      <div class="kpi-label">Nút đồ thị GNN</div>
-      <div class="kpi-value" id="kpiGraphNodes">0</div>
-      <div class="kpi-extra" id="kpiGraphEdges">0 edges</div>
     </div>
     <div class="kpi-card blue animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-gauge"></use></svg></div>
@@ -1899,7 +1812,7 @@ body::before { display: none; }
     <!-- MODEL BREAKDOWN -->
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Đóng góp từng mô hình AI</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Đóng góp từng thành phần</div>
       </div>
       <div class="model-bars-wrapper" id="modelBars">
         <div class="model-bar">
@@ -1923,54 +1836,6 @@ body::before { display: none; }
             <div class="model-bar-track" style="background:transparent; height:auto"><span id="weightsInfo" style="font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono)">--</span></div>
             <span class="model-bar-value"></span>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- GRAPH TOPOLOGY (Interactive Visualization) -->
-    <div class="panel animate-in" style="grid-column: span 2;">
-      <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-network"></use></svg>Đồ thị quan hệ GNN (Interactive Graph)</div>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
-          <span class="graph-scope" id="graphScopeLabel">30 phiên gần nhất</span>
-          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);display:inline-block;"></span>Device
-          </span>
-          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-blue);display:inline-block;"></span>IP
-          </span>
-          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-green);display:inline-block;"></span>Session
-          </span>
-          <span style="display:inline-flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--text-muted);">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--accent-purple);display:inline-block;"></span>Target
-          </span>
-        </div>
-      </div>
-      <div style="position:relative;">
-        <canvas id="graphCanvas" width="800" height="420" style="width:100%;height:420px;border-radius:0 0 var(--radius) var(--radius);background:rgba(10,14,26,0.6);cursor:grab;"></canvas>
-        <div id="graphTooltip" style="display:none;position:absolute;padding:8px 12px;background:rgba(26,31,53,0.95);border:1px solid var(--border-subtle);border-radius:8px;font-size:0.7rem;color:var(--text-primary);pointer-events:none;z-index:20;max-width:260px;backdrop-filter:blur(8px);box-shadow:0 4px 20px rgba(0,0,0,0.4);"></div>
-      </div>
-      <div class="graph-stats-grid">
-        <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gDevices">0</div>
-          <div class="graph-stat-label">Thiết bị hiển thị</div>
-        </div>
-        <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gIPs" style="color:var(--accent-green)">0</div>
-          <div class="graph-stat-label">IP hiển thị</div>
-        </div>
-        <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gSessions" style="color:var(--accent-green)">0</div>
-          <div class="graph-stat-label">Phiên hiển thị</div>
-        </div>
-        <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gEdges" style="color:var(--accent-orange)">0</div>
-          <div class="graph-stat-label">Cạnh hiển thị</div>
-        </div>
-        <div class="graph-stat-item">
-          <div class="graph-stat-value" id="gFraudRings" style="color:var(--accent-green)">0</div>
-          <div class="graph-stat-label" id="gFraudLabel">Fraud Ring</div>
         </div>
       </div>
     </div>
@@ -2054,8 +1919,8 @@ body::before { display: none; }
       <div class="drawer-section">
         <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Phân tích đa mô hình (Ensemble Fusion)</div>
         <div class="drawer-explain">
-          Hệ thống kết hợp <strong>3 mô hình AI</strong> độc lập, mỗi mô hình đánh giá khía cạnh khác nhau.
-          Trọng số được tự điều chỉnh dựa trên độ tin cậy của từng mô hình.
+          Hệ thống kết hợp <strong>3 thành phần phân tích</strong>: BiLSTM, XGBoost và BotD heuristic.
+          Trọng số được tự điều chỉnh dựa trên độ tin cậy và lượng dữ liệu của phiên.
         </div>
 
         <div class="model-detail-card" id="dModelLSTM">
@@ -2198,6 +2063,30 @@ function asBoolean(value) {
   return ['true', '1', 'yes'].includes(value.trim().toLowerCase());
 }
 
+function sessionRevision(session) {
+  const breakdown = session.breakdown || {};
+  return [
+    session.sessionId || '',
+    session.updated_at || session.received_at || session.created_at || '',
+    session.verdict || '',
+    session.bot_probability ?? '',
+    breakdown.mouse_points ?? session.mouse_points_captured ?? '',
+    breakdown.behavioral_lstm_score ?? '',
+    breakdown.tabular_score ?? '',
+  ].join('|');
+}
+
+function parseScreenResolution(value) {
+  if (Array.isArray(value) && value.length >= 2) {
+    return [Number(value[0]), Number(value[1])];
+  }
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)$/i);
+    if (match) return [Number(match[1]), Number(match[2])];
+  }
+  return [NaN, NaN];
+}
+
 function adminHeaders() {
   let token = sessionStorage.getItem('bot_admin_token') || '';
   if (!token) {
@@ -2264,380 +2153,13 @@ async function fetchHealth() {
   }
 }
 
-// ═══════ INTERACTIVE FORCE-DIRECTED GRAPH ═══════
-let graphNodes = [];
-let graphEdges = [];
-let graphSim = null;
-let graphDragNode = null;
-let graphHoverNode = null;
-let graphAnimFrame = null;
-
-const NODE_COLORS = {
-  device: '#00e5ff',
-  ip: '#4d7cfe',
-  session: '#00e676',
-  target: '#9c5cff',
-};
-const VERDICT_COLORS = {
-  HUMAN: '#00e676',
-  BOT: '#ff3d71',
-  SUSPECT: '#ff9100',
-  UNKNOWN: '#8b95b0',
-};
-const NODE_RADIUS = { device: 14, ip: 12, session: 10, target: 9 };
-const NODE_ICONS = { device: '💻', ip: '🌐', session: '📄', target: '🎯' };
-
-function initForceGraph() {
-  const canvas = document.getElementById('graphCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  let W = 0;
-  let H = 0;
-
-  function resizeCanvas() {
-    const rect = canvas.getBoundingClientRect();
-    const nextW = Math.max(1, rect.width);
-    const nextH = Math.max(1, rect.height);
-    const dpr = window.devicePixelRatio || 1;
-    if (nextW === W && nextH === H && canvas.width === Math.round(nextW * dpr)) return;
-
-    const previousW = W;
-    const previousH = H;
-    W = nextW;
-    H = nextH;
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    graphNodes.forEach(node => {
-      const radius = NODE_RADIUS[node.type] || 10;
-      const scaledX = previousW > 0 ? (node.x / previousW) * W : W / 2;
-      const scaledY = previousH > 0 ? (node.y / previousH) * H : H / 2;
-      node.x = Math.max(radius + 8, Math.min(W - radius - 8, scaledX));
-      node.y = Math.max(radius + 8, Math.min(H - radius - 8, scaledY));
-    });
-  }
-
-  resizeCanvas();
-  const graphResizeObserver = new ResizeObserver(resizeCanvas);
-  graphResizeObserver.observe(canvas);
-
-  // Force simulation
-  function simulate() {
-    if (graphNodes.length === 0) {
-      ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = '#5a6580';
-      ctx.font = '13px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Đang chờ dữ liệu đồ thị...', W / 2, H / 2);
-      graphAnimFrame = requestAnimationFrame(simulate);
-      return;
-    }
-
-    // Build adjacency once per frame for force, hover, and label decisions.
-    const nodeMap = {};
-    const hoveredNeighbors = new Set();
-    graphNodes.forEach((n, i) => { n._i = i; nodeMap[n.id] = n; });
-    graphEdges.forEach(edge => {
-      if (graphHoverNode?.id === edge.source) hoveredNeighbors.add(edge.target);
-      if (graphHoverNode?.id === edge.target) hoveredNeighbors.add(edge.source);
-    });
-
-    // Apply forces
-    const crowded = graphNodes.length > 36;
-    const k = crowded ? 0.012 : 0.009;
-    const repulsion = crowded ? 1100 : 1800;
-    const damping = 0.84;
-    const centerStrength = crowded ? 0.005 : 0.0025;
-    const targetDistance = crowded ? 68 : 92;
-    const centerX = W / 2, centerY = H / 2;
-
-    // Repulsion (all pairs)
-    for (let i = 0; i < graphNodes.length; i++) {
-      for (let j = i + 1; j < graphNodes.length; j++) {
-        const a = graphNodes[i], b = graphNodes[j];
-        let dx = a.x - b.x, dy = a.y - b.y;
-        let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        let force = repulsion / (dist * dist);
-        let fx = (dx / dist) * force, fy = (dy / dist) * force;
-        if (!a._dragging) { a.vx = (a.vx || 0) + fx; a.vy = (a.vy || 0) + fy; }
-        if (!b._dragging) { b.vx = (b.vx || 0) - fx; b.vy = (b.vy || 0) - fy; }
-      }
-    }
-
-    // Attraction (edges)
-    graphEdges.forEach(e => {
-      const a = nodeMap[e.source], b = nodeMap[e.target];
-      if (!a || !b) return;
-      let dx = b.x - a.x, dy = b.y - a.y;
-      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      let force = (dist - targetDistance) * k;
-      let fx = (dx / dist) * force, fy = (dy / dist) * force;
-      if (!a._dragging) { a.vx = (a.vx || 0) + fx; a.vy = (a.vy || 0) + fy; }
-      if (!b._dragging) { b.vx = (b.vx || 0) - fx; b.vy = (b.vy || 0) - fy; }
-    });
-
-    // Center gravity + apply velocity
-    graphNodes.forEach(n => {
-      if (n._dragging) return;
-      n.vx = ((n.vx || 0) + (centerX - n.x) * centerStrength) * damping;
-      n.vy = ((n.vy || 0) + (centerY - n.y) * centerStrength) * damping;
-      n.vx = Math.max(-4, Math.min(4, n.vx));
-      n.vy = Math.max(-4, Math.min(4, n.vy));
-      n.x += n.vx;
-      n.y += n.vy;
-
-      // Bounce at the canvas edge instead of accumulating force in a pile.
-      const r = NODE_RADIUS[n.type] || 10;
-      const pad = r + 10;
-      if (n.x < pad || n.x > W - pad) {
-        n.x = Math.max(pad, Math.min(W - pad, n.x));
-        n.vx *= -0.35;
-      }
-      if (n.y < pad || n.y > H - pad) {
-        n.y = Math.max(pad, Math.min(H - pad, n.y));
-        n.vy *= -0.35;
-      }
-    });
-
-    // ── Draw ──
-    ctx.clearRect(0, 0, W, H);
-
-    // Draw edges
-    graphEdges.forEach(e => {
-      const a = nodeMap[e.source], b = nodeMap[e.target];
-      if (!a || !b) return;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      const isHighlighted = graphHoverNode && (graphHoverNode.id === e.source || graphHoverNode.id === e.target);
-      ctx.strokeStyle = isHighlighted ? 'rgba(255,255,255,0.35)' : 'rgba(99,117,171,0.15)';
-      ctx.lineWidth = isHighlighted ? 1.5 : 0.7;
-      ctx.stroke();
-
-      // Edge label
-      if (isHighlighted) {
-        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-        ctx.fillStyle = 'rgba(99,117,171,0.5)';
-        ctx.font = '8px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(e.type, mx, my - 4);
-      }
-    });
-
-    // Draw nodes
-    graphNodes.forEach(n => {
-      const r = NODE_RADIUS[n.type] || 10;
-      let color = NODE_COLORS[n.type] || '#8b95b0';
-
-      // Sessions: color by verdict
-      if (n.type === 'session' && n.verdict) {
-        color = VERDICT_COLORS[n.verdict.toUpperCase()] || VERDICT_COLORS.UNKNOWN;
-      }
-
-      const isHovered = graphHoverNode && graphHoverNode.id === n.id;
-      const isConnected = graphHoverNode && hoveredNeighbors.has(n.id);
-      const dimmed = graphHoverNode && !isHovered && !isConnected;
-
-      // Glow effect for hovered
-      if (isHovered) {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
-        const glow = ctx.createRadialGradient(n.x, n.y, r, n.x, n.y, r + 8);
-        glow.addColorStop(0, color + '40');
-        glow.addColorStop(1, 'transparent');
-        ctx.fillStyle = glow;
-        ctx.fill();
-      }
-
-      // Node circle
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = dimmed ? (color + '30') : (color + 'cc');
-      ctx.fill();
-      ctx.strokeStyle = dimmed ? 'rgba(99,117,171,0.1)' : (color + '80');
-      ctx.lineWidth = isHovered ? 2.5 : 1;
-      ctx.stroke();
-
-      // Icon
-      ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.9)';
-      ctx.font = `${r * 0.9}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(NODE_ICONS[n.type] || '●', n.x, n.y);
-
-      // Dense graphs stay readable by revealing labels on hover. For small
-      // graphs, keep labels visible as before.
-      if (isHovered || !crowded) {
-        ctx.fillStyle = dimmed ? 'rgba(255,255,255,0.1)' : 'rgba(232,236,244,0.7)';
-        ctx.font = '9px Inter, sans-serif';
-        const textWidth = ctx.measureText(n.label).width;
-        const labelX = Math.max(textWidth / 2 + 4, Math.min(W - textWidth / 2 - 4, n.x));
-        const drawAbove = n.y + r + 15 > H;
-        ctx.textBaseline = drawAbove ? 'bottom' : 'top';
-        ctx.fillText(n.label, labelX, drawAbove ? n.y - r - 3 : n.y + r + 3);
-      }
-    });
-
-    graphAnimFrame = requestAnimationFrame(simulate);
-  }
-
-  // ── Mouse interactions ──
-  function getNodeAt(mx, my) {
-    for (let i = graphNodes.length - 1; i >= 0; i--) {
-      const n = graphNodes[i];
-      const r = NODE_RADIUS[n.type] || 10;
-      const dx = mx - n.x, dy = my - n.y;
-      if (dx * dx + dy * dy <= (r + 4) * (r + 4)) return n;
-    }
-    return null;
-  }
-
-  canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-
-    if (graphDragNode) {
-      graphDragNode.x = mx;
-      graphDragNode.y = my;
-      graphDragNode.vx = 0;
-      graphDragNode.vy = 0;
-      return;
-    }
-
-    const node = getNodeAt(mx, my);
-    graphHoverNode = node;
-    canvas.style.cursor = node ? 'pointer' : 'grab';
-
-    // Tooltip
-    const tooltip = document.getElementById('graphTooltip');
-    if (node) {
-      let html = `<div style="font-weight:700;margin-bottom:3px;">${NODE_ICONS[node.type]} ${escapeHtml(node.type.toUpperCase())}</div>`;
-      html += `<div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--accent-cyan);word-break:break-all;">${escapeHtml(node.fullId || node.label)}</div>`;
-      if (node.type === 'session' && node.verdict) {
-        const vc = VERDICT_COLORS[node.verdict.toUpperCase()] || '#8b95b0';
-        html += `<div style="margin-top:4px;">Verdict: <b style="color:${vc}">${escapeHtml(node.verdict)}</b></div>`;
-        html += `<div>Bot Prob: <b style="color:${vc}">${((node.prob || 0) * 100).toFixed(1)}%</b></div>`;
-      }
-      // Count connections
-      const conns = graphEdges.filter(ed => ed.source === node.id || ed.target === node.id).length;
-      html += `<div style="margin-top:2px;color:var(--text-muted);">${conns} kết nối</div>`;
-      tooltip.innerHTML = html;
-      tooltip.style.display = 'block';
-      const tooltipLeft = Math.min(mx + 16, canvas.clientWidth - tooltip.offsetWidth - 8);
-      const tooltipTop = Math.min(my - 10, canvas.clientHeight - tooltip.offsetHeight - 8);
-      tooltip.style.left = Math.max(8, tooltipLeft) + 'px';
-      tooltip.style.top = Math.max(8, tooltipTop) + 'px';
-    } else {
-      tooltip.style.display = 'none';
-    }
-  });
-
-  canvas.addEventListener('mousedown', e => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const node = getNodeAt(mx, my);
-    if (node) {
-      graphDragNode = node;
-      node._dragging = true;
-      canvas.style.cursor = 'grabbing';
-    }
-  });
-
-  canvas.addEventListener('mouseup', () => {
-    if (graphDragNode) {
-      graphDragNode._dragging = false;
-      graphDragNode = null;
-      canvas.style.cursor = 'grab';
-    }
-  });
-
-  canvas.addEventListener('mouseleave', () => {
-    graphHoverNode = null;
-    document.getElementById('graphTooltip').style.display = 'none';
-    if (graphDragNode) {
-      graphDragNode._dragging = false;
-      graphDragNode = null;
-    }
-  });
-
-  // Start animation loop
-  if (graphAnimFrame) cancelAnimationFrame(graphAnimFrame);
-  simulate();
-}
-
-async function fetchGraphStats() {
-  // Keep the interactive canvas readable while the counters still report the
-  // complete in-memory graph.
-  const topoData = await fetchJSON(API_BASE + '/api/v1/graph/topology?max_nodes=30');
-  if (topoData && topoData.nodes) {
-    const canvas = document.getElementById('graphCanvas');
-    const rect = canvas ? canvas.getBoundingClientRect() : { width: 800, height: 420 };
-    const W = rect.width, H = rect.height;
-
-    // Only reset positions for genuinely new nodes
-    const existingPos = {};
-    graphNodes.forEach(n => { existingPos[n.id] = { x: n.x, y: n.y, vx: n.vx || 0, vy: n.vy || 0 }; });
-
-    graphNodes = topoData.nodes.map(n => {
-      const prev = existingPos[n.id];
-      return {
-        ...n,
-        x: prev ? prev.x : (W * 0.2 + Math.random() * W * 0.6),
-        y: prev ? prev.y : (H * 0.2 + Math.random() * H * 0.6),
-        vx: prev ? prev.vx : 0,
-        vy: prev ? prev.vy : 0,
-      };
-    });
-    graphEdges = topoData.edges || [];
-
-    // Update stats
-    const stats = topoData.stats || {};
-    document.getElementById('gDevices').textContent = stats.visible_device_count || 0;
-    document.getElementById('gIPs').textContent = stats.visible_ip_count || 0;
-    document.getElementById('gSessions').textContent = stats.visible_session_count || 0;
-    document.getElementById('gEdges').textContent = stats.visible_edges_count || 0;
-    document.getElementById('graphScopeLabel').textContent =
-      `${stats.visible_session_count || 0} phiên gần nhất`;
-
-    const totalNodes = (stats.device_count || 0) + (stats.ip_count || 0) +
-      (stats.session_count || 0) + (stats.target_count || 0);
-    document.getElementById('kpiGraphNodes').textContent = totalNodes;
-    document.getElementById('kpiGraphEdges').textContent = (stats.edges_count || 0) + ' edges';
-
-    const rings = stats.suspected_coordinated_rings || 0;
-    document.getElementById('gFraudRings').textContent = rings;
-    if (rings > 0) {
-      document.getElementById('gFraudRings').style.color = 'var(--accent-red)';
-      document.getElementById('gFraudLabel').textContent = 'Fraud Ring detected';
-      document.getElementById('gFraudLabel').style.color = 'var(--accent-red)';
-    } else {
-      document.getElementById('gFraudRings').style.color = 'var(--accent-green)';
-      document.getElementById('gFraudLabel').textContent = 'Fraud Ring';
-      document.getElementById('gFraudLabel').style.color = '';
-    }
-  } else {
-    // Fallback: fetch stats only
-    const data = await fetchJSON(API_BASE + '/api/v1/graph/stats');
-    if (!data) return;
-    const totalNodes = (data.device_count || 0) + (data.ip_count || 0) +
-      (data.session_count || 0) + (data.target_count || 0);
-    document.getElementById('kpiGraphNodes').textContent = totalNodes;
-    document.getElementById('kpiGraphEdges').textContent = (data.edges_count || 0) + ' edges';
-    document.getElementById('graphScopeLabel').textContent = 'Không tải được topology';
-    document.getElementById('gDevices').textContent = '—';
-    document.getElementById('gIPs').textContent = '—';
-    document.getElementById('gSessions').textContent = '—';
-    document.getElementById('gEdges').textContent = '—';
-  }
-}
-
 async function fetchRecentTelemetry() {
   const data = await fetchJSON(API_BASE + '/api/v1/telemetry/recent?limit=50');
 
   if (data && data.sessions) {
     // Dirty-check: only update if data actually changed
-    const newFingerprint = data.sessions.map(s => s.sessionId + '|' + s.verdict + '|' + s.bot_probability).join(';');
-    const oldFingerprint = allSessions.map(s => s.sessionId + '|' + s.verdict + '|' + s.bot_probability).join(';');
+    const newFingerprint = data.sessions.map(sessionRevision).join(';');
+    const oldFingerprint = allSessions.map(sessionRevision).join(';');
 
     if (newFingerprint !== oldFingerprint) {
       // Preserve selected session reference
@@ -2646,6 +2168,11 @@ async function fetchRecentTelemetry() {
       // Re-find selectedSession in new data
       if (selectedId) {
         selectedSession = allSessions.find(s => s.sessionId === selectedId) || null;
+        if (selectedSession) {
+          updateModelBars(selectedSession);
+          updateGauge(selectedSession);
+          updateReasons(selectedSession);
+        }
       }
       renderTrafficTable();
     }
@@ -3028,6 +2555,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 
   // 7. BotD Detectors
   const detList = document.getElementById('dDetectorsList');
+  const [screenWidth, screenHeight] = parseScreenResolution(fp.screenResolution);
   const detectors = [
     { name: 'navigator.webdriver', flagged: asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver), desc: 'Cờ tự động hóa WebDriver chuẩn W3C' },
     { name: 'Headless Browser', flagged: asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless), desc: 'Chạy không giao diện đồ họa' },
@@ -3035,7 +2563,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     { name: 'PhantomJS', flagged: asBoolean(botd.phantomJS), desc: 'Phantom runtime' },
     { name: 'Plugins Empty', flagged: botd.pluginsLength === 0, desc: 'Danh sách plugin rỗng bất thường' },
     { name: 'Languages Missing', flagged: !fp.languages || fp.languages.length === 0, desc: 'Không có thông tin ngôn ngữ' },
-    { name: 'Screen Inconsistency', flagged: fp.screenResolution && (fp.screenResolution[0] === 0 || fp.screenResolution[1] === 0), desc: 'Độ phân giải 0x0' },
+    { name: 'Screen Inconsistency', flagged: Number.isFinite(screenWidth) && Number.isFinite(screenHeight) && (screenWidth === 0 || screenHeight === 0), desc: 'Độ phân giải 0x0' },
     { name: 'DevTools Opened', flagged: asBoolean(botd.devtools), desc: 'Công cụ gỡ lỗi DevTools' },
   ];
   detList.innerHTML = detectors.map(d => `
@@ -3485,30 +3013,36 @@ function animateValue(el, newVal) {
 }
 
 // ──── Alert Banner ────
-let lastBotCount = null;
+let previousBotSessions = null;
 function checkAlerts() {
-  let bots = 0;
-  allSessions.forEach(s => { if ((s.verdict || '').toUpperCase() === 'BOT') bots++; });
+  const currentBotSessions = new Set(
+    allSessions
+      .filter(session => (session.verdict || '').toUpperCase() === 'BOT')
+      .map(session => session.sessionId)
+      .filter(Boolean)
+  );
 
   // Establish a baseline on page load; historical bot sessions are not a new
   // real-time alert.
-  if (lastBotCount === null) {
-    lastBotCount = bots;
+  if (previousBotSessions === null) {
+    previousBotSessions = currentBotSessions;
     return;
   }
 
-  if (bots > lastBotCount && bots > 0) {
+  const newBotCount = [...currentBotSessions]
+    .filter(sessionId => !previousBotSessions.has(sessionId)).length;
+  if (newBotCount > 0) {
     const banner = document.getElementById('alertBanner');
     banner.classList.add('show');
     document.getElementById('alertText').textContent =
-      `Phát hiện ${bots} phiên Bot. Hệ thống đang theo dõi hoạt động đáng ngờ.`;
+      `Phát hiện ${newBotCount} phiên Bot mới. Hệ thống đang theo dõi hoạt động đáng ngờ.`;
     document.getElementById('alertTime').textContent =
       new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
     // Auto-hide after 8 seconds
     setTimeout(() => banner.classList.remove('show'), 8000);
   }
-  lastBotCount = bots;
+  previousBotSessions = currentBotSessions;
 }
 
 // ──── Delete Session(s) ────
@@ -3524,21 +3058,17 @@ async function deleteSession(sessionId, idx) {
       if (selectedSession && selectedSession.sessionId === sessionId) {
         selectedSession = null;
       }
+      if (previousBotSessions) previousBotSessions.delete(sessionId);
+      classificationSummary = null;
+      trafficTimeline = null;
+      nextSummaryPollAt = 0;
+      nextTimelinePollAt = 0;
       _lastTableHTML = ''; // Force re-render
       renderTrafficTable();
+      updateClassificationKPIs();
       updateCharts();
-      // Update KPIs immediately
-      let humans = 0, bots = 0, suspects = 0;
-      allSessions.forEach(s => {
-        const v = (s.verdict || '').toUpperCase();
-        if (v === 'HUMAN') humans++;
-        else if (v === 'BOT') bots++;
-        else suspects++;
-      });
-      animateValue(document.getElementById('kpiTotalSessions'), allSessions.length);
-      animateValue(document.getElementById('kpiHumanCount'), humans);
-      animateValue(document.getElementById('kpiBotCount'), bots);
-      animateValue(document.getElementById('kpiSuspectCount'), suspects);
+      await Promise.all([fetchClassificationSummary(), fetchTrafficTimeline()]);
+      updateCharts();
     }
   } catch(e) { console.error('Delete failed:', e); }
 }
@@ -3558,13 +3088,19 @@ async function deleteAllSessions() {
     if (res.ok) {
       allSessions = [];
       selectedSession = null;
+      previousBotSessions = new Set();
+      classificationSummary = { total: 0, humans: 0, bots: 0, suspects: 0 };
+      if (trafficTimeline && Array.isArray(trafficTimeline.buckets)) {
+        trafficTimeline.buckets = trafficTimeline.buckets.map(bucket => ({
+          ...bucket, human: 0, suspect: 0, bot: 0, total: 0
+        }));
+      }
+      nextSummaryPollAt = 0;
+      nextTimelinePollAt = 0;
       _lastTableHTML = ''; // Force re-render
       renderTrafficTable();
       updateCharts();
-      animateValue(document.getElementById('kpiTotalSessions'), 0);
-      animateValue(document.getElementById('kpiHumanCount'), 0);
-      animateValue(document.getElementById('kpiBotCount'), 0);
-      animateValue(document.getElementById('kpiSuspectCount'), 0);
+      updateClassificationKPIs();
       try { localStorage.removeItem('silkmoon_sessions'); } catch(e) {}
     }
   } catch(e) { console.error('Delete all failed:', e); }
@@ -3610,11 +3146,15 @@ async function simulateHuman(event) {
 
   try {
     const trajectory = [];
-    for (let i = 0; i < 15; i++) {
+    let elapsed = 0;
+    for (let i = 0; i < 40; i++) {
+      elapsed += 12 + Math.random() * 23 + (Math.random() < 0.08 ? 50 + Math.random() * 130 : 0);
+      const progress = i / 39;
+      const smooth = 3 * progress * progress - 2 * progress * progress * progress;
       trajectory.push({
-        x: 100 + i * 25 + Math.sin(i * 0.7) * 15,
-        y: 200 + Math.sin(i * 0.5) * 40 + (Math.random() - 0.5) * 10,
-        time: i * 16 + Math.random() * 5,
+        x: 180 + smooth * 900 + Math.sin(i * 0.73) * 7 + (Math.random() - 0.5) * 5,
+        y: 220 + smooth * 260 + Math.sin(i * 0.41) * 25 + (Math.random() - 0.5) * 5,
+        time: elapsed,
         type: 'move'
       });
     }
@@ -3625,8 +3165,24 @@ async function simulateHuman(event) {
       action: 'telemetry',
       timestamp: Date.now(),
       pageUrl: API_BASE + '/',
-      fingerprint: { hardwareConcurrency: 8, deviceMemory: 16, screenResolution: [1920, 1080] },
-      botd: { automationTool: false, pluginsLength: 5, webDriver: false },
+      fingerprint: {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36',
+        platform: 'Win32', language: 'vi-VN', languages: ['vi-VN', 'vi', 'en-US'],
+        hardwareConcurrency: 8, deviceMemory: 16, maxTouchPoints: 0,
+        screenResolution: '1920x1080', colorDepth: 24, pixelRatio: 1,
+        pluginsLength: 5, webglVendor: 'Google Inc.', webglRenderer: 'ANGLE (Intel)',
+        canvasHash: 'sim-human-canvas', audioHash: '35.12345', fontsCount: 30
+      },
+      botd: {
+        isBot: false, heuristicScore: 0, flaggedCount: 0, reasons: [],
+        detectors: {
+          webdriver: false, distinctiveProperties: false, chromeDriverGlobal: false,
+          headlessUa: false, virtualGpu: false, pluginsInconsistency: false,
+          languagesInconsistency: false, windowSize: false, errorTrace: false,
+          hasProcess: false, documentKeys: false, platformMismatch: false,
+          evalLength: false
+        }
+      },
       mouse: { records: trajectory }
     };
 
@@ -3645,7 +3201,6 @@ async function simulateHuman(event) {
 
 // ──── Enhanced Polling Loop ────
 let activePoll = null;
-let nextGraphPollAt = 0;
 let nextTimelinePollAt = 0;
 let nextSummaryPollAt = 0;
 function pollAll() {
@@ -3661,10 +3216,6 @@ function pollAll() {
     requests.push(fetchClassificationSummary());
     nextSummaryPollAt = now + 15000;
   }
-  if (now >= nextGraphPollAt) {
-    requests.push(fetchGraphStats());
-    nextGraphPollAt = now + 15000;
-  }
   activePoll = Promise.all(requests)
     .then(() => {
       updateCharts();
@@ -3677,7 +3228,6 @@ function pollAll() {
 // Initialize charts
 initDonutChart();
 initTimelineChart();
-initForceGraph();
 
 // Initial load
 pollAll();
@@ -3685,7 +3235,6 @@ pollAll();
 setInterval(pollAll, POLL_INTERVAL);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
-    nextGraphPollAt = 0;
     nextTimelinePollAt = 0;
     nextSummaryPollAt = 0;
     pollAll();

@@ -1,7 +1,7 @@
 """
 FastAPI Inference & Telemetry Collection Server
 Serves real-time bot detection inference using the trained Multi-Modal Ensemble
-and provides endpoints for telemetry ingestion & graph analysis.
+and provides endpoints for telemetry ingestion and operational analysis.
 """
 
 import asyncio
@@ -16,7 +16,6 @@ import threading
 import time
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any
-from urllib.parse import urlsplit
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +27,6 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.model_bundle import ModelBundleError, verify_model_bundle
-from core_ml.features.graph_builder import ClickFraudGraphBuilder
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
 
@@ -87,7 +85,6 @@ class RequestBodyLimitMiddleware:
 
 @asynccontextmanager
 async def app_lifespan(_app):
-    await run_in_threadpool(_hydrate_graph_from_database)
     maintenance_task = asyncio.create_task(_maintenance_loop())
     try:
         yield
@@ -155,7 +152,6 @@ ensemble_detector = EnsembleBotDetector(
     tabular_available=tabular_loaded,
 )
 model_bundle_id = str(model_manifest.get("bundle_id") or "")
-graph_builder = ClickFraudGraphBuilder(max_sessions=settings.MAX_GRAPH_SESSIONS)
 
 # Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
@@ -168,38 +164,6 @@ _health_cache = {"checked_at": 0.0, "database": False, "inference_ready": False}
 # Sliding-window rate limiter per client IP
 _rate_limit_lock = threading.Lock()
 _rate_limit_records = collections.defaultdict(list)
-
-
-def _hydrate_graph_from_database() -> bool:
-    """Rebuild process-local graph state from the latest persisted sessions."""
-    from api_service.database import get_graph_seed_events
-
-    events = get_graph_seed_events(limit=settings.MAX_GRAPH_SESSIONS)
-    if events is None:
-        logger.warning("Graph hydration skipped because MongoDB is unavailable")
-        return False
-
-    graph_builder.clear()
-    hydrated_count = 0
-    skipped_count = 0
-    for event in events:
-        try:
-            graph_builder.add_telemetry_event(
-                event, ip_address=event.get("client_ip") or "127.0.0.1"
-            )
-            hydrated_count += 1
-        except Exception:
-            skipped_count += 1
-            logger.exception(
-                "Skipped malformed graph seed event for session %r",
-                event.get("sessionId") if isinstance(event, dict) else None,
-            )
-    logger.info(
-        "Hydrated graph with %d persisted sessions (%d skipped)",
-        hydrated_count,
-        skipped_count,
-    )
-    return True
 
 
 async def _maintenance_loop():
@@ -216,17 +180,15 @@ async def _maintenance_loop():
 
 def _purge_session_from_memory(session_id: str) -> bool:
     """Remove a session from best-effort caches after an administrative delete."""
-    removed_from_graph = graph_builder.remove_session(session_id)
     with _telemetry_buffer_lock:
         retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
         removed_from_buffer = len(retained) != len(telemetry_buffer)
         telemetry_buffer.clear()
         telemetry_buffer.extend(retained)
-    return removed_from_graph or removed_from_buffer
+    return removed_from_buffer
 
 
 def _clear_in_memory_sessions():
-    graph_builder.clear()
     with _telemetry_buffer_lock:
         telemetry_buffer.clear()
 
@@ -338,12 +300,6 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 break
 
             if persisted:
-                try:
-                    graph_builder.add_telemetry_event(
-                        data, ip_address=data.get("client_ip") or "127.0.0.1"
-                    )
-                except Exception:
-                    logger.exception("Graph update failed during telemetry replay")
                 continue
 
             # A live database can intentionally reject stale/tombstoned data;
@@ -470,19 +426,12 @@ def require_read_access(request: Request):
 
 @app.get("/")
 def index():
-    stats = graph_builder.get_stats()
     return {
         "status": "online",
-        "service": "Bot Detection Core",
+        "service": "DATACAT Bot Detection API",
         "models": {
             "behavioral_lstm": "ready" if lstm_loaded else "unavailable",
             "tabular_xgboost": "ready" if tabular_loaded else "unavailable",
-            "hetero_gnn": "not_trained_without_real_graph_data",
-        },
-        "graph_node_counts": {
-            "devices": stats["device_count"],
-            "ips": stats["ip_count"],
-            "sessions": stats["session_count"],
         },
     }
 
@@ -524,7 +473,6 @@ def health_check():
         "models_loaded": {
             "tabular": tabular_loaded,
             "lstm": lstm_loaded,
-            "gnn_offline": False,
         },
         "model_bundle_valid": model_bundle_valid,
         "model_bundle_id": model_bundle_id,
@@ -659,13 +607,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         if persistence_failed or not database_ready:
             buffered = _buffer_telemetry(data, analysis)
 
-    # Only persisted telemetry is eligible for graph aggregation. This keeps
-    # stale/foreign heartbeats rejected by MongoDB out of the live topology.
     if persisted:
-        try:
-            graph_builder.add_telemetry_event(data, ip_address=client_ip)
-        except Exception:
-            logger.exception("Graph update failed after telemetry persistence")
         background_tasks.add_task(_flush_telemetry_buffer)
 
     return {
@@ -691,7 +633,14 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
     if results is None or total is None:
         raise HTTPException(status_code=503, detail="Database query failed")
 
-    return {"total_buffered": total, "returned": len(results), "sessions": results}
+    return {
+        "total": total,
+        # Deprecated compatibility alias for dashboard clients deployed before
+        # the endpoint switched from an in-memory buffer to MongoDB.
+        "total_buffered": total,
+        "returned": len(results),
+        "sessions": results,
+    }
 
 
 @app.get("/api/v1/traffic/timeline")
@@ -720,128 +669,6 @@ def get_traffic_timeline(
     if timeline is None:
         raise HTTPException(status_code=503, detail="Traffic timeline query failed")
     return timeline
-
-
-@app.get("/api/v1/graph/stats")
-def get_graph_stats(_read=Depends(require_read_access)):
-    """
-    Returns graph topology statistics and fraud ring indicators.
-    """
-    return graph_builder.get_stats()
-
-
-@app.get("/api/v1/graph/topology")
-def get_graph_topology(max_nodes: int = Query(default=80, ge=1, le=200), _read=Depends(require_read_access)):
-    """
-    Returns the full graph topology (nodes + edges) for interactive visualization.
-    Limits output to max_nodes most recent sessions and their connected nodes.
-    """
-    # Snapshot graph data under lock (fast, no I/O)
-    with graph_builder._lock:
-        session_items = list(graph_builder.session_map.items())[-max_nodes:]
-        selected_sessions = {idx for _, idx in session_items}
-        edge_dev_sess = [edge for edge in graph_builder.edges_device_session if edge[1] in selected_sessions]
-        edge_ip_sess = [edge for edge in graph_builder.edges_session_ip if edge[1] in selected_sessions]
-        edge_tgt_sess = [edge for edge in graph_builder.edges_session_target if edge[1] in selected_sessions]
-        selected_devices = {edge[0] for edge in edge_dev_sess}
-        selected_ips = {edge[0] for edge in edge_ip_sess}
-        selected_targets = {edge[0] for edge in edge_tgt_sess}
-        device_items = [(key, idx) for key, idx in graph_builder.device_map.items() if idx in selected_devices]
-        ip_items = [(key, idx) for key, idx in graph_builder.ip_map.items() if idx in selected_ips]
-        target_items = [(key, idx) for key, idx in graph_builder.target_map.items() if idx in selected_targets]
-        stats = {
-            "device_count": len(graph_builder.device_map),
-            "ip_count": len(graph_builder.ip_map),
-            "session_count": len(graph_builder.session_map),
-            "target_count": len(graph_builder.target_map),
-            "edges_count": (
-                len(graph_builder.edges_device_session)
-                + len(graph_builder.edges_session_ip)
-                + len(graph_builder.edges_session_target)
-            ),
-            "visible_device_count": len(device_items),
-            "visible_ip_count": len(ip_items),
-            "visible_session_count": len(session_items),
-            "visible_target_count": len(target_items),
-            "visible_edges_count": (
-                len(edge_dev_sess) + len(edge_ip_sess) + len(edge_tgt_sess)
-            ),
-            "suspected_coordinated_rings": 1
-            if (
-                len(graph_builder.session_map) > 10
-                and len(graph_builder.device_map)
-                < len(graph_builder.session_map) * 0.3
-            )
-            else 0,
-        }
-
-    # Build nodes (outside lock)
-    nodes = []
-    edges = []
-
-    for vid, idx in device_items:
-        nodes.append({
-            "id": f"dev_{idx}", "type": "device",
-            "label": vid[:12] + "…" if len(vid) > 12 else vid,
-            "fullId": vid,
-        })
-
-    for ip, idx in ip_items:
-        nodes.append({
-            "id": f"ip_{idx}", "type": "ip",
-            "label": ip, "fullId": ip,
-        })
-
-    # Session verdicts from DB (outside lock, may be slow)
-    session_verdicts = {}
-    try:
-        from api_service.database import get_db
-        db = get_db()
-        if db is not None:
-            selected_ids = [sid for sid, _ in session_items]
-            for doc in db["detection_results"].find(
-                {"sessionId": {"$in": selected_ids}},
-                {"sessionId": 1, "verdict": 1, "bot_probability": 1, "_id": 0},
-            ):
-                session_verdicts[doc.get("sessionId")] = {
-                    "verdict": doc.get("verdict", "UNKNOWN"),
-                    "prob": doc.get("bot_probability", 0),
-                }
-    except Exception:
-        logger.exception("Failed to load graph session verdicts")
-
-    for sid, idx in session_items:
-        sv = session_verdicts.get(sid, {})
-        nodes.append({
-            "id": f"sess_{idx}", "type": "session",
-            "label": sid[:10] + "…" if len(sid) > 10 else sid,
-            "fullId": sid,
-            "verdict": sv.get("verdict", "UNKNOWN"),
-            "prob": sv.get("prob", 0),
-        })
-
-    for url, idx in target_items:
-        try:
-            parsed_url = urlsplit(url)
-            short = parsed_url.path or "/"
-            if parsed_url.query:
-                short += f"?{parsed_url.query}"
-        except (TypeError, ValueError):
-            short = str(url) or "/"
-        nodes.append({
-            "id": f"tgt_{idx}", "type": "target",
-            "label": short[:20] + "…" if len(short) > 20 else short,
-            "fullId": url,
-        })
-
-    for dev_idx, sess_idx in edge_dev_sess:
-        edges.append({"source": f"dev_{dev_idx}", "target": f"sess_{sess_idx}", "type": "operates"})
-    for ip_idx, sess_idx in edge_ip_sess:
-        edges.append({"source": f"ip_{ip_idx}", "target": f"sess_{sess_idx}", "type": "originates"})
-    for tgt_idx, sess_idx in edge_tgt_sess:
-        edges.append({"source": f"sess_{sess_idx}", "target": f"tgt_{tgt_idx}", "type": "visits"})
-
-    return {"nodes": nodes, "edges": edges, "stats": stats}
 
 
 @app.get("/bot-collector.js")

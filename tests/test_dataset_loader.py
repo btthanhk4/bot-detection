@@ -241,6 +241,20 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
                 str(tmp_path), scenario="humans_and_moderate_bots", with_metadata=True
             )
 
+    def test_phase2_rejects_conflicting_annotation_files(self, tmp_path):
+        annotation_root = tmp_path / "phase2" / "annotations"
+        first = annotation_root / "a" / "labels"
+        second = annotation_root / "b" / "labels"
+        first.parent.mkdir(parents=True)
+        second.parent.mkdir(parents=True)
+        first.write_text("shared_0 human\n", encoding="utf-8")
+        second.write_text("shared_1 moderate_bot\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Conflicting Phase 2 annotations"):
+            load_phase2_dataset(
+                str(tmp_path), scenario="humans_and_moderate_bots", with_metadata=True
+            )
+
     def test_phase2_long_sessions_keep_recent_tail(self, tmp_path):
         data_dir = tmp_path / "phase2" / "data" / "mouse_movements" / "humans"
         data_dir.mkdir(parents=True)
@@ -310,6 +324,20 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         (annotations / "train").write_text("human human\nbot moderate_bot\n", encoding="utf-8")
 
         with pytest.raises(ValueError, match="Conflicting labels"):
+            load_real_dataset(
+                str(tmp_path), scenario=scenario, include_phase2=False, with_metadata=True
+            )
+
+    def test_phase1_rejects_conflicting_annotations_for_same_session(self, tmp_path):
+        scenario = "humans_and_moderate_bots"
+        annotation_root = tmp_path / "phase1" / "annotations" / scenario
+        annotation_root.mkdir(parents=True)
+        (annotation_root / "train").write_text("shared human\n", encoding="utf-8")
+        (annotation_root / "test").write_text(
+            "shared moderate_bot\n", encoding="utf-8"
+        )
+
+        with pytest.raises(ValueError, match="Conflicting Phase 1 annotations"):
             load_real_dataset(
                 str(tmp_path), scenario=scenario, include_phase2=False, with_metadata=True
             )

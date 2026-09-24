@@ -1,6 +1,6 @@
 # BÁO CÁO QUÁ TRÌNH XÂY DỰNG & TỐI ƯU MÔ HÌNH PHÁT HIỆN BOT
 
-> **Trạng thái:** Đây là bản diễn giải lịch sử trước khi sửa feature contract và
+> **Trạng thái: PHỤ LỤC LỊCH SỬ, KHÔNG PHẢI KẾT QUẢ HIỆN HÀNH.** Đây là bản diễn giải trước khi sửa feature contract và
 > data leakage. Kết quả máy đọc đã được chạy lại ngày 2026-09-15 trên 749 session;
 > nguồn số liệu hiện hành là [`core_ml/experiment_results.json`](core_ml/experiment_results.json)
 > và bảng tóm tắt trong [`README.md`](README.md). Không dùng các bảng lịch sử bên
@@ -56,8 +56,8 @@
 |-------|-----------|-------|--------|---------|
 | **BiLSTM** | 2-layer Bidirectional LSTM + TemporalAttention | Chuỗi 24 time steps × 8 features kinematics | P(bot) ∈ [0,1] | Phân tích hành vi chuột theo thời gian |
 | **XGBoost** | Gradient Boosted Trees (300 trees, depth 6) | Vector 43 features (env + mouse stats) | P(bot) ∈ [0,1] | Phân tích fingerprint + thống kê hành vi |
-| **GNN** | HeteroConv (SAGEConv) trên đồ thị device-IP-session | Graph heterogeneous | Logits per session | Phát hiện botnet phối hợp (coordinated) |
-| **Ensemble** | Confidence-based weighted fusion | 3 scores từ 3 models | Verdict + probability | Kết hợp đa modal |
+| **BotD Heuristic** | Luật phát hiện automation phía client | Fingerprint và browser signals | P(bot) ∈ [0,1] | Bằng chứng trực tiếp về WebDriver/headless |
+| **Ensemble** | Confidence-based weighted fusion | BiLSTM + XGBoost + heuristic | Verdict + probability | Kết hợp đa modal |
 
 ### 1.3 Bộ Features (50 chiều)
 
@@ -163,18 +163,6 @@ Epoch 30/30: Train=0.4542 | Val=0.5113 | Early stop
 ```
 
 > **Nhận xét:** LSTM performance thấp hơn XGBoost do: (1) dataset thật không có timestamp gốc → kinematic features bị nhiễu, (2) số lượng chunks ít (2,604) so với model capacity. Tuy nhiên trong Ensemble, LSTM bổ trợ XGBoost ở các case mà tabular features không đủ phân biệt.
-
-### 3.3 GNN (Graph — Fraud Ring Detection)
-
-```
-Epoch 10/25: Loss=0.5898
-Epoch 20/25: Loss=0.5253
-Epoch 25/25: Loss=0.3533
-```
-
-> **Nhận xét:** Loss hội tụ. GNN phát huy tác dụng khi có nhiều session cùng IP/device (phát hiện botnet phối hợp), ít giá trị trên single session.
-
----
 
 ## 4. THÍ NGHIỆM TỐI ƯU
 
@@ -357,7 +345,7 @@ Epoch 25/25: Loss=0.3533
 
 | Hạng mục | Chi tiết | Kết quả chính |
 |----------|----------|---------------|
-| Kiến trúc Ensemble 3 models | BiLSTM + XGBoost + GNN, confidence-based fusion | XGBoost AUC=0.9995 (val) |
+| Kiến trúc Ensemble 3 thành phần | BiLSTM + XGBoost + BotD heuristic, confidence-based fusion | XGBoost AUC=0.9995 (val) |
 | Real data integration | Parse 200 sessions từ M4D dataset | 600 total samples |
 | Feature engineering v2 | +6 features mới (curvature, time_regularity) | `time_regularity` Top 5 importance |
 | Proper evaluation split | Train/Val/Test 70/15/15, stratified | Không còn overfit trên train |
@@ -428,12 +416,10 @@ bot-detection-core/
 │   │   └── loader.py          # Data loading + synthetic generation
 │   ├── features/
 │   │   ├── env_features.py    # Environment/fingerprint features (26)
-│   │   ├── mouse_features.py  # Mouse dynamics features (17)
-│   │   └── graph_builder.py   # Graph construction for GNN
+│   │   └── mouse_features.py  # Mouse dynamics features (17)
 │   ├── models/
 │   │   ├── behavioral_lstm.py # BiLSTM + TemporalAttention
 │   │   ├── tabular_classifier.py # XGBoost + StandardScaler
-│   │   ├── gnn_detector.py    # HeteroConv GNN
 │   │   └── ensemble.py        # Confidence-based fusion
 │   ├── experiments/
 │   │   └── run_all.py         # 9 experiments suite
@@ -570,17 +556,15 @@ So sánh mô hình học máy (XGBoost 50 chiều) với các luật Heuristic t
 
 ## 6. TỔNG HỢP ĐÃ LÀM / CHƯA LÀM
  
-### ✅ Đã hoàn thành (100% Core ML & Production Readiness)
+### ✅ Đã hoàn thành pipeline Core ML phục vụ nghiên cứu
 
 | Hạng mục | Chi tiết |
 |----------|----------|
-| Kiến trúc Multi-Modal Ensemble | BiLSTM + XGBoost + GNN, confidence-based adaptive fusion |
+| Kiến trúc Multi-Modal Ensemble | BiLSTM + XGBoost + BotD heuristic, confidence-based adaptive fusion |
 | Real data integration | Nạp đầy đủ Phase 1 và Phase 2 M4D dataset (258 sessions thật) |
 | Chuẩn hóa không gian tọa độ | Normalize tọa độ chuột về [0, 1] trên cả dữ liệu thật và browser SDK |
 | Single Source of Truth đặc trưng | `STATISTICAL_FEATURE_NAMES` (20 features) và `ENV_FEATURE_NAMES` (30 features) |
 | Khử sập 500 & None-safe | Toàn bộ helper `safe_float`, `safe_bool` và sanitization `np.nan_to_num` |
-| Tính tất định GNN | Thay `hash()` bằng deterministic MD5 hash |
-| Bounded Memory Cache | Sliding window trong GraphBuilder chống rò rỉ RAM |
 | Bộ 9 Thí nghiệm E1 - E9 | Đã chạy và ghi nhận đầy đủ bảng số liệu thực tế |
 | Serving API & Collector SDK | FastAPI server (4 endpoints) + Client-side JS Collector |
 

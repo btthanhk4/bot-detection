@@ -175,7 +175,7 @@ def extract_env_vector(fingerprint: dict, botd: dict) -> np.ndarray:
     ]
 
     # Keep malformed but finite client values from overflowing float32 and
-    # poisoning graph/model tensors. Normal browser values are far below this.
+    # poisoning model tensors. Normal browser values are far below this.
     bounded = np.clip(
         np.asarray(features, dtype=np.float64),
         -MAX_FEATURE_MAGNITUDE,

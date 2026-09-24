@@ -398,44 +398,6 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         raise DatabasePersistenceError("Failed to persist detection result") from e
 
 
-def get_graph_seed_events(limit: int = 10000) -> Optional[List[dict]]:
-    """Load recent persisted telemetry in chronological order for graph recovery."""
-    db = get_db()
-    if db is None:
-        return None
-    try:
-        cursor = db["detection_results"].find(
-            {},
-            {
-                "_id": 0,
-                "sessionId": 1,
-                "visitorId": 1,
-                "client_ip": 1,
-                "pageUrl": 1,
-                "fingerprint": 1,
-                "botd": 1,
-                "mouse_trajectory": 1,
-                "updated_at": 1,
-            },
-        ).sort("updated_at", -1).limit(max(1, min(int(limit), 100000)))
-        documents = list(cursor)
-        return [
-            {
-                "sessionId": doc.get("sessionId"),
-                "visitorId": doc.get("visitorId"),
-                "client_ip": doc.get("client_ip"),
-                "pageUrl": doc.get("pageUrl"),
-                "fingerprint": doc.get("fingerprint") or {},
-                "botd": doc.get("botd") or {},
-                "mouse": {"records": doc.get("mouse_trajectory") or []},
-            }
-            for doc in reversed(documents)
-        ]
-    except Exception as exc:
-        logger.error(f"[DB] Graph seed query failed: {exc}")
-        return None
-
-
 def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
     """Get most recent detection results, sorted by created_at descending."""
     db = get_db()
@@ -642,8 +604,8 @@ def delete_all_sessions() -> Optional[int]:
         result = db["detection_results"].delete_many({})
         db["service_control"].update_one(
             {"_id": "ingestion"},
-            # Give the API process time to clear its in-memory graph and replay
-            # buffer before accepting new writes.
+            # Give the API process time to clear its replay buffer before
+            # accepting new writes.
             {"$set": {"blocked_until": datetime.now(timezone.utc) + timedelta(seconds=5)}},
             upsert=True,
         )

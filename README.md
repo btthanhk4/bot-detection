@@ -6,14 +6,14 @@
 
 ## Tổng quan
 
-Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp sức mạnh từ 3 công nghệ mã nguồn mở và mạng nơ-ron đồ thị:
+Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp ba nhánh phân tích: hành vi chuột, đặc trưng trình duyệt và luật phát hiện automation.
 
-| # | Công nghệ | Vai trò | Nguồn |
-|---|-----------|---------|-------|
-| 1 | **FingerprintJS** | Thu thập ~40 đặc trưng phần cứng/trình duyệt | [GitHub](https://github.com/fingerprintjs/fingerprintjs) |
-| 2 | **BotD** | 12+ luật heuristic client-side (webdriver, headless, inconsistencies) | [GitHub](https://github.com/fingerprintjs/BotD) |
-| 3 | **DELBOT-Mouse** | Phân tích quỹ đạo chuột bằng BiLSTM + Temporal Attention | [GitHub](https://github.com/chrisgdt/DELBOT-Mouse) |
-| 4 | **PyTorch Geometric** | Phát hiện botnet phối hợp qua đồ thị Device–IP–Session | [GitHub](https://github.com/pyg-team/pytorch_geometric) |
+| # | Thành phần | Vai trò | Ghi chú |
+|---|------------|---------|---------|
+| 1 | **Fingerprint collector** | Thu thập 25 trường tín hiệu phần cứng/trình duyệt | Tự triển khai, tham khảo [FingerprintJS](https://github.com/fingerprintjs/fingerprintjs) |
+| 2 | **BotD heuristic detector** | 13 luật client-side: webdriver, headless, inconsistencies | Tự triển khai, tham khảo [BotD](https://github.com/fingerprintjs/BotD) |
+| 3 | **Behavioral BiLSTM** | Phân tích quỹ đạo chuột bằng BiLSTM + Temporal Attention | Tự triển khai, tham khảo [DELBOT-Mouse](https://github.com/chrisgdt/DELBOT-Mouse) |
+| 4 | **XGBoost** | Phân loại fingerprint và thống kê hành vi tổng hợp | Mô hình tabular được huấn luyện trong dự án |
 
 ---
 
@@ -22,7 +22,7 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp s�
 ```
 ┌──────────────────────────────────────────────────┐
 │              DATA COLLECTION (collector/)          │
-│  FingerprintJS  │  BotD Heuristics  │  Mouse SDK  │
+│ Fingerprint SDK │  BotD Heuristics  │  Mouse SDK  │
 └────────┬────────┴──────────┬────────┴──────┬──────┘
          │     Telemetry JSON Payload        │
          ▼                                   ▼
@@ -45,8 +45,6 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp s�
 └─────────────────────────────────────────────────────┘
 ```
 
-The GNN architecture is retained as an offline research component, but no weight is
-shipped because the public mouse dataset has no observed device/IP/target graph.
 Live API verdicts use BiLSTM, XGBoost, and BotD heuristics.
 
 ---
@@ -57,8 +55,8 @@ Live API verdicts use BiLSTM, XGBoost, and BotD heuristics.
 bot-detection-core/
 ├── collector/                       # Client-side SDK thu thập tín hiệu
 │   ├── src/
-│   │   ├── fingerprint.js          # Thu thập ~40 đặc trưng & hash visitorId
-│   │   ├── botd.js                 # 12 luật heuristic phát hiện bot
+│   │   ├── fingerprint.js          # Thu thập 25 trường tín hiệu & hash visitorId
+│   │   ├── botd.js                 # 13 luật heuristic phát hiện bot
 │   │   ├── mouse.js                # Mouse tracker + kinematic features
 │   │   └── index.js                # Unified Collector SDK
 │   └── dist/
@@ -69,12 +67,10 @@ bot-detection-core/
 │   │   └── loader.py               # Parser M4D dataset + synthetic generator
 │   ├── features/
 │   │   ├── env_features.py         # Environment/fingerprint vector (30 dims)
-│   │   ├── mouse_features.py       # Mouse dynamics stats + chunks (20 + 8 dims)
-│   │   └── graph_builder.py        # Heterogeneous graph construction
+│   │   └── mouse_features.py       # Mouse dynamics stats + chunks (20 + 8 dims)
 │   ├── models/
 │   │   ├── behavioral_lstm.py      # BiLSTM + TemporalAttention (v2)
 │   │   ├── tabular_classifier.py   # XGBoost + StandardScaler (v2)
-│   │   ├── gnn_detector.py         # HeteroConv GNN + Residual (v2)
 │   │   └── ensemble.py             # Confidence-based weighted fusion (v2)
 │   ├── experiments/
 │   │   └── run_all.py              # 9 thí nghiệm đánh giá toàn diện
@@ -101,7 +97,7 @@ bot-detection-core/
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
 | **XGBoost (50 features)** | **1.0000** | **1.0000** | **0.0000** |
-| BiLSTM (session aggregation) | 1.0000 | 0.9851 | 0.0833 |
+| BiLSTM (session aggregation) | 1.0000 | 0.9778 | 0.1250 |
 | Production ensemble | 1.0000 | 1.0000 | 0.0000 |
 
 Các số liệu trên được đo trên 90 session test độc lập (24 human, 66 bot). Đây là
@@ -155,8 +151,7 @@ python -u -m core_ml.train --dataset-root "/path/to/web_bot_detection_dataset"
 
 Kết quả huấn luyện v2:
 - **XGBoost:** Test AUC=1.0000 | Test F1=1.0000
-- **BiLSTM:** Test AUC=1.0000 | Test F1=0.9851 (aggregated by session)
-- **GNN:** not trained; real graph relationships are required to avoid target leakage
+- **BiLSTM:** Test AUC=1.0000 | Test F1=0.9778 (aggregated by session)
 - Weights saved to `core_ml/weights/`
 
 ### 3. Chạy toàn bộ thí nghiệm
@@ -190,7 +185,7 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
 | `GET` | `/` | Health check + model status |
 | `POST` | `/api/v1/detect` | Real-time bot classification |
 | `POST` | `/api/v1/telemetry` | Asynchronous telemetry ingestion |
-| `GET` | `/api/v1/graph/stats` | Graph topology & fraud ring indicators |
+| `GET` | `/api/v1/traffic/timeline` | Lưu lượng phân loại theo khoảng thời gian |
 
 ### Ví dụ Response từ `/api/v1/detect`
 

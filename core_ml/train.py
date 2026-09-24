@@ -1,5 +1,5 @@
 """
-Training Pipeline for Multi-Modal Bot Detection & Graph Neural Network (v2)
+Training Pipeline for Multi-Modal Bot Detection (v2)
 ============================================================================
 Major improvements:
   1. Published test split preservation and leakage-safe stratification
@@ -377,48 +377,6 @@ def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=N
     print(f"    Top 5 Features: {top5}")
 
 
-def train_gnn(gnn_model, graph_data, train_indices=None, val_indices=None, test_indices=None, epochs=30, lr=0.01):
-    """Train GNN without using validation/test labels in the loss."""
-    print("--> Training HeteroClickFraudGNN Model...")
-    x_dict = graph_data["x_dict"]
-    edge_index_dict = graph_data["edge_index_dict"]
-    y_session = graph_data["y_session"]
-
-    if y_session.numel() == 0:
-        print("    No session labels found in graph. Skipping GNN training.")
-        return
-
-    train_indices = torch.as_tensor(
-        train_indices if train_indices is not None else np.arange(len(y_session)), dtype=torch.long
-    )
-    val_indices = torch.as_tensor(val_indices if val_indices is not None else [], dtype=torch.long)
-    test_indices = torch.as_tensor(test_indices if test_indices is not None else [], dtype=torch.long)
-
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(gnn_model.parameters(), lr=lr, weight_decay=1e-4)
-
-    gnn_model.train()
-    for epoch in range(epochs):
-        optimizer.zero_grad()
-        logits = gnn_model(x_dict, edge_index_dict)
-        loss = criterion(logits[train_indices], y_session[train_indices])
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), max_norm=1.0)
-        optimizer.step()
-        if (epoch + 1) % 10 == 0 or epoch == epochs - 1:
-            print(f"    GNN Epoch [{epoch+1}/{epochs}] Loss: {loss.item():.4f}")
-
-    gnn_model.eval()
-    if val_indices.numel() > 0:
-        with torch.no_grad():
-            val_proba = gnn_model.predict_session_probabilities(x_dict, edge_index_dict)[val_indices].numpy()
-        evaluate_metrics(y_session[val_indices].numpy(), val_proba, prefix="[Val GNN] ")
-    if test_indices.numel() > 0:
-        with torch.no_grad():
-            test_proba = gnn_model.predict_session_probabilities(x_dict, edge_index_dict)[test_indices].numpy()
-        evaluate_metrics(y_session[test_indices].numpy(), test_proba, prefix="[Test GNN] ")
-
-
 def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
     """Compute and print all classification metrics."""
     y_pred = (y_pred_proba >= threshold).astype(int)
@@ -689,13 +647,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "LSTM training did not complete; existing ensemble artifacts were preserved"
         )
 
-    # A GNN requires observed device/IP/target relationships. The public mouse
-    # dataset has none, so synthesizing graph edges from labels would leak the
-    # target into model inputs. Train it separately only on real graph data.
-    print("\n[PHASE 6] Skipping GNN: no observed graph relationships in this dataset")
-
     # ================================================================
-    # PHASE 7: Evaluation on Train/Val/Test
+    # PHASE 6: Evaluation on Train/Val/Test
     # ================================================================
     print("\n" + "=" * 60)
     print("  EVALUATION RESULTS")

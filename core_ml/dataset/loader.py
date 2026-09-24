@@ -37,6 +37,19 @@ class DatasetLabelConflictError(ValueError):
     """Raised when one dataset session ID is assigned incompatible labels."""
 
 
+_MISSING_LABEL = object()
+
+
+def _register_phase2_label(label_map: dict, session_id: str, label) -> None:
+    """Register one annotation without allowing traversal order to change its label."""
+    existing = label_map.get(session_id, _MISSING_LABEL)
+    if existing is not _MISSING_LABEL and existing != label:
+        raise DatasetLabelConflictError(
+            f"Conflicting Phase 2 annotations for session ID: {session_id}"
+        )
+    label_map[session_id] = label
+
+
 def _annotation_label(raw_label: str):
     """Map only documented labels; malformed annotations must not become bots."""
     normalized = str(raw_label).strip().lower()
@@ -285,11 +298,11 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
     label_map = {}  # session_id -> label (0=human, 1=bot)
     ann_root = os.path.join(phase2_root, "annotations")
     if os.path.isdir(ann_root):
-        for scenario_dir in os.listdir(ann_root):
+        for scenario_dir in sorted(os.listdir(ann_root)):
             scenario_path = os.path.join(ann_root, scenario_dir)
             if not os.path.isdir(scenario_path):
                 continue
-            for fname in os.listdir(scenario_path):
+            for fname in sorted(os.listdir(scenario_path)):
                 fpath = os.path.join(scenario_path, fname)
                 if os.path.isfile(fpath):
                     with open(fpath, "r", encoding="utf-8") as f:
@@ -309,11 +322,11 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                                         label_str,
                                         sid,
                                     )
-                                    label_map[sid] = None
-                                    label_map[base_sid] = None
+                                    _register_phase2_label(label_map, sid, None)
+                                    _register_phase2_label(label_map, base_sid, None)
                                     continue
-                                label_map[sid] = label
-                                label_map[base_sid] = label
+                                _register_phase2_label(label_map, sid, label)
+                                _register_phase2_label(label_map, base_sid, label)
     
     # Load data files
     data_files = [(os.path.join(phase2_root, "data", "mouse_movements", "humans", "mouse_movements_humans.json"), 0)]
@@ -443,12 +456,18 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
                                 session_id,
                             )
                             continue
-                        label_map[session_id] = (label, split)
+                        existing = label_map.get(session_id)
+                        if existing and existing[0] != label:
+                            raise DatasetLabelConflictError(
+                                f"Conflicting Phase 1 annotations for session ID: {session_id}"
+                            )
+                        if not existing or split == "test":
+                            label_map[session_id] = (label, split)
 
     # Load Phase 1 sessions
     phase1_load_errors = 0
     if os.path.isdir(phase1_data):
-        for session_id in os.listdir(phase1_data):
+        for session_id in sorted(os.listdir(phase1_data)):
             session_dir = os.path.join(phase1_data, session_id)
             if not os.path.isdir(session_dir):
                 continue
