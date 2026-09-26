@@ -204,9 +204,11 @@ def test_save_reports_admin_ingestion_pause_as_retryable(monkeypatch):
     from datetime import datetime, timedelta, timezone
     from api_service.database import DatabaseIngestionPaused
 
+    blocked_until = datetime.now(timezone.utc) + timedelta(seconds=5)
+
     class Control:
         def find_one(self, *_args):
-            return {"blocked_until": datetime.now(timezone.utc) + timedelta(seconds=5)}
+            return {"blocked_until": blocked_until}
 
     database = {"service_control": Control()}
     monkeypatch.setattr("api_service.database.get_db", lambda: database)
