@@ -48,6 +48,14 @@ class DatabasePersistenceError(RuntimeError):
     """Raised when a database write fails rather than being intentionally rejected."""
 
 
+class DatabaseIngestionPaused(RuntimeError):
+    """Raised while an administrative delete temporarily blocks new writes."""
+
+    def __init__(self, retry_after_seconds: int):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__("Telemetry ingestion is temporarily paused")
+
+
 def _sanitize_bson_value(value, depth: int = 0):
     """Bound untrusted nested values to a BSON-safe, dashboard-safe subset."""
     if depth > 4:
@@ -252,7 +260,8 @@ def _writes_are_blocked(db, session_id: str) -> bool:
     now = datetime.now(timezone.utc)
     control = db["service_control"].find_one({"_id": "ingestion"}, {"blocked_until": 1})
     if control and control.get("blocked_until") and control["blocked_until"] > now:
-        return True
+        remaining = math.ceil((control["blocked_until"] - now).total_seconds())
+        raise DatabaseIngestionPaused(max(1, remaining))
     return db["deleted_sessions"].find_one(
         {"sessionId": session_id, "expires_at": {"$gt": now}}, {"_id": 1}
     ) is not None
@@ -389,10 +398,17 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                     return None
 
         # Close the delete/write race: a tombstone created during this write wins.
-        if _writes_are_blocked(db, session_id):
+        try:
+            blocked_after_write = _writes_are_blocked(db, session_id)
+        except DatabaseIngestionPaused:
+            collection.delete_one({"sessionId": session_id})
+            raise
+        if blocked_after_write:
             collection.delete_one({"sessionId": session_id})
             return None
         return session_id
+    except DatabaseIngestionPaused:
+        raise
     except Exception as e:
         logger.error(f"[DB] Save failed: {e}")
         raise DatabasePersistenceError("Failed to persist detection result") from e

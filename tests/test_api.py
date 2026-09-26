@@ -701,6 +701,24 @@ def test_database_outage_uses_fallback_buffer(client, monkeypatch):
             telemetry_buffer.extend(retained)
 
 
+def test_admin_ingestion_pause_returns_retry_without_buffering(client, monkeypatch):
+    from api_service.database import DatabaseIngestionPaused
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    def paused_write(_data, _analysis):
+        raise DatabaseIngestionPaused(5)
+
+    monkeypatch.setattr("api_service.database.save_detection_result", paused_write)
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": "new-during-delete", "visitorId": "visitor"},
+    )
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "5"
+    with _telemetry_buffer_lock:
+        assert all(event.get("sessionId") != "new-during-delete" for event in telemetry_buffer)
+
+
 def test_database_write_exception_is_buffered_even_when_ping_is_healthy(client, monkeypatch):
     from api_service.main import telemetry_buffer, _telemetry_buffer_lock
 
@@ -877,7 +895,61 @@ def test_failed_replay_does_not_evict_newer_event_when_buffer_refills():
         telemetry_buffer.clear()
 
 
-def test_full_telemetry_buffer_reports_oldest_event_drop():
+def test_replay_reserves_capacity_for_failed_event(monkeypatch):
+    from api_service.main import (
+        _buffer_telemetry,
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        _telemetry_buffer_stats,
+        telemetry_buffer,
+    )
+
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.extend(
+            {"sessionId": str(index), "_buffered_analysis": {"verdict": "HUMAN"}}
+            for index in range(telemetry_buffer.maxlen)
+        )
+        dropped_before = _telemetry_buffer_stats["dropped_total"]
+
+    def fail_after_concurrent_ingest(_data, _analysis):
+        assert _buffer_telemetry({"sessionId": "concurrent"}) is False
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr("api_service.database.save_detection_result", fail_after_concurrent_ingest)
+    try:
+        _flush_telemetry_buffer(max_events=1)
+        with _telemetry_buffer_lock:
+            assert len(telemetry_buffer) == telemetry_buffer.maxlen
+            assert telemetry_buffer[0]["sessionId"] == "0"
+            assert _telemetry_buffer_stats["dropped_total"] == dropped_before
+    finally:
+        with _telemetry_buffer_lock:
+            telemetry_buffer.clear()
+
+
+def test_admin_delete_does_not_requeue_old_replay(monkeypatch):
+    from api_service.database import DatabaseIngestionPaused
+    from api_service.main import _flush_telemetry_buffer, _telemetry_buffer_lock, telemetry_buffer
+
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.append({
+            "sessionId": "deleted-event",
+            "_buffered_analysis": {"verdict": "HUMAN"},
+        })
+
+    def paused_write(_data, _analysis):
+        raise DatabaseIngestionPaused(5)
+
+    monkeypatch.setattr("api_service.database.save_detection_result", paused_write)
+
+    _flush_telemetry_buffer(max_events=1)
+    with _telemetry_buffer_lock:
+        assert not telemetry_buffer
+
+
+def test_full_telemetry_buffer_rejects_new_event_without_eviction():
     from api_service.main import (
         _buffer_telemetry,
         _telemetry_buffer_stats,
@@ -891,14 +963,37 @@ def test_full_telemetry_buffer_reports_oldest_event_drop():
         telemetry_buffer.extend(existing)
         dropped_before = _telemetry_buffer_stats["dropped_total"]
 
-    assert _buffer_telemetry({"sessionId": "newest"}) is True
+    assert _buffer_telemetry({"sessionId": "newest"}) is False
 
     with _telemetry_buffer_lock:
         assert len(telemetry_buffer) == telemetry_buffer.maxlen
-        assert telemetry_buffer[0]["sessionId"] == "old-1"
-        assert telemetry_buffer[-1]["sessionId"] == "newest"
-        assert _telemetry_buffer_stats["dropped_total"] == dropped_before + 1
+        assert list(telemetry_buffer) == existing
+        assert _telemetry_buffer_stats["dropped_total"] == dropped_before
         telemetry_buffer.clear()
+
+
+def test_full_telemetry_buffer_returns_retryable_error(client, monkeypatch):
+    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
+    with _telemetry_buffer_lock:
+        telemetry_buffer.clear()
+        telemetry_buffer.extend({"sessionId": str(index)} for index in range(telemetry_buffer.maxlen))
+
+    try:
+        response = client.post(
+            "/api/v1/telemetry",
+            json={"sessionId": "retry-me", "visitorId": "visitor"},
+        )
+        assert response.status_code == 503
+        assert response.headers["Retry-After"] == "10"
+        with _telemetry_buffer_lock:
+            assert len(telemetry_buffer) == telemetry_buffer.maxlen
+            assert all(event["sessionId"] != "retry-me" for event in telemetry_buffer)
+    finally:
+        with _telemetry_buffer_lock:
+            telemetry_buffer.clear()
 
 
 def test_delete_requires_admin_token(client, monkeypatch):

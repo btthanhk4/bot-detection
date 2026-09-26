@@ -420,7 +420,7 @@ def validate_release_metrics(
     minimums: dict = None,
     maximums: dict = None,
 ) -> None:
-    """Refuse to publish an ensemble that misses minimum held-out quality targets."""
+    """Refuse to publish an ensemble that misses validation quality targets."""
     required = minimums or RELEASE_MINIMUM_METRICS
     failures = []
     for name, minimum in required.items():
@@ -458,6 +458,30 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
         probabilities.append(lstm_model.predict_session_proba(chunks_tensor[positions.tolist()]))
         session_labels.append(int(labels[int(session_idx)]))
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
+
+
+def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels, test_indices, test_labels):
+    """Gate on validation, then report the untouched held-out test result."""
+    metrics_by_split = {}
+    for split_name, indices, labels in (
+        ("Val", val_indices, val_labels),
+        ("Test", test_indices, test_labels),
+    ):
+        probabilities = np.asarray([
+            detector.predict(telemetries[index])["bot_probability"]
+            for index in indices
+        ])
+        print(f"\n  --- {split_name} Set (Production Ensemble) ---")
+        metrics = evaluate_metrics(
+            labels,
+            probabilities,
+            threshold=PRODUCTION_DECISION_THRESHOLD,
+            prefix=f"[{split_name} Ensemble] ",
+        )
+        metrics_by_split[split_name.lower()] = metrics
+        if split_name == "Val":
+            validate_release_metrics(metrics)
+    return metrics_by_split
 
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None):
@@ -703,7 +727,6 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     for name, X_set, y_set in [
         ("Train", X_train_tab, y_train_tab),
         ("Val", X_val_tab, y_val_tab),
-        ("Test", X_test_tab, y_test_tab),
     ]:
         print(f"\n  --- {name} Set (Tabular XGBoost) ---")
         probas = tabular_model.predict_batch(X_set)
@@ -721,15 +744,6 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             training_metrics["lstm"]["val"] = evaluate_metrics(
                 lstm_val_true, lstm_val_preds, prefix="[Val LSTM] "
             )
-        if len(idx_test):
-            lstm_test_true, lstm_test_preds = predict_lstm_sessions(
-                lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_test, y_tab
-            )
-            if len(lstm_test_true):
-                print("\n  --- Test Set (BiLSTM by session) ---")
-                training_metrics["lstm"]["test"] = evaluate_metrics(
-                    lstm_test_true, lstm_test_preds, prefix="[Test LSTM] "
-                )
 
     # Evaluate the exact fusion policy used by the API instead of publishing
     # solely from individual-model metrics at a different threshold.
@@ -741,20 +755,30 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         tabular_available=True,
         lstm_available=True,
     )
-    ensemble_probabilities = np.asarray([
-        production_detector.predict(all_telemetries[index])["bot_probability"]
-        for index in idx_test
-    ])
-    print("\n  --- Test Set (Production Ensemble) ---")
-    training_metrics["ensemble"] = {
-        "test": evaluate_metrics(
-            y_test_tab,
-            ensemble_probabilities,
-            threshold=PRODUCTION_DECISION_THRESHOLD,
-            prefix="[Test Ensemble] ",
+    training_metrics["ensemble"] = evaluate_ensemble_for_release(
+        production_detector,
+        all_telemetries,
+        idx_val,
+        y_val_tab,
+        idx_test,
+        y_test_tab,
+    )
+
+    print("\n  --- Test Set (Tabular XGBoost) ---")
+    training_metrics["tabular"]["test"] = evaluate_metrics(
+        y_test_tab,
+        tabular_model.predict_batch(X_test_tab),
+        prefix="[Test] ",
+    )
+    if len(idx_test):
+        lstm_test_true, lstm_test_preds = predict_lstm_sessions(
+            lstm_model, X_chunks_tensor, all_chunk_session_indices, idx_test, y_tab
         )
-    }
-    validate_release_metrics(training_metrics["ensemble"]["test"])
+        if len(lstm_test_true):
+            print("\n  --- Test Set (BiLSTM by session) ---")
+            training_metrics["lstm"]["test"] = evaluate_metrics(
+                lstm_test_true, lstm_test_preds, prefix="[Test LSTM] "
+            )
 
     serializable_metrics = {
         model: {

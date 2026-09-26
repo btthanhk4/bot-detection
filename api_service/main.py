@@ -157,6 +157,7 @@ model_bundle_id = str(model_manifest.get("bundle_id") or "")
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
 _telemetry_buffer_lock = threading.Lock()
 _telemetry_buffer_stats = {"dropped_total": 0}
+_telemetry_replay_inflight = 0
 _telemetry_flush_lock = threading.Lock()
 _health_cache_lock = threading.Lock()
 _health_cache = {"checked_at": 0.0, "database": False, "inference_ready": False}
@@ -213,25 +214,16 @@ def _record_telemetry_drop(reason: str):
 
 
 def _buffer_telemetry(data: dict, analysis: Optional[dict] = None) -> bool:
-    """Append recent telemetry while making bounded-buffer loss observable."""
+    """Buffer telemetry without evicting an event already acknowledged to a client."""
     buffered_data = dict(data)
     if analysis is not None:
         # Reuse the decision already returned for this event. Re-running the
         # model during database recovery wastes CPU and can change the verdict.
         buffered_data["_buffered_analysis"] = dict(analysis)
-    dropped_oldest = False
     with _telemetry_buffer_lock:
-        if len(telemetry_buffer) >= telemetry_buffer.maxlen:
-            telemetry_buffer.popleft()
-            _telemetry_buffer_stats["dropped_total"] += 1
-            dropped_oldest = True
-            dropped_total = _telemetry_buffer_stats["dropped_total"]
+        if len(telemetry_buffer) + _telemetry_replay_inflight >= telemetry_buffer.maxlen:
+            return False
         telemetry_buffer.append(buffered_data)
-    if dropped_oldest:
-        logger.warning(
-            "Telemetry buffer full; dropped oldest event (dropped_total=%d)",
-            dropped_total,
-        )
     return True
 
 
@@ -250,10 +242,15 @@ def _requeue_buffered_event(data: dict, *, front: bool = True):
 
 def _flush_telemetry_buffer(max_events: Optional[int] = None):
     """Persist a bounded batch after MongoDB recovers without duplicate flushers."""
+    global _telemetry_replay_inflight
     if not _telemetry_flush_lock.acquire(blocking=False):
         return
     try:
-        from api_service.database import is_database_ready, save_detection_result
+        from api_service.database import (
+            DatabaseIngestionPaused,
+            is_database_ready,
+            save_detection_result,
+        )
 
         with _telemetry_buffer_lock:
             pending_count = len(telemetry_buffer)
@@ -264,50 +261,63 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 if not telemetry_buffer:
                     break
                 data = telemetry_buffer.popleft()
+                _telemetry_replay_inflight += 1
 
-            analysis = data.pop("_buffered_analysis", None)
-            if not isinstance(analysis, dict):
-                try:
-                    analysis = ensemble_detector.predict(data)
-                    _attach_model_metadata(analysis)
-                except Exception:
-                    retry_count = int(data.get("_replay_attempts", 0)) + 1
-                    if retry_count <= settings.MAX_TELEMETRY_RETRIES:
-                        data["_replay_attempts"] = retry_count
-                        _requeue_buffered_event(data, front=False)
-                        logger.exception(
-                            "Buffered telemetry inference failed (attempt %d/%d)",
-                            retry_count,
-                            settings.MAX_TELEMETRY_RETRIES,
-                        )
-                    else:
-                        logger.exception(
-                            "Dropping buffered telemetry after %d failed inference attempts",
-                            retry_count,
-                        )
-                        _record_telemetry_drop("inference retry limit exceeded")
-                    continue
-            else:
-                _attach_model_metadata(analysis)
-
-            data.pop("_replay_attempts", None)
             try:
-                persisted = bool(save_detection_result(data, analysis))
-            except Exception:
-                logger.exception("Buffered telemetry persistence failed")
-                data["_buffered_analysis"] = analysis
-                _requeue_buffered_event(data)
-                break
+                analysis = data.pop("_buffered_analysis", None)
+                if not isinstance(analysis, dict):
+                    try:
+                        analysis = ensemble_detector.predict(data)
+                        _attach_model_metadata(analysis)
+                    except Exception:
+                        retry_count = int(data.get("_replay_attempts", 0)) + 1
+                        if retry_count <= settings.MAX_TELEMETRY_RETRIES:
+                            data["_replay_attempts"] = retry_count
+                            _requeue_buffered_event(data, front=False)
+                            logger.exception(
+                                "Buffered telemetry inference failed (attempt %d/%d)",
+                                retry_count,
+                                settings.MAX_TELEMETRY_RETRIES,
+                            )
+                        else:
+                            logger.exception(
+                                "Dropping buffered telemetry after %d failed inference attempts",
+                                retry_count,
+                            )
+                            _record_telemetry_drop("inference retry limit exceeded")
+                        continue
+                else:
+                    _attach_model_metadata(analysis)
 
-            if persisted:
-                continue
+                data.pop("_replay_attempts", None)
+                try:
+                    persisted = bool(save_detection_result(data, analysis))
+                except DatabaseIngestionPaused:
+                    # An admin delete intentionally invalidates old replay data.
+                    continue
+                except Exception:
+                    logger.exception("Buffered telemetry persistence failed")
+                    data["_buffered_analysis"] = analysis
+                    _requeue_buffered_event(data)
+                    break
 
-            # A live database can intentionally reject stale/tombstoned data;
-            # discard it. On an outage, restore the event and retry later.
-            if not is_database_ready():
-                data["_buffered_analysis"] = analysis
-                _requeue_buffered_event(data)
-                break
+                if persisted:
+                    continue
+
+                # A live database can intentionally reject stale/tombstoned data;
+                # discard it. On an outage, restore the event and retry later.
+                try:
+                    database_ready = is_database_ready()
+                except Exception:
+                    logger.exception("Database readiness check failed during replay")
+                    database_ready = False
+                if not database_ready:
+                    data["_buffered_analysis"] = analysis
+                    _requeue_buffered_event(data)
+                    break
+            finally:
+                with _telemetry_buffer_lock:
+                    _telemetry_replay_inflight -= 1
     finally:
         _telemetry_flush_lock.release()
 
@@ -586,8 +596,14 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     persisted = False
     persistence_failed = False
     try:
-        from api_service.database import save_detection_result
+        from api_service.database import DatabaseIngestionPaused, save_detection_result
         persisted = bool(await run_in_threadpool(save_detection_result, data, analysis))
+    except DatabaseIngestionPaused as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Telemetry ingestion is temporarily paused",
+            headers={"Retry-After": str(min(exc.retry_after_seconds, 300))},
+        ) from exc
     except Exception:
         logger.exception("Telemetry persistence failed")
         persisted = False
@@ -606,6 +622,12 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
                 database_ready = False
         if persistence_failed or not database_ready:
             buffered = _buffer_telemetry(data, analysis)
+            if not buffered:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Telemetry buffer is full; retry later",
+                    headers={"Retry-After": "10"},
+                )
 
     if persisted:
         background_tasks.add_task(_flush_telemetry_buffer)

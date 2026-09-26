@@ -9,6 +9,7 @@ from core_ml.train import (
     audit_training_dataset,
     assign_real_session_splits,
     deduplicate_real_sessions,
+    evaluate_ensemble_for_release,
     predict_lstm_sessions,
     publish_model_artifacts,
     resolve_training_device,
@@ -171,6 +172,28 @@ def test_model_release_gate_rejects_missing_or_weak_metrics():
         validate_release_metrics(invalid)
     with pytest.raises(RuntimeError, match="false_positive_rate"):
         validate_release_metrics({**passing, "false_positive_rate": 0.50})
+
+
+def test_ensemble_release_gate_uses_validation_not_test():
+    class Detector:
+        def predict(self, telemetry):
+            return {"bot_probability": telemetry["score"]}
+
+    telemetries = [
+        {"score": 0.1}, {"score": 0.9},
+        {"score": 0.9}, {"score": 0.1},
+    ]
+    metrics = evaluate_ensemble_for_release(
+        Detector(), telemetries, [0, 1], np.array([0, 1]), [2, 3], np.array([0, 1]),
+    )
+    assert metrics["val"]["recall"] == 1.0
+    assert metrics["test"]["recall"] == 0.0
+
+    telemetries[:2] = [{"score": 0.9}, {"score": 0.1}]
+    with pytest.raises(RuntimeError, match="Model release gate failed"):
+        evaluate_ensemble_for_release(
+            Detector(), telemetries, [0, 1], np.array([0, 1]), [2, 3], np.array([0, 1]),
+        )
 
 
 def test_lstm_training_keeps_cpu_runtime_supported():

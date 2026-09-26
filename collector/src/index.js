@@ -78,7 +78,7 @@ export class BotCollector {
 
     if (!this.destroyed && lifecycleVersion === this.lifecycleVersion && this.autoSendInterval > 0) {
       this.timer = setInterval(() => {
-        this.sendTelemetry().catch(() => false);
+        this.sendTelemetry('heartbeat').catch(() => false);
       }, this.autoSendInterval);
     }
 
@@ -133,16 +133,7 @@ export class BotCollector {
     const mouse = payload && payload.mouse ? payload.mouse : {};
     const records = Array.isArray(mouse.records) ? mouse.records : [];
     const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
-    const lastRecord = records.length ? records[records.length - 1] : {};
-    const lastScroll = scrollEvents.length ? scrollEvents[scrollEvents.length - 1] : {};
-    return [
-      payload.pageUrl || '',
-      records.length,
-      lastRecord.time ?? '',
-      lastRecord.type || '',
-      scrollEvents.length,
-      lastScroll.time ?? '',
-    ].join('|');
+    return JSON.stringify([payload.pageUrl || '', records, scrollEvents]);
   }
 
   /**
@@ -181,7 +172,7 @@ export class BotCollector {
     this.pendingRetry = null;
   }
 
-  scheduleRetry(body, lifecycleVersion, attempt = 1) {
+  scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null) {
     if (
       this.destroyed ||
       lifecycleVersion !== this.lifecycleVersion ||
@@ -189,7 +180,7 @@ export class BotCollector {
     ) return;
 
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.pendingRetry = { body, lifecycleVersion, attempt };
+    this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature };
     const delay = Math.max(
       this.retryBaseDelay * Math.pow(2, attempt - 1),
       this.retryAfterMs,
@@ -200,14 +191,22 @@ export class BotCollector {
       const pending = this.pendingRetry;
       if (!pending || this.destroyed || pending.lifecycleVersion !== this.lifecycleVersion) return;
 
-      const sent = await this.transmitTelemetry(pending.body, 'retry');
+      const sentBody = pending.body;
+      const sentSignature = pending.activitySignature;
+      const sent = await this.transmitTelemetry(sentBody, 'retry');
       // A heartbeat may have installed a newer snapshot while this request was
       // in flight. The older completion must not clear or replace that retry.
       if (this.pendingRetry !== pending) return;
       if (sent) {
-        this.pendingRetry = null;
+        this.lastSentActivitySignature = sentSignature;
+        this.lastSuccessfulSendAt = Date.now();
+        if (pending.body === sentBody) {
+          this.pendingRetry = null;
+        } else {
+          this.scheduleRetry(pending.body, pending.lifecycleVersion, 1, pending.activitySignature);
+        }
       } else {
-        this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1);
+        this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1, pending.activitySignature);
       }
     }, delay);
   }
@@ -256,6 +255,7 @@ export class BotCollector {
       }
       const activitySignature = this.getActivitySignature(payload);
       const unchangedHeartbeat = action === 'heartbeat'
+        && !this.pendingRetry
         && activitySignature === this.lastSentActivitySignature
         && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
       if (unchangedHeartbeat) return true;
@@ -278,6 +278,14 @@ export class BotCollector {
         body = JSON.stringify(payload);
       }
 
+      if (action === 'heartbeat' && this.pendingRetry) {
+        if (activitySignature !== this.pendingRetry.activitySignature) {
+          this.pendingRetry.body = body;
+          this.pendingRetry.activitySignature = activitySignature;
+        }
+        return false;
+      }
+
       const sent = await this.transmitTelemetry(body, action);
       if (sent && action !== 'pagehide') {
         this.lastSentActivitySignature = activitySignature;
@@ -286,7 +294,7 @@ export class BotCollector {
       } else if (!sent && action !== 'pagehide') {
         // Heartbeats are cumulative snapshots. Keeping only the latest failed
         // body bounds memory while allowing transient network failures to heal.
-        this.scheduleRetry(body, lifecycleVersion);
+        this.scheduleRetry(body, lifecycleVersion, 1, activitySignature);
       }
       return sent;
     } catch (e) {

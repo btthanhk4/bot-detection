@@ -19,11 +19,11 @@ global.fetch = async () => {
   return { ok: true, json: async () => ({}) };
 };
 
-const activeIntervals = new Set();
+const activeIntervals = new Map();
 let nextInterval = 1;
-global.setInterval = () => {
+global.setInterval = (callback) => {
   const id = nextInterval++;
-  activeIntervals.add(id);
+  activeIntervals.set(id, callback);
   return id;
 };
 global.clearInterval = (id) => activeIntervals.delete(id);
@@ -222,6 +222,100 @@ async function testUnchangedHeartbeatIsCoalescedUntilIdleDeadline() {
   collector.destroy();
 }
 
+function testActivitySignatureIncludesEarlierPoints() {
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  const first = {
+    pageUrl: '/shop',
+    mouse: { records: [{ time: 1, x: 0.1 }, { time: 2, x: 0.5 }], scrollEvents: [] },
+  };
+  const second = {
+    pageUrl: '/shop',
+    mouse: { records: [{ time: 1, x: 0.9 }, { time: 2, x: 0.5 }], scrollEvents: [] },
+  };
+  assert.notStrictEqual(collector.getActivitySignature(first), collector.getActivitySignature(second));
+  collector.destroy();
+}
+
+async function testIntervalSendsHeartbeatOnlyWhenNeeded() {
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts++;
+    return { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 1000 });
+  const start = collector.start();
+  await waitFor(() => digestResolvers.length === 3);
+  digestResolvers[2]();
+  await start;
+  const tick = activeIntervals.get(collector.timer);
+  assert.strictEqual(attempts, 1);
+
+  tick();
+  await waitFor(() => collector.sendPromise === null);
+  assert.strictEqual(attempts, 1, 'idle interval should not send a redundant request');
+
+  collector.mouseRecorder.records.push({ time: 16, x: 0.1, y: 0.2, type: 'move' });
+  tick();
+  await waitFor(() => attempts === 2 && collector.sendPromise === null);
+  assert.strictEqual(attempts, 2, 'interval should send after activity');
+  collector.destroy();
+}
+
+async function testHeartbeatUpdatesPendingRetryWithoutBypassingBackoff() {
+  const requests = [];
+  global.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return requests.length === 1
+      ? { ok: false, headers: { get: () => '60' } }
+      : { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0 });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  const firstBody = collector.pendingRetry.body;
+  collector.mouseRecorder.records.push({ time: 16, x: 0.1, y: 0.2, type: 'move' });
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  assert.strictEqual(requests.length, 1, 'heartbeat must respect pending Retry-After');
+  assert.notStrictEqual(collector.pendingRetry.body, firstBody);
+  assert.strictEqual(JSON.parse(collector.pendingRetry.body).mouse.records.length, 1);
+  collector.destroy();
+}
+
+async function testInFlightRetryPreservesNewHeartbeat() {
+  const requests = [];
+  let resolveOldRetry = null;
+  global.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    if (requests.length === 1) return { ok: false };
+    if (requests.length === 2) {
+      return new Promise((resolve) => {
+        resolveOldRetry = () => resolve({ ok: true });
+      });
+    }
+    return { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, retryBaseDelay: 100 });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  await waitFor(() => resolveOldRetry !== null);
+  collector.mouseRecorder.records.push({ time: 16, x: 0.1, y: 0.2, type: 'move' });
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  assert.strictEqual(requests.length, 2, 'new heartbeat should wait for the retry result');
+
+  resolveOldRetry();
+  await waitFor(() => collector.pendingRetry && collector.pendingRetry.attempt === 1);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  await waitFor(() => requests.length === 3);
+  assert.strictEqual(requests[2].mouse.records.length, 1);
+  await waitFor(() => collector.pendingRetry === null);
+  collector.destroy();
+}
+
 async function testRetryAfterIsRespectedAndBounded() {
   global.fetch = async () => ({
     ok: false,
@@ -284,6 +378,10 @@ testRestartDuringFingerprinting()
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
   .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)
+  .then(testActivitySignatureIncludesEarlierPoints)
+  .then(testIntervalSendsHeartbeatOnlyWhenNeeded)
+  .then(testHeartbeatUpdatesPendingRetryWithoutBypassingBackoff)
+  .then(testInFlightRetryPreservesNewHeartbeat)
   .then(testRetryAfterIsRespectedAndBounded)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)

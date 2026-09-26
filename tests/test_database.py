@@ -200,6 +200,25 @@ def test_delete_all_keeps_fail_closed_block_when_delete_fails(monkeypatch):
     assert len(control.updates) == 1
 
 
+def test_save_reports_admin_ingestion_pause_as_retryable(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from api_service.database import DatabaseIngestionPaused
+
+    class Control:
+        def find_one(self, *_args):
+            return {"blocked_until": datetime.now(timezone.utc) + timedelta(seconds=5)}
+
+    database = {"service_control": Control()}
+    monkeypatch.setattr("api_service.database.get_db", lambda: database)
+
+    with pytest.raises(DatabaseIngestionPaused) as exc:
+        save_detection_result(
+            {"sessionId": "new-during-delete", "visitorId": "visitor"},
+            {"verdict": "HUMAN"},
+        )
+    assert 1 <= exc.value.retry_after_seconds <= 5
+
+
 def test_recent_results_falls_back_to_created_time_for_legacy_null_update(monkeypatch):
     from datetime import datetime, timezone
 

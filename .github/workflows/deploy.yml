@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
+      - name: Lint Python
+        run: python -m ruff check .
+
       - name: Run tests
         shell: bash
         run: |
