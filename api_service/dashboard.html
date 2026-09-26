@@ -2304,10 +2304,10 @@ function renderTrafficTable() {
   const selectedId = selectedSession ? selectedSession.sessionId : null;
 
   const newHTML = allSessions.map((s, idx) => {
-    const v = (s.verdict || 'UNKNOWN').toUpperCase();
     const prob = s.bot_probability || 0;
     const bd = s.breakdown || {};
     const deferred = bd.decision_deferred === true || s.decision_state === 'INSUFFICIENT_EVIDENCE';
+    const v = deferred ? 'SUSPECT' : (s.verdict || 'UNKNOWN').toUpperCase();
     const probPct = deferred ? '--' : (prob * 100).toFixed(1);
     const lstmScore = (bd.has_enough_mouse_data === false) ? '--' :
       (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
@@ -2320,7 +2320,7 @@ function renderTrafficTable() {
     let rowClass = '';
     if (v === 'HUMAN') verdictClass = 'verdict-human';
     else if (v === 'BOT') { verdictClass = 'verdict-bot'; rowClass = 'row-bot'; }
-    else if (!deferred) rowClass = 'row-suspect';
+    else rowClass = 'row-suspect';
 
     let barColor = 'var(--accent-green)';
     if (prob > 0.7) barColor = 'var(--accent-red)';
@@ -2335,7 +2335,7 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
-      <td><span class="verdict-badge ${verdictClass}">${deferred ? 'CHỜ DỮ LIỆU' : v}</span></td>
+      <td><span class="verdict-badge ${verdictClass}">${v}</span></td>
       <td>
         <div class="risk-bar-container">
           <div class="risk-bar-fill" style="width:${deferred ? 0 : probPct}%;background:${barColor}"></div>
@@ -2442,7 +2442,6 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   if (selectionVersion !== sessionSelectionVersion || selectedSession?.sessionId !== s.sessionId) return;
 
   const dataObj = detail || s;
-  const v = (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
   const prob = (dataObj.bot_probability !== undefined) ? dataObj.bot_probability : (s.bot_probability || 0);
   const conf = (dataObj.confidence !== undefined) ? dataObj.confidence : (s.confidence || 0);
   const bd = dataObj.breakdown || s.breakdown || {};
@@ -2452,11 +2451,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const botdDetectors = botd.detectors || {};
   const mouseStats = dataObj.mouse_stats || s.mouse_stats || {};
 
+  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE' || s.decision_state === 'INSUFFICIENT_EVIDENCE';
+  const v = deferred ? 'SUSPECT' : (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
+
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
   hero.className = 'verdict-hero ' + (v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect');
-  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE';
-  document.getElementById('dVerdictBadge').textContent = deferred ? 'CHỜ DỮ LIỆU' : v;
+  document.getElementById('dVerdictBadge').textContent = v;
   document.getElementById('dBotProb').textContent = deferred ? '--' : (prob * 100).toFixed(1) + '%';
   document.getElementById('dBotProb').style.color = v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
   document.getElementById('dConfBar').style.width = deferred ? '0%' : (conf * 100).toFixed(0) + '%';
@@ -2485,10 +2486,16 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText += 'Môi trường trình duyệt hoàn chỉnh, các thuộc tính phần cứng và plugin đồng nhất.';
     }
   } else {
-    if (bd.decision_deferred) {
-      const received = Number(bd.mouse_points) || 0;
-      const required = Number(bd.minimum_mouse_points) || 25;
-      explainText = `<strong>Hệ thống đang chờ thêm dữ liệu:</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Chưa đưa ra kết luận khi bằng chứng hành vi còn thiếu.`;
+    if (deferred) {
+      if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
+        explainText = '<strong>Phiên NGHI VẤN:</strong> Dữ liệu cảm ứng hoặc thiết bị di động chưa được mô hình chuột hỗ trợ. Chưa thể kết luận BOT hay NGƯỜI THẬT.';
+      } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
+        const received = Number(bd.mouse_points) || 0;
+        const required = Number(bd.minimum_mouse_points) || 25;
+        explainText = `<strong>Phiên NGHI VẤN:</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Hệ thống sẽ đánh giá lại khi có thêm dữ liệu.`;
+      } else {
+        explainText = '<strong>Phiên NGHI VẤN:</strong> Hiện chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.';
+      }
     } else {
       explainText = `<strong>Hệ thống xếp loại NGHI VẤN (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới. Chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.`;
     }
@@ -2627,8 +2634,8 @@ function updateGauge(s) {
   if (deferred) document.getElementById('gaugeArc').setAttribute('stroke-dashoffset', arcLength);
   document.getElementById('gaugeValue').textContent = deferred ? '--' : pct.toFixed(1) + '%';
 
-  const v = (s.verdict || '').toUpperCase();
-  const label = deferred ? 'CHỜ DỮ LIỆU' : v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? 'BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
+  const v = deferred ? 'SUSPECT' : (s.verdict || '').toUpperCase();
+  const label = v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? 'BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
   document.getElementById('gaugeLabel').textContent = label;
   document.getElementById('gaugeLabel').style.fill =
     v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';

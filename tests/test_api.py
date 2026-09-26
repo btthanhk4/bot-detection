@@ -446,6 +446,7 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     res = client.get("/dashboard")
     assert res.status_code == 200
     assert "<title>DATACAT</title>" in res.text
+    assert "CHỜ DỮ LIỆU" not in res.text
     assert "/api/v1/traffic/timeline" in res.text
     assert 'id="timelineRange"' in res.text
     assert '<option value="1440">24 giờ</option>' in res.text
