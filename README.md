@@ -39,8 +39,8 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp ba 
 └────────┬────────┘    └──────────────┬──────────────┘
          │                            │
 ┌────────▼────────────────────────────▼──────────────┐
-│    ENSEMBLE — Confidence-based Adaptive Fusion      │
-│    + BotD Heuristic Override                        │
+│    ENSEMBLE — Fixed ML weights + BotD evidence       │
+│    + decision evidence gate                         │
 │    → Verdict: HUMAN / SUSPECT / BOT                 │
 └─────────────────────────────────────────────────────┘
 ```
@@ -71,7 +71,7 @@ bot-detection-core/
 │   ├── models/
 │   │   ├── behavioral_lstm.py      # BiLSTM + TemporalAttention (v2)
 │   │   ├── tabular_classifier.py   # XGBoost + StandardScaler (v2)
-│   │   └── ensemble.py             # Confidence-based weighted fusion (v2)
+│   │   └── ensemble.py             # Monotonic BotD evidence fusion (v6)
 │   ├── experiments/
 │   │   └── run_all.py              # 9 thí nghiệm đánh giá toàn diện
 │   ├── train.py                    # Training pipeline (v2)
@@ -94,45 +94,48 @@ bot-detection-core/
 
 ### Training v2 (749 samples: 449 real M4D + 300 synthetic)
 
-**Policy v5 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
-calibrate). Train bổ sung các cửa sổ 25/50/100 điểm chỉ từ phiên train. Trên
-validation cùng nguồn với 25 điểm chuột: `TN=14, FP=0, FN=7, TP=39`; trên test
-cùng nguồn với phiên đầy đủ: `TN=24, FP=0, FN=10, TP=56`. Release gate kiểm tra
-cả phiên và các mốc 25/50/100 điểm trên validation. Xem JSON report bên dưới.
+**Policy v6 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
+hiệu chuẩn). Train bổ sung cửa sổ 25/50/100 điểm từ các phiên train, lấy đúng
+phần đầu của phiên dài. Trên validation cùng nguồn ở 25 điểm chuột:
+`TN=14, FP=0, FN=7, TP=39`; trên test cùng nguồn ở toàn phiên:
+`TN=24, FP=0, FN=4, TP=62`. Release gate kiểm tra toàn phiên và các mốc
+25/50/100 điểm trên validation. Xem JSON report bên dưới.
 Đây là sự đánh đổi có chủ đích:
 giảm gắn nhầm người thật, chấp nhận nhiều bot nằm ở mức SUSPECT cho đến khi có
 thêm bằng chứng. Tập test đã được xem khi phát triển và không còn là blind test.
-Dữ liệu touch được tách khỏi model chuột; các phiên touch-only sẽ chờ kết luận.
-Tín hiệu tự động hóa do BotD báo chỉ có thể nâng nhãn HUMAN lên SUSPECT, không
-tự ép kết luận BOT khi hai mô hình ML không đồng ý.
+Dữ liệu touch được tách khỏi model chuột; các phiên touch-only giữ nhãn SUSPECT.
+Quỹ đạo trùng lặp hoặc không có biến thiên thời gian/vị trí cũng giữ SUSPECT.
+BotD chỉ tăng điểm theo bằng chứng dương; khi chưa có quỹ đạo chuột hợp lệ,
+BotD không tự quyết định nhãn BOT.
 
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
 | **XGBoost (50 features)** | **1.0000** | **1.0000** | **0.0000** |
-| BiLSTM (session aggregation) | 1.0000 | 1.0000 | 0.0000 |
-| Ensemble policy v5 trên test cùng nguồn | 1.0000 | 0.9180 | 0.0000 |
+| BiLSTM (session aggregation) | 1.0000 | 0.9851 | 0.0833 |
+| Ensemble policy v6 trên test cùng nguồn | 1.0000 | 0.9688 | 0.0000 |
 
 Các số liệu trên được đo trên 90 session test tách khỏi train (24 human, 66 bot)
 nhưng cùng nguồn dataset nghiên cứu. Tập này đã được xem trong quá trình sửa
 policy, nên không còn là test mù để chứng minh hiệu năng production.
 Ở 25 điểm `move` trên validation cùng nguồn, policy v2 (ngưỡng 0.70) gắn nhầm
-3/14 người thật và bỏ sót 3/46 bot; policy v5 gắn nhầm 0/14 nhưng bỏ sót 7/46.
+3/14 người thật và bỏ sót 3/46 bot; policy v6 gắn nhầm 0/14 nhưng bỏ sót 7/46.
 Xem
 [`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
 [`early_session_validation.json`](core_ml/early_session_validation.json).
 Không dùng `is_bot` để tự động chặn khi chưa kiểm định trên dữ liệu thực tế
 độc lập, đặc biệt với các phiên ngắn, touch hoặc thiếu dữ liệu.
 Artifact đi kèm đã qua release gate trên validation cùng nguồn. `/health` báo
-`release_gate_evidence_present: true` khi chạy với đúng ngưỡng 0.93, nhưng đây
+`release_gate_evidence_present: true` khi policy, ngưỡng và các chỉ số validation
+đạt điều kiện cấu hình, nhưng đây
 chưa phải kiểm định độc lập trên traffic thực tế; không dùng kết quả này để tự
 động chặn người dùng mà không có bước theo dõi và xác minh bổ sung.
 
 **Top 5 Feature Importance (XGBoost):**
 1. `std_speed` — Độ biến thiên tốc độ
-2. `straightness` — Độ thẳng của quỹ đạo
-3. `fonts_count` — Số lượng phông chữ trình duyệt báo cáo
-4. `angular_entropy` — Entropy hướng di chuyển
-5. `mean_accel` — Gia tốc trung bình
+2. `curvature_std` — Độ biến thiên độ cong quỹ đạo
+3. `mean_accel` — Gia tốc trung bình
+4. `max_speed` — Tốc độ lớn nhất
+5. `mean_speed` — Tốc độ trung bình
 
 ### 9 Thí nghiệm đánh giá
 
@@ -217,24 +220,28 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
 {
   "is_bot": true,
   "verdict": "BOT",
-  "bot_probability": 0.9355,
-  "risk_score": 0.9355,
+  "bot_probability": 0.9804,
+  "risk_score": 0.9804,
   "score_calibrated": false,
-  "policy_version": "5",
+  "policy_version": "6",
   "decision_state": "FINAL",
-  "confidence": 0.871,
+  "confidence": 0.9608,
   "reasons": [
     "Flagged: platformMismatch",
     "Mouse dynamics exhibit robotic trajectory (LSTM score: 1.00)"
   ],
   "breakdown": {
     "behavioral_lstm_score": 1.0,
-    "tabular_score": 0.782,
+    "tabular_score": 0.96,
     "heuristic_score": 0.1,
     "has_enough_mouse_data": true,
+    "usable_trajectory": true,
+    "distinct_positions": 31,
     "mouse_points": 31,
     "records_received": 34,
     "decision_deferred": false,
+    "fusion_baseline": 0.98,
+    "heuristic_lift": 0.0004,
     "minimum_mouse_points": 25
   },
   "latency_ms": 3.42

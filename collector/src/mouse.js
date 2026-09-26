@@ -264,9 +264,15 @@ export class MouseRecorder {
   }
 
   exportData() {
+    const recentOtherEvents = this.records.filter((record) =>
+      record.type !== 'move' || record.source === 'touch',
+    ).slice(-20);
+    const recentMouseMoves = this.records.filter((record) =>
+      record.type === 'move' && record.source !== 'touch',
+    ).slice(-(100 - recentOtherEvents.length));
     return {
-      records: this.records.slice(-100), // last 100 points
-      chunks: this.getChunks(this.chunkSize),
+      records: [...recentMouseMoves, ...recentOtherEvents]
+        .sort((a, b) => a.time - b.time),
       stats: this.getStats(),
       scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
     };

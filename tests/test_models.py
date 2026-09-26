@@ -113,13 +113,9 @@ class TestTabularClassifier:
         y_train = np.random.randint(0, 2, size=20)
         clf.fit(X_train, y_train)
 
-        # Fewer features (padding should trigger)
-        p_short = clf.predict_proba(np.random.randn(30))
-        assert 0.0 <= p_short <= 1.0
-
-        # More features (truncation should trigger)
-        p_long = clf.predict_proba(np.random.randn(70))
-        assert 0.0 <= p_long <= 1.0
+        for size in (30, 70):
+            with pytest.raises(RuntimeError, match="feature dimension"):
+                clf.predict_proba(np.random.randn(size))
 
     def test_fitted_runtime_failure_is_not_hidden_as_neutral_probability(self, monkeypatch):
         clf = TabularBotClassifier(n_estimators=5)
@@ -219,7 +215,7 @@ class TestEnsembleDetector:
         assert result["verdict"] != "BOT"
         assert not any(reason.startswith("Client-reported") for reason in result["reasons"])
 
-    def test_non_finite_model_scores_do_not_poison_fusion(self):
+    def test_non_finite_model_scores_fail_inference(self):
         class InvalidLSTM:
             def predict_session_proba(self, _chunks):
                 return float("nan")
@@ -233,11 +229,57 @@ class TestEnsembleDetector:
             for i in range(30)
         ]
         detector = EnsembleBotDetector(lstm_model=InvalidLSTM(), tabular_model=InvalidTabular())
-        result = detector.predict({"mouse": {"records": records}})
+        with pytest.raises(RuntimeError, match="LSTM returned an invalid probability"):
+            detector.predict({"mouse": {"records": records}})
 
-        assert math.isfinite(result["bot_probability"])
-        assert result["breakdown"]["behavioral_lstm_score"] == 0.5
-        assert result["breakdown"]["tabular_score"] == 0.5
+    def test_positive_botd_evidence_never_reduces_fused_risk(self):
+        class FixedModel:
+            def __init__(self, probability):
+                self.probability = probability
+
+            def predict_proba(self, _features):
+                return self.probability
+
+            def predict_session_proba(self, _chunks):
+                return self.probability
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(25)
+        ]
+        for lstm_score, tabular_score in ((1.0, 1.0), (0.05, 0.7), (0.5, 0.5)):
+            detector = EnsembleBotDetector(
+                lstm_model=FixedModel(lstm_score),
+                tabular_model=FixedModel(tabular_score),
+            )
+            scores = [
+                detector.predict({
+                    "mouse": {"records": records},
+                    "botd": {"heuristicScore": heuristic_score},
+                })["risk_score"]
+                for heuristic_score in (0, 0.1, 0.2, 0.3, 0.5, 1)
+            ]
+            assert scores == sorted(scores)
+
+    def test_degenerate_mouse_records_do_not_finalize_human(self):
+        class BenignModel:
+            def predict_proba(self, _features):
+                return 0.01
+
+            def predict_session_proba(self, _chunks):
+                return 0.01
+
+        detector = EnsembleBotDetector(
+            lstm_model=BenignModel(), tabular_model=BenignModel()
+        )
+        for records in (
+            [{"time": 0, "x": 0.2, "y": 0.2, "type": "move"}] * 25,
+            [{"time": i * 20, "x": 0.2, "y": 0.2, "type": "move"} for i in range(25)],
+        ):
+            result = detector.predict({"mouse": {"records": records}})
+            assert result["verdict"] == "SUSPECT"
+            assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+            assert result["breakdown"]["usable_trajectory"] is False
 
     def test_mouse_points_counts_only_valid_moves(self):
         records = [
@@ -352,7 +394,7 @@ class TestEnsembleDetector:
         assert result["is_bot"] is False
         assert result["verdict"] == "SUSPECT"
         assert result["bot_probability"] < 0.70
-        assert result["policy_version"] == "5"
+        assert result["policy_version"] == "6"
 
     def test_minimum_point_setting_cannot_exceed_retained_window(self):
         with pytest.raises(ValueError, match="retained record window"):

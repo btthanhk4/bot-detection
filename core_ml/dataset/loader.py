@@ -17,7 +17,10 @@ import random
 import re
 import hashlib
 from dataclasses import dataclass
-from core_ml.features.mouse_features import records_to_chunks as _canonical_records_to_chunks
+from core_ml.features.mouse_features import (
+    prefix_through_moves,
+    records_to_chunks as _canonical_records_to_chunks,
+)
 
 
 logger = logging.getLogger("bot_detection.dataset")
@@ -31,6 +34,7 @@ class RealMouseSession:
     source: str
     split: str
     scenario: str
+    early_records: list = None
 
 
 class DatasetLabelConflictError(ValueError):
@@ -377,6 +381,11 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         if len(mouse_records) < 10:
                             continue
 
+                        # Keep the true start for early-session evaluation before
+                        # limiting the full-session training view.
+                        # Include one move after the largest training prefix so
+                        # iter_training_prefixes can recognize it as partial.
+                        early_records = prefix_through_moves(mouse_records, 101)
                         # Cap at 5000 records per session to keep training fast.
                         if len(mouse_records) > 5000:
                             mouse_records = mouse_records[-5000:]
@@ -388,6 +397,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                             source="phase2",
                             split="unspecified",
                             scenario=scenario or "all",
+                            early_records=early_records,
                         )
                         sessions.append(session if with_metadata else (mouse_records, label))
                         seen_sessions[session_id] = label
@@ -703,7 +713,7 @@ def generate_synthetic_telemetry(is_bot: bool = False, bot_level: str = "moderat
             ]),
             "canvasHash": f"a{random.randint(1000,9999)}",
             "audioHash": f"35.{random.randint(10000,99999)}",
-            "fontsCount": random.randint(25, 45),
+            "fontsCount": random.randint(5, 13),
         }
         botd = {
             "isBot": False,

@@ -272,6 +272,8 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
 
         assert len(sessions[0].records) == 5000
         assert sessions[0].records[0]["time"] == 2
+        assert sessions[0].early_records[0]["time"] == 0
+        assert len(sessions[0].early_records) == 101
 
     def test_phase2_invalid_timestamp_does_not_shift_later_events(self):
         record = {

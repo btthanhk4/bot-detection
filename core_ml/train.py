@@ -47,7 +47,12 @@ from core_ml.features.mouse_features import (
     STATISTICAL_FEATURE_NAMES,
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.model_bundle import file_sha256
+from core_ml.model_bundle import (
+    RELEASE_EARLY_MINIMUM_METRICS,
+    RELEASE_MAXIMUM_METRICS,
+    RELEASE_MINIMUM_METRICS,
+    file_sha256,
+)
 from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
@@ -63,21 +68,6 @@ if torch.cuda.is_available():
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 PRODUCTION_DECISION_THRESHOLD = 0.93
 PRODUCTION_SUSPECT_THRESHOLD = 0.45
-RELEASE_MINIMUM_METRICS = {
-    "roc_auc": 0.80,
-    "precision": 0.75,
-    "recall": 0.75,
-}
-RELEASE_MAXIMUM_METRICS = {
-    "false_positive_rate": 0.0,
-}
-RELEASE_EARLY_MINIMUM_METRICS = {
-    "roc_auc": 0.80,
-    "precision": 0.90,
-    "recall": 0.60,
-}
-
-
 def resolve_training_device(requested: str = "auto") -> torch.device:
     """Resolve an explicit training device without silently ignoring CUDA requests."""
     normalized = str(requested or "auto").strip().lower()
@@ -507,7 +497,10 @@ def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels
                 mouse = telemetry.get("mouse") or {}
                 telemetry = {
                     **telemetry,
-                    "mouse": {"records": prefix_through_moves(mouse.get("records") or [], move_limit)},
+                    "mouse": {"records": prefix_through_moves(
+                        telemetry.get("early_records") or mouse.get("records") or [],
+                        move_limit,
+                    )},
                 }
             decisions.append(detector.predict(telemetry))
         probabilities = np.asarray([decision["bot_probability"] for decision in decisions])
@@ -627,6 +620,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "fingerprint": {},  # No fingerprint data for real sessions
             "botd": {"heuristicScore": 0.0, "flaggedCount": 0, "detectors": {}, "reasons": []},
             "mouse": {"records": records, "chunks": chunks},
+            "early_records": session.early_records,
         }
         all_telemetries.append(telemetry)
         all_labels.append(label)
@@ -710,7 +704,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         extra_labels = []
         for session_idx in idx_train:
             telemetry = all_telemetries[int(session_idx)]
-            records = (telemetry.get("mouse") or {}).get("records") or []
+            records = telemetry.get("early_records") or (telemetry.get("mouse") or {}).get("records") or []
             for _, prefix in iter_training_prefixes(records):
                 extra_vectors.append(build_tabular_vector(
                     telemetry.get("fingerprint") or {},
@@ -773,7 +767,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             early_chunks = []
             early_labels = []
             for session_idx in idx_train:
-                records = (all_telemetries[int(session_idx)].get("mouse") or {}).get("records") or []
+                telemetry = all_telemetries[int(session_idx)]
+                records = telemetry.get("early_records") or (telemetry.get("mouse") or {}).get("records") or []
                 for _, prefix in iter_training_prefixes(records):
                     prefix_chunks = extract_sequential_chunks(records_to_chunks(prefix))
                     if prefix_chunks.size(0):

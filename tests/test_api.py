@@ -279,7 +279,7 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     assert data["verdict"] == "SUSPECT"
     assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
     assert data["score_calibrated"] is False
-    assert data["policy_version"] == "5"
+    assert data["policy_version"] == "6"
 
 
 def test_health_distinguishes_model_load_from_release_evidence(client):
@@ -288,7 +288,7 @@ def test_health_distinguishes_model_load_from_release_evidence(client):
     assert response.status_code in (200, 503)
     health = response.json()
     assert health["model_bundle_valid"] is True
-    assert health["decision_policy_version"] == "5"
+    assert health["decision_policy_version"] == "6"
     assert health["release_gate_evidence_present"] is True
 
 

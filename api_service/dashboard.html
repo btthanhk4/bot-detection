@@ -2451,7 +2451,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const botdDetectors = botd.detectors || {};
   const mouseStats = dataObj.mouse_stats || s.mouse_stats || {};
 
-  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE' || s.decision_state === 'INSUFFICIENT_EVIDENCE';
+  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE';
   const v = deferred ? 'SUSPECT' : (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
 
   // 2. Verdict Hero
@@ -2489,6 +2489,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     if (deferred) {
       if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
         explainText = '<strong>Phiên NGHI VẤN:</strong> Dữ liệu cảm ứng hoặc thiết bị di động chưa được mô hình chuột hỗ trợ. Chưa thể kết luận BOT hay NGƯỜI THẬT.';
+      } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
+        explainText = '<strong>Phiên NGHI VẤN:</strong> Quỹ đạo chưa có đủ biến thiên về thời gian hoặc vị trí để đánh giá đáng tin cậy.';
       } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
         const received = Number(bd.mouse_points) || 0;
         const required = Number(bd.minimum_mouse_points) || 25;
@@ -2526,11 +2528,12 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dScoreHeur').textContent = (heurScore * 100).toFixed(1) + '%';
   document.getElementById('dWeightHeur').textContent = ((weights.w_heuristic || 0) * 100).toFixed(0) + '%';
 
-  const sumW = (weights.w_lstm || 0) + (weights.w_tabular || 0) + (weights.w_heuristic || 0) || 1;
+  const fusionBase = Number.isFinite(Number(bd.fusion_baseline)) ? Number(bd.fusion_baseline) : prob;
+  const heuristicLift = Number.isFinite(Number(bd.heuristic_lift)) ? Number(bd.heuristic_lift) : 0;
   document.getElementById('dFusionResult').innerHTML =
     `<span style="color:var(--text-muted)">Tính toán Fusion:</span> ` +
-    `(${((weights.w_lstm||0)).toFixed(2)}×${lstmScore.toFixed(2)} + ${((weights.w_tabular||0)).toFixed(2)}×${tabScore.toFixed(2)} + ${((weights.w_heuristic||0)).toFixed(2)}×${heurScore.toFixed(2)}) / ${sumW.toFixed(2)} = ` +
-    `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${deferred ? 'Chờ đủ dữ liệu' : (prob * 100).toFixed(1) + '% → ' + v}</span>`;
+    `${fusionBase.toFixed(2)} + ${heuristicLift.toFixed(2)} (BotD) = ` +
+    `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${deferred ? 'NGHI VẤN' : (prob * 100).toFixed(1) + '% → ' + v}</span>`;
 
   // 4. Detection Reasons
   const reasonsDiv = document.getElementById('dReasonsList');

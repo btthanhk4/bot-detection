@@ -130,6 +130,7 @@ def prepare_data(dataset_root=None):
         t = {
             "fingerprint": {}, "botd": {"heuristicScore": 0.0, "detectors": {}, "reasons": []},
             "mouse": {"records": records, "chunks": chunks},
+            "early_records": session.early_records,
         }
         all_telemetries.append(t)
         all_labels.append(label)
@@ -753,7 +754,11 @@ def main(dataset_root=None):
     experiment_concept_drift(dataset_root=dataset_root)
     experiment_feature_ablation(X, y, feature_names, idx_train, idx_test)
     experiment_class_imbalance(X, y, feature_names, idx_train, idx_test)
-    experiment_early_detection(all_records, y, feature_names, idx_train, idx_test)
+    early_records = [
+        telemetry.get("early_records") or records
+        for telemetry, records in zip(all_telemetries, all_records)
+    ]
+    experiment_early_detection(early_records, y, feature_names, idx_train, idx_test)
     experiment_inference_latency(X, model)
     experiment_roc_analysis(X, y, feature_names, idx_fit, idx_val, idx_test)
     experiment_short_sessions(all_records, y, feature_names, idx_train, idx_test)

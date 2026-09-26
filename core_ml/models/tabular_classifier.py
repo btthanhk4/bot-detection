@@ -98,7 +98,7 @@ class TabularBotClassifier:
         # padding/truncating would attach values to the wrong feature names.
         expected_dim = getattr(self.scaler, "n_features_in_", x_arr.shape[1])
         if x_arr.shape[1] != expected_dim:
-            return 0.5
+            raise RuntimeError("Tabular feature dimension does not match the fitted model")
 
         x_scaled = self.scaler.transform(x_arr)
         probas = self.model.predict_proba(x_scaled)

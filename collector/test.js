@@ -230,6 +230,51 @@ async function testFailedHeartbeatRetriesLatestSnapshot() {
   collector.destroy();
 }
 
+async function testHeartbeatRecoversAfterRetryBudgetIsExhausted() {
+  let attempts = 0;
+  global.fetch = async () => ({ ok: ++attempts >= 3 });
+  const collector = new BotCollector({
+    endpointUrl: '/telemetry', autoSendInterval: 0, retryBaseDelay: 100, maxRetryAttempts: 1,
+  });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+
+  assert.strictEqual(await collector.sendTelemetry('init'), false);
+  await new Promise((resolve) => setTimeout(resolve, 130));
+  await waitFor(() => attempts === 2 && collector.pendingRetry === null);
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(attempts, 3);
+  collector.destroy();
+}
+
+async function testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded() {
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  collector.mouseRecorder.records = [
+    ...Array.from({ length: 25 }, (_, i) => ({ time: i * 20, x: i / 100, y: 0.2, type: 'move', source: 'mouse' })),
+    ...Array.from({ length: 80 }, (_, i) => ({ time: 500 + i * 20, x: 0.3, y: 0.2, type: 'click', source: 'mouse' })),
+  ];
+  const records = collector.mouseRecorder.exportData().records;
+  assert.strictEqual(records.filter((record) => record.type === 'move').length, 25);
+  assert.ok(records.length <= 100);
+
+  const previousWindow = global.window;
+  const previousDocument = global.document;
+  global.window = { location: { href: `https://example.com/?q=${'x'.repeat(3000)}` } };
+  global.document = { referrer: `https://example.com/?r=${'y'.repeat(3000)}` };
+  try {
+    const payload = await collector.getPayload('heartbeat');
+    assert.strictEqual(payload.pageUrl.length, 2048);
+    assert.strictEqual(payload.referrer.length, 2048);
+    assert.strictEqual(payload.mouse.records.filter((record) => record.type === 'move').length, 25);
+  } finally {
+    global.window = previousWindow;
+    global.document = previousDocument;
+    collector.destroy();
+  }
+}
+
 async function testUnchangedHeartbeatIsCoalescedUntilIdleDeadline() {
   let attempts = 0;
   global.fetch = async () => {
@@ -361,6 +406,27 @@ async function testRetryAfterIsRespectedAndBounded() {
 
   assert.strictEqual(await collector.transmitTelemetry('{}', 'heartbeat'), false);
   assert.strictEqual(collector.retryAfterMs, 300000, 'server backoff should be capped at five minutes');
+  assert.ok(collector.retryNotBefore > Date.now());
+  collector.destroy();
+}
+
+async function testExhaustedRetryStillRespectsServerCooldown() {
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts++;
+    return attempts === 1
+      ? { ok: false, headers: { get: () => '60' } }
+      : { ok: true };
+  };
+  const collector = new BotCollector({ maxRetryAttempts: 0, autoSendInterval: 0 });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  assert.strictEqual(await collector.sendTelemetry('init'), false);
+  assert.strictEqual(collector.pendingRetry, null);
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  assert.strictEqual(attempts, 1);
+  collector.retryNotBefore = 0;
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
   collector.destroy();
 }
 
@@ -419,9 +485,12 @@ testRestartDuringFingerprinting()
   .then(testHeartbeatUpdatesPendingRetryWithoutBypassingBackoff)
   .then(testInFlightRetryPreservesNewHeartbeat)
   .then(testRetryAfterIsRespectedAndBounded)
+  .then(testExhaustedRetryStillRespectsServerCooldown)
   .then(testFailedDetectionDoesNotPromoteClientFlag)
   .then(testTouchIsTaggedAndExcludedFromMouseChunks)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
+  .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
+  .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
   .then(() => console.log('collector lifecycle tests: OK'))
   .catch((error) => {

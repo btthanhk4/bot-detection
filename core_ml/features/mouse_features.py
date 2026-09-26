@@ -87,13 +87,16 @@ def sanitize_mouse_records(records: list, max_records: int = MAX_MOUSE_RECORDS) 
             or abs(numeric_y) > MAX_RAW_COORDINATE
         ):
             continue
-        valid_records.append({
+        sanitized = {
             "time": numeric_time,
             "x": numeric_x,
             "y": numeric_y,
             "type": str(record.get("type", "move")),
             "_input_order": index,
-        })
+        }
+        if record.get("source") in ("mouse", "touch"):
+            sanitized["source"] = record["source"]
+        valid_records.append(sanitized)
 
     valid_records.sort(key=lambda record: (record["time"], record["_input_order"]))
     if max_records > 0:

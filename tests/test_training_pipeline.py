@@ -5,6 +5,7 @@ import pytest
 import torch
 
 from core_ml.dataset.loader import RealMouseSession
+from core_ml.model_bundle import release_evidence_valid
 from core_ml.train import (
     audit_training_dataset,
     assign_real_session_splits,
@@ -37,6 +38,23 @@ def _session(session_id, label, source="phase2", split="unspecified", records=No
         split=split,
         scenario="test",
     )
+
+
+def test_release_evidence_checks_metrics_and_policy_values():
+    passing = {"roc_auc": 0.9, "precision": 1.0, "recall": 0.9, "false_positive_rate": 0.0}
+    manifest = {"training": {
+        "decision_policy_version": "6",
+        "production_decision_threshold": 0.93,
+        "production_suspect_threshold": 0.45,
+        "dataset": {"split_counts": {"train": 10, "val": 4, "test": 4}},
+        "metrics": {"ensemble": {
+            split: dict(passing) for split in ("val", "early_val", "mid_val", "late_val")
+        }},
+    }}
+    assert release_evidence_valid(manifest, "6", 0.93, 0.45)
+    assert not release_evidence_valid(manifest, "5", 0.93, 0.45)
+    manifest["training"]["metrics"]["ensemble"]["early_val"]["recall"] = 0.1
+    assert not release_evidence_valid(manifest, "6", 0.93, 0.45)
 
 
 def test_early_training_windows_stop_at_requested_moves_without_copying_full_session():

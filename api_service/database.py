@@ -293,8 +293,15 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         mouse_data = telemetry.get("mouse") or {}
         records = mouse_data.get("records") or mouse_data.get("trajectory") or []
         sanitized_records = sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
-        mouse_stats = compute_statistical_features(sanitized_records)
-        mouse_stats["chunks_count"] = len(records_to_chunks(sanitized_records))
+        inference_records = sanitize_mouse_records(
+            [
+                record for record in records
+                if isinstance(record, dict) and record.get("source") != "touch"
+            ],
+            max_records=MAX_MOUSE_RECORDS,
+        )
+        mouse_stats = compute_statistical_features(inference_records)
+        mouse_stats["chunks_count"] = len(records_to_chunks(inference_records))
         mouse_stats["has_enough_data"] = mouse_stats["chunks_count"] > 0
         captured_count = len(sanitized_records)
         now = datetime.now(timezone.utc)

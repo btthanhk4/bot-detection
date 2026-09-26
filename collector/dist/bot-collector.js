@@ -692,9 +692,15 @@
     }
 
     exportData() {
+      const recentOtherEvents = this.records.filter((record) =>
+        record.type !== 'move' || record.source === 'touch',
+      ).slice(-20);
+      const recentMouseMoves = this.records.filter((record) =>
+        record.type === 'move' && record.source !== 'touch',
+      ).slice(-(100 - recentOtherEvents.length));
       return {
-        records: this.records.slice(-100), // last 100 points
-        chunks: this.getChunks(this.chunkSize),
+        records: [...recentMouseMoves, ...recentOtherEvents]
+          .sort((a, b) => a.time - b.time),
         stats: this.getStats(),
         scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
       };
@@ -711,6 +717,10 @@
 
 
 
+
+  function boundedUrl(value) {
+    return String(value || '').slice(0, 2048);
+  }
 
   class BotCollector {
     constructor(options = {}) {
@@ -737,6 +747,7 @@
       this.lastSentActivitySignature = null;
       this.lastSuccessfulSendAt = 0;
       this.retryAfterMs = 0;
+      this.retryNotBefore = 0;
       this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
       this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
       this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
@@ -799,6 +810,8 @@
       this.initPromise = null;
       this.sendPromise = null;
       this.clearPendingRetry();
+      this.retryAfterMs = 0;
+      this.retryNotBefore = 0;
       for (const controller of this.abortControllers) controller.abort();
       this.abortControllers.clear();
       if (typeof window !== 'undefined') {
@@ -825,8 +838,8 @@
         action,
         timestamp: Date.now(),
         sequence,
-        pageUrl: typeof window !== 'undefined' ? window.location.href : '',
-        referrer: typeof document !== 'undefined' ? document.referrer : '',
+        pageUrl: typeof window !== 'undefined' ? boundedUrl(window.location.href) : '',
+        referrer: typeof document !== 'undefined' ? boundedUrl(document.referrer) : '',
         visitorId: this.cachedFingerprint.visitorId,
         fingerprint: this.cachedFingerprint.components,
         botd: this.cachedBotd,
@@ -878,17 +891,18 @@
     }
 
     scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null) {
-      if (
-        this.destroyed ||
-        lifecycleVersion !== this.lifecycleVersion ||
-        attempt > this.maxRetryAttempts
-      ) return;
+      if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return;
+      if (attempt > this.maxRetryAttempts) {
+        this.clearPendingRetry();
+        return;
+      }
 
       if (this.retryTimer) clearTimeout(this.retryTimer);
       this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature };
       const delay = Math.max(
         this.retryBaseDelay * Math.pow(2, attempt - 1),
         this.retryAfterMs,
+        this.retryNotBefore - Date.now(),
       );
       this.retryAfterMs = 0;
       this.retryTimer = setTimeout(async () => {
@@ -942,9 +956,11 @@
           const retryAfterSeconds = Number(res.headers.get('Retry-After'));
           if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
             this.retryAfterMs = Math.min(300000, Math.ceil(retryAfterSeconds * 1000));
+            this.retryNotBefore = Date.now() + this.retryAfterMs;
           }
         } else if (res.ok) {
           this.retryAfterMs = 0;
+          this.retryNotBefore = 0;
         }
         return res.ok;
       } catch (e) {
@@ -964,6 +980,7 @@
           && activitySignature === this.lastSentActivitySignature
           && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
         if (unchangedHeartbeat) return true;
+        if (action === 'heartbeat' && !this.pendingRetry && Date.now() < this.retryNotBefore) return false;
         let body = JSON.stringify(payload);
 
         // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.

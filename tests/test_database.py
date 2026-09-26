@@ -493,6 +493,31 @@ def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
     assert detections.docs["s1"]["score_calibrated"] is False
 
 
+def test_saved_touch_records_keep_source_without_counting_as_mouse(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+    touch_records = [
+        {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move", "source": "touch"}
+        for i in range(25)
+    ]
+    assert save_detection_result(
+        {"sessionId": "touch", "visitorId": "v1", "mouse": {"records": touch_records}},
+        {"verdict": "SUSPECT", "decision_state": "INSUFFICIENT_EVIDENCE"},
+    )
+    stored = detections.docs["touch"]
+    assert stored["mouse_stats"]["move_point_count"] == 0
+    assert stored["mouse_stats"]["chunks_count"] == 0
+    assert all(record["source"] == "touch" for record in stored["mouse_trajectory"])
+
+
 def test_newer_timestamp_allows_sequence_restart(monkeypatch):
     detections = MemoryCollection()
     empty = MemoryCollection()

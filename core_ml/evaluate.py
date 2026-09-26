@@ -152,7 +152,7 @@ def evaluate_dataset(
     for session in selected:
         records = (
             session.records if max_move_points is None
-            else prefix_through_moves(session.records, max_move_points)
+            else prefix_through_moves(session.early_records or session.records, max_move_points)
         )
         result = detector.predict({
             "sessionId": session.session_id,
