@@ -13,7 +13,8 @@ RELEASE_MAXIMUM_METRICS = {"false_positive_rate": 0.0}
 
 
 def release_evidence_valid(manifest: dict, policy_version: str, threshold: float,
-                           suspect_threshold: float) -> bool:
+                           suspect_threshold: float, *,
+                           min_mouse_points_for_bot: int = 25) -> bool:
     """Check that the exact deployed policy has passed its validation gates."""
     training = manifest.get("training") or {}
     if not isinstance(training, dict):
@@ -71,7 +72,8 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
     if policy_version == "7":
         if (
             training.get("environment_features_trained") is not False
-            or training.get("minimum_mouse_points_for_bot") != 25
+            or training.get("minimum_mouse_points_for_bot") != min_mouse_points_for_bot
+            or min_mouse_points_for_bot != 25
             or training.get("collector_window_policy") != "mouse_export_v1"
             or training.get("rolling_checkpoints") != 25
         ):

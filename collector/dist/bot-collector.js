@@ -441,6 +441,8 @@
       this.chunks = [];
       this.lastMoveRecord = null;
       this.scrollEvents = [];  // separate scroll tracking
+      this.coordinateWidth = null;
+      this.coordinateHeight = null;
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
       this.isListening = false;
       this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -484,15 +486,27 @@
       this.chunks = [];
       this.lastMoveRecord = null;
       this.scrollEvents = [];
+      this.coordinateWidth = null;
+      this.coordinateHeight = null;
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
 
     recordPoint(type, clientX, clientY, source = 'mouse') {
+      const viewportWidth = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
+      const viewportHeight = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
+      // Small viewport changes can come from scrollbars; larger growth needs a new frame.
+      if (this.coordinateWidth !== null &&
+          (viewportWidth > this.coordinateWidth + 32 || viewportHeight > this.coordinateHeight + 32)) {
+        this.clear();
+      }
+      if (this.coordinateWidth === null) {
+        this.coordinateWidth = viewportWidth;
+        this.coordinateHeight = viewportHeight;
+      }
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const time = Math.round(now - this.startTime);
-
-      const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
-      const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
+      const w = this.coordinateWidth;
+      const h = this.coordinateHeight;
       const safeX = (typeof clientX === 'number' && Number.isFinite(clientX)) ? clientX : 0;
       const safeY = (typeof clientY === 'number' && Number.isFinite(clientY)) ? clientY : 0;
       const normX = Math.max(0, Math.min(1, Number((safeX / w).toFixed(5))));
@@ -605,8 +619,8 @@
         this.recordPoint('up', touch.clientX, touch.clientY, 'touch');
       } else {
         const last = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-        const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
-        const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
+        const w = this.coordinateWidth || ((typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920);
+        const h = this.coordinateHeight || ((typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080);
         const x = last ? last.x * w : 0;
         const y = last ? last.y * h : 0;
         this.recordPoint('up', x, y, 'touch');

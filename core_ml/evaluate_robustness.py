@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 from collections import Counter
 from pathlib import Path
 
@@ -30,9 +31,14 @@ DESKTOP_FINGERPRINT = {
 
 
 def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=25,
-                        desktop_fingerprint=False, threshold=0.93):
+                        desktop_fingerprint=False, threshold=0.93,
+                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.45):
     if split not in ("val", "test"):
         raise ValueError("Robustness evaluation requires a held-out val or test split")
+    if not math.isfinite(heuristic_score) or not 0.0 <= heuristic_score <= 1.0:
+        raise ValueError("heuristic_score must be between zero and one")
+    if not math.isfinite(suspect_threshold) or not 0.0 <= suspect_threshold <= threshold:
+        raise ValueError("suspect_threshold must be between zero and the BOT threshold")
     sessions = deduplicate_real_sessions([
         session
         for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots")
@@ -45,6 +51,7 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         if assignment == split
     ]
     detector, manifest = _load_detector(weights_dir, threshold)
+    detector.suspect_threshold = suspect_threshold
     training_hashes = set(
         manifest.get("training", {}).get("dataset", {})
         .get("trajectory_hashes_by_split", {}).get("train", [])
@@ -53,16 +60,20 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         raise ValueError("Evaluation split overlaps model training trajectories")
 
     rolling = {"human": Counter(), "bot": Counter()}
+    transitions = {"human": Counter(), "bot": Counter()}
     timing = {str(factor): {"human": Counter(), "bot": Counter()}
               for factor in (0.5, 1.0, 2.0)}
     human_ever_bot = bot_ever_human = human_ever_suspect = 0
     human_bot_details = []
     fingerprint = DESKTOP_FINGERPRINT if desktop_fingerprint else {}
+    botd = {"heuristicScore": heuristic_score, "detectors": {"webdriver": webdriver}}
     for session in selected:
         label = "bot" if session.label else "human"
         verdicts = []
         for window in rolling_windows(session.records, checkpoints=checkpoints):
-            decision = detector.predict({"mouse": {"records": window}, "fingerprint": fingerprint})
+            decision = detector.predict({
+                "mouse": {"records": window}, "fingerprint": fingerprint, "botd": botd,
+            })
             verdict = decision["verdict"]
             rolling[label][verdict] += 1
             verdicts.append(verdict)
@@ -80,11 +91,18 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
             human_ever_suspect += "SUSPECT" in verdicts
         else:
             bot_ever_human += "HUMAN" in verdicts
+        transitions[label].update(
+            f"{previous}->{current}"
+            for previous, current in zip(verdicts, verdicts[1:])
+            if previous != current
+        )
 
         early = prefix_through_moves(session.early_records or session.records, 100)
         for factor in (0.5, 1.0, 2.0):
             scaled = [{**record, "time": record["time"] * factor} for record in early]
-            verdict = detector.predict({"mouse": {"records": scaled}, "fingerprint": fingerprint})["verdict"]
+            verdict = detector.predict({
+                "mouse": {"records": scaled}, "fingerprint": fingerprint, "botd": botd,
+            })["verdict"]
             timing[str(factor)][label][verdict] += 1
 
     return {
@@ -92,9 +110,13 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "split": split,
         "checkpoints_per_session": checkpoints,
         "threshold": threshold,
+        "suspect_threshold": suspect_threshold,
         "desktop_fingerprint": desktop_fingerprint,
+        "heuristic_score": heuristic_score,
+        "webdriver": webdriver,
         "session_counts": dict(Counter("bot" if s.label else "human" for s in selected)),
         "rolling_windows": {label: dict(counts) for label, counts in rolling.items()},
+        "verdict_transitions": {label: dict(counts) for label, counts in transitions.items()},
         "human_sessions_ever_bot": human_ever_bot,
         "human_bot_details": human_bot_details,
         "human_sessions_ever_suspect": human_ever_suspect,
@@ -113,13 +135,18 @@ def main():
     parser.add_argument("--split", choices=("val", "test"), default="val")
     parser.add_argument("--checkpoints", type=int, default=25)
     parser.add_argument("--threshold", type=float, default=0.93)
+    parser.add_argument("--suspect-threshold", type=float, default=0.45)
     parser.add_argument("--desktop-fingerprint", action="store_true")
+    parser.add_argument("--heuristic-score", type=float, default=0.0)
+    parser.add_argument("--webdriver", action="store_true")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
     torch.set_num_threads(1)
     report = evaluate_robustness(
         args.dataset_root, args.weights_dir, split=args.split, checkpoints=args.checkpoints,
         desktop_fingerprint=args.desktop_fingerprint, threshold=args.threshold,
+        heuristic_score=args.heuristic_score, webdriver=args.webdriver,
+        suspect_threshold=args.suspect_threshold,
     )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     print(rendered)

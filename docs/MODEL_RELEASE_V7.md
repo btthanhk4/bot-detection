@@ -46,12 +46,46 @@ release gate also requires zero human sessions ever BOT across sampled windows,
 limits HUMAN-to-SUSPECT and BOT-to-HUMAN session friction, and binds the
 fingerprint-training and collector-window contract.
 
+## Post-release hardening
+
+- Serving now compares the configured minimum mouse points with the release
+  evidence. The v7 bundle was evaluated at 25 points; changing
+  `BOT_MIN_MOUSE_POINTS_FOR_BOT` makes inference unavailable.
+- The collector keeps one coordinate frame across viewport shrinkage and resets
+  its mouse window on expansion larger than 32 pixels. This prevents a resize
+  from producing a fictitious mouse movement or clipping a large new viewport.
+  A reset returns the session to SUSPECT until sufficient new mouse data arrives.
+- The replay tool reports verdict transitions and can inject a desktop
+  fingerprint, BotD heuristic score, and webdriver flag. These are controlled
+  perturbations of labeled mouse traces, not real labeled browser data.
+
+On the 14-human/46-bot validation split, 25 sampled windows per session:
+
+| SUSPECT threshold | Human SUSPECT windows | Human sessions ever BOT | Bot sessions ever HUMAN |
+| --- | ---: | ---: | ---: |
+| 0.45 (released) | 24/350 | 0/14 | 0/46 |
+| 0.50 (rejected) | 10/350 | 0/14 | 1/46 |
+| 0.55 (rejected) | 8/350 | 0/14 | 5/46 |
+
+The released threshold stays at `0.45`. At that threshold, a heuristic score of
+`1.0` with a desktop fingerprint produced 0/14 human sessions ever BOT and
+9/14 ever SUSPECT. Adding a webdriver flag made all 14 human traces SUSPECT,
+but still 0/14 BOT. These stress tests show how the policy reacts to browser
+signals; they do not estimate a real-world false-positive rate for BotD.
+
+The unchanged model had 40 HUMAN/SUSPECT transitions on human validation
+traces and 64 BOT/SUSPECT transitions on bot traces. A per-session smoothing
+policy needs separately labeled live traffic before it can replace the current
+per-window decisions without hiding emerging bot behavior.
+
 Reproduce the frozen-bundle replay from the repository root:
 
 ```powershell
 python -m core_ml.evaluate_robustness --dataset-root "../Tuần 3/repos/web_bot_detection_dataset" --weights-dir core_ml/weights --split val
 python -m core_ml.evaluate_robustness --dataset-root "../Tuần 3/repos/web_bot_detection_dataset" --weights-dir core_ml/weights --split test
 python -m core_ml.evaluate_robustness --dataset-root "../Tuần 3/repos/web_bot_detection_dataset" --weights-dir core_ml/weights --split val --desktop-fingerprint
+python -m core_ml.evaluate_robustness --dataset-root "../Tuần 3/repos/web_bot_detection_dataset" --weights-dir core_ml/weights --split val --desktop-fingerprint --heuristic-score 1 --webdriver
+python -m core_ml.evaluate_robustness --dataset-root "../Tuần 3/repos/web_bot_detection_dataset" --weights-dir core_ml/weights --split val --desktop-fingerprint --suspect-threshold 0.50
 ```
 
 ## Release boundary

@@ -158,6 +158,7 @@ release_gate_evidence_present = release_evidence_valid(
     DECISION_POLICY_VERSION,
     settings.THRESHOLD,
     settings.SUSPECT_THRESHOLD,
+    min_mouse_points_for_bot=settings.MIN_MOUSE_POINTS_FOR_BOT,
 )
 
 # Small best-effort cache for requests received while MongoDB is unavailable.

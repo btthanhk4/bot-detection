@@ -115,6 +115,9 @@ def test_policy_v7_requires_rolling_evidence_and_mouse_only_contract():
         }},
     }}
     assert release_evidence_valid(manifest, "7", 0.93, 0.45)
+    assert not release_evidence_valid(
+        manifest, "7", 0.93, 0.45, min_mouse_points_for_bot=100
+    )
     manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_ever_bot"] = 1.0
     assert not release_evidence_valid(manifest, "7", 0.93, 0.45)
     manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_ever_bot"] = 0.0

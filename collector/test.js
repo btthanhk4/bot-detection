@@ -116,6 +116,39 @@ async function testTouchIsTaggedAndExcludedFromMouseChunks() {
   collector.destroy();
 }
 
+async function testResizeDoesNotCreateMouseMovement() {
+  const previousWindow = global.window;
+  global.window = {
+    innerWidth: 1000,
+    innerHeight: 1000,
+    removeEventListener: () => {},
+  };
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  try {
+    recorder.recordPoint('move', 500, 500);
+    global.window.innerWidth = 500;
+    recorder.recordPoint('move', 500, 500);
+    assert.strictEqual(recorder.records[1].x, 0.5);
+    assert.strictEqual(recorder.records[1].dx, 0);
+    global.window.innerWidth = 1015;
+    recorder.recordPoint('move', 500, 500);
+    assert.strictEqual(recorder.records.length, 3, 'scrollbar-sized changes should retain history');
+    recorder.clear();
+    global.window.innerWidth = 500;
+    recorder.recordPoint('move', 250, 500);
+    assert.strictEqual(recorder.records[0].x, 0.5, 'clear should adopt the new viewport');
+    global.window.innerWidth = 1200;
+    recorder.recordPoint('move', 250, 500);
+    assert.strictEqual(recorder.records.length, 1, 'expansion should start a fresh coordinate frame');
+    assert.strictEqual(recorder.records[0].x, Number((250 / 1200).toFixed(5)));
+    assert.strictEqual(recorder.records[0].speed, 0);
+  } finally {
+    collector.destroy();
+    global.window = previousWindow;
+  }
+}
+
 async function testPagehideBeaconUsesCorsSafelistedContentType() {
   const collector = new BotCollector({ endpointUrl: 'https://api.example/telemetry' });
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
@@ -488,6 +521,7 @@ testRestartDuringFingerprinting()
   .then(testExhaustedRetryStillRespectsServerCooldown)
   .then(testFailedDetectionDoesNotPromoteClientFlag)
   .then(testTouchIsTaggedAndExcludedFromMouseChunks)
+  .then(testResizeDoesNotCreateMouseMovement)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)
