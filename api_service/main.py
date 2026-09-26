@@ -25,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 from api_service.config import settings
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.model_bundle import ModelBundleError, verify_model_bundle
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
@@ -152,6 +152,17 @@ ensemble_detector = EnsembleBotDetector(
     tabular_available=tabular_loaded,
 )
 model_bundle_id = str(model_manifest.get("bundle_id") or "")
+_training_evidence = model_manifest.get("training") or {}
+_ensemble_evidence = (_training_evidence.get("metrics") or {}).get("ensemble") or {}
+release_gate_evidence_present = (
+    _training_evidence.get("decision_policy_version") == DECISION_POLICY_VERSION
+    and _training_evidence.get("production_decision_threshold") == settings.THRESHOLD
+    and _training_evidence.get("production_suspect_threshold") == settings.SUSPECT_THRESHOLD
+    and isinstance(_ensemble_evidence.get("val"), dict)
+    and isinstance(_ensemble_evidence.get("early_val"), dict)
+    and isinstance(_ensemble_evidence.get("mid_val"), dict)
+    and isinstance(_ensemble_evidence.get("late_val"), dict)
+)
 
 # Small best-effort cache for requests received while MongoDB is unavailable.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
@@ -486,6 +497,8 @@ def health_check():
         },
         "model_bundle_valid": model_bundle_valid,
         "model_bundle_id": model_bundle_id,
+        "decision_policy_version": DECISION_POLICY_VERSION,
+        "release_gate_evidence_present": release_gate_evidence_present,
         "inference_ready": runtime_ready,
         "database": database_ready,
     }

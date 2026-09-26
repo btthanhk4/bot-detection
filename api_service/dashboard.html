@@ -1905,11 +1905,11 @@ body::before { display: none; }
         <div class="verdict-hero" id="dVerdictHero">
           <div class="verdict-hero-badge" id="dVerdictBadge">--</div>
           <div class="verdict-hero-prob">
-            <span class="verdict-prob-label">Xác suất là Bot:</span>
+            <span class="verdict-prob-label">Điểm rủi ro:</span>
             <span class="verdict-prob-value" id="dBotProb">--%</span>
           </div>
           <div class="verdict-hero-conf">
-            <span>Độ tin cậy:</span>
+            <span>Độ phân cực điểm:</span>
             <div class="conf-bar"><div class="conf-bar-fill" id="dConfBar"></div></div>
             <span id="dConfValue">--%</span>
           </div>
@@ -1922,7 +1922,7 @@ body::before { display: none; }
         <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Phân tích đa mô hình (Ensemble Fusion)</div>
         <div class="drawer-explain">
           Hệ thống kết hợp <strong>3 thành phần phân tích</strong>: BiLSTM, XGBoost và BotD heuristic.
-          Trọng số được tự điều chỉnh dựa trên độ tin cậy và lượng dữ liệu của phiên.
+          Trọng số được tự điều chỉnh theo độ lệch điểm và lượng dữ liệu của phiên.
         </div>
 
         <div class="model-detail-card" id="dModelLSTM">
@@ -2306,9 +2306,11 @@ function renderTrafficTable() {
   const newHTML = allSessions.map((s, idx) => {
     const v = (s.verdict || 'UNKNOWN').toUpperCase();
     const prob = s.bot_probability || 0;
-    const probPct = (prob * 100).toFixed(1);
     const bd = s.breakdown || {};
-    const lstmScore = (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
+    const deferred = bd.decision_deferred === true || s.decision_state === 'INSUFFICIENT_EVIDENCE';
+    const probPct = deferred ? '--' : (prob * 100).toFixed(1);
+    const lstmScore = (bd.has_enough_mouse_data === false) ? '--' :
+      (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
     const tabScore = (bd.tabular_score !== undefined) ? (bd.tabular_score * 100).toFixed(1) : '--';
     const mousePoints = Number.isFinite(Number(bd.mouse_points))
       ? Number(bd.mouse_points)
@@ -2318,7 +2320,7 @@ function renderTrafficTable() {
     let rowClass = '';
     if (v === 'HUMAN') verdictClass = 'verdict-human';
     else if (v === 'BOT') { verdictClass = 'verdict-bot'; rowClass = 'row-bot'; }
-    else rowClass = 'row-suspect';
+    else if (!deferred) rowClass = 'row-suspect';
 
     let barColor = 'var(--accent-green)';
     if (prob > 0.7) barColor = 'var(--accent-red)';
@@ -2333,15 +2335,15 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
-      <td><span class="verdict-badge ${verdictClass}">${v}</span></td>
+      <td><span class="verdict-badge ${verdictClass}">${deferred ? 'CHỜ DỮ LIỆU' : v}</span></td>
       <td>
         <div class="risk-bar-container">
-          <div class="risk-bar-fill" style="width:${probPct}%;background:${barColor}"></div>
+          <div class="risk-bar-fill" style="width:${deferred ? 0 : probPct}%;background:${barColor}"></div>
         </div>
-        <div class="risk-pct" style="color:${barColor}">${probPct}%</div>
+        <div class="risk-pct" style="color:${barColor}">${deferred ? '--' : probPct + '%'}</div>
       </td>
       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${mousePoints > 0 ? 'var(--accent-green)' : 'var(--text-muted)'}">${mousePoints}</span></td>
-      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(lstmScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${lstmScore}%</span></td>
+      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(lstmScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${lstmScore === '--' ? '--' : lstmScore + '%'}</span></td>
       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(tabScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${tabScore}%</span></td>
       <td>
         <div style="display:flex;gap:4px;align-items:center;">
@@ -2453,16 +2455,17 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
   hero.className = 'verdict-hero ' + (v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect');
-  document.getElementById('dVerdictBadge').textContent = v;
-  document.getElementById('dBotProb').textContent = (prob * 100).toFixed(1) + '%';
+  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE';
+  document.getElementById('dVerdictBadge').textContent = deferred ? 'CHỜ DỮ LIỆU' : v;
+  document.getElementById('dBotProb').textContent = deferred ? '--' : (prob * 100).toFixed(1) + '%';
   document.getElementById('dBotProb').style.color = v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
-  document.getElementById('dConfBar').style.width = (conf * 100).toFixed(0) + '%';
-  document.getElementById('dConfValue').textContent = (conf * 100).toFixed(0) + '%';
+  document.getElementById('dConfBar').style.width = deferred ? '0%' : (conf * 100).toFixed(0) + '%';
+  document.getElementById('dConfValue').textContent = deferred ? '--' : (conf * 100).toFixed(0) + '%';
 
   // Verdict Explain in Vietnamese
   let explainText = '';
   if (v === 'BOT') {
-    explainText = `<strong>Hệ thống kết luận là BOT (Xác suất ${(prob * 100).toFixed(1)}%):</strong> `;
+    explainText = `<strong>Hệ thống kết luận là BOT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> `;
     const flags = [];
     if (asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver)) flags.push('cờ tự động hóa navigator.webdriver = true');
     if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
@@ -2472,10 +2475,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     if (flags.length > 0) {
       explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
     } else {
-      explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng an toàn 70%.';
+      explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng kết luận BOT.';
     }
   } else if (v === 'HUMAN') {
-    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Mọi kiểm tra bảo mật đều hợp lệ. `;
+    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Chưa thấy bằng chứng bot đủ mạnh trong dữ liệu thu thập. `;
     if (s.mouse_points_captured > 5) {
       explainText += `Hành vi di chuột có tính ngẫu nhiên sinh học tự nhiên, gia tốc biến thiên hợp lý (LSTM: ${((bd.behavioral_lstm_score||0)*100).toFixed(1)}%). Không phát hiện cờ tự động hóa.`;
     } else {
@@ -2484,10 +2487,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   } else {
     if (bd.decision_deferred) {
       const received = Number(bd.mouse_points) || 0;
-      const required = Number(bd.minimum_mouse_points) || 24;
-      explainText = `<strong>Hệ thống đang chờ thêm dữ liệu (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Chưa đưa ra kết luận BOT khi bằng chứng hành vi còn thiếu.`;
+      const required = Number(bd.minimum_mouse_points) || 25;
+      explainText = `<strong>Hệ thống đang chờ thêm dữ liệu:</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Chưa đưa ra kết luận khi bằng chứng hành vi còn thiếu.`;
     } else {
-      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (Xác suất ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới (45% - 70%). Chưa phát hiện cờ bot nghiêm trọng nhưng hành vi chưa đủ rõ để khẳng định.`;
+      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới. Chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.`;
     }
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
@@ -2499,9 +2502,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const weights = bd.weights_used || { w_lstm: 0.35, w_tabular: 0.40, w_heuristic: 0.25 };
 
   const barL = document.getElementById('dBarLSTM');
-  barL.style.width = (lstmScore * 100) + '%';
+  barL.style.width = bd.has_enough_mouse_data === false ? '0%' : (lstmScore * 100) + '%';
   barL.style.background = lstmScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-cyan)';
-  document.getElementById('dScoreLSTM').textContent = (lstmScore * 100).toFixed(1) + '%';
+  document.getElementById('dScoreLSTM').textContent = bd.has_enough_mouse_data === false ? '--' : (lstmScore * 100).toFixed(1) + '%';
   document.getElementById('dWeightLSTM').textContent = ((weights.w_lstm || 0) * 100).toFixed(0) + '%';
 
   const barT = document.getElementById('dBarTab');
@@ -2520,7 +2523,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dFusionResult').innerHTML =
     `<span style="color:var(--text-muted)">Tính toán Fusion:</span> ` +
     `(${((weights.w_lstm||0)).toFixed(2)}×${lstmScore.toFixed(2)} + ${((weights.w_tabular||0)).toFixed(2)}×${tabScore.toFixed(2)} + ${((weights.w_heuristic||0)).toFixed(2)}×${heurScore.toFixed(2)}) / ${sumW.toFixed(2)} = ` +
-    `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${(prob * 100).toFixed(1)}% → ${v}</span>`;
+    `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${deferred ? 'Chờ đủ dữ liệu' : (prob * 100).toFixed(1) + '% → ' + v}</span>`;
 
   // 4. Detection Reasons
   const reasonsDiv = document.getElementById('dReasonsList');
@@ -2620,10 +2623,12 @@ function updateGauge(s) {
   const offset = arcLength * (1 - prob);
 
   document.getElementById('gaugeArc').setAttribute('stroke-dashoffset', offset);
-  document.getElementById('gaugeValue').textContent = pct.toFixed(1) + '%';
+  const deferred = s.breakdown?.decision_deferred === true || s.decision_state === 'INSUFFICIENT_EVIDENCE';
+  if (deferred) document.getElementById('gaugeArc').setAttribute('stroke-dashoffset', arcLength);
+  document.getElementById('gaugeValue').textContent = deferred ? '--' : pct.toFixed(1) + '%';
 
   const v = (s.verdict || '').toUpperCase();
-  const label = v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? 'BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
+  const label = deferred ? 'CHỜ DỮ LIỆU' : v === 'HUMAN' ? 'NGƯỜI THẬT' : v === 'BOT' ? 'BOT ĐÃ PHÁT HIỆN' : 'NGHI VẤN';
   document.getElementById('gaugeLabel').textContent = label;
   document.getElementById('gaugeLabel').style.fill =
     v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';

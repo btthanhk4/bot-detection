@@ -310,7 +310,7 @@ export class BotCollector {
     try {
       const payload = await this.getPayload(action);
       if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) {
-        return { is_bot: false, bot_probability: 0, fallback: true, error: 'collector_inactive' };
+        return { is_bot: false, verdict: 'UNKNOWN', decision_state: 'UNAVAILABLE', bot_probability: null, fallback: true, error: 'collector_inactive' };
       }
       const res = await this.fetchWithTimeout(this.detectUrl, {
         method: 'POST',
@@ -319,8 +319,10 @@ export class BotCollector {
       });
       if (!res.ok) {
         return {
-          is_bot: this.cachedBotd?.isBot || false,
-          bot_probability: this.cachedBotd?.heuristicScore || 0,
+          is_bot: false,
+          verdict: 'UNKNOWN',
+          decision_state: 'UNAVAILABLE',
+          bot_probability: null,
           fallback: true,
           status: res.status,
           error: `HTTP ${res.status}`,
@@ -329,8 +331,10 @@ export class BotCollector {
       return await res.json();
     } catch (e) {
       return {
-        is_bot: this.cachedBotd?.isBot || false,
-        bot_probability: this.cachedBotd?.heuristicScore || 0,
+        is_bot: false,
+        verdict: 'UNKNOWN',
+        decision_state: 'UNAVAILABLE',
+        bot_probability: null,
         fallback: true,
         error: e.message,
       };

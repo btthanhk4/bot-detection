@@ -18,19 +18,20 @@ from sklearn.metrics import (
 
 from core_ml.dataset.loader import load_real_dataset
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
-from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
+from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES, prefix_through_moves
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.model_bundle import verify_model_bundle
 from core_ml.train import (
+    PRODUCTION_DECISION_THRESHOLD,
     assign_real_session_splits,
     deduplicate_real_sessions,
     records_signature,
 )
 
 
-def classification_metrics(labels, probabilities, threshold: float) -> dict:
+def classification_metrics(labels, probabilities, threshold: float, predictions=None) -> dict:
     """Return threshold-dependent and ranking metrics for binary detection."""
     y_true = np.asarray(labels, dtype=int)
     y_score = np.asarray(probabilities, dtype=float)
@@ -44,18 +45,25 @@ def classification_metrics(labels, probabilities, threshold: float) -> dict:
     if not 0 <= threshold <= 1:
         raise ValueError("Threshold must be between zero and one")
 
-    predictions = (y_score >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, predictions, labels=[0, 1]).ravel()
+    y_pred = (
+        np.asarray(predictions)
+        if predictions is not None
+        else (y_score >= threshold).astype(int)
+    )
+    if y_pred.shape != y_true.shape or not np.isin(y_pred, [0, 1]).all():
+        raise ValueError("Predictions must be aligned binary labels")
+    y_pred = y_pred.astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     has_both_labels = observed_labels == {0, 1}
     return {
         "threshold": float(threshold),
         "roc_auc": float(roc_auc_score(y_true, y_score)) if has_both_labels else None,
         "pr_auc": float(average_precision_score(y_true, y_score)) if has_both_labels else None,
         "brier_score": float(brier_score_loss(y_true, y_score)),
-        "accuracy": float(np.mean(predictions == y_true)),
-        "f1": float(f1_score(y_true, predictions, zero_division=0)),
-        "precision": float(precision_score(y_true, predictions, zero_division=0)),
-        "recall": float(recall_score(y_true, predictions, zero_division=0)),
+        "accuracy": float(np.mean(y_pred == y_true)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
         "false_positive_rate": float(fp / max(1, fp + tn)),
         "false_negative_rate": float(fn / max(1, fn + tp)),
         "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
@@ -89,8 +97,9 @@ def evaluate_dataset(
     weights_dir: str,
     *,
     split: str = "all",
-    threshold: float = 0.70,
+    threshold: float = PRODUCTION_DECISION_THRESHOLD,
     allow_training_overlap: bool = False,
+    max_move_points: int = None,
 ) -> dict:
     """Evaluate a model bundle and reject overlap with its training trajectories."""
     sessions = []
@@ -112,6 +121,8 @@ def evaluate_dataset(
     ]
     if not selected:
         raise ValueError(f"No sessions found for evaluation split {split!r}")
+    if max_move_points is not None and (type(max_move_points) is not int or max_move_points < 1):
+        raise ValueError("max_move_points must be a positive integer")
 
     detector, manifest = _load_detector(weights_dir, threshold)
     hashes_by_split = (
@@ -136,18 +147,31 @@ def evaluate_dataset(
 
     labels = []
     probabilities = []
+    predictions = []
+    deferred_count = 0
     for session in selected:
+        records = (
+            session.records if max_move_points is None
+            else prefix_through_moves(session.records, max_move_points)
+        )
         result = detector.predict({
             "sessionId": session.session_id,
             "fingerprint": {},
             "botd": {"heuristicScore": 0.0, "detectors": {}, "reasons": []},
-            "mouse": {"records": session.records},
+            "mouse": {"records": records},
         })
         labels.append(session.label)
         probabilities.append(result["bot_probability"])
+        predictions.append(result["is_bot"])
+        deferred_count += result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+
+    metrics = classification_metrics(labels, probabilities, threshold, predictions)
+    metrics["deferred_count"] = deferred_count
+    metrics["decision_coverage"] = 1.0 - deferred_count / len(selected)
 
     return {
         "bundle_id": manifest.get("bundle_id"),
+        "decision_policy_version": DECISION_POLICY_VERSION,
         "dataset_name": Path(dataset_root).resolve().name,
         "evaluation_kind": (
             "external"
@@ -157,12 +181,13 @@ def evaluate_dataset(
             else "mixed_known_and_external"
         ),
         "split": split,
+        "max_move_points": max_move_points,
         "session_count": len(selected),
         "human_count": int(labels.count(0)),
         "bot_count": int(labels.count(1)),
         "training_overlap_count": len(overlap),
         "known_bundle_dataset_overlap_count": known_overlap_count,
-        "metrics": classification_metrics(labels, probabilities, threshold),
+        "metrics": metrics,
     }
 
 
@@ -174,7 +199,8 @@ def main():
         default=os.path.join(os.path.dirname(__file__), "weights"),
     )
     parser.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
-    parser.add_argument("--threshold", type=float, default=0.70)
+    parser.add_argument("--threshold", type=float, default=PRODUCTION_DECISION_THRESHOLD)
+    parser.add_argument("--max-move-points", type=int, default=None)
     parser.add_argument("--allow-training-overlap", action="store_true")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
@@ -185,6 +211,7 @@ def main():
         split=args.split,
         threshold=args.threshold,
         allow_training_overlap=args.allow_training_overlap,
+        max_move_points=args.max_move_points,
     )
     rendered = json.dumps(report, ensure_ascii=True, indent=2, sort_keys=True)
     print(rendered)

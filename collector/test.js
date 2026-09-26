@@ -80,6 +80,42 @@ async function testDestroyAbortsStatusRequest() {
   assert.strictEqual(collector.abortControllers.size, 0);
 }
 
+async function testFailedDetectionDoesNotPromoteClientFlag() {
+  const collector = new BotCollector({ detectUrl: '/detect' });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = { isBot: true, heuristicScore: 0.99 };
+  global.fetch = async () => ({ ok: false, status: 503 });
+
+  const unavailable = await collector.checkBotStatus();
+  assert.strictEqual(unavailable.is_bot, false);
+  assert.strictEqual(unavailable.verdict, 'UNKNOWN');
+  assert.strictEqual(unavailable.decision_state, 'UNAVAILABLE');
+  assert.strictEqual(unavailable.bot_probability, null);
+
+  global.fetch = async () => { throw new Error('network unavailable'); };
+  const offline = await collector.checkBotStatus();
+  assert.strictEqual(offline.is_bot, false);
+  assert.strictEqual(offline.decision_state, 'UNAVAILABLE');
+  collector.destroy();
+}
+
+async function testTouchIsTaggedAndExcludedFromMouseChunks() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  for (let i = 0; i < 30; i++) {
+    recorder.handleTouchMove({ touches: [{ clientX: i * 10, clientY: 20 }] });
+  }
+
+  assert.ok(recorder.records.every((record) => record.source === 'touch'));
+  assert.strictEqual(recorder.getChunks().length, 0);
+  assert.strictEqual(recorder.getStats().movePointCount, 0);
+
+  recorder.handleMouseMove({ clientX: 10, clientY: 20 });
+  assert.strictEqual(recorder.records[30].source, 'mouse');
+  assert.strictEqual(recorder.records[30].speed, 0);
+  collector.destroy();
+}
+
 async function testPagehideBeaconUsesCorsSafelistedContentType() {
   const collector = new BotCollector({ endpointUrl: 'https://api.example/telemetry' });
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
@@ -383,6 +419,8 @@ testRestartDuringFingerprinting()
   .then(testHeartbeatUpdatesPendingRetryWithoutBypassingBackoff)
   .then(testInFlightRetryPreservesNewHeartbeat)
   .then(testRetryAfterIsRespectedAndBounded)
+  .then(testFailedDetectionDoesNotPromoteClientFlag)
+  .then(testTouchIsTaggedAndExcludedFromMouseChunks)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
   .then(() => console.log('collector lifecycle tests: OK'))

@@ -43,11 +43,12 @@ from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as E
 from core_ml.features.mouse_features import (
     extract_sequential_chunks,
     extract_mouse_stat_vector,
+    prefix_through_moves,
     STATISTICAL_FEATURE_NAMES,
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.model_bundle import file_sha256
-from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 # Reproducibility
@@ -60,7 +61,7 @@ if torch.cuda.is_available():
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
-PRODUCTION_DECISION_THRESHOLD = 0.70
+PRODUCTION_DECISION_THRESHOLD = 0.93
 PRODUCTION_SUSPECT_THRESHOLD = 0.45
 RELEASE_MINIMUM_METRICS = {
     "roc_auc": 0.80,
@@ -68,7 +69,12 @@ RELEASE_MINIMUM_METRICS = {
     "recall": 0.75,
 }
 RELEASE_MAXIMUM_METRICS = {
-    "false_positive_rate": 0.20,
+    "false_positive_rate": 0.0,
+}
+RELEASE_EARLY_MINIMUM_METRICS = {
+    "roc_auc": 0.80,
+    "precision": 0.90,
+    "recall": 0.60,
 }
 
 
@@ -311,6 +317,21 @@ def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.nda
     return np.concatenate([env_vec, mouse_stat_vec])
 
 
+def iter_training_prefixes(records: list, move_counts=(25, 50, 100)):
+    """Yield early views of a session without duplicating its complete record list."""
+    if not isinstance(records, list) or not records:
+        return
+    targets = set(move_counts)
+    moves = 0
+    for index, record in enumerate(records):
+        if isinstance(record, dict) and record.get("type") == "move":
+            moves += 1
+            if moves in targets and index + 1 < len(records):
+                yield moves, records[:index + 1]
+            if moves >= max(targets):
+                break
+
+
 def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
                epochs=30, batch_size=32, lr=0.002, patience=7, device="auto"):
     """Train LSTM with early stopping and LR scheduling."""
@@ -388,9 +409,15 @@ def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=N
     print(f"    Top 5 Features: {top5}")
 
 
-def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix=""):
+def evaluate_metrics(y_true, y_pred_proba, threshold=0.5, prefix="", predictions=None):
     """Compute and print all classification metrics."""
-    y_pred = (y_pred_proba >= threshold).astype(int)
+    y_pred = (
+        np.asarray(predictions, dtype=int)
+        if predictions is not None
+        else (y_pred_proba >= threshold).astype(int)
+    )
+    if y_pred.shape != np.asarray(y_true).shape or not np.isin(y_pred, [0, 1]).all():
+        raise ValueError("Predictions must be aligned binary labels")
     cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     metrics = {}
     try:
@@ -463,28 +490,51 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
 def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels, test_indices, test_labels):
     """Gate on validation, then report the untouched held-out test result."""
     metrics_by_split = {}
-    for split_name, indices, labels in (
-        ("Val", val_indices, val_labels),
-        ("Test", test_indices, test_labels),
+    for split_name, indices, labels, move_limit in (
+        ("Val", val_indices, val_labels, None),
+        ("Early Val", val_indices, val_labels, 25),
+        ("Mid Val", val_indices, val_labels, 50),
+        ("Late Val", val_indices, val_labels, 100),
+        ("Test", test_indices, test_labels, None),
+        ("Early Test", test_indices, test_labels, 25),
+        ("Mid Test", test_indices, test_labels, 50),
+        ("Late Test", test_indices, test_labels, 100),
     ):
-        probabilities = np.asarray([
-            detector.predict(telemetries[index])["bot_probability"]
-            for index in indices
-        ])
+        decisions = []
+        for index in indices:
+            telemetry = telemetries[index]
+            if move_limit is not None:
+                mouse = telemetry.get("mouse") or {}
+                telemetry = {
+                    **telemetry,
+                    "mouse": {"records": prefix_through_moves(mouse.get("records") or [], move_limit)},
+                }
+            decisions.append(detector.predict(telemetry))
+        probabilities = np.asarray([decision["bot_probability"] for decision in decisions])
+        predictions = np.asarray([decision["is_bot"] for decision in decisions], dtype=int)
         print(f"\n  --- {split_name} Set (Production Ensemble) ---")
         metrics = evaluate_metrics(
             labels,
             probabilities,
             threshold=PRODUCTION_DECISION_THRESHOLD,
             prefix=f"[{split_name} Ensemble] ",
+            predictions=predictions,
         )
-        metrics_by_split[split_name.lower()] = metrics
-        if split_name == "Val":
-            validate_release_metrics(metrics)
+        deferred_count = sum(
+            decision.get("decision_state") == "INSUFFICIENT_EVIDENCE"
+            for decision in decisions
+        )
+        metrics["deferred_count"] = deferred_count
+        metrics["decision_coverage"] = 1.0 - deferred_count / len(decisions)
+        metrics_by_split[split_name.lower().replace(" ", "_")] = metrics
+        if split_name.endswith("Val"):
+            minimums = RELEASE_EARLY_MINIMUM_METRICS if move_limit is not None else RELEASE_MINIMUM_METRICS
+            validate_release_metrics(metrics, minimums=minimums)
     return metrics_by_split
 
 
-def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None):
+def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
+         early_augmentation=True, diagnostic_only=False):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -493,6 +543,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
     production_weights_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "weights"))
     weights_dir = os.path.abspath(weights_dir or production_weights_dir)
+    if diagnostic_only and os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir):
+        raise ValueError("Diagnostic models require a separate --weights-dir")
     os.makedirs(weights_dir, exist_ok=True)
 
     # ================================================================
@@ -652,7 +704,27 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     X_train_tab, X_val_tab, X_test_tab = X_tab[idx_train], X_tab[idx_val], X_tab[idx_test]
     y_train_tab, y_val_tab, y_test_tab = y_tab[idx_train], y_tab[idx_val], y_tab[idx_test]
 
+    augmented_prefix_count = 0
+    if early_augmentation:
+        extra_vectors = []
+        extra_labels = []
+        for session_idx in idx_train:
+            telemetry = all_telemetries[int(session_idx)]
+            records = (telemetry.get("mouse") or {}).get("records") or []
+            for _, prefix in iter_training_prefixes(records):
+                extra_vectors.append(build_tabular_vector(
+                    telemetry.get("fingerprint") or {},
+                    telemetry.get("botd") or {},
+                    prefix,
+                ))
+                extra_labels.append(int(y_tab[session_idx]))
+        augmented_prefix_count = len(extra_vectors)
+        if extra_vectors:
+            X_train_tab = np.vstack([X_train_tab, np.asarray(extra_vectors, dtype=np.float32)])
+            y_train_tab = np.concatenate([y_train_tab, np.asarray(extra_labels, dtype=int)])
+
     print(f"  Train: {len(idx_train)} | Val: {len(idx_val)} | Test: {len(idx_test)}")
+    print(f"  Additional train-only early windows: {augmented_prefix_count}")
     print(f"  Train dist: H={sum(y_train_tab==0)} B={sum(y_train_tab==1)} | Val dist: H={sum(y_val_tab==0)} B={sum(y_val_tab==1)} | Test dist: H={sum(y_test_tab==0)} B={sum(y_test_tab==1)}")
 
     # ================================================================
@@ -696,6 +768,24 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         y_chunks_train = y_chunks_tensor[train_idx]
         X_chunks_val = X_chunks_tensor[val_idx]
         y_chunks_val = y_chunks_tensor[val_idx]
+        early_chunk_count = 0
+        if early_augmentation:
+            early_chunks = []
+            early_labels = []
+            for session_idx in idx_train:
+                records = (all_telemetries[int(session_idx)].get("mouse") or {}).get("records") or []
+                for _, prefix in iter_training_prefixes(records):
+                    prefix_chunks = extract_sequential_chunks(records_to_chunks(prefix))
+                    if prefix_chunks.size(0):
+                        early_chunks.append(prefix_chunks[-1])
+                        early_labels.append(float(y_tab[session_idx]))
+            early_chunk_count = len(early_chunks)
+            if early_chunks:
+                X_chunks_train = torch.cat([X_chunks_train, torch.stack(early_chunks)])
+                y_chunks_train = torch.cat([
+                    y_chunks_train, torch.tensor(early_labels, dtype=torch.float32)
+                ])
+        print(f"    Additional train-only early chunks: {early_chunk_count}")
         print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
@@ -755,14 +845,32 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         tabular_available=True,
         lstm_available=True,
     )
-    training_metrics["ensemble"] = evaluate_ensemble_for_release(
-        production_detector,
-        all_telemetries,
-        idx_val,
-        y_val_tab,
-        idx_test,
-        y_test_tab,
-    )
+    try:
+        training_metrics["ensemble"] = evaluate_ensemble_for_release(
+            production_detector,
+            all_telemetries,
+            idx_val,
+            y_val_tab,
+            idx_test,
+            y_test_tab,
+        )
+    except RuntimeError as exc:
+        if diagnostic_only:
+            publish_model_artifacts(
+                tabular_model,
+                lstm_model.cpu(),
+                weights_dir,
+                feature_names=feature_names,
+                training_metadata={
+                    "diagnostic_only": True,
+                    "decision_policy_version": "diagnostic",
+                    "release_gate_failure": str(exc),
+                    "early_augmentation": bool(early_augmentation),
+                    "dataset": dataset_audit,
+                },
+            )
+            print(f"  Saved failed candidate for offline diagnosis -> {weights_dir}")
+        raise
 
     print("\n  --- Test Set (Tabular XGBoost) ---")
     training_metrics["tabular"]["test"] = evaluate_metrics(
@@ -798,7 +906,11 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "individual_model_evaluation_threshold": 0.5,
             "production_decision_threshold": PRODUCTION_DECISION_THRESHOLD,
             "production_suspect_threshold": PRODUCTION_SUSPECT_THRESHOLD,
+            "decision_policy_version": DECISION_POLICY_VERSION,
+            "early_augmentation": bool(early_augmentation),
+            "augmented_training_prefixes": augmented_prefix_count,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
+            "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,
             "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,
             "dataset": dataset_audit,
             "metrics": serializable_metrics,
@@ -824,10 +936,22 @@ if __name__ == "__main__":
         action="store_true",
         help="Allow a diagnostic synthetic-only model; never use this artifact in production",
     )
+    parser.add_argument(
+        "--no-early-augmentation",
+        action="store_true",
+        help="Train without additional early-session windows for a baseline comparison",
+    )
+    parser.add_argument(
+        "--diagnostic-only",
+        action="store_true",
+        help="Save a failed candidate to a separate directory for offline analysis",
+    )
     args = parser.parse_args()
     main(
         dataset_root=args.dataset_root,
         device=args.device,
         allow_synthetic_only=args.allow_synthetic_only,
         weights_dir=args.weights_dir or None,
+        early_augmentation=not args.no_early_augmentation,
+        diagnostic_only=args.diagnostic_only,
     )

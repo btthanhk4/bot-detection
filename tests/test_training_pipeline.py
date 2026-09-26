@@ -11,6 +11,7 @@ from core_ml.train import (
     deduplicate_real_sessions,
     evaluate_ensemble_for_release,
     predict_lstm_sessions,
+    iter_training_prefixes,
     publish_model_artifacts,
     resolve_training_device,
     resolve_training_indices,
@@ -36,6 +37,21 @@ def _session(session_id, label, source="phase2", split="unspecified", records=No
         split=split,
         scenario="test",
     )
+
+
+def test_early_training_windows_stop_at_requested_moves_without_copying_full_session():
+    records = []
+    for index in range(110):
+        records.append({"time": index * 10, "x": index / 110, "y": 0.2, "type": "move"})
+        if index % 10 == 0:
+            records.append({"time": index * 10 + 1, "x": index / 110, "y": 0.2, "type": "click"})
+
+    windows = list(iter_training_prefixes(records))
+
+    assert [count for count, _ in windows] == [25, 50, 100]
+    assert [sum(record["type"] == "move" for record in prefix) for _, prefix in windows] == [25, 50, 100]
+    assert all(len(prefix) < len(records) for _, prefix in windows)
+    assert list(iter_training_prefixes(windows[0][1])) == []
 
 
 def test_split_preserves_official_test_and_is_deterministic():
@@ -160,7 +176,7 @@ def test_model_release_gate_rejects_missing_or_weak_metrics():
         "roc_auc": 0.90,
         "precision": 0.80,
         "recall": 0.85,
-        "false_positive_rate": 0.10,
+        "false_positive_rate": 0.0,
     }
     validate_release_metrics(passing)
 
@@ -171,13 +187,16 @@ def test_model_release_gate_rejects_missing_or_weak_metrics():
         invalid.pop("precision")
         validate_release_metrics(invalid)
     with pytest.raises(RuntimeError, match="false_positive_rate"):
-        validate_release_metrics({**passing, "false_positive_rate": 0.50})
+        validate_release_metrics({**passing, "false_positive_rate": 0.01})
 
 
 def test_ensemble_release_gate_uses_validation_not_test():
     class Detector:
         def predict(self, telemetry):
-            return {"bot_probability": telemetry["score"]}
+            return {
+                "bot_probability": telemetry["score"],
+                "is_bot": telemetry["score"] >= 0.7,
+            }
 
     telemetries = [
         {"score": 0.1}, {"score": 0.9},
@@ -193,6 +212,86 @@ def test_ensemble_release_gate_uses_validation_not_test():
     with pytest.raises(RuntimeError, match="Model release gate failed"):
         evaluate_ensemble_for_release(
             Detector(), telemetries, [0, 1], np.array([0, 1]), [2, 3], np.array([0, 1]),
+        )
+
+
+def test_ensemble_release_metrics_count_actual_deferred_verdicts():
+    class Detector:
+        def predict(self, telemetry):
+            return {
+                "bot_probability": telemetry["score"],
+                "is_bot": telemetry["is_bot"],
+            }
+
+    telemetries = [
+        {"score": 0.95, "is_bot": False},
+        {"score": 0.99, "is_bot": True},
+    ]
+    metrics = evaluate_ensemble_for_release(
+        Detector(), telemetries, [0, 1], np.array([0, 1]), [0, 1], np.array([0, 1]),
+    )
+
+    assert metrics["val"]["false_positive_rate"] == 0
+    assert metrics["val"]["recall"] == 1
+    assert metrics["val"]["deferred_count"] == 0
+    assert metrics["val"]["decision_coverage"] == 1
+
+
+def test_ensemble_release_gate_rejects_early_false_positives():
+    class Detector:
+        def predict(self, telemetry):
+            early = len(telemetry["mouse"]["records"]) <= 25
+            score = (
+                0.9 if telemetry["label"] == 1
+                else 0.75 if early and telemetry["early_false_positive"]
+                else 0.1
+            )
+            return {"bot_probability": score, "is_bot": score >= 0.7}
+
+    labels = np.array([0, 0, 0] + [1] * 9)
+    telemetries = [
+        {
+            "label": int(label),
+            "early_false_positive": index == 0,
+            "mouse": {"records": [
+                {"time": point, "x": point / 100, "y": 0.2, "type": "move"}
+                for point in range(30)
+            ]},
+        }
+        for index, label in enumerate(labels)
+    ]
+
+    with pytest.raises(RuntimeError, match="false_positive_rate"):
+        evaluate_ensemble_for_release(
+            Detector(), telemetries, list(range(len(labels))), labels,
+            list(range(len(labels))), labels,
+        )
+
+
+def test_ensemble_release_gate_rejects_mid_session_false_positives():
+    class Detector:
+        def predict(self, telemetry):
+            label = telemetry["label"]
+            point_count = len(telemetry["mouse"]["records"])
+            score = 0.95 if label else 0.94 if point_count == 50 else 0.1
+            return {"bot_probability": score, "is_bot": score >= 0.93}
+
+    labels = np.array([0, 0, 0] + [1] * 30)
+    telemetries = [
+        {
+            "label": int(label),
+            "mouse": {"records": [
+                {"time": point, "x": point / 120, "y": 0.2, "type": "move"}
+                for point in range(120)
+            ]},
+        }
+        for label in labels
+    ]
+
+    with pytest.raises(RuntimeError, match="false_positive_rate"):
+        evaluate_ensemble_for_release(
+            Detector(), telemetries, list(range(len(labels))), labels,
+            list(range(len(labels))), labels,
         )
 
 
@@ -240,6 +339,11 @@ def test_synthetic_diagnostic_cannot_overwrite_production_bundle(tmp_path):
             device="cpu",
             allow_synthetic_only=True,
         )
+
+
+def test_failed_candidate_diagnostic_cannot_overwrite_production_bundle():
+    with pytest.raises(ValueError, match="separate --weights-dir"):
+        train_main(diagnostic_only=True)
 
 
 def test_training_requires_both_real_labels(tmp_path, monkeypatch):

@@ -1,27 +1,31 @@
 {
   "bot_count": 66,
-  "bundle_id": "1c95d20ba62c4c02b38ba6493ffd587f",
+  "bundle_id": "2bf12fb8ecab4fa7b7c70e9cf1f0d3cf",
   "dataset_name": "web_bot_detection_dataset",
+  "decision_policy_version": "5",
   "evaluation_kind": "heldout_same_dataset",
   "human_count": 24,
   "known_bundle_dataset_overlap_count": 90,
+  "max_move_points": null,
   "metrics": {
-    "accuracy": 1.0,
-    "brier_score": 0.010970746,
+    "accuracy": 0.8888888888888888,
+    "brier_score": 0.004391061777777779,
     "confusion_matrix": {
-      "fn": 0,
+      "fn": 10,
       "fp": 0,
       "tn": 24,
-      "tp": 66
+      "tp": 56
     },
-    "f1": 1.0,
-    "false_negative_rate": 0.0,
+    "decision_coverage": 1.0,
+    "deferred_count": 0,
+    "f1": 0.9180327868852459,
+    "false_negative_rate": 0.15151515151515152,
     "false_positive_rate": 0.0,
-    "pr_auc": 1.0,
+    "pr_auc": 0.9999999999999998,
     "precision": 1.0,
-    "recall": 1.0,
+    "recall": 0.8484848484848485,
     "roc_auc": 1.0,
-    "threshold": 0.7
+    "threshold": 0.93
   },
   "session_count": 90,
   "split": "test",

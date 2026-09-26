@@ -476,12 +476,21 @@ def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
         "service_control": empty,
     }
     monkeypatch.setattr("api_service.database.get_db", lambda: database)
-    analysis = {"verdict": "HUMAN", "bot_probability": 0.1}
+    analysis = {
+        "verdict": "HUMAN",
+        "bot_probability": 0.1,
+        "decision_state": "FINAL",
+        "policy_version": "2",
+        "score_calibrated": False,
+    }
 
     assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 2}, analysis)
     assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 1}, {"verdict": "BOT"}) is None
     assert save_detection_result({"sessionId": "s1", "visitorId": "attacker", "sequence": 3}, {"verdict": "BOT"}) is None
     assert detections.docs["s1"]["verdict"] == "HUMAN"
+    assert detections.docs["s1"]["decision_state"] == "FINAL"
+    assert detections.docs["s1"]["policy_version"] == "2"
+    assert detections.docs["s1"]["score_calibrated"] is False
 
 
 def test_newer_timestamp_allows_sequence_restart(monkeypatch):

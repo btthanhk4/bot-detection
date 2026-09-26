@@ -103,6 +103,21 @@ def sanitize_mouse_records(records: list, max_records: int = MAX_MOUSE_RECORDS) 
     return valid_records
 
 
+def prefix_through_moves(records: list, max_move_points: int) -> list:
+    """Keep events through the Nth move to audit early-session decisions."""
+    if type(max_move_points) is not int or max_move_points < 1:
+        raise ValueError("max_move_points must be a positive integer")
+    prefix = []
+    moves = 0
+    for record in records:
+        prefix.append(record)
+        if isinstance(record, dict) and record.get("type") == "move":
+            moves += 1
+            if moves == max_move_points:
+                break
+    return prefix
+
+
 def compute_statistical_features(records: list) -> dict:
     """
     Extract comprehensive statistical motion features from a list of mouse points.

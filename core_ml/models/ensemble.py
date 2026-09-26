@@ -2,16 +2,14 @@
 Multi-Modal Ensemble Bot Detector (v2)
 =======================================
 Fuses DELBOT-Mouse Behavioral BiLSTM, Tabular Environment XGBoost, and BotD Heuristic Rules.
-Improvements:
-  - Confidence-based adaptive weighting (higher confidence → higher weight)
-  - Improved data sufficiency scoring
-  - 6 new mouse features integrated into tabular vector
-  - Better threshold calibration
+The fused score is not probability-calibrated. Client heuristics are untrusted
+signals, and a decision is deferred until an LSTM window can be constructed.
 """
 
 import numpy as np
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
 from core_ml.features.mouse_features import (
+    MAX_MOUSE_RECORDS,
     compute_statistical_features,
     extract_mouse_stat_vector,
     extract_sequential_chunks,
@@ -19,6 +17,9 @@ from core_ml.features.mouse_features import (
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
+
+
+DECISION_POLICY_VERSION = "5"
 
 
 class EnsembleBotDetector:
@@ -29,9 +30,9 @@ class EnsembleBotDetector:
         w_lstm: float = 0.40,
         w_tabular: float = 0.40,
         w_heuristic: float = 0.20,
-        threshold: float = 0.70,
+        threshold: float = 0.93,
         suspect_threshold: float = 0.45,
-        min_mouse_points_for_bot: int = 24,
+        min_mouse_points_for_bot: int = 25,
         lstm_available: bool = True,
         tabular_available: bool = True,
     ):
@@ -42,12 +43,15 @@ class EnsembleBotDetector:
         self.w_heuristic = w_heuristic
         self.threshold = max(0.0, min(1.0, float(threshold)))
         self.suspect_threshold = max(0.0, min(self.threshold, float(suspect_threshold)))
-        self.min_mouse_points_for_bot = max(0, int(min_mouse_points_for_bot))
+        # A 24-transition LSTM window needs 25 move events.
+        self.min_mouse_points_for_bot = max(25, int(min_mouse_points_for_bot))
+        if self.min_mouse_points_for_bot > MAX_MOUSE_RECORDS:
+            raise ValueError("Minimum mouse points cannot exceed the retained record window")
         self.lstm_available = bool(lstm_available)
         self.tabular_available = bool(tabular_available)
 
     def _compute_confidence_weight(self, score: float) -> float:
-        """Weight a calibrated bidirectional model by distance from uncertainty."""
+        """Weight a model score by distance from 0.5, not calibrated confidence."""
         return abs(score - 0.5) * 2.0 + 0.3  # min weight = 0.3
 
     def _compute_heuristic_weight(self, score: float) -> float:
@@ -72,12 +76,32 @@ class EnsembleBotDetector:
 
         raw_records = mouse.get("records") or mouse.get("trajectory")
         records = raw_records if isinstance(raw_records, list) else []
+        touch_record_count = sum(
+            isinstance(record, dict) and record.get("source") == "touch"
+            for record in records
+        )
+        mouse_records = [
+            record for record in records
+            if isinstance(record, dict) and record.get("source") != "touch"
+        ]
+        user_agent = str(fingerprint.get("userAgent") or "").lower()
+        unsupported_mobile = any(
+            token in user_agent for token in ("mobile", "android", "iphone", "ipad", "ipod")
+        )
+        legacy_touch_ambiguous = (
+            safe_float(fingerprint.get("maxTouchPoints"), 0.0) > 0
+            and any(
+                isinstance(record, dict) and record.get("type") == "move"
+                and record.get("source") is None
+                for record in records
+            )
+        )
         # Client-provided chunks are untrusted and can disagree with raw records.
         # Rebuild canonical windows server-side so data sufficiency cannot be spoofed.
-        chunks = records_to_chunks(records, chunk_size=24, stride=12)
+        chunks = records_to_chunks(mouse_records, chunk_size=24, stride=12)
 
         # Compute mouse stats ONCE — reused for both fallback logic and tabular vector
-        mouse_stats = compute_statistical_features(records)
+        mouse_stats = compute_statistical_features(mouse_records)
 
         # 1. BotD Heuristics evaluation
         heuristic_score = self._sanitize_probability(botd.get("heuristicScore"), 0.0)
@@ -85,25 +109,25 @@ class EnsembleBotDetector:
         reasons = [str(reason)[:256] for reason in raw_reasons[:20]] if isinstance(raw_reasons, list) else []
         detectors = botd.get("detectors") if isinstance(botd.get("detectors"), dict) else {}
 
-        # Immediate hard rule triggers (100% confidence bot flags)
+        # These flags originate in the browser and are evidence, not proof.
         critical_flags = []
         is_webdriver = any(safe_bool(value) for value in (
             detectors.get("webdriver"), botd.get("webDriver"), botd.get("webdriver")
         ))
         if is_webdriver:
-            critical_flags.append("Critical: Webdriver automation flag confirmed")
+            critical_flags.append("Client-reported webdriver automation signal")
             heuristic_score = max(heuristic_score, 0.95)
         if any(safe_bool(value) for value in (
             detectors.get("distinctiveProperties"),
             detectors.get("chromeDriverGlobal"),
             botd.get("automationTool"),
         )):
-            critical_flags.append("Critical: Automation framework signature detected")
+            critical_flags.append("Client-reported automation framework signal")
             heuristic_score = max(heuristic_score, 0.95)
         if any(safe_bool(value) for value in (
             detectors.get("headlessUa"), detectors.get("headless"), botd.get("headless")
         )):
-            critical_flags.append("Headless browser environment detected")
+            critical_flags.append("Client-reported headless browser signal")
             heuristic_score = max(heuristic_score, 0.80)
         reasons.extend(critical_flags)
 
@@ -115,19 +139,6 @@ class EnsembleBotDetector:
             lstm_score = self.lstm_model.predict_session_proba(chunks_tensor)
             if lstm_score > 0.70:
                 reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
-        elif self.lstm_available:
-            # If user hasn't moved mouse enough, use precomputed mouse stats
-            if mouse_stats.get("move_point_count", 0) > 5:
-                if mouse_stats.get("straightness", 0.0) > 0.98:
-                    lstm_score = 0.80
-                    reasons.append("Unnaturally straight mouse trajectory")
-                elif mouse_stats.get("time_regularity", 1.0) < 0.05 and mouse_stats.get("point_count", 0) > 10:
-                    lstm_score = 0.75
-                    reasons.append("Suspiciously regular timing between mouse events")
-                else:
-                    lstm_score = 0.50  # neutral
-            else:
-                lstm_score = 0.50  # neutral
 
         # 3. Tabular model evaluation (Canonical single source of truth vector)
         env_vec = extract_env_vector(fingerprint, botd)
@@ -141,20 +152,10 @@ class EnsembleBotDetector:
         heuristic_score = self._sanitize_probability(heuristic_score, 0.0)
 
         # 4. Confidence-Based Adaptive Weighted Fusion
-        if not self.lstm_available:
+        if not self.lstm_available or not has_enough_mouse_data:
             w_l = 0.0
             w_t = 0.70 * self._compute_confidence_weight(tabular_score) if self.tabular_available else 0.0
             w_h = 0.30 * self._compute_heuristic_weight(heuristic_score)
-        elif not has_enough_mouse_data:
-            # Without full 24-point chunks, check if partial mouse trajectory exists
-            if mouse_stats.get("move_point_count", 0) >= 5:
-                w_l = 0.15 * self._compute_confidence_weight(lstm_score)
-                w_t = 0.50 * self._compute_confidence_weight(tabular_score)
-                w_h = 0.35 * self._compute_heuristic_weight(heuristic_score)
-            else:
-                w_h = 0.30 * self._compute_heuristic_weight(heuristic_score)
-                w_t = 0.70 * self._compute_confidence_weight(tabular_score)
-                w_l = 0.0
         else:
             # Base weights adjusted by confidence
             conf_lstm = self._compute_confidence_weight(lstm_score)
@@ -171,37 +172,37 @@ class EnsembleBotDetector:
         total_w = w_l + w_t + w_h
         final_proba = (w_l * lstm_score + w_t * tabular_score + w_h * heuristic_score) / total_w if total_w > 1e-6 else 0.5
 
-        # If critical hard rule triggered, elevate probability to >= 0.95
-        if critical_flags:
-            final_proba = max(final_proba, 0.96)
-
-        # No-mouse penalty: real users almost always generate mouse movement
-        # If a session has zero mouse data and no critical flags, apply mild bot suspicion
-        if mouse_stats.get("move_point_count", 0) == 0 and not critical_flags:
-            final_proba = min(1.0, final_proba + 0.05)
-
         final_proba = max(0.0, min(1.0, float(final_proba)))
 
-        # The full-session tabular model is not calibrated for very short input.
-        # Defer a final decision until enough validated movement exists while
-        # independently strong automation flags can still trigger immediately.
+        # The full-session models are not validated for partial trajectories.
+        # A client-reported automation flag cannot bypass this evidence gate.
         move_point_count = int(mouse_stats.get("move_point_count", 0))
-        decision_deferred = move_point_count < self.min_mouse_points_for_bot and not critical_flags
+        decision_deferred = (
+            move_point_count < self.min_mouse_points_for_bot or not has_enough_mouse_data
+            or not self.lstm_available or not self.tabular_available
+            or unsupported_mobile or legacy_touch_ambiguous
+        )
         if decision_deferred:
-            upper_bound = max(0.0, self.threshold - 0.01)
-            lower_bound = min(self.suspect_threshold, upper_bound)
-            final_proba = min(upper_bound, max(lower_bound, final_proba))
-            reasons.append(
-                f"Decision deferred: need {self.min_mouse_points_for_bot} valid mouse points "
-                f"(received {move_point_count})"
-            )
+            if not self.lstm_available or not self.tabular_available:
+                reasons.append("Decision deferred: required model unavailable")
+            elif unsupported_mobile:
+                reasons.append("Decision deferred: mobile or tablet input is outside the trained mouse domain")
+            elif legacy_touch_ambiguous:
+                reasons.append("Decision deferred: legacy touch-capable input has no pointer source")
+            elif touch_record_count and not move_point_count:
+                reasons.append("Decision deferred: touch trajectory is outside the mouse model domain")
+            else:
+                reasons.append(
+                    f"Decision deferred: need {self.min_mouse_points_for_bot} valid mouse move points "
+                    f"(received {move_point_count})"
+                )
 
         # Thresholds are deployment settings and must match the reported decision policy.
         if decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
             verdict = "BOT"
-        elif final_proba >= self.suspect_threshold:
+        elif final_proba >= self.suspect_threshold or critical_flags:
             verdict = "SUSPECT"
         else:
             verdict = "HUMAN"
@@ -209,12 +210,16 @@ class EnsembleBotDetector:
         # is_bot aligns with verdict (not a separate threshold)
         is_bot = (verdict == "BOT")
 
-        confidence = abs(final_proba - 0.5) * 2.0  # 0.0 to 1.0
+        confidence = abs(final_proba - 0.5) * 2.0  # Score margin, not calibrated confidence.
 
         return {
             "is_bot": is_bot,
             "verdict": verdict,
             "bot_probability": round(final_proba, 4),
+            "risk_score": round(final_proba, 4),
+            "score_calibrated": False,
+            "policy_version": DECISION_POLICY_VERSION,
+            "decision_state": "INSUFFICIENT_EVIDENCE" if decision_deferred else "FINAL",
             "confidence": round(confidence, 4),
             "reasons": reasons,
             "breakdown": {
@@ -224,6 +229,9 @@ class EnsembleBotDetector:
                 "has_enough_mouse_data": has_enough_mouse_data,
                 "mouse_points": move_point_count,
                 "records_received": len(records),
+                "touch_records_excluded": touch_record_count,
+                "unsupported_mobile": unsupported_mobile,
+                "legacy_touch_ambiguous": legacy_touch_ambiguous,
                 "decision_deferred": decision_deferred,
                 "minimum_mouse_points": self.min_mouse_points_for_bot,
                 "weights_used": {

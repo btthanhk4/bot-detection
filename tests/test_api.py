@@ -262,7 +262,7 @@ def test_telemetry_does_not_buffer_inference_failures(client, monkeypatch):
         assert not telemetry_buffer
 
 
-def test_detect_bot_flagged(client):
+def test_detect_client_flag_without_mouse_defers_decision(client):
     payload = {
         "sessionId": "sess_test_bot",
         "visitorId": "dev_test_bot",
@@ -275,9 +275,21 @@ def test_detect_bot_flagged(client):
     res = client.post("/api/v1/detect", json=payload)
     assert res.status_code == 200
     data = res.json()
-    assert data["is_bot"] is True
-    assert data["bot_probability"] >= 0.75
-    assert data["verdict"] == "BOT"
+    assert data["is_bot"] is False
+    assert data["verdict"] == "SUSPECT"
+    assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
+    assert data["score_calibrated"] is False
+    assert data["policy_version"] == "5"
+
+
+def test_health_distinguishes_model_load_from_release_evidence(client):
+    response = client.get("/health")
+
+    assert response.status_code in (200, 503)
+    health = response.json()
+    assert health["model_bundle_valid"] is True
+    assert health["decision_policy_version"] == "5"
+    assert health["release_gate_evidence_present"] is True
 
 
 def test_detect_empty_payload(client):

@@ -156,7 +156,7 @@ class TestEnsembleDetector:
     def test_ensemble_decisions(self):
         ensemble = EnsembleBotDetector()
 
-        # 1. Obvious bot payload (webdriver = True)
+        # A browser-reported flag alone is not enough for a final block decision.
         bot_payload = {
             "fingerprint": {"hardwareConcurrency": 1, "deviceMemory": 2},
             "botd": {
@@ -167,9 +167,10 @@ class TestEnsembleDetector:
             "mouse": {"records": []},
         }
         res_bot = ensemble.predict(bot_payload)
-        assert res_bot["is_bot"] is True
-        assert res_bot["bot_probability"] >= 0.75
-        assert res_bot["verdict"] == "BOT"
+        assert res_bot["is_bot"] is False
+        assert res_bot["verdict"] == "SUSPECT"
+        assert res_bot["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert res_bot["score_calibrated"] is False
 
         # 2. None / empty payload (graceful degradation)
         res_empty = ensemble.predict(None)
@@ -216,7 +217,7 @@ class TestEnsembleDetector:
         })
 
         assert result["verdict"] != "BOT"
-        assert not any(reason.startswith("Critical:") for reason in result["reasons"])
+        assert not any(reason.startswith("Client-reported") for reason in result["reasons"])
 
     def test_non_finite_model_scores_do_not_poison_fusion(self):
         class InvalidLSTM:
@@ -267,25 +268,95 @@ class TestEnsembleDetector:
 
         assert result["verdict"] == "SUSPECT"
         assert result["is_bot"] is False
-        assert result["bot_probability"] < 0.70
+        assert result["bot_probability"] > 0.70
         assert result["breakdown"]["decision_deferred"] is True
+        assert result["breakdown"]["weights_used"]["w_lstm"] == 0
+        assert result["breakdown"]["behavioral_lstm_score"] == 0.5
 
     def test_minimum_mouse_evidence_allows_final_decision(self):
-        class StrongTabular:
+        class StrongModels:
+            def predict_session_proba(self, _chunks):
+                return 0.99
+
             def predict_proba(self, _features):
                 return 0.99
 
         records = [
             {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
-            for i in range(24)
+            for i in range(25)
         ]
         detector = EnsembleBotDetector(
-            tabular_model=StrongTabular(), lstm_available=False, threshold=0.70
+            lstm_model=StrongModels(), tabular_model=StrongModels()
         )
         result = detector.predict({"mouse": {"records": records}})
 
         assert result["verdict"] == "BOT"
         assert result["breakdown"]["decision_deferred"] is False
+
+    def test_24_moves_cannot_finalize_without_lstm_window(self):
+        class StrongModels:
+            def predict_session_proba(self, _chunks):
+                return 0.99
+
+            def predict_proba(self, _features):
+                return 0.99
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(25)
+        ]
+        detector = EnsembleBotDetector(lstm_model=StrongModels(), tabular_model=StrongModels())
+
+        for count in (0, 23, 24):
+            result = detector.predict({"mouse": {"records": records[:count]}})
+            assert result["verdict"] == "SUSPECT"
+            assert result["is_bot"] is False
+            assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+            assert result["breakdown"]["weights_used"]["w_lstm"] == 0
+            assert result["breakdown"]["minimum_mouse_points"] == 25
+
+        result = detector.predict({"mouse": {"records": records}})
+        assert result["decision_state"] == "FINAL"
+        assert result["is_bot"] is True
+
+    def test_browser_flag_cannot_bypass_short_session_evidence_gate(self):
+        detector = EnsembleBotDetector(lstm_available=False, tabular_available=False)
+        result = detector.predict({"botd": {"detectors": {"webdriver": True}}})
+
+        assert result["verdict"] == "SUSPECT"
+        assert result["is_bot"] is False
+        assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert result["bot_probability"] < 0.96
+
+    def test_browser_flag_alone_cannot_override_benign_model_scores(self):
+        class BenignModel:
+            def predict_session_proba(self, _chunks):
+                return 0.05
+
+            def predict_proba(self, _features):
+                return 0.05
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(25)
+        ]
+        detector = EnsembleBotDetector(
+            lstm_model=BenignModel(), tabular_model=BenignModel()
+        )
+        result = detector.predict({
+            "botd": {"detectors": {"webdriver": True}},
+            "mouse": {"records": records},
+        })
+
+        assert result["decision_state"] == "FINAL"
+        assert result["is_bot"] is False
+        assert result["verdict"] == "SUSPECT"
+        assert result["bot_probability"] < 0.70
+        assert result["policy_version"] == "5"
+
+    def test_minimum_point_setting_cannot_exceed_retained_window(self):
+        with pytest.raises(ValueError, match="retained record window"):
+            EnsembleBotDetector(min_mouse_points_for_bot=101)
 
     def test_deferred_decision_survives_equal_threshold_configuration(self):
         detector = EnsembleBotDetector(
@@ -326,11 +397,11 @@ class TestEnsembleDetector:
     def test_absent_heuristic_flags_do_not_override_strong_ml_evidence(self):
         class StrongLSTM:
             def predict_session_proba(self, _chunks):
-                return 0.9
+                return 0.99
 
         class StrongTabular:
             def predict_proba(self, _features):
-                return 0.9
+                return 0.99
 
         records = [
             {"time": i * 20, "x": 0.1 + i * 0.01, "y": 0.2, "type": "move"}
@@ -345,3 +416,61 @@ class TestEnsembleDetector:
         assert result["verdict"] == "BOT"
         assert result["bot_probability"] > 0.8
         assert result["breakdown"]["weights_used"]["w_heuristic"] < 0.1
+
+    def test_touch_trajectory_is_not_classified_as_mouse(self):
+        class FailingLSTM:
+            def predict_session_proba(self, _chunks):
+                raise AssertionError("Touch points must not reach the mouse model")
+
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move", "source": "touch"}
+            for i in range(30)
+        ]
+        result = EnsembleBotDetector(lstm_model=FailingLSTM()).predict(
+            {"mouse": {"records": records}}
+        )
+
+        assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert result["is_bot"] is False
+        assert result["breakdown"]["mouse_points"] == 0
+        assert result["breakdown"]["touch_records_excluded"] == 30
+
+    def test_missing_model_defers_decision_even_with_mouse_points(self):
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        result = EnsembleBotDetector(lstm_available=False).predict(
+            {"mouse": {"records": records}}
+        )
+
+        assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert result["is_bot"] is False
+
+    def test_mobile_user_agent_defers_legacy_untagged_touch_records(self):
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        result = EnsembleBotDetector().predict({
+            "fingerprint": {"userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"},
+            "mouse": {"records": records},
+        })
+
+        assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert result["is_bot"] is False
+        assert result["breakdown"]["unsupported_mobile"] is True
+
+    def test_touch_capable_legacy_desktop_input_is_ambiguous(self):
+        records = [
+            {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        result = EnsembleBotDetector().predict({
+            "fingerprint": {"userAgent": "Desktop Chrome", "maxTouchPoints": 5},
+            "mouse": {"records": records},
+        })
+
+        assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        assert result["is_bot"] is False
+        assert result["breakdown"]["legacy_touch_ambiguous"] is True

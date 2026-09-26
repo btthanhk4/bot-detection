@@ -94,21 +94,45 @@ bot-detection-core/
 
 ### Training v2 (749 samples: 449 real M4D + 300 synthetic)
 
+**Policy v5 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
+calibrate). Train bổ sung các cửa sổ 25/50/100 điểm chỉ từ phiên train. Trên
+validation cùng nguồn với 25 điểm chuột: `TN=14, FP=0, FN=7, TP=39`; trên test
+cùng nguồn với phiên đầy đủ: `TN=24, FP=0, FN=10, TP=56`. Release gate kiểm tra
+cả phiên và các mốc 25/50/100 điểm trên validation. Xem JSON report bên dưới.
+Đây là sự đánh đổi có chủ đích:
+giảm gắn nhầm người thật, chấp nhận nhiều bot nằm ở mức SUSPECT cho đến khi có
+thêm bằng chứng. Tập test đã được xem khi phát triển và không còn là blind test.
+Dữ liệu touch được tách khỏi model chuột; các phiên touch-only sẽ chờ kết luận.
+Tín hiệu tự động hóa do BotD báo chỉ có thể nâng nhãn HUMAN lên SUSPECT, không
+tự ép kết luận BOT khi hai mô hình ML không đồng ý.
+
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
 | **XGBoost (50 features)** | **1.0000** | **1.0000** | **0.0000** |
-| BiLSTM (session aggregation) | 1.0000 | 0.9778 | 0.1250 |
-| Production ensemble | 1.0000 | 1.0000 | 0.0000 |
+| BiLSTM (session aggregation) | 1.0000 | 1.0000 | 0.0000 |
+| Ensemble policy v5 trên test cùng nguồn | 1.0000 | 0.9180 | 0.0000 |
 
-Các số liệu trên được đo trên 90 session test độc lập (24 human, 66 bot). Đây là
-kết quả trên dataset nghiên cứu, không phải cam kết hiệu năng trên traffic production.
+Các số liệu trên được đo trên 90 session test tách khỏi train (24 human, 66 bot)
+nhưng cùng nguồn dataset nghiên cứu. Tập này đã được xem trong quá trình sửa
+policy, nên không còn là test mù để chứng minh hiệu năng production.
+Ở 25 điểm `move` trên validation cùng nguồn, policy v2 (ngưỡng 0.70) gắn nhầm
+3/14 người thật và bỏ sót 3/46 bot; policy v5 gắn nhầm 0/14 nhưng bỏ sót 7/46.
+Xem
+[`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
+[`early_session_validation.json`](core_ml/early_session_validation.json).
+Không dùng `is_bot` để tự động chặn khi chưa kiểm định trên dữ liệu thực tế
+độc lập, đặc biệt với các phiên ngắn, touch hoặc thiếu dữ liệu.
+Artifact đi kèm đã qua release gate trên validation cùng nguồn. `/health` báo
+`release_gate_evidence_present: true` khi chạy với đúng ngưỡng 0.93, nhưng đây
+chưa phải kiểm định độc lập trên traffic thực tế; không dùng kết quả này để tự
+động chặn người dùng mà không có bước theo dõi và xác minh bổ sung.
 
 **Top 5 Feature Importance (XGBoost):**
 1. `std_speed` — Độ biến thiên tốc độ
-2. `angular_entropy` — Entropy hướng di chuyển
-3. `mean_accel` — Gia tốc trung bình
-4. `jerk_mean` — Mức thay đổi gia tốc
-5. `mean_speed` — Tốc độ trung bình
+2. `straightness` — Độ thẳng của quỹ đạo
+3. `fonts_count` — Số lượng phông chữ trình duyệt báo cáo
+4. `angular_entropy` — Entropy hướng di chuyển
+5. `mean_accel` — Gia tốc trung bình
 
 ### 9 Thí nghiệm đánh giá
 
@@ -193,8 +217,12 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
 {
   "is_bot": true,
   "verdict": "BOT",
-  "bot_probability": 0.8155,
-  "confidence": 0.631,
+  "bot_probability": 0.9355,
+  "risk_score": 0.9355,
+  "score_calibrated": false,
+  "policy_version": "5",
+  "decision_state": "FINAL",
+  "confidence": 0.871,
   "reasons": [
     "Flagged: platformMismatch",
     "Mouse dynamics exhibit robotic trajectory (LSTM score: 1.00)"
@@ -207,11 +235,17 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
     "mouse_points": 31,
     "records_received": 34,
     "decision_deferred": false,
-    "minimum_mouse_points": 24
+    "minimum_mouse_points": 25
   },
   "latency_ms": 3.42
 }
 ```
+
+`bot_probability` được giữ lại để tương thích API cũ, nhưng hiện là điểm rủi ro
+chưa hiệu chuẩn, không phải xác suất bot thống kê. `confidence` là độ lệch
+của điểm so với 0.5. Khi thiếu 25 điểm `move`, thiếu model hoặc đầu vào touch/mobile,
+`decision_state` là `INSUFFICIENT_EVIDENCE`, `verdict` tạm là `SUSPECT` để tương thích; không
+nên dùng giá trị `bot_probability` để chặn người dùng trong trạng thái này.
 
 ---
 

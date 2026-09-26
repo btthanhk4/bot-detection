@@ -487,7 +487,7 @@
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
 
-    recordPoint(type, clientX, clientY) {
+    recordPoint(type, clientX, clientY, source = 'mouse') {
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const time = Math.round(now - this.startTime);
 
@@ -499,7 +499,8 @@
       const normY = Math.max(0, Math.min(1, Number((safeY / h).toFixed(5))));
 
       const previousRecord = this.records.length > 0 ? this.records[this.records.length - 1] : null;
-      const prev = type === 'move' ? this.lastMoveRecord : previousRecord;
+      const candidate = type === 'move' ? this.lastMoveRecord : previousRecord;
+      const prev = candidate && candidate.source === source ? candidate : null;
 
       let timeDiff = 0;
       let dx = 0;
@@ -533,6 +534,7 @@
       const record = {
         time,
         type,
+        source,
         x: normX,
         y: normY,
         dx: Number(dx.toFixed(5)),
@@ -587,27 +589,27 @@
 
     handleTouchStart(e) {
       if (e.touches && e.touches[0]) {
-        this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY);
+        this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY, 'touch');
       }
     }
 
     handleTouchMove(e) {
       if (e.touches && e.touches[0]) {
-        this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY);
+        this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY, 'touch');
       }
     }
 
     handleTouchEnd(e) {
       const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
       if (touch) {
-        this.recordPoint('up', touch.clientX, touch.clientY);
+        this.recordPoint('up', touch.clientX, touch.clientY, 'touch');
       } else {
         const last = this.records.length > 0 ? this.records[this.records.length - 1] : null;
         const w = (typeof window !== 'undefined' && window.innerWidth > 0) ? window.innerWidth : 1920;
         const h = (typeof window !== 'undefined' && window.innerHeight > 0) ? window.innerHeight : 1080;
         const x = last ? last.x * w : 0;
         const y = last ? last.y * h : 0;
-        this.recordPoint('up', x, y);
+        this.recordPoint('up', x, y, 'touch');
       }
     }
 
@@ -615,7 +617,7 @@
      * Split records into consecutive chunks of 24 points for LSTM input
      */
     getChunks(chunkSize = 24) {
-      const moveRecords = this.records.filter((r) => r.type === 'move');
+      const moveRecords = this.records.filter((r) => r.type === 'move' && r.source !== 'touch');
       const featureRows = [];
       let prevSpeedX = 0;
       let prevSpeedY = 0;
@@ -650,9 +652,11 @@
      * Aggregated statistical summary of mouse dynamics
      */
     getStats() {
-      if (this.records.length < 2) {
+      const mouseRecords = this.records.filter((r) => r.source !== 'touch');
+      if (mouseRecords.length < 2) {
         return {
-          pointCount: this.records.length,
+          pointCount: mouseRecords.length,
+          movePointCount: mouseRecords.filter((r) => r.type === 'move').length,
           hasEnoughData: false,
           avgSpeed: 0,
           maxSpeed: 0,
@@ -661,7 +665,7 @@
         };
       }
 
-      const moveRecords = this.records.filter((r) => r.type === 'move');
+      const moveRecords = mouseRecords.filter((r) => r.type === 'move');
       const speeds = moveRecords.map((r) => r.speed).filter((s) => s > 0);
       const accels = moveRecords.map((r) => r.accel).filter((a) => a > 0);
 
@@ -670,14 +674,14 @@
       const avgAccel = accels.length ? accels.reduce((a, b) => a + b, 0) / accels.length : 0;
 
       // Straightness = net displacement / total path length
-      const first = moveRecords[0] || this.records[0];
-      const last = moveRecords[moveRecords.length - 1] || this.records[this.records.length - 1];
+      const first = moveRecords[0] || mouseRecords[0];
+      const last = moveRecords[moveRecords.length - 1] || mouseRecords[mouseRecords.length - 1];
       const netDist = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
       const totalDist = moveRecords.reduce((sum, r) => sum + (r.distance || 0), 0);
       const straightness = totalDist > 0 ? Number((netDist / totalDist).toFixed(4)) : 1.0;
 
       return {
-        pointCount: this.records.length,
+        pointCount: mouseRecords.length,
         movePointCount: moveRecords.length,
         hasEnoughData: moveRecords.length >= this.chunkSize + 1,
         avgSpeed: Number(avgSpeed.toFixed(4)),
@@ -1011,7 +1015,7 @@
       try {
         const payload = await this.getPayload(action);
         if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) {
-          return { is_bot: false, bot_probability: 0, fallback: true, error: 'collector_inactive' };
+          return { is_bot: false, verdict: 'UNKNOWN', decision_state: 'UNAVAILABLE', bot_probability: null, fallback: true, error: 'collector_inactive' };
         }
         const res = await this.fetchWithTimeout(this.detectUrl, {
           method: 'POST',
@@ -1020,8 +1024,10 @@
         });
         if (!res.ok) {
           return {
-            is_bot: this.cachedBotd?.isBot || false,
-            bot_probability: this.cachedBotd?.heuristicScore || 0,
+            is_bot: false,
+            verdict: 'UNKNOWN',
+            decision_state: 'UNAVAILABLE',
+            bot_probability: null,
             fallback: true,
             status: res.status,
             error: `HTTP ${res.status}`,
@@ -1030,8 +1036,10 @@
         return await res.json();
       } catch (e) {
         return {
-          is_bot: this.cachedBotd?.isBot || false,
-          bot_probability: this.cachedBotd?.heuristicScore || 0,
+          is_bot: false,
+          verdict: 'UNKNOWN',
+          decision_state: 'UNAVAILABLE',
+          bot_probability: null,
           fallback: true,
           error: e.message,
         };
