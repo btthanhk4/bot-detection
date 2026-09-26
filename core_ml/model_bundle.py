@@ -52,14 +52,66 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                 value = float(metrics[name])
             except (KeyError, TypeError, ValueError, OverflowError):
                 return False
-            if not math.isfinite(value) or value < minimum:
+            if not math.isfinite(value) or not minimum <= value <= 1.0:
                 return False
         for name, maximum in RELEASE_MAXIMUM_METRICS.items():
             try:
                 value = float(metrics[name])
             except (KeyError, TypeError, ValueError, OverflowError):
                 return False
-            if not math.isfinite(value) or value > maximum:
+            if not math.isfinite(value) or not 0.0 <= value <= maximum:
+                return False
+        coverage = metrics.get("decision_coverage")
+        try:
+            coverage = float(coverage)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if not math.isfinite(coverage) or not 0.0 < coverage <= 1.0:
+            return False
+    if policy_version == "7":
+        if (
+            training.get("environment_features_trained") is not False
+            or training.get("minimum_mouse_points_for_bot") != 25
+            or training.get("collector_window_policy") != "mouse_export_v1"
+            or training.get("rolling_checkpoints") != 25
+        ):
+            return False
+        for split, min_humans, min_bots in (
+            ("rolling_val", 10, 20), ("rolling_test", 20, 30),
+        ):
+            metrics = metrics_by_split.get(split)
+            if not isinstance(metrics, dict):
+                return False
+            counts = {}
+            for name in (
+                "human_sessions", "bot_sessions", "human_ever_bot",
+                "human_ever_suspect", "bot_ever_human", "human_windows", "bot_windows",
+                "human_bot_windows", "bot_human_windows",
+            ):
+                value = metrics.get(name)
+                try:
+                    valid_count = (
+                        type(value) in (int, float) and math.isfinite(value)
+                        and value >= 0 and value == int(value)
+                    )
+                except (OverflowError, ValueError):
+                    return False
+                if not valid_count:
+                    return False
+                counts[name] = int(value)
+            if (
+                counts["human_sessions"] < min_humans
+                or counts["bot_sessions"] < min_bots
+                or counts["human_windows"] != 25 * counts["human_sessions"]
+                or counts["bot_windows"] != 25 * counts["bot_sessions"]
+                or counts["human_ever_bot"] != 0
+                or counts["human_bot_windows"] != 0
+                or counts["human_ever_suspect"] > counts["human_sessions"]
+                or counts["bot_ever_human"] > counts["bot_sessions"]
+                or counts["bot_human_windows"] > counts["bot_windows"]
+                or counts["human_ever_suspect"] / counts["human_sessions"] > 0.80
+                or counts["bot_ever_human"] / counts["bot_sessions"] > 0.05
+            ):
                 return False
     return True
 

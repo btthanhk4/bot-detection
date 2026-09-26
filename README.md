@@ -13,7 +13,7 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp ba 
 | 1 | **Fingerprint collector** | Thu thập 25 trường tín hiệu phần cứng/trình duyệt | Tự triển khai, tham khảo [FingerprintJS](https://github.com/fingerprintjs/fingerprintjs) |
 | 2 | **BotD heuristic detector** | 13 luật client-side: webdriver, headless, inconsistencies | Tự triển khai, tham khảo [BotD](https://github.com/fingerprintjs/BotD) |
 | 3 | **Behavioral BiLSTM** | Phân tích quỹ đạo chuột bằng BiLSTM + Temporal Attention | Tự triển khai, tham khảo [DELBOT-Mouse](https://github.com/chrisgdt/DELBOT-Mouse) |
-| 4 | **XGBoost** | Phân loại fingerprint và thống kê hành vi tổng hợp | Mô hình tabular được huấn luyện trong dự án |
+| 4 | **XGBoost** | Phân loại thống kê chuyển động chuột; không học fingerprint synthetic thiếu nhãn thực | Mô hình tabular được huấn luyện trong dự án |
 
 ---
 
@@ -29,7 +29,7 @@ Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp ba 
 ┌──────────────────────────────────────────────────┐
 │           FEATURE EXTRACTION (core_ml/features/)  │
 │  Mouse Kinematics (8 dims/step + 20 stats)       │
-│  Environment + BotD Fingerprint (30 dims)        │
+│  Environment + BotD reserved (30 dims)           │
 │  Total: 50-dimensional feature vector            │
 └────────┬────────────────────────────┬────────────┘
          │                            │
@@ -71,7 +71,7 @@ bot-detection-core/
 │   ├── models/
 │   │   ├── behavioral_lstm.py      # BiLSTM + TemporalAttention (v2)
 │   │   ├── tabular_classifier.py   # XGBoost + StandardScaler (v2)
-│   │   └── ensemble.py             # Monotonic BotD evidence fusion (v6)
+│   │   └── ensemble.py             # Monotonic BotD evidence fusion (v7)
 │   ├── experiments/
 │   │   └── run_all.py              # 9 thí nghiệm đánh giá toàn diện
 │   ├── train.py                    # Training pipeline (v2)
@@ -94,15 +94,13 @@ bot-detection-core/
 
 ### Training v2 (749 samples: 449 real M4D + 300 synthetic)
 
-**Policy v6 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
-hiệu chuẩn). Train bổ sung cửa sổ 25/50/100 điểm từ các phiên train, lấy đúng
-phần đầu của phiên dài. Trên validation cùng nguồn ở 25 điểm chuột:
-`TN=14, FP=0, FN=7, TP=39`; trên test cùng nguồn ở toàn phiên:
-`TN=24, FP=0, FN=4, TP=62`. Release gate kiểm tra toàn phiên và các mốc
-25/50/100 điểm trên validation. Xem JSON report bên dưới.
-Đây là sự đánh đổi có chủ đích:
-giảm gắn nhầm người thật, chấp nhận nhiều bot nằm ở mức SUSPECT cho đến khi có
-thêm bằng chứng. Tập test đã được xem khi phát triển và không còn là blind test.
+**Policy v7 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
+hiệu chuẩn). XGBoost chỉ học 20 đặc trưng thống kê chuột vì các phiên thực có nhãn
+không kèm fingerprint; 30 cột môi trường vẫn giữ trong schema nhưng không được cây
+sử dụng. BotD tiếp tục cung cấp bằng chứng dương qua nhánh heuristic riêng.
+Train bổ sung cửa sổ đầu phiên, cửa sổ cuốn giữa phiên và biến thể thời gian chỉ
+từ tập train. Release gate kiểm tra cả các cửa sổ giữa phiên trên validation và test.
+Chi tiết phép đo và giới hạn: [Model release v7](docs/MODEL_RELEASE_V7.md).
 Dữ liệu touch được tách khỏi model chuột; các phiên touch-only giữ nhãn SUSPECT.
 Quỹ đạo trùng lặp hoặc không có biến thiên thời gian/vị trí cũng giữ SUSPECT.
 BotD chỉ tăng điểm theo bằng chứng dương; khi chưa có quỹ đạo chuột hợp lệ,
@@ -110,32 +108,33 @@ BotD không tự quyết định nhãn BOT.
 
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|
-| **XGBoost (50 features)** | **1.0000** | **1.0000** | **0.0000** |
-| BiLSTM (session aggregation) | 1.0000 | 0.9851 | 0.0833 |
-| Ensemble policy v6 trên test cùng nguồn | 1.0000 | 0.9688 | 0.0000 |
+| **XGBoost (20/50 cột học từ chuột)** | **1.0000** | **1.0000** | **0.0000** |
+| BiLSTM (session aggregation) | 0.9994 | 0.9778 | 0.1250 |
+| Ensemble policy v7 trên test cùng nguồn | 1.0000 | 0.9846 | 0.0000 |
 
 Các số liệu trên được đo trên 90 session test tách khỏi train (24 human, 66 bot)
 nhưng cùng nguồn dataset nghiên cứu. Tập này đã được xem trong quá trình sửa
 policy, nên không còn là test mù để chứng minh hiệu năng production.
-Ở 25 điểm `move` trên validation cùng nguồn, policy v2 (ngưỡng 0.70) gắn nhầm
-3/14 người thật và bỏ sót 3/46 bot; policy v6 gắn nhầm 0/14 nhưng bỏ sót 7/46.
-Xem
-[`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
-[`early_session_validation.json`](core_ml/early_session_validation.json).
+Ở 25 điểm `move` trên validation cùng nguồn, policy v7 gắn nhầm 0/14 người thật
+thành BOT và giữ 1/46 bot ở mức không phải BOT. Replay 25 cửa sổ/phiên không có
+phiên HUMAN bị BOT trên validation (14 phiên) hoặc test (24 phiên). Đây là
+phép đo trên cùng nguồn dữ liệu, không chứng minh tỷ lệ lỗi ngoài thực tế.
+Các report [`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
+[`early_session_validation.json`](core_ml/early_session_validation.json) là lịch sử v6.
 Không dùng `is_bot` để tự động chặn khi chưa kiểm định trên dữ liệu thực tế
 độc lập, đặc biệt với các phiên ngắn, touch hoặc thiếu dữ liệu.
-Artifact đi kèm đã qua release gate trên validation cùng nguồn. `/health` báo
-`release_gate_evidence_present: true` khi policy, ngưỡng và các chỉ số validation
-đạt điều kiện cấu hình, nhưng đây
+Artifact đi kèm đã qua release gate trên validation và test cùng nguồn. `/health` báo
+`release_gate_evidence_present: true` khi policy, ngưỡng, contract tiền xử lý và
+chỉ số rolling đạt điều kiện cấu hình, nhưng đây
 chưa phải kiểm định độc lập trên traffic thực tế; không dùng kết quả này để tự
 động chặn người dùng mà không có bước theo dõi và xác minh bổ sung.
 
 **Top 5 Feature Importance (XGBoost):**
 1. `std_speed` — Độ biến thiên tốc độ
-2. `curvature_std` — Độ biến thiên độ cong quỹ đạo
-3. `mean_accel` — Gia tốc trung bình
-4. `max_speed` — Tốc độ lớn nhất
-5. `mean_speed` — Tốc độ trung bình
+2. `direction_changes_y` — Số lần đổi hướng theo trục dọc
+3. `angular_entropy` — Độ đa dạng góc di chuyển
+4. `curvature_mean` — Độ cong trung bình quỹ đạo
+5. `curvature_std` — Độ biến thiên độ cong quỹ đạo
 
 ### 9 Thí nghiệm đánh giá
 

@@ -9,3 +9,4 @@ venv/
 .env
 node_modules/
 tests/
+bot-lab/

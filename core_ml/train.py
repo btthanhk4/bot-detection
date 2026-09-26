@@ -39,7 +39,8 @@ from core_ml.dataset.loader import (
     load_real_dataset,
     records_to_chunks,
 )
-from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.collector_windows import rolling_windows
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
     extract_sequential_chunks,
     extract_mouse_stat_vector,
@@ -301,8 +302,10 @@ def resolve_training_indices(labels, splits, seed: int = SEED):
 
 
 def build_tabular_vector(fingerprint: dict, botd: dict, records: list) -> np.ndarray:
-    """Build combined env + mouse stats feature vector using canonical extractor."""
-    env_vec = extract_env_vector(fingerprint, botd)
+    """Train only on labeled mouse evidence; real sessions lack browser labels."""
+    # Synthetic fingerprints are label-correlated but absent from all real
+    # sessions. Keeping their columns constant prevents domain-shift splits.
+    env_vec = np.zeros(len(ENV_FEATURE_NAMES), dtype=np.float32)
     mouse_stat_vec = extract_mouse_stat_vector(records)
     return np.concatenate([env_vec, mouse_stat_vec])
 
@@ -320,6 +323,20 @@ def iter_training_prefixes(records: list, move_counts=(25, 50, 100)):
                 yield moves, records[:index + 1]
             if moves >= max(targets):
                 break
+
+
+def iter_training_rolling_windows(records: list, checkpoints=4):
+    """Yield train-only collector exports with plausible timestamp variation."""
+    for window in rolling_windows(records, checkpoints=checkpoints):
+        start = window[0]["time"]
+        for factor in (0.5, 1.0, 2.0):
+            if factor == 1.0:
+                yield window
+            else:
+                yield [
+                    {**record, "time": start + (record["time"] - start) * factor}
+                    for record in window
+                ]
 
 
 def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
@@ -477,7 +494,8 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels, test_indices, test_labels):
+def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels, test_indices,
+                                  test_labels, *, rolling_checkpoints=0):
     """Gate on validation, then report the untouched held-out test result."""
     metrics_by_split = {}
     for split_name, indices, labels, move_limit in (
@@ -490,6 +508,14 @@ def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels
         ("Mid Test", test_indices, test_labels, 50),
         ("Late Test", test_indices, test_labels, 100),
     ):
+        if split_name == "Test" and rolling_checkpoints:
+            rolling_val = evaluate_rolling_for_release(
+                detector, telemetries, val_indices, val_labels,
+                checkpoints=rolling_checkpoints,
+            )
+            print(f"  Rolling validation: {rolling_val}")
+            validate_rolling_release(rolling_val)
+            metrics_by_split["rolling_val"] = rolling_val
         decisions = []
         for index in indices:
             telemetry = telemetries[index]
@@ -523,7 +549,61 @@ def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels
         if split_name.endswith("Val"):
             minimums = RELEASE_EARLY_MINIMUM_METRICS if move_limit is not None else RELEASE_MINIMUM_METRICS
             validate_release_metrics(metrics, minimums=minimums)
+    if rolling_checkpoints:
+        rolling_test = evaluate_rolling_for_release(
+            detector, telemetries, test_indices, test_labels,
+            checkpoints=rolling_checkpoints,
+        )
+        print(f"  Rolling held-out test: {rolling_test}")
+        validate_rolling_release(rolling_test)
+        metrics_by_split["rolling_test"] = rolling_test
     return metrics_by_split
+
+
+def evaluate_rolling_for_release(detector, telemetries, indices, labels, *, checkpoints=25):
+    """Count errors per session across collector-like intermediate exports."""
+    totals = {
+        "human_sessions": 0, "bot_sessions": 0, "human_ever_bot": 0,
+        "bot_ever_human": 0, "human_ever_suspect": 0,
+        "human_windows": 0, "bot_windows": 0,
+        "human_bot_windows": 0, "bot_human_windows": 0,
+    }
+    for index, label in zip(indices, labels):
+        telemetry = telemetries[int(index)]
+        records = (telemetry.get("mouse") or {}).get("records") or []
+        windows = rolling_windows(records, checkpoints=checkpoints)
+        if not windows:
+            continue
+        verdicts = [
+            detector.predict({**telemetry, "mouse": {"records": window}}).get("verdict")
+            for window in windows
+        ]
+        if int(label) == 0:
+            totals["human_sessions"] += 1
+            totals["human_windows"] += len(verdicts)
+            totals["human_ever_bot"] += "BOT" in verdicts
+            totals["human_ever_suspect"] += "SUSPECT" in verdicts
+            totals["human_bot_windows"] += verdicts.count("BOT")
+        else:
+            totals["bot_sessions"] += 1
+            totals["bot_windows"] += len(verdicts)
+            totals["bot_ever_human"] += "HUMAN" in verdicts
+            totals["bot_human_windows"] += verdicts.count("HUMAN")
+    return totals
+
+
+def validate_rolling_release(metrics: dict) -> None:
+    """A released hard BOT verdict must not fire on held-out humans."""
+    if metrics["human_sessions"] == 0 or metrics["bot_sessions"] == 0:
+        raise RuntimeError("Rolling release gate requires both labeled classes")
+    if metrics["human_ever_bot"]:
+        raise RuntimeError(
+            f"Rolling release gate failed: {metrics['human_ever_bot']} human sessions had a BOT verdict"
+        )
+    if metrics["human_ever_suspect"] / metrics["human_sessions"] > 0.80:
+        raise RuntimeError("Rolling release gate failed: excessive human SUSPECT sessions")
+    if metrics["bot_ever_human"] / metrics["bot_sessions"] > 0.05:
+        raise RuntimeError("Rolling release gate failed: excessive bot HUMAN sessions")
 
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
@@ -699,6 +779,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     y_train_tab, y_val_tab, y_test_tab = y_tab[idx_train], y_tab[idx_val], y_tab[idx_test]
 
     augmented_prefix_count = 0
+    augmented_rolling_count = 0
     if early_augmentation:
         extra_vectors = []
         extra_labels = []
@@ -712,13 +793,22 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     prefix,
                 ))
                 extra_labels.append(int(y_tab[session_idx]))
-        augmented_prefix_count = len(extra_vectors)
+                augmented_prefix_count += 1
+            for window in iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or []):
+                extra_vectors.append(build_tabular_vector(
+                    telemetry.get("fingerprint") or {},
+                    telemetry.get("botd") or {},
+                    window,
+                ))
+                extra_labels.append(int(y_tab[session_idx]))
+                augmented_rolling_count += 1
         if extra_vectors:
             X_train_tab = np.vstack([X_train_tab, np.asarray(extra_vectors, dtype=np.float32)])
             y_train_tab = np.concatenate([y_train_tab, np.asarray(extra_labels, dtype=int)])
 
     print(f"  Train: {len(idx_train)} | Val: {len(idx_val)} | Test: {len(idx_test)}")
     print(f"  Additional train-only early windows: {augmented_prefix_count}")
+    print(f"  Additional train-only rolling/timing windows: {augmented_rolling_count}")
     print(f"  Train dist: H={sum(y_train_tab==0)} B={sum(y_train_tab==1)} | Val dist: H={sum(y_val_tab==0)} B={sum(y_val_tab==1)} | Test dist: H={sum(y_test_tab==0)} B={sum(y_test_tab==1)}")
 
     # ================================================================
@@ -763,6 +853,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         X_chunks_val = X_chunks_tensor[val_idx]
         y_chunks_val = y_chunks_tensor[val_idx]
         early_chunk_count = 0
+        rolling_chunk_count = 0
         if early_augmentation:
             early_chunks = []
             early_labels = []
@@ -774,13 +865,20 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     if prefix_chunks.size(0):
                         early_chunks.append(prefix_chunks[-1])
                         early_labels.append(float(y_tab[session_idx]))
-            early_chunk_count = len(early_chunks)
+                        early_chunk_count += 1
+                for window in iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or []):
+                    window_chunks = extract_sequential_chunks(records_to_chunks(window))
+                    if window_chunks.size(0):
+                        early_chunks.append(window_chunks[-1])
+                        early_labels.append(float(y_tab[session_idx]))
+                        rolling_chunk_count += 1
             if early_chunks:
                 X_chunks_train = torch.cat([X_chunks_train, torch.stack(early_chunks)])
                 y_chunks_train = torch.cat([
                     y_chunks_train, torch.tensor(early_labels, dtype=torch.float32)
                 ])
         print(f"    Additional train-only early chunks: {early_chunk_count}")
+        print(f"    Additional train-only rolling/timing chunks: {rolling_chunk_count}")
         print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
@@ -848,6 +946,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             y_val_tab,
             idx_test,
             y_test_tab,
+            rolling_checkpoints=25,
         )
     except RuntimeError as exc:
         if diagnostic_only:
@@ -904,6 +1003,11 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "decision_policy_version": DECISION_POLICY_VERSION,
             "early_augmentation": bool(early_augmentation),
             "augmented_training_prefixes": augmented_prefix_count,
+            "augmented_training_rolling_windows": augmented_rolling_count,
+            "environment_features_trained": False,
+            "minimum_mouse_points_for_bot": production_detector.min_mouse_points_for_bot,
+            "collector_window_policy": "mouse_export_v1",
+            "rolling_checkpoints": 25,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,
             "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,

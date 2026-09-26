@@ -8,16 +8,20 @@ from core_ml.dataset.loader import RealMouseSession
 from core_ml.model_bundle import release_evidence_valid
 from core_ml.train import (
     audit_training_dataset,
+    build_tabular_vector,
     assign_real_session_splits,
     deduplicate_real_sessions,
     evaluate_ensemble_for_release,
+    evaluate_rolling_for_release,
     predict_lstm_sessions,
     iter_training_prefixes,
+    iter_training_rolling_windows,
     publish_model_artifacts,
     resolve_training_device,
     resolve_training_indices,
     train_lstm,
     validate_release_metrics,
+    validate_rolling_release,
     main as train_main,
 )
 from core_ml.experiments.run_all import (
@@ -41,7 +45,10 @@ def _session(session_id, label, source="phase2", split="unspecified", records=No
 
 
 def test_release_evidence_checks_metrics_and_policy_values():
-    passing = {"roc_auc": 0.9, "precision": 1.0, "recall": 0.9, "false_positive_rate": 0.0}
+    passing = {
+        "roc_auc": 0.9, "precision": 1.0, "recall": 0.9,
+        "false_positive_rate": 0.0, "decision_coverage": 1.0,
+    }
     manifest = {"training": {
         "decision_policy_version": "6",
         "production_decision_threshold": 0.93,
@@ -57,6 +64,67 @@ def test_release_evidence_checks_metrics_and_policy_values():
     assert not release_evidence_valid(manifest, "6", 0.93, 0.45)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("roc_auc", 2.0),
+    ("precision", float("nan")),
+    ("false_positive_rate", -1.0),
+    ("decision_coverage", 0.0),
+])
+def test_release_evidence_rejects_impossible_metrics(field, value):
+    passing = {
+        "roc_auc": 0.9, "precision": 1.0, "recall": 0.9,
+        "false_positive_rate": 0.0, "decision_coverage": 1.0,
+    }
+    manifest = {"training": {
+        "decision_policy_version": "6",
+        "production_decision_threshold": 0.93,
+        "production_suspect_threshold": 0.45,
+        "dataset": {"split_counts": {"train": 10, "val": 4, "test": 4}},
+        "metrics": {"ensemble": {
+            split: dict(passing) for split in ("val", "early_val", "mid_val", "late_val")
+        }},
+    }}
+    manifest["training"]["metrics"]["ensemble"]["val"][field] = value
+    assert not release_evidence_valid(manifest, "6", 0.93, 0.45)
+
+
+def test_policy_v7_requires_rolling_evidence_and_mouse_only_contract():
+    passing = {
+        "roc_auc": 1.0, "precision": 1.0, "recall": 1.0,
+        "false_positive_rate": 0.0, "decision_coverage": 1.0,
+    }
+    rolling = {
+        "human_sessions": 24.0, "bot_sessions": 66.0,
+        "human_ever_bot": 0.0, "human_ever_suspect": 16.0,
+        "bot_ever_human": 1.0, "human_windows": 600.0,
+        "bot_windows": 1650.0, "human_bot_windows": 0.0,
+        "bot_human_windows": 1.0,
+    }
+    manifest = {"training": {
+        "decision_policy_version": "7",
+        "production_decision_threshold": 0.93,
+        "production_suspect_threshold": 0.45,
+        "environment_features_trained": False,
+        "minimum_mouse_points_for_bot": 25,
+        "collector_window_policy": "mouse_export_v1",
+        "rolling_checkpoints": 25,
+        "dataset": {"split_counts": {"train": 599, "val": 60, "test": 90}},
+        "metrics": {"ensemble": {
+            **{split: dict(passing) for split in ("val", "early_val", "mid_val", "late_val")},
+            "rolling_val": dict(rolling), "rolling_test": dict(rolling),
+        }},
+    }}
+    assert release_evidence_valid(manifest, "7", 0.93, 0.45)
+    manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_ever_bot"] = 1.0
+    assert not release_evidence_valid(manifest, "7", 0.93, 0.45)
+    manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_ever_bot"] = 0.0
+    manifest["training"]["environment_features_trained"] = True
+    assert not release_evidence_valid(manifest, "7", 0.93, 0.45)
+    manifest["training"]["environment_features_trained"] = False
+    manifest["training"]["metrics"]["ensemble"]["rolling_test"]["human_windows"] = 599.0
+    assert not release_evidence_valid(manifest, "7", 0.93, 0.45)
+
+
 def test_early_training_windows_stop_at_requested_moves_without_copying_full_session():
     records = []
     for index in range(110):
@@ -70,6 +138,102 @@ def test_early_training_windows_stop_at_requested_moves_without_copying_full_ses
     assert [sum(record["type"] == "move" for record in prefix) for _, prefix in windows] == [25, 50, 100]
     assert all(len(prefix) < len(records) for _, prefix in windows)
     assert list(iter_training_prefixes(windows[0][1])) == []
+
+
+def test_rolling_release_gate_catches_mid_session_human_false_positive():
+    class Detector:
+        def predict(self, telemetry):
+            records = telemetry["mouse"]["records"]
+            last_time = records[-1]["time"]
+            if telemetry["label"] == 0 and 60 <= last_time < 150:
+                verdict = "BOT"
+            else:
+                verdict = "HUMAN" if telemetry["label"] == 0 else "BOT"
+            return {"verdict": verdict}
+
+    telemetries = [
+        {"label": label, "mouse": {"records": [
+            {"time": index, "x": index / 200, "y": 0.2, "type": "move"}
+            for index in range(200)
+        ]}}
+        for label in (0, 1)
+    ]
+    metrics = evaluate_rolling_for_release(Detector(), telemetries, [0, 1], [0, 1], checkpoints=5)
+    assert metrics["human_ever_bot"] == 1
+    assert metrics["human_bot_windows"] >= 1
+    with pytest.raises(RuntimeError, match="human sessions had a BOT verdict"):
+        validate_rolling_release(metrics)
+
+
+def test_rolling_validation_runs_before_test_predictions():
+    class Detector:
+        test_calls = 0
+
+        def predict(self, telemetry):
+            if telemetry["split"] == "test":
+                self.test_calls += 1
+            records = telemetry["mouse"]["records"]
+            last_time = records[-1]["time"]
+            false_bot = telemetry["label"] == 0 and 110 <= last_time < 150
+            verdict = "BOT" if telemetry["label"] == 1 or false_bot else "HUMAN"
+            return {
+                "verdict": verdict,
+                "is_bot": verdict == "BOT",
+                "bot_probability": 0.99 if verdict == "BOT" else 0.01,
+            }
+
+    labels = np.asarray([0] * 14 + [1] * 46)
+    def rows(split):
+        return [
+            {"split": split, "label": int(label), "mouse": {"records": [
+                {"time": index, "x": index / 200, "y": 0.2, "type": "move"}
+                for index in range(200)
+            ]}}
+            for label in labels
+        ]
+
+    detector = Detector()
+    with pytest.raises(RuntimeError, match="human sessions had a BOT verdict"):
+        evaluate_ensemble_for_release(
+            detector, rows("val") + rows("test"),
+            list(range(60)), labels, list(range(60, 120)), labels,
+            rolling_checkpoints=5,
+        )
+    assert detector.test_calls == 0
+
+
+def test_training_rolling_windows_change_timing_only():
+    records = [
+        {"time": index * 10, "x": index / 100, "y": 0.2, "type": "move"}
+        for index in range(100)
+    ]
+    windows = list(iter_training_rolling_windows(records, checkpoints=1))
+    assert len(windows) == 3
+    assert [[(r["x"], r["y"]) for r in window] for window in windows].count(
+        [(r["x"], r["y"]) for r in windows[0]]
+    ) == 3
+    assert windows[0][-1]["time"] - windows[0][0]["time"] == 0.5 * (
+        windows[1][-1]["time"] - windows[1][0]["time"]
+    )
+    assert windows[2][-1]["time"] - windows[2][0]["time"] == 2 * (
+        windows[1][-1]["time"] - windows[1][0]["time"]
+    )
+
+
+def test_tabular_training_does_not_learn_synthetic_only_fingerprint_fields():
+    from core_ml.features.env_features import FEATURE_NAMES
+
+    records = [
+        {"time": index * 15, "x": index / 100, "y": 0.2, "type": "move"}
+        for index in range(30)
+    ]
+    empty = build_tabular_vector({}, {}, records)
+    synthetic = build_tabular_vector(
+        {"audioHash": "synthetic", "hardwareConcurrency": 1},
+        {"heuristicScore": 1.0, "flaggedCount": 10}, records,
+    )
+    assert np.array_equal(empty, synthetic)
+    assert not np.any(empty[:len(FEATURE_NAMES)])
 
 
 def test_split_preserves_official_test_and_is_deterministic():

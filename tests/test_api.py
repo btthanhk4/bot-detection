@@ -279,7 +279,7 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     assert data["verdict"] == "SUSPECT"
     assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
     assert data["score_calibrated"] is False
-    assert data["policy_version"] == "6"
+    assert data["policy_version"] == "7"
 
 
 def test_health_distinguishes_model_load_from_release_evidence(client):
@@ -288,7 +288,7 @@ def test_health_distinguishes_model_load_from_release_evidence(client):
     assert response.status_code in (200, 503)
     health = response.json()
     assert health["model_bundle_valid"] is True
-    assert health["decision_policy_version"] == "6"
+    assert health["decision_policy_version"] == "7"
     assert health["release_gate_evidence_present"] is True
 
 
@@ -600,6 +600,29 @@ def test_summary_reports_database_query_failure(client, monkeypatch):
 def test_invalid_telemetry_is_rejected(client):
     res = client.post("/api/v1/telemetry", content=b"not-json", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400
+
+
+@pytest.mark.parametrize("field", ["records", "trajectory"])
+def test_non_array_mouse_records_are_rejected(client, field):
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": "bad-mouse", "visitorId": "visitor", "mouse": {field: 7}},
+    )
+    assert response.status_code == 422
+
+
+def test_retry_after_is_exposed_to_cross_origin_collector(client, monkeypatch):
+    from api_service.config import settings
+
+    monkeypatch.setattr(settings, "RATE_LIMIT_PER_MINUTE", 1)
+    origin = settings.CORS_ORIGINS[0] if settings.CORS_ORIGINS[0] != "*" else "https://example.com"
+    headers = {"Origin": origin}
+    payload = {"sessionId": "rate-limited", "visitorId": "visitor"}
+    client.post("/api/v1/telemetry", content=b"not-json", headers=headers)
+    response = client.post("/api/v1/telemetry", json=payload, headers=headers)
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "60"
+    assert "retry-after" in response.headers["Access-Control-Expose-Headers"].lower()
 
 
 def test_excessively_nested_telemetry_is_rejected(client):

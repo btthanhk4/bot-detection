@@ -13,6 +13,7 @@ from core_ml.features.mouse_features import (
     compute_statistical_features,
     extract_mouse_stat_vector,
     extract_sequential_chunks,
+    normalize_move_coordinates,
     records_to_chunks,
     sanitize_mouse_records,
 )
@@ -20,7 +21,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "6"
+DECISION_POLICY_VERSION = "7"
 
 
 class EnsembleBotDetector:
@@ -89,10 +90,11 @@ class EnsembleBotDetector:
         ]
         valid_mouse_records = sanitize_mouse_records(mouse_records)
         valid_moves = [record for record in valid_mouse_records if record["type"] == "move"]
-        distinct_positions = len({(record["x"], record["y"]) for record in valid_moves})
+        distinct_positions = len(set(normalize_move_coordinates(valid_moves)))
+        distinct_times = len({record["time"] for record in valid_moves})
         usable_trajectory = bool(
             valid_moves and valid_moves[-1]["time"] > valid_moves[0]["time"]
-            and distinct_positions >= 5
+            and distinct_positions >= 5 and distinct_times >= 5
         )
         user_agent = str(fingerprint.get("userAgent") or "").lower()
         unsupported_mobile = any(

@@ -761,7 +761,7 @@ def main(dataset_root=None):
     experiment_early_detection(early_records, y, feature_names, idx_train, idx_test)
     experiment_inference_latency(X, model)
     experiment_roc_analysis(X, y, feature_names, idx_fit, idx_val, idx_test)
-    experiment_short_sessions(all_records, y, feature_names, idx_train, idx_test)
+    experiment_short_sessions(early_records, y, feature_names, idx_train, idx_test)
     experiment_power_user(all_records, y, feature_names, idx_train, idx_test)
 
     # Save all results to JSON

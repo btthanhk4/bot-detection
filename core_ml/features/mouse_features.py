@@ -121,6 +121,20 @@ def prefix_through_moves(records: list, max_move_points: int) -> list:
     return prefix
 
 
+def normalize_move_coordinates(move_records: list) -> list:
+    """Apply the same pixel-to-screen normalization used by mouse statistics."""
+    xs = [record["x"] for record in move_records]
+    ys = [record["y"] for record in move_records]
+    max_abs_x = max((abs(x) for x in xs), default=1.0)
+    max_abs_y = max((abs(y) for y in ys), default=1.0)
+    scale_w = max(1920.0, max_abs_x) if max_abs_x > 1.0 else 1.0
+    scale_h = max(1080.0, max_abs_y) if max_abs_y > 1.0 else 1.0
+    return [
+        (max(0.0, min(1.0, x / scale_w)), max(0.0, min(1.0, y / scale_h)))
+        for x, y in zip(xs, ys)
+    ]
+
+
 def compute_statistical_features(records: list) -> dict:
     """
     Extract comprehensive statistical motion features from a list of mouse points.
@@ -142,17 +156,8 @@ def compute_statistical_features(records: list) -> dict:
         return _get_empty_stats(point_count=len(valid_records), move_count=len(move_records))
 
     times = [r["time"] for r in move_records]
-    xs = [r["x"] for r in move_records]
-    ys = [r["y"] for r in move_records]
-
-    # Coordinate auto-normalization:
-    # If coordinates are in pixel space (> 1.0), normalize to [0, 1] screen coordinates
-    max_abs_x = max((abs(x) for x in xs), default=1.0)
-    max_abs_y = max((abs(y) for y in ys), default=1.0)
-    scale_w = max(1920.0, max_abs_x) if max_abs_x > 1.0 else 1.0
-    scale_h = max(1080.0, max_abs_y) if max_abs_y > 1.0 else 1.0
-    xs = [max(0.0, min(1.0, x / scale_w)) for x in xs]
-    ys = [max(0.0, min(1.0, y / scale_h)) for y in ys]
+    positions = normalize_move_coordinates(move_records)
+    xs, ys = zip(*positions)
 
     duration = max(1.0, float(times[-1] - times[0]))
 

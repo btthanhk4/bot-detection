@@ -281,6 +281,31 @@ class TestEnsembleDetector:
             assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
             assert result["breakdown"]["usable_trajectory"] is False
 
+    def test_clamped_or_repeated_time_mouse_records_do_not_finalize(self):
+        class StrongModels:
+            def predict_session_proba(self, _chunks):
+                return 0.99
+
+            def predict_proba(self, _features):
+                return 0.99
+
+        detector = EnsembleBotDetector(
+            lstm_model=StrongModels(), tabular_model=StrongModels(),
+        )
+        negative_records = [
+            {"time": i * 20, "x": -i - 1, "y": -i - 1, "type": "move"}
+            for i in range(30)
+        ]
+        repeated_times = [
+            {"time": 0 if i < 29 else 20, "x": i / 100, "y": 0.2, "type": "move"}
+            for i in range(30)
+        ]
+        for records in (negative_records, repeated_times):
+            result = detector.predict({"mouse": {"records": records}})
+            assert result["verdict"] == "SUSPECT"
+            assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+            assert result["breakdown"]["usable_trajectory"] is False
+
     def test_mouse_points_counts_only_valid_moves(self):
         records = [
             {"time": 0, "x": 0.1, "y": 0.1, "type": "move"},
@@ -394,7 +419,7 @@ class TestEnsembleDetector:
         assert result["is_bot"] is False
         assert result["verdict"] == "SUSPECT"
         assert result["bot_probability"] < 0.70
-        assert result["policy_version"] == "6"
+        assert result["policy_version"] == "7"
 
     def test_minimum_point_setting_cannot_exceed_retained_window(self):
         with pytest.raises(ValueError, match="retained record window"):

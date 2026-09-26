@@ -1922,14 +1922,14 @@ body::before { display: none; }
         <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Phân tích đa mô hình (Ensemble Fusion)</div>
         <div class="drawer-explain">
           Hệ thống kết hợp <strong>3 thành phần phân tích</strong>: BiLSTM, XGBoost và BotD heuristic.
-          Trọng số được tự điều chỉnh theo độ lệch điểm và lượng dữ liệu của phiên.
+          BiLSTM và XGBoost dùng trọng số cố định; BotD chỉ cộng bằng chứng dương.
         </div>
 
         <div class="model-detail-card" id="dModelLSTM">
           <div class="model-detail-header">
             <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-dna"></use></svg></div>
             <div>
-              <div class="model-detail-name">LSTM BiGRU — Hành vi chuột</div>
+              <div class="model-detail-name">BiLSTM — Hành vi chuột</div>
               <div class="model-detail-desc">Phân tích quỹ đạo, tốc độ, gia tốc di chuột. Bot có quỹ đạo thẳng và đều, người có quỹ đạo cong tự nhiên.</div>
             </div>
           </div>
@@ -1944,8 +1944,8 @@ body::before { display: none; }
           <div class="model-detail-header">
             <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-fingerprint"></use></svg></div>
             <div>
-              <div class="model-detail-name">XGBoost — Fingerprint & Môi trường</div>
-              <div class="model-detail-desc">Phân tích phần cứng (CPU, RAM, GPU), trình duyệt, plugin, độ phân giải, canvas hash, audio hash, v.v.</div>
+              <div class="model-detail-name">XGBoost — Thống kê chuyển động chuột</div>
+              <div class="model-detail-desc">Phân tích tốc độ, gia tốc, độ cong và thay đổi hướng di chuyển.</div>
             </div>
           </div>
           <div class="model-detail-bar">
@@ -2472,7 +2472,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
     if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('công cụ Selenium/Puppeteer/Playwright');
     if (bd.behavioral_lstm_score > 0.5) flags.push(`quỹ đạo chuột thẳng tắp máy móc (LSTM: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%)`);
-    if (bd.tabular_score > 0.5) flags.push(`thông số phần cứng giả mạo (XGBoost: ${(bd.tabular_score * 100).toFixed(1)}%)`);
+    if (bd.tabular_score > 0.5) flags.push(`chuyển động chuột có dấu hiệu tự động hóa (XGBoost: ${(bd.tabular_score * 100).toFixed(1)}%)`);
     if (flags.length > 0) {
       explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
     } else {
@@ -2594,8 +2594,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     { name: 'Headless Browser', flagged: asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless), desc: 'Chạy không giao diện đồ họa' },
     { name: 'Automation Tool', flagged: asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool), desc: 'Selenium, Puppeteer, Playwright' },
     { name: 'PhantomJS', flagged: asBoolean(botd.phantomJS), desc: 'Phantom runtime' },
-    { name: 'Plugins Empty', flagged: botd.pluginsLength === 0, desc: 'Danh sách plugin rỗng bất thường' },
-    { name: 'Languages Missing', flagged: !fp.languages || fp.languages.length === 0, desc: 'Không có thông tin ngôn ngữ' },
+    { name: 'Plugins Inconsistent', flagged: asBoolean(botdDetectors.pluginsInconsistency), desc: 'Plugin không nhất quán với trình duyệt' },
+    { name: 'Language Inconsistent', flagged: asBoolean(botdDetectors.languagesInconsistency), desc: 'Ngôn ngữ trình duyệt không nhất quán' },
     { name: 'Screen Inconsistency', flagged: Number.isFinite(screenWidth) && Number.isFinite(screenHeight) && (screenWidth === 0 || screenHeight === 0), desc: 'Độ phân giải 0x0' },
     { name: 'DevTools Opened', flagged: asBoolean(botd.devtools), desc: 'Công cụ gỡ lỗi DevTools' },
   ];

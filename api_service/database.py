@@ -290,8 +290,10 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         if _writes_are_blocked(db, session_id):
             return None
 
-        mouse_data = telemetry.get("mouse") or {}
+        mouse_data = telemetry.get("mouse")
+        mouse_data = mouse_data if isinstance(mouse_data, dict) else {}
         records = mouse_data.get("records") or mouse_data.get("trajectory") or []
+        records = records if isinstance(records, list) else []
         sanitized_records = sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
         inference_records = sanitize_mouse_records(
             [

@@ -1,0 +1,133 @@
+"""Replay held-out mouse sessions against a frozen bundle without retraining."""
+
+import argparse
+import json
+from collections import Counter
+from pathlib import Path
+
+import torch
+
+from core_ml.collector_windows import rolling_windows
+from core_ml.dataset.loader import load_real_dataset
+from core_ml.evaluate import _load_detector
+from core_ml.features.mouse_features import prefix_through_moves
+from core_ml.train import assign_real_session_splits, deduplicate_real_sessions, records_signature
+
+
+DESKTOP_FINGERPRINT = {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "maxTouchPoints": 0,
+    "screenResolution": "1920x1080",
+    "colorDepth": 24,
+    "pixelRatio": 1,
+    "pluginsLength": 5,
+    "fontsCount": 10,
+    "audioHash": "35.12345",
+    "canvasHash": "browser-probe",
+}
+
+
+def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=25,
+                        desktop_fingerprint=False, threshold=0.93):
+    if split not in ("val", "test"):
+        raise ValueError("Robustness evaluation requires a held-out val or test split")
+    sessions = deduplicate_real_sessions([
+        session
+        for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots")
+        for session in load_real_dataset(
+            dataset_root, scenario=scenario, include_phase2=True, with_metadata=True,
+        )
+    ])
+    selected = [
+        session for session, assignment in zip(sessions, assign_real_session_splits(sessions))
+        if assignment == split
+    ]
+    detector, manifest = _load_detector(weights_dir, threshold)
+    training_hashes = set(
+        manifest.get("training", {}).get("dataset", {})
+        .get("trajectory_hashes_by_split", {}).get("train", [])
+    )
+    if training_hashes & {records_signature(session.records) for session in selected}:
+        raise ValueError("Evaluation split overlaps model training trajectories")
+
+    rolling = {"human": Counter(), "bot": Counter()}
+    timing = {str(factor): {"human": Counter(), "bot": Counter()}
+              for factor in (0.5, 1.0, 2.0)}
+    human_ever_bot = bot_ever_human = human_ever_suspect = 0
+    human_bot_details = []
+    fingerprint = DESKTOP_FINGERPRINT if desktop_fingerprint else {}
+    for session in selected:
+        label = "bot" if session.label else "human"
+        verdicts = []
+        for window in rolling_windows(session.records, checkpoints=checkpoints):
+            decision = detector.predict({"mouse": {"records": window}, "fingerprint": fingerprint})
+            verdict = decision["verdict"]
+            rolling[label][verdict] += 1
+            verdicts.append(verdict)
+            if label == "human" and verdict == "BOT":
+                human_bot_details.append({
+                    "session_id": session.session_id,
+                    "source": session.source,
+                    "last_window_time": window[-1]["time"],
+                    "risk": decision["risk_score"],
+                    "lstm": decision["breakdown"]["behavioral_lstm_score"],
+                    "tabular": decision["breakdown"]["tabular_score"],
+                })
+        if label == "human":
+            human_ever_bot += "BOT" in verdicts
+            human_ever_suspect += "SUSPECT" in verdicts
+        else:
+            bot_ever_human += "HUMAN" in verdicts
+
+        early = prefix_through_moves(session.early_records or session.records, 100)
+        for factor in (0.5, 1.0, 2.0):
+            scaled = [{**record, "time": record["time"] * factor} for record in early]
+            verdict = detector.predict({"mouse": {"records": scaled}, "fingerprint": fingerprint})["verdict"]
+            timing[str(factor)][label][verdict] += 1
+
+    return {
+        "bundle_id": manifest["bundle_id"],
+        "split": split,
+        "checkpoints_per_session": checkpoints,
+        "threshold": threshold,
+        "desktop_fingerprint": desktop_fingerprint,
+        "session_counts": dict(Counter("bot" if s.label else "human" for s in selected)),
+        "rolling_windows": {label: dict(counts) for label, counts in rolling.items()},
+        "human_sessions_ever_bot": human_ever_bot,
+        "human_bot_details": human_bot_details,
+        "human_sessions_ever_suspect": human_ever_suspect,
+        "bot_sessions_ever_human": bot_ever_human,
+        "timing_first_100_moves": {
+            factor: {label: dict(counts) for label, counts in labels.items()}
+            for factor, labels in timing.items()
+        },
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dataset-root", required=True)
+    parser.add_argument("--weights-dir", required=True)
+    parser.add_argument("--split", choices=("val", "test"), default="val")
+    parser.add_argument("--checkpoints", type=int, default=25)
+    parser.add_argument("--threshold", type=float, default=0.93)
+    parser.add_argument("--desktop-fingerprint", action="store_true")
+    parser.add_argument("--output", default="")
+    args = parser.parse_args()
+    torch.set_num_threads(1)
+    report = evaluate_robustness(
+        args.dataset_root, args.weights_dir, split=args.split, checkpoints=args.checkpoints,
+        desktop_fingerprint=args.desktop_fingerprint, threshold=args.threshold,
+    )
+    rendered = json.dumps(report, ensure_ascii=False, indent=2)
+    print(rendered)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

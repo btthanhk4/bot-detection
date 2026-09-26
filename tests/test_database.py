@@ -731,6 +731,25 @@ def test_save_uses_server_computed_mouse_stats(monkeypatch):
     assert "avgSpeed" not in stored["mouse_stats"]
 
 
+def test_save_accepts_legacy_buffered_non_array_mouse_records(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr(
+        "api_service.database.get_db",
+        lambda: {
+            "detection_results": detections,
+            "deleted_sessions": empty,
+            "service_control": empty,
+        },
+    )
+
+    assert save_detection_result(
+        {"sessionId": "legacy-bad-mouse", "visitorId": "visitor", "mouse": {"records": 7}},
+        {"verdict": "SUSPECT"},
+    )
+    assert detections.docs["legacy-bad-mouse"]["mouse_points_captured"] == 0
+
+
 def test_save_uses_same_rolling_window_as_collector(monkeypatch):
     detections = MemoryCollection()
     empty = MemoryCollection()

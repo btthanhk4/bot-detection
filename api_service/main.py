@@ -19,7 +19,7 @@ from typing import Optional, Dict, Any
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from api_service.config import settings
@@ -118,6 +118,7 @@ app.add_middleware(
     allow_credentials="*" not in settings.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Retry-After"],
 )
 
 # Global model holders
@@ -368,6 +369,15 @@ class TelemetryPayload(BaseModel):
     fingerprint: Optional[Dict[str, Any]] = None
     botd: Optional[Dict[str, Any]] = None
     mouse: Optional[Dict[str, Any]] = None
+
+    @field_validator("mouse")
+    @classmethod
+    def validate_mouse_records(cls, mouse):
+        if mouse is not None:
+            for key in ("records", "trajectory"):
+                if key in mouse and not isinstance(mouse[key], list):
+                    raise ValueError(f"mouse.{key} must be an array")
+        return mouse
 
 
 def _is_trusted_proxy(host: str) -> bool:

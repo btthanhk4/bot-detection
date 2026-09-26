@@ -1,6 +1,8 @@
 import pytest
 
 from core_ml.evaluate import classification_metrics, prefix_through_moves
+from core_ml.evaluate_robustness import evaluate_robustness
+from core_ml.dataset.loader import RealMouseSession
 
 
 def test_classification_metrics_reports_operational_error_rates():
@@ -58,3 +60,29 @@ def test_prefix_through_moves_keeps_interleaved_events():
     assert prefix_through_moves(records, 2) == records[:4]
     with pytest.raises(ValueError, match="positive integer"):
         prefix_through_moves(records, 0)
+
+
+def test_robustness_report_counts_verdicts_by_session(monkeypatch):
+    from core_ml import evaluate_robustness as module
+
+    class Detector:
+        def predict(self, telemetry):
+            records = telemetry["mouse"]["records"]
+            return {"verdict": "BOT" if records[0]["x"] > 0.5 else "HUMAN"}
+
+    sessions = [
+        RealMouseSession(
+            records=[{"time": i * 10, "x": x, "y": 0.2, "type": "move"} for i in range(30)],
+            label=label, session_id=str(label), source="phase2", split="val", scenario="test",
+        )
+        for label, x in ((0, 0.1), (1, 0.9))
+    ]
+    monkeypatch.setattr(module, "load_real_dataset", lambda *_args, **kwargs: sessions if kwargs["scenario"] == "humans_and_moderate_bots" else [])
+    monkeypatch.setattr(module, "assign_real_session_splits", lambda _sessions: ["val", "val"])
+    monkeypatch.setattr(module, "_load_detector", lambda *_args: (Detector(), {"bundle_id": "candidate", "training": {}}))
+
+    report = evaluate_robustness("unused", "unused", checkpoints=2)
+    assert report["session_counts"] == {"human": 1, "bot": 1}
+    assert report["rolling_windows"] == {"human": {"HUMAN": 2}, "bot": {"BOT": 2}}
+    assert report["human_sessions_ever_bot"] == 0
+    assert report["bot_sessions_ever_human"] == 0
