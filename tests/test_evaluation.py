@@ -136,3 +136,38 @@ def test_robustness_routes_browser_signals_to_each_prediction(monkeypatch):
     assert all(signal == {"heuristicScore": 0.6, "detectors": {"webdriver": True}} for signal in received)
     with pytest.raises(ValueError, match="heuristic_score"):
         evaluate_robustness("unused", "unused", heuristic_score=float("nan"))
+    with pytest.raises(ValueError, match="lstm_p75_min_mean"):
+        evaluate_robustness("unused", "unused", lstm_p75_min_mean=float("nan"))
+
+
+def test_robustness_full_replay_uses_uncapped_phase2_session(monkeypatch):
+    from core_ml import evaluate_robustness as module
+
+    short = [{"time": i, "x": 0.1, "y": 0.2, "type": "move"} for i in range(30)]
+    full = [{"time": i, "x": 0.9 if i < 30 else 0.1, "y": 0.2, "type": "move"}
+            for i in range(60)]
+    session = RealMouseSession(
+        records=short, label=0, session_id="long", source="phase2",
+        split="val", scenario="test",
+    )
+
+    class Detector:
+        def predict(self, telemetry):
+            return {"verdict": "BOT" if telemetry["mouse"]["records"][-1]["x"] > 0.5 else "HUMAN",
+                    "risk_score": 0.95, "breakdown": {"behavioral_lstm_score": 0.95,
+                                                      "tabular_score": 0.95}}
+
+    def load(_root, **kwargs):
+        if kwargs["scenario"] == "humans_and_advanced_bots":
+            return []
+        session.replay_records = full if kwargs.get("replay_session_ids") else None
+        return [session]
+
+    monkeypatch.setattr(module, "load_real_dataset", load)
+    monkeypatch.setattr(module, "assign_real_session_splits", lambda _sessions: ["val"])
+    monkeypatch.setattr(module, "_load_detector", lambda *_args: (Detector(), {"bundle_id": "candidate", "training": {}}))
+
+    report = evaluate_robustness("unused", "unused", checkpoints=3, full_replay=True)
+    assert report["rolling_windows"]["human"] == {"BOT": 1, "HUMAN": 2}
+    assert report["human_sessions_ever_bot"] == 1
+    assert report["bot_gate_counts"]["risk_96"]["human"] == {"downgraded": 1}

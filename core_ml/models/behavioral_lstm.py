@@ -52,6 +52,7 @@ class MouseTrajectoryLSTM(nn.Module):
         bidirectional: bool = True,
         l1_lambda: float = 1e-5,
         l2_lambda: float = 1e-4,
+        p75_min_weighted_mean: float = 0.0,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -60,6 +61,7 @@ class MouseTrajectoryLSTM(nn.Module):
         self.bidirectional = bidirectional
         self.l1_lambda = l1_lambda
         self.l2_lambda = l2_lambda
+        self.p75_min_weighted_mean = p75_min_weighted_mean
 
         # Effective hidden dim after bidirectional concatenation
         self.effective_hidden = hidden_dim * 2 if bidirectional else hidden_dim
@@ -167,7 +169,7 @@ class MouseTrajectoryLSTM(nn.Module):
             # Use p75 only as a strong bot signal override
             # Prevents edge case where low p75 overrides a high weighted_mean
             p75 = float(torch.quantile(preds, 0.75).item())
-            if p75 > 0.7:
+            if p75 > 0.7 and weighted_mean >= self.p75_min_weighted_mean:
                 return max(weighted_mean, p75)
             return weighted_mean
 

@@ -46,6 +46,29 @@ release gate also requires zero human sessions ever BOT across sampled windows,
 limits HUMAN-to-SUSPECT and BOT-to-HUMAN session friction, and binds the
 fingerprint-training and collector-window contract.
 
+### Dense replay audit (post-release)
+
+The 25-checkpoint release gate missed a brief false BOT decision. Replaying
+100 checkpoints over each **entire** test trajectory, including the middle of
+Phase 2 sessions longer than the 5,000-record training cap, gives:
+
+| Frozen policy | Human sessions ever BOT | Human BOT windows | Bot sessions ever HUMAN |
+| --- | ---: | ---: | ---: |
+| v7, BOT 0.93 | 1/24 | 1/2,400 | 2/66 |
+| Experimental LSTM p75 guard 0.70, BOT 0.93 | 1/24 | 1/2,400 | 2/66 |
+
+The false BOT window is from a Phase 1 human trace with estimated timestamps;
+the uncalibrated fused score is 0.9494. A hypothetical BOT cutoff of 0.96
+would downgrade this window to SUSPECT and retain 6,154 of 6,248 candidate BOT
+windows in this test replay. This is a **diagnostic**, not a released policy:
+the test set was inspected while considering the cutoff. It cannot provide
+independent evidence of an acceptable false-positive rate. Policy v7, its
+thresholds, and the bundled weights remain unchanged. Do not auto-block on
+these verdicts without independently labeled live evaluation.
+
+Reproduce with `--split test --checkpoints 100 --desktop-fingerprint --full-replay`;
+add `--lstm-p75-min-mean 0.7` to examine the experimental aggregation.
+
 ## Post-release hardening
 
 - Serving now compares the configured minimum mouse points with the release

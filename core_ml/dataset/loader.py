@@ -35,6 +35,7 @@ class RealMouseSession:
     split: str
     scenario: str
     early_records: list = None
+    replay_records: list = None
 
 
 class DatasetLabelConflictError(ValueError):
@@ -276,7 +277,8 @@ def parse_phase2_record(record: dict) -> list:
     return records
 
 
-def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: bool = False):
+def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: bool = False,
+                        replay_session_ids=None):
     """
     Load Phase 2 data from MongoDB-exported JSON lines files.
     Phase 2 has real browser timestamps and richer data (~220MB).
@@ -386,6 +388,10 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                         # Include one move after the largest training prefix so
                         # iter_training_prefixes can recognize it as partial.
                         early_records = prefix_through_moves(mouse_records, 101)
+                        replay_records = (
+                            mouse_records if replay_session_ids and session_id in replay_session_ids
+                            else None
+                        )
                         # Cap at 5000 records per session to keep training fast.
                         if len(mouse_records) > 5000:
                             mouse_records = mouse_records[-5000:]
@@ -398,6 +404,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                             split="unspecified",
                             scenario=scenario or "all",
                             early_records=early_records,
+                            replay_records=replay_records,
                         )
                         sessions.append(session if with_metadata else (mouse_records, label))
                         seen_sessions[session_id] = label
@@ -425,7 +432,8 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
 
 
 def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots",
-                      include_phase2: bool = True, with_metadata: bool = False):
+                      include_phase2: bool = True, with_metadata: bool = False,
+                      replay_session_ids=None):
     """
     Loads real mouse movement sessions from web_bot_detection_dataset.
     Loads Phase 1 (folder-per-session) and optionally Phase 2 (JSON lines with real timestamps).
@@ -525,7 +533,10 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
 
     # ===== Phase 2: MongoDB JSON-lines with REAL timestamps =====
     if include_phase2:
-        sessions.extend(load_phase2_dataset(dataset_root, scenario=scenario, with_metadata=True))
+        sessions.extend(load_phase2_dataset(
+            dataset_root, scenario=scenario, with_metadata=True,
+            replay_session_ids=replay_session_ids,
+        ))
 
     unique_by_trajectory = {}
     for session in sessions:

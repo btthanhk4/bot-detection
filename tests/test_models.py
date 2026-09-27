@@ -132,6 +132,19 @@ class TestTabularClassifier:
 
 
 class TestBehavioralLSTM:
+    def test_p75_override_requires_support_from_session_mean(self, monkeypatch):
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        predictions = torch.tensor([[0.01], [0.02], [0.8], [0.95]])
+        monkeypatch.setattr(model, "forward", lambda _chunks: predictions)
+        chunks = torch.zeros(4, 24, 8)
+
+        legacy = model.predict_session_proba(chunks)
+        model.p75_min_weighted_mean = 0.7
+        guarded = model.predict_session_proba(chunks)
+
+        assert guarded < legacy
+        assert guarded < 0.7
+
     def test_forward_and_predict_session(self):
         model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=32, num_layers=2)
         batch = torch.randn(4, 24, 8)

@@ -999,17 +999,28 @@
 
         // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
         if (action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse) {
-          payload.mouse.records = (payload.mouse.records || []).slice(-40);
-          payload.mouse.chunks = (payload.mouse.chunks || []).slice(-2);
+          const records = Array.isArray(payload.mouse.records) ? payload.mouse.records : [];
+          const retained = records.map((record, index) => ({ record, index }));
+          const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-40);
+          const other = retained.filter(({ record }) => !record || record.type !== 'move' || record.source === 'touch').slice(-10);
+          payload.mouse.records = [...moves, ...other]
+            .sort((left, right) => left.index - right.index)
+            .map(({ record }) => record);
+          delete payload.mouse.chunks;
           payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
           body = JSON.stringify(payload);
         }
-        // Fingerprint fields such as user-agent or font lists can also dominate
-        // an unload payload. The init/heartbeat requests already sent this data.
+        // Preserve model input-domain signals even when optional fingerprint data is oversized.
         if (action === 'pagehide' && new Blob([body]).size > 60000) {
-          payload.fingerprint = {};
+          const fingerprint = payload.fingerprint || {};
+          const userAgent = String(fingerprint.userAgent || '');
+          const touchPoints = Number(fingerprint.maxTouchPoints);
+          payload.fingerprint = {
+            userAgent: /mobile|android|iphone|ipad|ipod/i.test(userAgent) ? 'mobile' : userAgent.slice(0, 512),
+            maxTouchPoints: Number.isFinite(touchPoints) ? touchPoints : 0,
+          };
           if (payload.botd && Array.isArray(payload.botd.reasons)) {
-            payload.botd.reasons = payload.botd.reasons.slice(0, 10);
+            payload.botd.reasons = payload.botd.reasons.slice(0, 10).map((reason) => String(reason).slice(0, 256));
           }
           body = JSON.stringify(payload);
         }

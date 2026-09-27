@@ -119,6 +119,10 @@ policy, nên không còn là test mù để chứng minh hiệu năng production
 thành BOT và giữ 1/46 bot ở mức không phải BOT. Replay 25 cửa sổ/phiên không có
 phiên HUMAN bị BOT trên validation (14 phiên) hoặc test (24 phiên). Đây là
 phép đo trên cùng nguồn dữ liệu, không chứng minh tỷ lệ lỗi ngoài thực tế.
+Replay dày hơn, 100 cửa sổ/phiên trên toàn bộ quỹ đạo test, phát hiện 1/24
+phiên HUMAN từng bị gán BOT và 2/66 phiên BOT từng bị gán HUMAN. Vì vậy
+release gate v7 hiện tại chưa đủ để xác nhận an toàn cho tự động chặn.
+Chi tiết và cách tái hiện nằm trong [Model release v7](docs/MODEL_RELEASE_V7.md).
 Các report [`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
 [`early_session_validation.json`](core_ml/early_session_validation.json) là lịch sử v6.
 Không dùng `is_bot` để tự động chặn khi chưa kiểm định trên dữ liệu thực tế

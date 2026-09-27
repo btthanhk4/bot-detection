@@ -32,13 +32,16 @@ DESKTOP_FINGERPRINT = {
 
 def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=25,
                         desktop_fingerprint=False, threshold=0.93,
-                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.45):
+                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.45,
+                        lstm_p75_min_mean=0.0, full_replay=False):
     if split not in ("val", "test"):
         raise ValueError("Robustness evaluation requires a held-out val or test split")
     if not math.isfinite(heuristic_score) or not 0.0 <= heuristic_score <= 1.0:
         raise ValueError("heuristic_score must be between zero and one")
     if not math.isfinite(suspect_threshold) or not 0.0 <= suspect_threshold <= threshold:
         raise ValueError("suspect_threshold must be between zero and the BOT threshold")
+    if not math.isfinite(lstm_p75_min_mean) or not 0.0 <= lstm_p75_min_mean <= 1.0:
+        raise ValueError("lstm_p75_min_mean must be between zero and one")
     sessions = deduplicate_real_sessions([
         session
         for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots")
@@ -52,6 +55,8 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
     ]
     detector, manifest = _load_detector(weights_dir, threshold)
     detector.suspect_threshold = suspect_threshold
+    if hasattr(detector, "lstm_model"):
+        detector.lstm_model.p75_min_weighted_mean = lstm_p75_min_mean
     training_hashes = set(
         manifest.get("training", {}).get("dataset", {})
         .get("trajectory_hashes_by_split", {}).get("train", [])
@@ -59,24 +64,56 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
     if training_hashes & {records_signature(session.records) for session in selected}:
         raise ValueError("Evaluation split overlaps model training trajectories")
 
+    if full_replay:
+        phase2_ids = {session.session_id for session in selected if session.source == "phase2"}
+        replay_by_id = {}
+        if phase2_ids:
+            for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots"):
+                for session in load_real_dataset(
+                    dataset_root, scenario=scenario, include_phase2=True,
+                    with_metadata=True, replay_session_ids=phase2_ids,
+                ):
+                    if session.session_id in phase2_ids and session.replay_records:
+                        replay_by_id[session.session_id] = session.replay_records
+        for session in selected:
+            if session.source == "phase2" and session.session_id not in replay_by_id:
+                raise ValueError(f"Missing full replay records for {session.session_id}")
+            session.replay_records = replay_by_id.get(session.session_id)
+
     rolling = {"human": Counter(), "bot": Counter()}
     transitions = {"human": Counter(), "bot": Counter()}
     timing = {str(factor): {"human": Counter(), "bot": Counter()}
               for factor in (0.5, 1.0, 2.0)}
     human_ever_bot = bot_ever_human = human_ever_suspect = 0
     human_bot_details = []
+    bot_gate_counts = {rule: {"human": Counter(), "bot": Counter()} for rule in (
+        "risk_96", "tabular_95", "both_90", "both_95",
+    )}
     fingerprint = DESKTOP_FINGERPRINT if desktop_fingerprint else {}
     botd = {"heuristicScore": heuristic_score, "detectors": {"webdriver": webdriver}}
     for session in selected:
         label = "bot" if session.label else "human"
         verdicts = []
-        for window in rolling_windows(session.records, checkpoints=checkpoints):
+        for window in rolling_windows(session.replay_records or session.records, checkpoints=checkpoints):
             decision = detector.predict({
                 "mouse": {"records": window}, "fingerprint": fingerprint, "botd": botd,
             })
             verdict = decision["verdict"]
             rolling[label][verdict] += 1
             verdicts.append(verdict)
+            if verdict == "BOT":
+                breakdown = decision.get("breakdown") or {}
+                risk = decision.get("risk_score", 0)
+                lstm = breakdown.get("behavioral_lstm_score", 0)
+                tabular = breakdown.get("tabular_score", 0)
+                gates = {
+                    "risk_96": risk >= 0.96,
+                    "tabular_95": tabular >= 0.95,
+                    "both_90": min(lstm, tabular) >= 0.90,
+                    "both_95": min(lstm, tabular) >= 0.95,
+                }
+                for rule, passed in gates.items():
+                    bot_gate_counts[rule][label]["retained" if passed else "downgraded"] += 1
             if label == "human" and verdict == "BOT":
                 human_bot_details.append({
                     "session_id": session.session_id,
@@ -111,6 +148,8 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "checkpoints_per_session": checkpoints,
         "threshold": threshold,
         "suspect_threshold": suspect_threshold,
+        "lstm_p75_min_mean": lstm_p75_min_mean,
+        "full_replay": full_replay,
         "desktop_fingerprint": desktop_fingerprint,
         "heuristic_score": heuristic_score,
         "webdriver": webdriver,
@@ -119,6 +158,10 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "verdict_transitions": {label: dict(counts) for label, counts in transitions.items()},
         "human_sessions_ever_bot": human_ever_bot,
         "human_bot_details": human_bot_details,
+        "bot_gate_counts": {
+            rule: {label: dict(counts) for label, counts in labels.items()}
+            for rule, labels in bot_gate_counts.items()
+        },
         "human_sessions_ever_suspect": human_ever_suspect,
         "bot_sessions_ever_human": bot_ever_human,
         "timing_first_100_moves": {
@@ -139,6 +182,8 @@ def main():
     parser.add_argument("--desktop-fingerprint", action="store_true")
     parser.add_argument("--heuristic-score", type=float, default=0.0)
     parser.add_argument("--webdriver", action="store_true")
+    parser.add_argument("--lstm-p75-min-mean", type=float, default=0.0)
+    parser.add_argument("--full-replay", action="store_true")
     parser.add_argument("--output", default="")
     args = parser.parse_args()
     torch.set_num_threads(1)
@@ -147,6 +192,7 @@ def main():
         desktop_fingerprint=args.desktop_fingerprint, threshold=args.threshold,
         heuristic_score=args.heuristic_score, webdriver=args.webdriver,
         suspect_threshold=args.suspect_threshold,
+        lstm_p75_min_mean=args.lstm_p75_min_mean, full_replay=args.full_replay,
     )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     print(rendered)

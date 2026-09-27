@@ -215,6 +215,36 @@ async function testPagehideUsesUtf8ByteLengthAndSequenceWraps() {
   }
 }
 
+async function testOversizedPagehideRetainsMouseAndMobileDomain() {
+  const collector = new BotCollector({ endpointUrl: '/telemetry' });
+  collector.cachedFingerprint = {
+    visitorId: 'visitor',
+    components: { userAgent: 'Mozilla Mobile ' + 'x'.repeat(70000), maxTouchPoints: 5 },
+  };
+  collector.cachedBotd = { isBot: false, heuristicScore: 0 };
+  collector.mouseRecorder.records = Array.from({ length: 100 }, (_, i) => ({
+    time: i * 10, x: i / 100, y: 0.2, type: i % 3 === 0 ? 'click' : 'move', source: 'mouse',
+  }));
+  let body = null;
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: { sendBeacon: (_url, blob) => { body = blob; return true; } },
+  });
+  try {
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), true);
+    assert.ok(body.size < 60000);
+    const payload = JSON.parse(await body.text());
+    assert.match(payload.fingerprint.userAgent, /mobile/i);
+    assert.strictEqual(payload.fingerprint.maxTouchPoints, 5);
+    assert.ok(payload.mouse.records.filter((record) => record.type === 'move').length >= 25);
+  } finally {
+    collector.destroy();
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
+    else delete global.navigator;
+  }
+}
+
 async function testPagehideFetchFallbackAvoidsCorsPreflight() {
   const collector = new BotCollector({ endpointUrl: 'https://api.example/telemetry' });
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
@@ -511,6 +541,7 @@ testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
+  .then(testOversizedPagehideRetainsMouseAndMobileDomain)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
   .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)
   .then(testActivitySignatureIncludesEarlierPoints)
