@@ -10,9 +10,10 @@ services:
       - BOT_API_HOST=0.0.0.0
       - BOT_API_PORT=8000
       - BOT_API_WORKERS=1
+      - BOT_TELEMETRY_SPOOL_PATH=/app/var/telemetry-spool.sqlite
       - BOT_CORS_ORIGINS=${BOT_CORS_ORIGINS:-http://159.223.91.163}
-      - BOT_DECISION_THRESHOLD=0.93
-      - BOT_SUSPECT_THRESHOLD=0.45
+      - BOT_DECISION_THRESHOLD=0.96
+      - BOT_SUSPECT_THRESHOLD=0.425
       - BOT_MIN_MOUSE_POINTS_FOR_BOT=25
       - BOT_DATA_RETENTION_DAYS=${BOT_DATA_RETENTION_DAYS:-30}
       - BOT_TRUST_PROXY_HEADERS=true
@@ -22,6 +23,8 @@ services:
       - MONGO_URI=${MONGO_URI:-mongodb://silkmoon-mongodb:27017}
       - MONGO_DB=${MONGO_DB:-bot_detection}
     restart: unless-stopped
+    volumes:
+      - bot_detection_spool:/app/var
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -31,3 +34,6 @@ services:
 networks:
   default:
     name: silkmoon-network
+
+volumes:
+  bot_detection_spool:

@@ -86,7 +86,7 @@ def _load_detector(weights_dir: str, threshold: float) -> tuple[EnsembleBotDetec
         tabular_model=tabular,
         lstm_model=lstm,
         threshold=threshold,
-        suspect_threshold=min(0.45, threshold),
+        suspect_threshold=min(0.425, threshold),
         tabular_available=True,
         lstm_available=True,
     ), manifest

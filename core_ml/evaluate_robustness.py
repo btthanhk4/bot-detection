@@ -30,10 +30,10 @@ DESKTOP_FINGERPRINT = {
 }
 
 
-def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=25,
-                        desktop_fingerprint=False, threshold=0.93,
-                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.45,
-                        lstm_p75_min_mean=0.0, full_replay=False):
+def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=100,
+                        desktop_fingerprint=False, threshold=0.96,
+                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.425,
+                        lstm_p75_min_mean=0.70, full_replay=False):
     if split not in ("val", "test"):
         raise ValueError("Robustness evaluation requires a held-out val or test split")
     if not math.isfinite(heuristic_score) or not 0.0 <= heuristic_score <= 1.0:
@@ -86,6 +86,7 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
               for factor in (0.5, 1.0, 2.0)}
     human_ever_bot = bot_ever_human = human_ever_suspect = 0
     human_bot_details = []
+    bot_human_details = []
     bot_gate_counts = {rule: {"human": Counter(), "bot": Counter()} for rule in (
         "risk_96", "tabular_95", "both_90", "both_95",
     )}
@@ -123,6 +124,15 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
                     "lstm": decision["breakdown"]["behavioral_lstm_score"],
                     "tabular": decision["breakdown"]["tabular_score"],
                 })
+            if label == "bot" and verdict == "HUMAN":
+                bot_human_details.append({
+                    "session_id": session.session_id,
+                    "source": session.source,
+                    "last_window_time": window[-1]["time"],
+                    "risk": decision.get("risk_score"),
+                    "lstm": (decision.get("breakdown") or {}).get("behavioral_lstm_score"),
+                    "tabular": (decision.get("breakdown") or {}).get("tabular_score"),
+                })
         if label == "human":
             human_ever_bot += "BOT" in verdicts
             human_ever_suspect += "SUSPECT" in verdicts
@@ -158,6 +168,7 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "verdict_transitions": {label: dict(counts) for label, counts in transitions.items()},
         "human_sessions_ever_bot": human_ever_bot,
         "human_bot_details": human_bot_details,
+        "bot_human_details": bot_human_details,
         "bot_gate_counts": {
             rule: {label: dict(counts) for label, counts in labels.items()}
             for rule, labels in bot_gate_counts.items()
@@ -176,14 +187,16 @@ def main():
     parser.add_argument("--dataset-root", required=True)
     parser.add_argument("--weights-dir", required=True)
     parser.add_argument("--split", choices=("val", "test"), default="val")
-    parser.add_argument("--checkpoints", type=int, default=25)
-    parser.add_argument("--threshold", type=float, default=0.93)
-    parser.add_argument("--suspect-threshold", type=float, default=0.45)
+    parser.add_argument("--checkpoints", type=int, default=100)
+    parser.add_argument("--threshold", type=float, default=0.96)
+    parser.add_argument("--suspect-threshold", type=float, default=0.425)
     parser.add_argument("--desktop-fingerprint", action="store_true")
     parser.add_argument("--heuristic-score", type=float, default=0.0)
     parser.add_argument("--webdriver", action="store_true")
-    parser.add_argument("--lstm-p75-min-mean", type=float, default=0.0)
-    parser.add_argument("--full-replay", action="store_true")
+    parser.add_argument("--lstm-p75-min-mean", type=float, default=0.70)
+    parser.add_argument("--full-replay", dest="full_replay", action="store_true")
+    parser.add_argument("--retained-replay", dest="full_replay", action="store_false")
+    parser.set_defaults(full_replay=True)
     parser.add_argument("--output", default="")
     args = parser.parse_args()
     torch.set_num_threads(1)

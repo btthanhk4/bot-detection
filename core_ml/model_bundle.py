@@ -69,13 +69,19 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
             return False
         if not math.isfinite(coverage) or not 0.0 < coverage <= 1.0:
             return False
-    if policy_version == "7":
+    if policy_version in ("7", "8"):
+        checkpoints = 100 if policy_version == "8" else 25
         if (
             training.get("environment_features_trained") is not False
             or training.get("minimum_mouse_points_for_bot") != min_mouse_points_for_bot
             or min_mouse_points_for_bot != 25
             or training.get("collector_window_policy") != "mouse_export_v1"
-            or training.get("rolling_checkpoints") != 25
+            or training.get("rolling_checkpoints") != checkpoints
+        ):
+            return False
+        if policy_version == "8" and (
+            training.get("rolling_full_replay") is not True
+            or training.get("lstm_p75_min_weighted_mean") != 0.70
         ):
             return False
         for split, min_humans, min_bots in (
@@ -104,8 +110,8 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
             if (
                 counts["human_sessions"] < min_humans
                 or counts["bot_sessions"] < min_bots
-                or counts["human_windows"] != 25 * counts["human_sessions"]
-                or counts["bot_windows"] != 25 * counts["bot_sessions"]
+                or counts["human_windows"] != checkpoints * counts["human_sessions"]
+                or counts["bot_windows"] != checkpoints * counts["bot_sessions"]
                 or counts["human_ever_bot"] != 0
                 or counts["human_bot_windows"] != 0
                 or counts["human_ever_suspect"] > counts["human_sessions"]
@@ -113,6 +119,7 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                 or counts["bot_human_windows"] > counts["bot_windows"]
                 or counts["human_ever_suspect"] / counts["human_sessions"] > 0.80
                 or counts["bot_ever_human"] / counts["bot_sessions"] > 0.05
+                or (policy_version == "8" and (counts["bot_ever_human"] or counts["bot_human_windows"]))
             ):
                 return False
     return True

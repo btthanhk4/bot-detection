@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from api_service.config import settings
+from api_service.spool import TelemetrySpool
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
@@ -85,6 +86,7 @@ class RequestBodyLimitMiddleware:
 
 @asynccontextmanager
 async def app_lifespan(_app):
+    await run_in_threadpool(_restore_telemetry_spool)
     maintenance_task = asyncio.create_task(_maintenance_loop())
     try:
         yield
@@ -161,8 +163,9 @@ release_gate_evidence_present = release_evidence_valid(
     min_mouse_points_for_bot=settings.MIN_MOUSE_POINTS_FOR_BOT,
 )
 
-# Small best-effort cache for requests received while MongoDB is unavailable.
+# The in-memory queue mirrors the durable spool while this process is running.
 telemetry_buffer = collections.deque(maxlen=settings.MAX_BUFFER_SIZE)
+_spool = TelemetrySpool(settings.TELEMETRY_SPOOL_PATH, settings.MAX_BUFFER_SIZE)
 _telemetry_buffer_lock = threading.Lock()
 _telemetry_buffer_stats = {"dropped_total": 0}
 _telemetry_replay_inflight = 0
@@ -190,6 +193,7 @@ async def _maintenance_loop():
 def _purge_session_from_memory(session_id: str) -> bool:
     """Remove a session from best-effort caches after an administrative delete."""
     with _telemetry_buffer_lock:
+        _spool.delete_session(session_id)
         retained = [event for event in telemetry_buffer if event.get("sessionId") != session_id]
         removed_from_buffer = len(retained) != len(telemetry_buffer)
         telemetry_buffer.clear()
@@ -199,7 +203,20 @@ def _purge_session_from_memory(session_id: str) -> bool:
 
 def _clear_in_memory_sessions():
     with _telemetry_buffer_lock:
+        _spool.clear()
         telemetry_buffer.clear()
+
+
+def _restore_telemetry_spool() -> None:
+    """Recover committed events before accepting traffic after a restart."""
+    with _telemetry_buffer_lock:
+        events = _spool.load()
+        known = {event.get("_spool_id") for event in telemetry_buffer}
+        for event in events:
+            if event["_spool_id"] not in known:
+                if len(telemetry_buffer) >= telemetry_buffer.maxlen:
+                    raise RuntimeError("Telemetry queue cannot hold all durable events")
+                telemetry_buffer.append(event)
 
 
 def _require_inference_models():
@@ -222,7 +239,7 @@ def _record_telemetry_drop(reason: str):
 
 
 def _buffer_telemetry(data: dict, analysis: Optional[dict] = None) -> bool:
-    """Buffer telemetry without evicting an event already acknowledged to a client."""
+    """Acknowledge only after the fallback event is committed to disk."""
     buffered_data = dict(data)
     if analysis is not None:
         # Reuse the decision already returned for this event. Re-running the
@@ -231,6 +248,17 @@ def _buffer_telemetry(data: dict, analysis: Optional[dict] = None) -> bool:
     with _telemetry_buffer_lock:
         if len(telemetry_buffer) + _telemetry_replay_inflight >= telemetry_buffer.maxlen:
             return False
+        try:
+            identifier = _spool.enqueue(buffered_data)
+        except (OSError, ValueError, TypeError) as exc:
+            logger.error("Telemetry spool write failed: %s", exc)
+            return False
+        except Exception:
+            logger.exception("Telemetry spool write failed")
+            return False
+        if identifier is None:
+            return False
+        buffered_data["_spool_id"] = identifier
         telemetry_buffer.append(buffered_data)
     return True
 
@@ -254,6 +282,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
     if not _telemetry_flush_lock.acquire(blocking=False):
         return
     try:
+        _restore_telemetry_spool()
         from api_service.database import (
             DatabaseIngestionPaused,
             is_database_ready,
@@ -293,6 +322,8 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                                 retry_count,
                             )
                             _record_telemetry_drop("inference retry limit exceeded")
+                            if data.get("_spool_id") is not None:
+                                _spool.delete(data["_spool_id"])
                         continue
                 else:
                     _attach_model_metadata(analysis)
@@ -302,6 +333,8 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                     persisted = bool(save_detection_result(data, analysis))
                 except DatabaseIngestionPaused:
                     # An admin delete intentionally invalidates old replay data.
+                    if data.get("_spool_id") is not None:
+                        _spool.delete(data["_spool_id"])
                     continue
                 except Exception:
                     logger.exception("Buffered telemetry persistence failed")
@@ -310,6 +343,8 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                     break
 
                 if persisted:
+                    if data.get("_spool_id") is not None:
+                        _spool.delete(data["_spool_id"])
                     continue
 
                 # A live database can intentionally reject stale/tombstoned data;
@@ -323,6 +358,8 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                     data["_buffered_analysis"] = analysis
                     _requeue_buffered_event(data)
                     break
+                if data.get("_spool_id") is not None:
+                    _spool.delete(data["_spool_id"])
             finally:
                 with _telemetry_buffer_lock:
                     _telemetry_replay_inflight -= 1

@@ -5,10 +5,26 @@ Integration tests for FastAPI inference & telemetry service.
 import asyncio
 import hashlib
 import json
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
 from api_service.main import app
+from core_ml.models.ensemble import DECISION_POLICY_VERSION
+
+
+@pytest.fixture(autouse=True)
+def isolated_telemetry_spool(tmp_path, monkeypatch):
+    from api_service import main
+    from api_service.spool import TelemetrySpool
+
+    monkeypatch.setattr(
+        main, "_spool",
+        TelemetrySpool(tmp_path / "telemetry-spool.sqlite", main.settings.MAX_BUFFER_SIZE),
+    )
+    yield
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
 
 
 @pytest.fixture
@@ -279,7 +295,7 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     assert data["verdict"] == "SUSPECT"
     assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
     assert data["score_calibrated"] is False
-    assert data["policy_version"] == "7"
+    assert data["policy_version"] == DECISION_POLICY_VERSION
 
 
 def test_health_distinguishes_model_load_from_release_evidence(client):
@@ -288,7 +304,7 @@ def test_health_distinguishes_model_load_from_release_evidence(client):
     assert response.status_code in (200, 503)
     health = response.json()
     assert health["model_bundle_valid"] is True
-    assert health["decision_policy_version"] == "7"
+    assert health["decision_policy_version"] == DECISION_POLICY_VERSION
     assert health["release_gate_evidence_present"] is True
 
 
@@ -825,6 +841,96 @@ def test_buffered_telemetry_reuses_original_inference(client, monkeypatch):
     assert persisted == [(session_id, "HUMAN")]
     with _telemetry_buffer_lock:
         assert all(event.get("sessionId") != session_id for event in telemetry_buffer)
+
+
+def test_buffered_telemetry_survives_process_restart(client, monkeypatch):
+    from api_service import main
+    from api_service.spool import TelemetrySpool
+
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda _data, _analysis: (_ for _ in ()).throw(RuntimeError("database offline")),
+    )
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": "restart-session", "visitorId": "visitor"},
+    )
+    assert response.status_code == 200
+    assert response.json()["recorded"] is True
+    assert main._spool.count() == 1
+
+    spool_path = main._spool.path
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
+    monkeypatch.setattr(
+        main, "_spool", TelemetrySpool(spool_path, main.settings.MAX_BUFFER_SIZE),
+    )
+    main._restore_telemetry_spool()
+    persisted = []
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda data, _analysis: persisted.append(data["sessionId"]) or data["sessionId"],
+    )
+    main._flush_telemetry_buffer()
+    assert persisted == ["restart-session"]
+    assert main._spool.count() == 0
+
+
+def test_spool_restore_cannot_resurrect_deleted_session(monkeypatch):
+    from api_service import main
+
+    assert main._buffer_telemetry({"sessionId": "delete-race"})
+    loaded = threading.Event()
+    resume = threading.Event()
+    purge_done = threading.Event()
+    original_load = main._spool.load
+
+    def paused_load():
+        events = original_load()
+        loaded.set()
+        assert resume.wait(timeout=2)
+        return events
+
+    monkeypatch.setattr(main._spool, "load", paused_load)
+    restore_thread = threading.Thread(target=main._restore_telemetry_spool)
+    purge_thread = threading.Thread(
+        target=lambda: (main._purge_session_from_memory("delete-race"), purge_done.set())
+    )
+    restore_thread.start()
+    try:
+        assert loaded.wait(timeout=2)
+        purge_thread.start()
+        assert not purge_done.wait(timeout=0.1)
+    finally:
+        resume.set()
+        restore_thread.join(timeout=2)
+        if purge_thread.ident is not None:
+            purge_thread.join(timeout=2)
+
+    assert purge_done.is_set()
+    assert main._spool.count() == 0
+    assert all(event.get("sessionId") != "delete-race" for event in main.telemetry_buffer)
+
+
+def test_spool_failure_returns_retryable_error_without_ack(client, monkeypatch):
+    from api_service import main
+
+    monkeypatch.setattr(main, "_require_inference_models", lambda: None)
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
+
+    def fail_disk(_event):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(main._spool, "enqueue", fail_disk)
+    response = client.post(
+        "/api/v1/telemetry",
+        json={"sessionId": "spool-failure", "visitorId": "visitor"},
+    )
+    assert response.status_code == 503
+    assert response.headers["Retry-After"] == "10"
+    assert main._spool.count() == 0
+    assert all(event.get("sessionId") != "spool-failure" for event in main.telemetry_buffer)
 
 
 def test_buffered_telemetry_is_flushed_after_database_recovery(monkeypatch):

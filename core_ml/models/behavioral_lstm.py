@@ -52,7 +52,7 @@ class MouseTrajectoryLSTM(nn.Module):
         bidirectional: bool = True,
         l1_lambda: float = 1e-5,
         l2_lambda: float = 1e-4,
-        p75_min_weighted_mean: float = 0.0,
+        p75_min_weighted_mean: float = 0.70,
     ):
         super().__init__()
         self.input_dim = input_dim

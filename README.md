@@ -92,9 +92,21 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Training v2 (749 samples: 449 real M4D + 300 synthetic)
+### Policy v8 (current)
 
-**Policy v7 hiện tại:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
+The bundled model uses BOT threshold `0.96`, SUSPECT threshold `0.425`, and
+a guarded BiLSTM chunk aggregation. Its release gate replays 100 checkpoints
+from each complete held-out session. See [Model release v8](docs/MODEL_RELEASE_V8.md)
+for measured outcomes and limits. These same-source splits have been used to
+select policy values and do not constitute independent production validation.
+
+During a MongoDB outage, acknowledged telemetry is committed to the local
+SQLite spool on a persistent Docker volume. Keep the API on one host/worker;
+the spool is not a distributed queue.
+
+### Historical policy v7 (749 samples: 449 real M4D + 300 synthetic)
+
+**Policy v7 lịch sử:** Ngưỡng BOT là `0.93` (điểm rủi ro, không phải xác suất đã
 hiệu chuẩn). XGBoost chỉ học 20 đặc trưng thống kê chuột vì các phiên thực có nhãn
 không kèm fingerprint; 30 cột môi trường vẫn giữ trong schema nhưng không được cây
 sử dụng. BotD tiếp tục cung cấp bằng chứng dương qua nhánh heuristic riêng.
@@ -121,13 +133,13 @@ phiên HUMAN bị BOT trên validation (14 phiên) hoặc test (24 phiên). Đâ
 phép đo trên cùng nguồn dữ liệu, không chứng minh tỷ lệ lỗi ngoài thực tế.
 Replay dày hơn, 100 cửa sổ/phiên trên toàn bộ quỹ đạo test, phát hiện 1/24
 phiên HUMAN từng bị gán BOT và 2/66 phiên BOT từng bị gán HUMAN. Vì vậy
-release gate v7 hiện tại chưa đủ để xác nhận an toàn cho tự động chặn.
+release gate v7 chưa đủ để xác nhận an toàn cho tự động chặn.
 Chi tiết và cách tái hiện nằm trong [Model release v7](docs/MODEL_RELEASE_V7.md).
 Các report [`heldout_evaluation.json`](core_ml/heldout_evaluation.json) và
 [`early_session_validation.json`](core_ml/early_session_validation.json) là lịch sử v6.
 Không dùng `is_bot` để tự động chặn khi chưa kiểm định trên dữ liệu thực tế
 độc lập, đặc biệt với các phiên ngắn, touch hoặc thiếu dữ liệu.
-Artifact đi kèm đã qua release gate trên validation và test cùng nguồn. `/health` báo
+Artifact v7 từng qua release gate trên validation và test cùng nguồn. `/health` báo
 `release_gate_evidence_present: true` khi policy, ngưỡng, contract tiền xử lý và
 chỉ số rolling đạt điều kiện cấu hình, nhưng đây
 chưa phải kiểm định độc lập trên traffic thực tế; không dùng kết quả này để tự
@@ -226,12 +238,12 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
   "bot_probability": 0.9804,
   "risk_score": 0.9804,
   "score_calibrated": false,
-  "policy_version": "6",
+  "policy_version": "8",
   "decision_state": "FINAL",
   "confidence": 0.9608,
   "reasons": [
     "Flagged: platformMismatch",
-    "Mouse dynamics exhibit robotic trajectory (LSTM score: 1.00)"
+    "Elevated mouse-behavior model score (LSTM: 1.00)"
   ],
   "breakdown": {
     "behavioral_lstm_score": 1.0,

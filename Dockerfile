@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/
 
 # Create and run as non-root user for security compliance
-RUN useradd -m appuser && chown -R appuser:appuser /app
+RUN useradd -m appuser && mkdir -p /app/var && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

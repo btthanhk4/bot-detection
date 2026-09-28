@@ -63,12 +63,16 @@ class Settings:
     ]
 
     # Classification Thresholds
-    THRESHOLD: float = _env_float("BOT_DECISION_THRESHOLD", 0.93, 0.0, 1.0)
-    SUSPECT_THRESHOLD: float = _env_float("BOT_SUSPECT_THRESHOLD", 0.45, 0.0, THRESHOLD)
+    THRESHOLD: float = _env_float("BOT_DECISION_THRESHOLD", 0.96, 0.0, 1.0)
+    SUSPECT_THRESHOLD: float = _env_float("BOT_SUSPECT_THRESHOLD", 0.425, 0.0, THRESHOLD)
     MIN_MOUSE_POINTS_FOR_BOT: int = _env_int("BOT_MIN_MOUSE_POINTS_FOR_BOT", 25, 25, 100)
 
     # Capacity limits & Protection
     MAX_BUFFER_SIZE: int = _env_int("BOT_MAX_TELEMETRY_BUFFER", 1000, 1)
+    TELEMETRY_SPOOL_PATH: str = os.getenv(
+        "BOT_TELEMETRY_SPOOL_PATH",
+        os.path.join(os.path.dirname(__file__), "..", "var", "telemetry-spool.sqlite"),
+    )
     MAX_TELEMETRY_RETRIES: int = _env_int("BOT_MAX_TELEMETRY_RETRIES", 3, 0, 100)
     MAINTENANCE_INTERVAL_SECONDS: int = _env_int("BOT_MAINTENANCE_INTERVAL_SECONDS", 10, 1, 3600)
     HEALTH_CACHE_SECONDS: int = _env_int("BOT_HEALTH_CACHE_SECONDS", 10, 0, 300)

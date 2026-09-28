@@ -1818,7 +1818,7 @@ body::before { display: none; }
       </div>
       <div class="model-bars-wrapper" id="modelBars">
         <div class="model-bar">
-          <span class="model-bar-label">LSTM BiGRU</span>
+          <span class="model-bar-label">BiLSTM</span>
           <div class="model-bar-track"><div class="model-bar-fill" id="barLSTM" style="width:0%;background:var(--gradient-cyan)"></div></div>
           <span class="model-bar-value" style="color:var(--accent-green)" id="valLSTM">--</span>
         </div>
@@ -2309,8 +2309,9 @@ function renderTrafficTable() {
     const deferred = bd.decision_deferred === true || s.decision_state === 'INSUFFICIENT_EVIDENCE';
     const v = deferred ? 'SUSPECT' : (s.verdict || 'UNKNOWN').toUpperCase();
     const probPct = deferred ? '--' : (prob * 100).toFixed(1);
-    const lstmScore = (bd.has_enough_mouse_data === false) ? '--' :
-      (bd.behavioral_lstm_score !== undefined) ? (bd.behavioral_lstm_score * 100).toFixed(1) : '--';
+    const lstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
+      && Number.isFinite(Number(bd.behavioral_lstm_score))
+      ? (Number(bd.behavioral_lstm_score) * 100).toFixed(1) : '--';
     const tabScore = (bd.tabular_score !== undefined) ? (bd.tabular_score * 100).toFixed(1) : '--';
     const mousePoints = Number.isFinite(Number(bd.mouse_points))
       ? Number(bd.mouse_points)
@@ -2470,9 +2471,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     const flags = [];
     if (asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver)) flags.push('cờ tự động hóa navigator.webdriver = true');
     if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
-    if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('công cụ Selenium/Puppeteer/Playwright');
-    if (bd.behavioral_lstm_score > 0.5) flags.push(`quỹ đạo chuột thẳng tắp máy móc (LSTM: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%)`);
-    if (bd.tabular_score > 0.5) flags.push(`chuyển động chuột có dấu hiệu tự động hóa (XGBoost: ${(bd.tabular_score * 100).toFixed(1)}%)`);
+    if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('thuộc tính trình duyệt liên quan đến tự động hóa');
+    if (bd.has_enough_mouse_data && bd.behavioral_lstm_score > 0.5) flags.push(`điểm rủi ro từ mô hình hành vi chuột: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%`);
+    if (bd.tabular_score > 0.5) flags.push(`điểm rủi ro từ mô hình thống kê chuột: ${(bd.tabular_score * 100).toFixed(1)}%`);
     if (flags.length > 0) {
       explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
     } else {
@@ -2480,10 +2481,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     }
   } else if (v === 'HUMAN') {
     explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Chưa thấy bằng chứng bot đủ mạnh trong dữ liệu thu thập. `;
-    if (s.mouse_points_captured > 5) {
-      explainText += `Hành vi di chuột có tính ngẫu nhiên sinh học tự nhiên, gia tốc biến thiên hợp lý (LSTM: ${((bd.behavioral_lstm_score||0)*100).toFixed(1)}%). Không phát hiện cờ tự động hóa.`;
-    } else {
-      explainText += 'Môi trường trình duyệt hoàn chỉnh, các thuộc tính phần cứng và plugin đồng nhất.';
+    if (bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
+        && Number.isFinite(Number(bd.behavioral_lstm_score))) {
+      explainText += `Điểm mô hình hành vi chuột: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%.`;
     }
   } else {
     if (deferred) {
@@ -2511,9 +2511,12 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const weights = bd.weights_used || { w_lstm: 0.35, w_tabular: 0.40, w_heuristic: 0.25 };
 
   const barL = document.getElementById('dBarLSTM');
-  barL.style.width = bd.has_enough_mouse_data === false ? '0%' : (lstmScore * 100) + '%';
+  barL.style.width = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
+    && Number.isFinite(Number(bd.behavioral_lstm_score)) ? (lstmScore * 100) + '%' : '0%';
   barL.style.background = lstmScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-cyan)';
-  document.getElementById('dScoreLSTM').textContent = bd.has_enough_mouse_data === false ? '--' : (lstmScore * 100).toFixed(1) + '%';
+  document.getElementById('dScoreLSTM').textContent = bd.has_enough_mouse_data === true
+    && bd.behavioral_lstm_score != null && Number.isFinite(Number(bd.behavioral_lstm_score))
+    ? (lstmScore * 100).toFixed(1) + '%' : '--';
   document.getElementById('dWeightLSTM').textContent = ((weights.w_lstm || 0) * 100).toFixed(0) + '%';
 
   const barT = document.getElementById('dBarTab');
@@ -2610,16 +2613,19 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 
 function updateModelBars(s) {
   const bd = s.breakdown || {};
-  const lstm = (bd.behavioral_lstm_score || 0) * 100;
-  const tab = (bd.tabular_score || 0) * 100;
-  const heur = (bd.heuristic_score || 0) * 100;
+  const hasLstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null && Number.isFinite(Number(bd.behavioral_lstm_score));
+  const hasTabScore = bd.tabular_score != null && Number.isFinite(Number(bd.tabular_score));
+  const hasHeuristicScore = bd.heuristic_score != null && Number.isFinite(Number(bd.heuristic_score));
+  const lstm = hasLstmScore ? Number(bd.behavioral_lstm_score) * 100 : 0;
+  const tab = hasTabScore ? Number(bd.tabular_score) * 100 : 0;
+  const heur = hasHeuristicScore ? Number(bd.heuristic_score) * 100 : 0;
 
   document.getElementById('barLSTM').style.width = lstm + '%';
-  document.getElementById('valLSTM').textContent = lstm.toFixed(1) + '%';
+  document.getElementById('valLSTM').textContent = hasLstmScore ? lstm.toFixed(1) + '%' : '--';
   document.getElementById('barTabular').style.width = tab + '%';
-  document.getElementById('valTabular').textContent = tab.toFixed(1) + '%';
+  document.getElementById('valTabular').textContent = hasTabScore ? tab.toFixed(1) + '%' : '--';
   document.getElementById('barHeuristic').style.width = heur + '%';
-  document.getElementById('valHeuristic').textContent = heur.toFixed(1) + '%';
+  document.getElementById('valHeuristic').textContent = hasHeuristicScore ? heur.toFixed(1) + '%' : '--';
 
   const w = bd.weights_used || {};
   document.getElementById('weightsInfo').textContent =
@@ -2800,7 +2806,10 @@ function drawTrajectory(s, rawMouse) {
   ctx.fillStyle = 'rgba(139, 149, 176, 0.6)';
   ctx.font = '9px Inter';
   ctx.textAlign = 'left';
-  const lstmLabel = `LSTM: ${(lstmScore * 100).toFixed(1)}% | Dữ liệu thật | ${isBot ? 'Quỹ đạo đáng ngờ' : 'Quỹ đạo tự nhiên'}`;
+  const lstmLabel = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
+    && Number.isFinite(Number(bd.behavioral_lstm_score))
+    ? `Điểm LSTM: ${(lstmScore * 100).toFixed(1)}%`
+    : 'Điểm LSTM: --';
   ctx.fillText(lstmLabel, 8, h - 8);
 }
 

@@ -11,20 +11,26 @@ needs evidence. Passing local tests is not a production-readiness certificate.
   while an older request is in flight.
 - A full fallback buffer returns a retryable 503 instead of evicting telemetry
   that was already acknowledged. Replay reserves capacity for its in-flight item.
+- MongoDB-outage telemetry is committed to a SQLite spool on a named Docker
+  volume before `recorded: true`; startup reloads it. A failed spool write returns
+  503. Reopen/replay tests cover process-local state loss.
+- Policy v8 gates release on 100 checkpoints per full held-out session, with no
+  human-to-BOT or bot-to-HUMAN verdicts in the replayed validation/test splits.
 - New events during the administrative delete pause return a retryable 503;
   replayed events from before the delete are not requeued.
-- New training runs gate model publication on validation metrics, leaving the
-  official test result for final reporting. CI now also runs Ruff.
+- New training runs gate model publication on validation metrics and full
+  validation/test replay. The test split has informed policy tuning, so it is
+  no longer an untouched final holdout. CI also runs Ruff.
 
 ## Open production risks and acceptance criteria
 
-1. **P0: Durable ingestion.** The fallback queue is process-local RAM. A crash,
-   restart, or forced deployment during a MongoDB outage can lose events that
-   received `recorded: true`. Use a durable queue or append-only spool and only
-   acknowledge after durable enqueue. Prove recovery with kill/restart and
-   duplicate-delivery tests.
-2. **P0: Real-world model validity.** The bundled model was trained partly on
-   synthetic environment features and a limited mouse dataset. Collect
+1. **P0: Durable ingestion operations.** The local SQLite spool removes the
+   acknowledged-RAM-only failure, but requires persistent volume backups,
+   disk-capacity alerts, and a forced-kill/MongoDB-outage drill on staging.
+   It is single-host; do not assume it works across replicas or a replaced host.
+2. **P0: Real-world model validity.** The bundled model uses a limited labeled
+   mouse dataset supplemented by synthetic training samples; the browser
+   fingerprint columns are not validated by that dataset. Collect
    consented, labeled production-like sessions; measure per-device and per-site
    false-positive rates, calibration, and drift before enforcing bot decisions.
    Keep a truly independent final holdout and version the data/threshold policy.

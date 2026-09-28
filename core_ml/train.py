@@ -67,8 +67,8 @@ if torch.cuda.is_available():
 
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
-PRODUCTION_DECISION_THRESHOLD = 0.93
-PRODUCTION_SUSPECT_THRESHOLD = 0.45
+PRODUCTION_DECISION_THRESHOLD = 0.96
+PRODUCTION_SUSPECT_THRESHOLD = 0.425
 def resolve_training_device(requested: str = "auto") -> torch.device:
     """Resolve an explicit training device without silently ignoring CUDA requests."""
     normalized = str(requested or "auto").strip().lower()
@@ -496,7 +496,7 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
 
 def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels, test_indices,
                                   test_labels, *, rolling_checkpoints=0):
-    """Gate on validation, then report the untouched held-out test result."""
+    """Gate on validation and full-session replay, then report same-source test metrics."""
     metrics_by_split = {}
     for split_name, indices, labels, move_limit in (
         ("Val", val_indices, val_labels, None),
@@ -514,7 +514,9 @@ def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels
                 checkpoints=rolling_checkpoints,
             )
             print(f"  Rolling validation: {rolling_val}")
-            validate_rolling_release(rolling_val)
+            if rolling_val["human_sessions"] + rolling_val["bot_sessions"] != len(val_indices):
+                raise RuntimeError("Rolling release gate failed: missing validation session")
+            validate_rolling_release(rolling_val, expected_checkpoints=rolling_checkpoints)
             metrics_by_split["rolling_val"] = rolling_val
         decisions = []
         for index in indices:
@@ -555,7 +557,9 @@ def evaluate_ensemble_for_release(detector, telemetries, val_indices, val_labels
             checkpoints=rolling_checkpoints,
         )
         print(f"  Rolling held-out test: {rolling_test}")
-        validate_rolling_release(rolling_test)
+        if rolling_test["human_sessions"] + rolling_test["bot_sessions"] != len(test_indices):
+            raise RuntimeError("Rolling release gate failed: missing test session")
+        validate_rolling_release(rolling_test, expected_checkpoints=rolling_checkpoints)
         metrics_by_split["rolling_test"] = rolling_test
     return metrics_by_split
 
@@ -570,7 +574,7 @@ def evaluate_rolling_for_release(detector, telemetries, indices, labels, *, chec
     }
     for index, label in zip(indices, labels):
         telemetry = telemetries[int(index)]
-        records = (telemetry.get("mouse") or {}).get("records") or []
+        records = telemetry.get("replay_records") or (telemetry.get("mouse") or {}).get("records") or []
         windows = rolling_windows(records, checkpoints=checkpoints)
         if not windows:
             continue
@@ -592,18 +596,23 @@ def evaluate_rolling_for_release(detector, telemetries, indices, labels, *, chec
     return totals
 
 
-def validate_rolling_release(metrics: dict) -> None:
+def validate_rolling_release(metrics: dict, *, expected_checkpoints: int = 0) -> None:
     """A released hard BOT verdict must not fire on held-out humans."""
     if metrics["human_sessions"] == 0 or metrics["bot_sessions"] == 0:
         raise RuntimeError("Rolling release gate requires both labeled classes")
+    if expected_checkpoints and (
+        metrics["human_windows"] != expected_checkpoints * metrics["human_sessions"]
+        or metrics["bot_windows"] != expected_checkpoints * metrics["bot_sessions"]
+    ):
+        raise RuntimeError("Rolling release gate failed: incomplete session replay")
     if metrics["human_ever_bot"]:
         raise RuntimeError(
             f"Rolling release gate failed: {metrics['human_ever_bot']} human sessions had a BOT verdict"
         )
     if metrics["human_ever_suspect"] / metrics["human_sessions"] > 0.80:
         raise RuntimeError("Rolling release gate failed: excessive human SUSPECT sessions")
-    if metrics["bot_ever_human"] / metrics["bot_sessions"] > 0.05:
-        raise RuntimeError("Rolling release gate failed: excessive bot HUMAN sessions")
+    if metrics["bot_ever_human"] or metrics["bot_human_windows"]:
+        raise RuntimeError("Rolling release gate failed: a bot session had a HUMAN verdict")
 
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
@@ -688,6 +697,21 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
     # 1c. Build real data telemetry payloads
     real_splits = assign_real_session_splits(real_sessions)
+    heldout_ids = {
+        session.session_id for session, split in zip(real_sessions, real_splits)
+        if split in ("val", "test") and session.source == "phase2"
+    }
+    replay_by_id = {}
+    if heldout_ids:
+        for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots"):
+            for session in load_real_dataset(
+                real_data_root, scenario=scenario, include_phase2=True,
+                with_metadata=True, replay_session_ids=heldout_ids,
+            ):
+                if session.session_id in heldout_ids and session.replay_records:
+                    replay_by_id[session.session_id] = session.replay_records
+        if heldout_ids - replay_by_id.keys():
+            raise RuntimeError("Full held-out Phase 2 replay data is unavailable")
     for real_idx, (session, split) in enumerate(zip(real_sessions, real_splits)):
         records, label = session.records, session.label
         # Create telemetry-like structure from real mouse data
@@ -701,6 +725,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "botd": {"heuristicScore": 0.0, "flaggedCount": 0, "detectors": {}, "reasons": []},
             "mouse": {"records": records, "chunks": chunks},
             "early_records": session.early_records,
+            "replay_records": replay_by_id.get(session.session_id) if split in ("val", "test") else None,
         }
         all_telemetries.append(telemetry)
         all_labels.append(label)
@@ -946,7 +971,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             y_val_tab,
             idx_test,
             y_test_tab,
-            rolling_checkpoints=25,
+            rolling_checkpoints=100,
         )
     except RuntimeError as exc:
         if diagnostic_only:
@@ -1007,7 +1032,9 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "environment_features_trained": False,
             "minimum_mouse_points_for_bot": production_detector.min_mouse_points_for_bot,
             "collector_window_policy": "mouse_export_v1",
-            "rolling_checkpoints": 25,
+            "rolling_checkpoints": 100,
+            "rolling_full_replay": True,
+            "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,
             "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,

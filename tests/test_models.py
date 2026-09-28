@@ -133,7 +133,7 @@ class TestTabularClassifier:
 
 class TestBehavioralLSTM:
     def test_p75_override_requires_support_from_session_mean(self, monkeypatch):
-        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16, p75_min_weighted_mean=0.0)
         predictions = torch.tensor([[0.01], [0.02], [0.8], [0.95]])
         monkeypatch.setattr(model, "forward", lambda _chunks: predictions)
         chunks = torch.zeros(4, 24, 8)
@@ -432,7 +432,7 @@ class TestEnsembleDetector:
         assert result["is_bot"] is False
         assert result["verdict"] == "SUSPECT"
         assert result["bot_probability"] < 0.70
-        assert result["policy_version"] == "7"
+        assert result["policy_version"] == "8"
 
     def test_minimum_point_setting_cannot_exceed_retained_window(self):
         with pytest.raises(ValueError, match="retained record window"):

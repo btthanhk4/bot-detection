@@ -21,7 +21,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "7"
+DECISION_POLICY_VERSION = "8"
 
 
 class EnsembleBotDetector:
@@ -32,8 +32,8 @@ class EnsembleBotDetector:
         w_lstm: float = 0.40,
         w_tabular: float = 0.40,
         w_heuristic: float = 0.20,
-        threshold: float = 0.93,
-        suspect_threshold: float = 0.45,
+        threshold: float = 0.96,
+        suspect_threshold: float = 0.425,
         min_mouse_points_for_bot: int = 25,
         lstm_available: bool = True,
         tabular_available: bool = True,
@@ -152,7 +152,7 @@ class EnsembleBotDetector:
                 self.lstm_model.predict_session_proba(chunks_tensor), "LSTM"
             )
             if lstm_score > 0.70:
-                reasons.append(f"Mouse dynamics exhibit robotic trajectory (LSTM score: {lstm_score:.2f})")
+                reasons.append(f"Elevated mouse-behavior model score (LSTM: {lstm_score:.2f})")
 
         # 3. Tabular model evaluation (Canonical single source of truth vector)
         env_vec = extract_env_vector(fingerprint, botd)

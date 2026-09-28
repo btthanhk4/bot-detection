@@ -128,6 +128,47 @@ def test_policy_v7_requires_rolling_evidence_and_mouse_only_contract():
     assert not release_evidence_valid(manifest, "7", 0.93, 0.45)
 
 
+def test_policy_v8_requires_full_session_100_checkpoint_evidence():
+    passing = {
+        "roc_auc": 1.0, "precision": 1.0, "recall": 1.0,
+        "false_positive_rate": 0.0, "decision_coverage": 1.0,
+    }
+    def rolling(humans, bots):
+        return {
+            "human_sessions": humans, "bot_sessions": bots,
+            "human_ever_bot": 0, "human_ever_suspect": 0,
+            "bot_ever_human": 0, "human_windows": humans * 100,
+            "bot_windows": bots * 100, "human_bot_windows": 0,
+            "bot_human_windows": 0,
+        }
+
+    manifest = {"training": {
+        "decision_policy_version": "8",
+        "production_decision_threshold": 0.96,
+        "production_suspect_threshold": 0.425,
+        "environment_features_trained": False,
+        "minimum_mouse_points_for_bot": 25,
+        "collector_window_policy": "mouse_export_v1",
+        "rolling_checkpoints": 100,
+        "rolling_full_replay": True,
+        "lstm_p75_min_weighted_mean": 0.70,
+        "dataset": {"split_counts": {"train": 599, "val": 60, "test": 90}},
+        "metrics": {"ensemble": {
+            **{split: dict(passing) for split in ("val", "early_val", "mid_val", "late_val")},
+            "rolling_val": rolling(14, 46), "rolling_test": rolling(24, 66),
+        }},
+    }}
+    assert release_evidence_valid(manifest, "8", 0.96, 0.425)
+    manifest["training"]["rolling_full_replay"] = False
+    assert not release_evidence_valid(manifest, "8", 0.96, 0.425)
+    manifest["training"]["rolling_full_replay"] = True
+    manifest["training"]["metrics"]["ensemble"]["rolling_test"]["human_ever_bot"] = 1
+    assert not release_evidence_valid(manifest, "8", 0.96, 0.425)
+    manifest["training"]["metrics"]["ensemble"]["rolling_test"]["human_ever_bot"] = 0
+    manifest["training"]["metrics"]["ensemble"]["rolling_test"]["bot_ever_human"] = 1
+    assert not release_evidence_valid(manifest, "8", 0.96, 0.425)
+
+
 def test_early_training_windows_stop_at_requested_moves_without_copying_full_session():
     records = []
     for index in range(110):
@@ -166,6 +207,49 @@ def test_rolling_release_gate_catches_mid_session_human_false_positive():
     assert metrics["human_bot_windows"] >= 1
     with pytest.raises(RuntimeError, match="human sessions had a BOT verdict"):
         validate_rolling_release(metrics)
+
+
+def test_rolling_release_uses_full_replay_past_training_tail():
+    full_records = [
+        {"time": index, "x": index / 200, "y": 0.2, "type": "move"}
+        for index in range(200)
+    ]
+
+    class Detector:
+        def predict(self, telemetry):
+            last_time = telemetry["mouse"]["records"][-1]["time"]
+            return {"verdict": "BOT" if 60 <= last_time < 140 else "HUMAN"}
+
+    telemetry = {
+        "mouse": {"records": full_records[-50:]},
+        "replay_records": full_records,
+    }
+    metrics = evaluate_rolling_for_release(
+        Detector(), [telemetry], [0], [0], checkpoints=100,
+    )
+    assert metrics["human_windows"] == 100
+    assert metrics["human_ever_bot"] == 1
+
+
+def test_rolling_release_rejects_even_one_bot_human_window():
+    metrics = {
+        "human_sessions": 14, "bot_sessions": 46,
+        "human_ever_bot": 0, "human_ever_suspect": 0,
+        "bot_ever_human": 1, "bot_human_windows": 1,
+    }
+    with pytest.raises(RuntimeError, match="bot session had a HUMAN verdict"):
+        validate_rolling_release(metrics)
+
+
+def test_rolling_release_rejects_incomplete_checkpoint_coverage():
+    metrics = {
+        "human_sessions": 14, "bot_sessions": 46,
+        "human_windows": 1399, "bot_windows": 4600,
+        "human_ever_bot": 0, "human_ever_suspect": 0,
+        "bot_ever_human": 0, "bot_human_windows": 0,
+    }
+    with pytest.raises(RuntimeError, match="incomplete session replay"):
+        validate_rolling_release(metrics, expected_checkpoints=100)
 
 
 def test_rolling_validation_runs_before_test_predictions():
