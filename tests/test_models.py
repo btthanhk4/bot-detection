@@ -132,6 +132,27 @@ class TestTabularClassifier:
 
 
 class TestBehavioralLSTM:
+    @pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -0.1, 1.1])
+    def test_rejects_invalid_output_from_any_chunk(self, monkeypatch, invalid):
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        monkeypatch.setattr(
+            model, "forward", lambda _chunks: torch.tensor([[invalid], [0.99]])
+        )
+        with pytest.raises(RuntimeError, match="invalid chunk probabilities"):
+            model.predict_session_proba(torch.zeros(2, 24, 8))
+
+    def test_rejects_wrong_chunk_count(self, monkeypatch):
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        monkeypatch.setattr(model, "forward", lambda _chunks: torch.tensor([[0.99]]))
+        with pytest.raises(RuntimeError, match="invalid chunk probabilities"):
+            model.predict_session_proba(torch.zeros(2, 24, 8))
+
+    def test_monotonic_scores_reject_invalid_chunk(self, monkeypatch):
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        monkeypatch.setattr(model, "forward", lambda _chunks: torch.tensor([[0.1], [float("nan")]]))
+        with pytest.raises(RuntimeError, match="invalid chunk probabilities"):
+            model.predict_session_scores(torch.zeros(2, 24, 8))
+
     def test_p75_override_requires_support_from_session_mean(self, monkeypatch):
         model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16, p75_min_weighted_mean=0.0)
         predictions = torch.tensor([[0.01], [0.02], [0.8], [0.95]])
@@ -162,6 +183,72 @@ class TestBehavioralLSTM:
 
 
 class TestEnsembleDetector:
+    def test_mean_risk_is_monotonic_and_tail_only_abstains(self, monkeypatch):
+        class Tabular:
+            def __init__(self, probability):
+                self.probability = probability
+
+            def predict_proba(self, _features):
+                return self.probability
+
+        model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=16)
+        tabular = Tabular(0.99)
+        detector = EnsembleBotDetector(lstm_model=model, tabular_model=tabular)
+        records = [
+            {"time": index * 16, "x": index / 100, "y": 0.2 + index % 3 / 100,
+             "type": "move"}
+            for index in range(37)
+        ]
+        results = []
+        for scores in ([0.5, 0.99], [0.6, 0.99]):
+            monkeypatch.setattr(model, "forward", lambda _chunks, scores=scores: (
+                torch.tensor(scores).reshape(-1, 1)
+            ))
+            results.append(detector.predict({"mouse": {"records": records}}))
+        assert results[1]["risk_score"] > results[0]["risk_score"]
+        assert results[1]["breakdown"]["behavioral_lstm_tail_score"] >= (
+            results[0]["breakdown"]["behavioral_lstm_tail_score"]
+        )
+
+        tabular.probability = 0.1
+        monkeypatch.setattr(model, "forward", lambda _chunks: torch.tensor([[0.1], [1.0]]))
+        uncertain = detector.predict({"mouse": {"records": records}})
+        assert uncertain["risk_score"] < detector.suspect_threshold
+        assert uncertain["breakdown"]["suspicion_risk_score"] < detector.suspect_threshold
+        assert uncertain["breakdown"]["behavioral_disagreement"] is True
+        assert uncertain["verdict"] == "SUSPECT"
+
+    def test_disagreeing_models_abstain_instead_of_calling_bot_human(self):
+        class LSTM:
+            def predict_session_scores(self, _chunks):
+                return 0.4441, 0.7638
+
+        class Tabular:
+            def predict_proba(self, _features):
+                return 0.0275
+
+        detector = EnsembleBotDetector(lstm_model=LSTM(), tabular_model=Tabular())
+        records = [
+            {"time": index * 16, "x": index / 100, "y": 0.2 + index % 3 / 100,
+             "type": "move"}
+            for index in range(37)
+        ]
+        result = detector.predict({"mouse": {"records": records}})
+
+        assert result["risk_score"] < detector.suspect_threshold
+        assert result["breakdown"]["suspicion_risk_score"] < detector.suspect_threshold
+        assert result["breakdown"]["behavioral_disagreement"] is True
+        assert result["verdict"] == "SUSPECT"
+
+        class AgreeingTabular:
+            def predict_proba(self, _features):
+                return 0.9
+
+        detector.tabular_model = AgreeingTabular()
+        agreeing = detector.predict({"mouse": {"records": records}})
+        assert agreeing["breakdown"]["behavioral_disagreement"] is False
+        assert agreeing["verdict"] == "SUSPECT"
+
     def test_ensemble_decisions(self):
         ensemble = EnsembleBotDetector()
 
@@ -432,7 +519,7 @@ class TestEnsembleDetector:
         assert result["is_bot"] is False
         assert result["verdict"] == "SUSPECT"
         assert result["bot_probability"] < 0.70
-        assert result["policy_version"] == "8"
+        assert result["policy_version"] == "9"
 
     def test_minimum_point_setting_cannot_exceed_retained_window(self):
         with pytest.raises(ValueError, match="retained record window"):

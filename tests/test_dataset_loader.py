@@ -282,6 +282,21 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         assert len(replay[0].replay_records) == point_count
         assert replay[0].replay_records[0]["time"] == 0
 
+        sampled = load_phase2_dataset(
+            str(tmp_path), with_metadata=True,
+            training_window_session_ids={"long-session"},
+        )
+        assert sampled[0].replay_records is None
+        assert len(sampled[0].sampled_training_windows) == 32
+        assert sampled[0].sampled_training_windows[0][0]["time"] == 0
+        assert sampled[0].sampled_training_windows[-1][-1]["time"] == point_count - 1
+
+        unselected = load_phase2_dataset(
+            str(tmp_path), with_metadata=True,
+            training_window_session_ids={"another-session"},
+        )
+        assert unselected[0].sampled_training_windows is None
+
     def test_phase2_invalid_timestamp_does_not_shift_later_events(self):
         record = {
             "mousemove_total_behaviour": "[m(10,10)][m(20,20)][m(30,30)]",

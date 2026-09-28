@@ -39,7 +39,8 @@ from core_ml.dataset.loader import (
     load_real_dataset,
     records_to_chunks,
 )
-from core_ml.collector_windows import rolling_windows
+from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_window, rolling_windows
+from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
     extract_sequential_chunks,
@@ -68,7 +69,7 @@ if torch.cuda.is_available():
 
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 PRODUCTION_DECISION_THRESHOLD = 0.96
-PRODUCTION_SUSPECT_THRESHOLD = 0.425
+PRODUCTION_SUSPECT_THRESHOLD = 0.45
 def resolve_training_device(requested: str = "auto") -> torch.device:
     """Resolve an explicit training device without silently ignoring CUDA requests."""
     normalized = str(requested or "auto").strip().lower()
@@ -339,6 +340,20 @@ def iter_training_rolling_windows(records: list, checkpoints=4):
                 ]
 
 
+def iter_training_sampled_windows(windows: list):
+    """Augment bounded windows sampled across a full training trajectory."""
+    for index, window in enumerate(windows):
+        factor = (0.5, 1.0, 2.0)[index % 3]
+        if factor == 1.0:
+            yield window
+        else:
+            start = window[0]["time"]
+            yield [
+                {**record, "time": start + (record["time"] - start) * factor}
+                for record in window
+            ]
+
+
 def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
                epochs=30, batch_size=32, lr=0.002, patience=7, device="auto"):
     """Train LSTM with early stopping and LR scheduling."""
@@ -489,7 +504,13 @@ def predict_lstm_sessions(lstm_model, chunks_tensor, chunk_session_indices, sess
         positions = np.flatnonzero(chunk_sessions == int(session_idx))
         if positions.size == 0:
             continue
-        probabilities.append(lstm_model.predict_session_proba(chunks_tensor[positions.tolist()]))
+        session_chunks = chunks_tensor[positions.tolist()]
+        score = (
+            lstm_model.predict_session_scores(session_chunks)[0]
+            if hasattr(lstm_model, "predict_session_scores")
+            else lstm_model.predict_session_proba(session_chunks)
+        )
+        probabilities.append(score)
         session_labels.append(int(labels[int(session_idx)]))
     return np.asarray(session_labels, dtype=int), np.asarray(probabilities, dtype=float)
 
@@ -569,7 +590,8 @@ def evaluate_rolling_for_release(detector, telemetries, indices, labels, *, chec
     totals = {
         "human_sessions": 0, "bot_sessions": 0, "human_ever_bot": 0,
         "bot_ever_human": 0, "human_ever_suspect": 0,
-        "human_windows": 0, "bot_windows": 0,
+        "human_windows": 0, "bot_windows": 0, "human_suspect_windows": 0,
+        "max_human_suspect_fraction": 0.0,
         "human_bot_windows": 0, "bot_human_windows": 0,
     }
     for index, label in zip(indices, labels):
@@ -588,6 +610,11 @@ def evaluate_rolling_for_release(detector, telemetries, indices, labels, *, chec
             totals["human_ever_bot"] += "BOT" in verdicts
             totals["human_ever_suspect"] += "SUSPECT" in verdicts
             totals["human_bot_windows"] += verdicts.count("BOT")
+            suspect_count = verdicts.count("SUSPECT")
+            totals["human_suspect_windows"] += suspect_count
+            totals["max_human_suspect_fraction"] = max(
+                totals["max_human_suspect_fraction"], suspect_count / len(verdicts)
+            )
         else:
             totals["bot_sessions"] += 1
             totals["bot_windows"] += len(verdicts)
@@ -609,10 +636,54 @@ def validate_rolling_release(metrics: dict, *, expected_checkpoints: int = 0) ->
         raise RuntimeError(
             f"Rolling release gate failed: {metrics['human_ever_bot']} human sessions had a BOT verdict"
         )
-    if metrics["human_ever_suspect"] / metrics["human_sessions"] > 0.80:
+    if expected_checkpoints >= 1000:
+        if (
+            metrics["human_suspect_windows"] / metrics["human_windows"] > 0.10
+            or metrics["max_human_suspect_fraction"] > 0.25
+        ):
+            raise RuntimeError("Rolling release gate failed: excessive human SUSPECT windows")
+    elif metrics["human_ever_suspect"] / metrics["human_sessions"] > 0.80:
         raise RuntimeError("Rolling release gate failed: excessive human SUSPECT sessions")
     if metrics["bot_ever_human"] or metrics["bot_human_windows"]:
         raise RuntimeError("Rolling release gate failed: a bot session had a HUMAN verdict")
+
+
+def validate_known_release_cases(detector, telemetries: list, indices, labels,
+                                 cases: dict = KNOWN_FAILURE_WINDOWS) -> dict:
+    """Check every previously failing time against the original full trajectory."""
+    pending = set(cases)
+    checked = 0
+    for index, label in zip(indices, labels):
+        telemetry = telemetries[int(index)]
+        session_id = telemetry.get("dataset_session_id")
+        if session_id not in pending:
+            continue
+        expected_label, times = cases[session_id]
+        if int(label) != expected_label:
+            raise RuntimeError(f"Release regression label changed for {session_id}")
+        records = telemetry.get("replay_records") or (telemetry.get("mouse") or {}).get("records") or []
+        found_times = set()
+        move_count = 0
+        for record_index, record in enumerate(records):
+            if record.get("type") != "move":
+                continue
+            move_count += 1
+            if record.get("time") not in times or move_count < 25:
+                continue
+            found_times.add(record["time"])
+            window = export_window(records, record_index)
+            result = detector.predict({**telemetry, "mouse": {"records": window}})
+            if (expected_label == 0 and result["verdict"] == "BOT") or (
+                expected_label == 1 and result["verdict"] == "HUMAN"
+            ):
+                raise RuntimeError(f"Known release regression failed for {session_id} at {record['time']}")
+            checked += 1
+        if found_times != set(times):
+            raise RuntimeError(f"Missing release regression window for {session_id}")
+        pending.remove(session_id)
+    if pending:
+        raise RuntimeError(f"Missing release regression sessions: {sorted(pending)}")
+    return {"session_count": len(cases), "checked_windows": checked}
 
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
@@ -697,6 +768,21 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
     # 1c. Build real data telemetry payloads
     real_splits = assign_real_session_splits(real_sessions)
+    train_phase2_ids = {
+        session.session_id for session, split in zip(real_sessions, real_splits)
+        if split == "train" and session.source == "phase2"
+    }
+    train_windows_by_id = {}
+    if train_phase2_ids and early_augmentation:
+        for scenario in ("humans_and_moderate_bots", "humans_and_advanced_bots"):
+            for session in load_real_dataset(
+                real_data_root, scenario=scenario, include_phase2=True,
+                with_metadata=True, training_window_session_ids=train_phase2_ids,
+            ):
+                if session.session_id in train_phase2_ids and session.sampled_training_windows is not None:
+                    train_windows_by_id[session.session_id] = session.sampled_training_windows
+        if train_phase2_ids - train_windows_by_id.keys():
+            raise RuntimeError("Full training trajectory windows are unavailable")
     heldout_ids = {
         session.session_id for session, split in zip(real_sessions, real_splits)
         if split in ("val", "test") and session.source == "phase2"
@@ -718,6 +804,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         chunks = records_to_chunks(records, chunk_size=24, stride=12)
         telemetry = {
             "sessionId": f"real_{real_idx}",
+            "dataset_session_id": session.session_id,
             "visitorId": f"fp_real_{real_idx}",
             "timestamp": 1725800000000,
             "pageUrl": "https://example.com/test",
@@ -726,6 +813,13 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "mouse": {"records": records, "chunks": chunks},
             "early_records": session.early_records,
             "replay_records": replay_by_id.get(session.session_id) if split in ("val", "test") else None,
+            "_training_rolling_windows": (
+                train_windows_by_id[session.session_id]
+                if split == "train" and session.source == "phase2" and early_augmentation
+                else list(rolling_windows(records, checkpoints=TRAIN_FULL_TRAJECTORY_CHECKPOINTS))
+                if split == "train" and session.source == "phase1" and early_augmentation
+                else None
+            ),
         }
         all_telemetries.append(telemetry)
         all_labels.append(label)
@@ -819,7 +913,13 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                 ))
                 extra_labels.append(int(y_tab[session_idx]))
                 augmented_prefix_count += 1
-            for window in iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or []):
+            sampled_windows = telemetry.get("_training_rolling_windows")
+            rolling = (
+                iter_training_sampled_windows(sampled_windows)
+                if sampled_windows is not None
+                else iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or [])
+            )
+            for window in rolling:
                 extra_vectors.append(build_tabular_vector(
                     telemetry.get("fingerprint") or {},
                     telemetry.get("botd") or {},
@@ -891,7 +991,13 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                         early_chunks.append(prefix_chunks[-1])
                         early_labels.append(float(y_tab[session_idx]))
                         early_chunk_count += 1
-                for window in iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or []):
+                sampled_windows = telemetry.get("_training_rolling_windows")
+                rolling = (
+                    iter_training_sampled_windows(sampled_windows)
+                    if sampled_windows is not None
+                    else iter_training_rolling_windows((telemetry.get("mouse") or {}).get("records") or [])
+                )
+                for window in rolling:
                     window_chunks = extract_sequential_chunks(records_to_chunks(window))
                     if window_chunks.size(0):
                         early_chunks.append(window_chunks[-1])
@@ -963,6 +1069,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         tabular_available=True,
         lstm_available=True,
     )
+    if training_device.type == "cpu":
+        torch.set_num_threads(1)
     try:
         training_metrics["ensemble"] = evaluate_ensemble_for_release(
             production_detector,
@@ -971,7 +1079,10 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             y_val_tab,
             idx_test,
             y_test_tab,
-            rolling_checkpoints=100,
+            rolling_checkpoints=1000,
+        )
+        training_metrics["ensemble"]["known_regressions"] = validate_known_release_cases(
+            production_detector, all_telemetries, idx_test, y_test_tab,
         )
     except RuntimeError as exc:
         if diagnostic_only:
@@ -1032,8 +1143,12 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "environment_features_trained": False,
             "minimum_mouse_points_for_bot": production_detector.min_mouse_points_for_bot,
             "collector_window_policy": "mouse_export_v1",
-            "rolling_checkpoints": 100,
+            "rolling_checkpoints": 1000,
             "rolling_full_replay": True,
+            "train_full_trajectory_windows": bool(real_sessions and early_augmentation),
+            "train_full_trajectory_checkpoints": TRAIN_FULL_TRAJECTORY_CHECKPOINTS,
+            "lstm_aggregation": "mean_p75_disagreement_v2",
+            "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

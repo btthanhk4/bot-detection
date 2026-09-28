@@ -143,17 +143,17 @@ def test_health_detects_runtime_inference_failure(client, monkeypatch):
 
 def test_health_probe_contains_enough_mouse_data_to_execute_lstm(client, monkeypatch):
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
-    observed = {}
+    observed = []
 
     def inspect_probe(payload):
-        observed["move_count"] = len(payload["mouse"]["records"])
+        observed.append(len(payload["mouse"]["records"]))
         return {"bot_probability": 0.5}
 
     monkeypatch.setattr("api_service.main.ensemble_detector.predict", inspect_probe)
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert observed["move_count"] >= 25
+    assert observed == [25, 37]
 
 
 def test_health_probe_is_cached(client, monkeypatch):
@@ -172,7 +172,7 @@ def test_health_probe_is_cached(client, monkeypatch):
 
     assert client.get("/health").status_code == 200
     assert client.get("/health").status_code == 200
-    assert calls == {"database": 1, "inference": 1}
+    assert calls == {"database": 1, "inference": 2}
 
 
 def test_application_lifespan_starts_and_stops_maintenance(monkeypatch):
@@ -873,6 +873,57 @@ def test_buffered_telemetry_survives_process_restart(client, monkeypatch):
     )
     main._flush_telemetry_buffer()
     assert persisted == ["restart-session"]
+    assert main._spool.count() == 0
+
+
+def test_inflight_purge_cannot_delete_newly_acknowledged_event(monkeypatch):
+    from api_service import main
+    from api_service.spool import TelemetrySpool
+
+    assert main._buffer_telemetry({"sessionId": "old"}, {"verdict": "HUMAN"})
+    old_identifier = main.telemetry_buffer[0]["_spool_id"]
+
+    def save_during_purge(data, _analysis):
+        main._purge_session_from_memory("old")
+        assert main._buffer_telemetry({"sessionId": "new"}, {"verdict": "SUSPECT"})
+        assert main.telemetry_buffer[0]["_spool_id"] != old_identifier
+        return data["sessionId"]
+
+    monkeypatch.setattr("api_service.database.save_detection_result", save_during_purge)
+    main._flush_telemetry_buffer(max_events=1)
+    assert main._spool.count() == 1
+
+    spool_path = main._spool.path
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
+    monkeypatch.setattr(main, "_spool", TelemetrySpool(spool_path, main.settings.MAX_BUFFER_SIZE))
+    main._restore_telemetry_spool()
+    assert [event["sessionId"] for event in main.telemetry_buffer] == ["new"]
+
+
+def test_replay_keeps_original_model_bundle_after_restart(monkeypatch):
+    from api_service import main
+    from api_service.spool import TelemetrySpool
+
+    assert main._buffer_telemetry(
+        {"sessionId": "old-model"},
+        {"verdict": "HUMAN", "policy_version": "7", "model_bundle_id": "bundle-before"},
+    )
+    spool_path = main._spool.path
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
+    monkeypatch.setattr(main, "_spool", TelemetrySpool(spool_path, main.settings.MAX_BUFFER_SIZE))
+    monkeypatch.setattr(main, "model_bundle_id", "bundle-after")
+    captured = []
+    monkeypatch.setattr(
+        "api_service.database.save_detection_result",
+        lambda data, analysis: captured.append(dict(analysis)) or data["sessionId"],
+    )
+    main._flush_telemetry_buffer()
+
+    assert captured == [{
+        "verdict": "HUMAN", "policy_version": "7", "model_bundle_id": "bundle-before",
+    }]
     assert main._spool.count() == 0
 
 

@@ -64,7 +64,7 @@ class Settings:
 
     # Classification Thresholds
     THRESHOLD: float = _env_float("BOT_DECISION_THRESHOLD", 0.96, 0.0, 1.0)
-    SUSPECT_THRESHOLD: float = _env_float("BOT_SUSPECT_THRESHOLD", 0.425, 0.0, THRESHOLD)
+    SUSPECT_THRESHOLD: float = _env_float("BOT_SUSPECT_THRESHOLD", 0.45, 0.0, THRESHOLD)
     MIN_MOUSE_POINTS_FOR_BOT: int = _env_int("BOT_MIN_MOUSE_POINTS_FOR_BOT", 25, 25, 100)
 
     # Capacity limits & Protection

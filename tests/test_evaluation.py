@@ -140,6 +140,19 @@ def test_robustness_routes_browser_signals_to_each_prediction(monkeypatch):
         evaluate_robustness("unused", "unused", lstm_p75_min_mean=float("nan"))
 
 
+def test_robustness_rejects_inert_legacy_aggregation_override(monkeypatch):
+    from core_ml import evaluate_robustness as module
+
+    monkeypatch.setattr(module, "load_real_dataset", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(module, "assign_real_session_splits", lambda _sessions: [])
+    monkeypatch.setattr(
+        module, "_load_detector",
+        lambda *_args: (object(), {"training": {"decision_policy_version": "9"}}),
+    )
+    with pytest.raises(ValueError, match="legacy-only"):
+        evaluate_robustness("unused", "unused", lstm_p75_min_mean=0.8)
+
+
 def test_robustness_full_replay_uses_uncapped_phase2_session(monkeypatch):
     from core_ml import evaluate_robustness as module
 

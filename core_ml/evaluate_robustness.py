@@ -32,7 +32,7 @@ DESKTOP_FINGERPRINT = {
 
 def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", checkpoints=100,
                         desktop_fingerprint=False, threshold=0.96,
-                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.425,
+                        heuristic_score=0.0, webdriver=False, suspect_threshold=0.45,
                         lstm_p75_min_mean=0.70, full_replay=False):
     if split not in ("val", "test"):
         raise ValueError("Robustness evaluation requires a held-out val or test split")
@@ -54,8 +54,11 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         if assignment == split
     ]
     detector, manifest = _load_detector(weights_dir, threshold)
+    policy_version = str(manifest.get("training", {}).get("decision_policy_version", ""))
+    if policy_version == "9" and lstm_p75_min_mean != 0.70:
+        raise ValueError("lstm_p75_min_mean is a legacy-only setting and does not affect policy v9")
     detector.suspect_threshold = suspect_threshold
-    if hasattr(detector, "lstm_model"):
+    if policy_version != "9" and hasattr(detector, "lstm_model"):
         detector.lstm_model.p75_min_weighted_mean = lstm_p75_min_mean
     training_hashes = set(
         manifest.get("training", {}).get("dataset", {})
@@ -158,7 +161,8 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "checkpoints_per_session": checkpoints,
         "threshold": threshold,
         "suspect_threshold": suspect_threshold,
-        "lstm_p75_min_mean": lstm_p75_min_mean,
+        "decision_policy_version": policy_version,
+        "legacy_lstm_p75_min_mean": lstm_p75_min_mean if policy_version != "9" else None,
         "full_replay": full_replay,
         "desktop_fingerprint": desktop_fingerprint,
         "heuristic_score": heuristic_score,
@@ -189,7 +193,7 @@ def main():
     parser.add_argument("--split", choices=("val", "test"), default="val")
     parser.add_argument("--checkpoints", type=int, default=100)
     parser.add_argument("--threshold", type=float, default=0.96)
-    parser.add_argument("--suspect-threshold", type=float, default=0.425)
+    parser.add_argument("--suspect-threshold", type=float, default=0.45)
     parser.add_argument("--desktop-fingerprint", action="store_true")
     parser.add_argument("--heuristic-score", type=float, default=0.0)
     parser.add_argument("--webdriver", action="store_true")

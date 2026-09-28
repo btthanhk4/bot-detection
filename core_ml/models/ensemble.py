@@ -21,7 +21,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "8"
+DECISION_POLICY_VERSION = "9"
 
 
 class EnsembleBotDetector:
@@ -33,7 +33,7 @@ class EnsembleBotDetector:
         w_tabular: float = 0.40,
         w_heuristic: float = 0.20,
         threshold: float = 0.96,
-        suspect_threshold: float = 0.425,
+        suspect_threshold: float = 0.45,
         min_mouse_points_for_bot: int = 25,
         lstm_available: bool = True,
         tabular_available: bool = True,
@@ -147,12 +147,21 @@ class EnsembleBotDetector:
         chunks_tensor = extract_sequential_chunks(chunks)
         has_enough_mouse_data = chunks_tensor.size(0) > 0
         lstm_score = 0.5
+        lstm_tail_score = 0.5
         if has_enough_mouse_data and self.lstm_available:
-            lstm_score = self._require_model_probability(
-                self.lstm_model.predict_session_proba(chunks_tensor), "LSTM"
-            )
-            if lstm_score > 0.70:
-                reasons.append(f"Elevated mouse-behavior model score (LSTM: {lstm_score:.2f})")
+            if hasattr(self.lstm_model, "predict_session_scores"):
+                scores = self.lstm_model.predict_session_scores(chunks_tensor)
+                if not isinstance(scores, (tuple, list)) or len(scores) != 2:
+                    raise RuntimeError("LSTM returned invalid session scores")
+                lstm_score = self._require_model_probability(scores[0], "LSTM mean")
+                lstm_tail_score = self._require_model_probability(scores[1], "LSTM p75")
+            else:
+                lstm_score = self._require_model_probability(
+                    self.lstm_model.predict_session_proba(chunks_tensor), "LSTM"
+                )
+                lstm_tail_score = lstm_score
+            if lstm_score > 0.70 or lstm_tail_score > 0.70:
+                reasons.append("Elevated mouse-behavior model evidence")
 
         # 3. Tabular model evaluation (Canonical single source of truth vector)
         env_vec = extract_env_vector(fingerprint, botd)
@@ -169,8 +178,17 @@ class EnsembleBotDetector:
         w_t = max(0.0, self.w_tabular) if self.tabular_available else 0.0
         ml_total = w_l + w_t
         baseline = (w_l * lstm_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
+        tail_baseline = (w_l * lstm_tail_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
         heuristic_weight = min(1.0, max(0.0, self.w_heuristic) * heuristic_score)
         final_proba = baseline + (1.0 - baseline) * heuristic_weight
+        suspicion_score = tail_baseline + (1.0 - tail_baseline) * heuristic_weight
+        # Strong within-session behavioral evidence warrants abstention when
+        # the tabular model disagrees, even if the blended score is low.
+        behavioral_disagreement = (
+            self.lstm_available and self.tabular_available and has_enough_mouse_data
+            and lstm_score >= 0.425 and lstm_tail_score >= 0.70
+            and tabular_score < self.suspect_threshold
+        )
 
         # The full-session models are not validated for partial trajectories.
         # A client-reported automation flag cannot bypass this evidence gate.
@@ -203,7 +221,8 @@ class EnsembleBotDetector:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
             verdict = "BOT"
-        elif final_proba >= self.suspect_threshold or critical_flags:
+        elif (max(final_proba, suspicion_score) >= self.suspect_threshold
+              or behavioral_disagreement or critical_flags):
             verdict = "SUSPECT"
         else:
             verdict = "HUMAN"
@@ -225,6 +244,7 @@ class EnsembleBotDetector:
             "reasons": reasons,
             "breakdown": {
                 "behavioral_lstm_score": round(lstm_score, 4),
+                "behavioral_lstm_tail_score": round(lstm_tail_score, 4),
                 "tabular_score": round(tabular_score, 4),
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,
@@ -243,6 +263,8 @@ class EnsembleBotDetector:
                     "w_heuristic": round(heuristic_weight, 3),
                 },
                 "fusion_baseline": round(baseline, 4),
+                "suspicion_risk_score": round(suspicion_score, 4),
+                "behavioral_disagreement": behavioral_disagreement,
                 "heuristic_lift": round(final_proba - baseline, 4),
             },
         }

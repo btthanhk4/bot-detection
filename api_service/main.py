@@ -325,9 +325,6 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                             if data.get("_spool_id") is not None:
                                 _spool.delete(data["_spool_id"])
                         continue
-                else:
-                    _attach_model_metadata(analysis)
-
                 data.pop("_replay_attempts", None)
                 try:
                     persisted = bool(save_detection_result(data, analysis))
@@ -517,14 +514,17 @@ def health_check():
             runtime_ready = False
             if tabular_loaded and lstm_loaded and release_gate_evidence_present:
                 try:
-                    probe_records = [
-                        {"time": index * 16, "x": index / 100, "y": 0.2, "type": "move"}
-                        for index in range(25)
-                    ]
-                    probe = ensemble_detector.predict({"mouse": {"records": probe_records}})
-                    probability = float(probe.get("bot_probability"))
-                    runtime_ready = math.isfinite(probability) and 0.0 <= probability <= 1.0
+                    runtime_ready = True
+                    for point_count in (25, 37):
+                        probe_records = [
+                            {"time": index * 16, "x": index / 100, "y": 0.2, "type": "move"}
+                            for index in range(point_count)
+                        ]
+                        probe = ensemble_detector.predict({"mouse": {"records": probe_records}})
+                        probability = float(probe.get("bot_probability"))
+                        runtime_ready = runtime_ready and math.isfinite(probability) and 0.0 <= probability <= 1.0
                 except Exception:
+                    runtime_ready = False
                     logger.exception("Model inference health probe failed")
             _health_cache.update({
                 "checked_at": now,

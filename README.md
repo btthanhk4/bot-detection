@@ -92,13 +92,15 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v8 (current)
+### Policy v9 (current)
 
-The bundled model uses BOT threshold `0.96`, SUSPECT threshold `0.425`, and
-a guarded BiLSTM chunk aggregation. Its release gate replays 100 checkpoints
-from each complete held-out session. See [Model release v8](docs/MODEL_RELEASE_V8.md)
-for measured outcomes and limits. These same-source splits have been used to
-select policy values and do not constitute independent production validation.
+The bundled model uses BOT threshold `0.96`, SUSPECT threshold `0.45`, and
+monotonic BiLSTM mean/p75 evidence with an abstention rule for model disagreement.
+Its release gate replays 1,000 checkpoints from each complete validation and
+test session, including known regression windows. See
+[Model release v9](docs/MODEL_RELEASE_V9.md) for measured outcomes and limits.
+These same-source splits have been used to select policy values and do not
+constitute independent production validation.
 
 During a MongoDB outage, acknowledged telemetry is committed to the local
 SQLite spool on a persistent Docker volume. Keep the API on one host/worker;

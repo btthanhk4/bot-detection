@@ -6,7 +6,7 @@ Improvements:
   - Bidirectional LSTM for capturing both forward/backward temporal context
   - Temporal Attention mechanism to focus on discriminative time steps
   - LeakyReLU activation + L1/L2 regularization per DELBOT best practices
-  - Confidence-weighted mean aggregation for session-level prediction
+  - Validated chunk scores with monotonic mean and upper-quartile session evidence
 """
 
 import os
@@ -149,29 +149,42 @@ class MouseTrajectoryLSTM(nn.Module):
         Evaluates all chunks from a single session and aggregates their bot probability.
         Uses a confidence-weighted mean: more extreme predictions get higher weight.
         """
-        if chunks_tensor is None or chunks_tensor.size(0) == 0:
+        preds = self._predict_chunk_outputs(chunks_tensor)
+        if preds is None:
             return 0.5
 
+        if preds.size(0) == 1:
+            return float(preds[0].item())
+
+        weights = torch.abs(preds - 0.5) * 2.0 + 0.1
+        weighted_mean = float((preds * weights).sum() / weights.sum())
+        p75 = float(torch.quantile(preds, 0.75).item())
+        if p75 > 0.7 and weighted_mean >= self.p75_min_weighted_mean:
+            return max(weighted_mean, p75)
+        return weighted_mean
+
+    def predict_session_scores(self, chunks_tensor: torch.Tensor) -> tuple[float, float]:
+        """Return monotonic mean and upper-quartile evidence for policy v9."""
+        preds = self._predict_chunk_outputs(chunks_tensor)
+        if preds is None:
+            return 0.5, 0.5
+        return float(preds.mean().item()), float(torch.quantile(preds, 0.75).item())
+
+    def _predict_chunk_outputs(self, chunks_tensor: torch.Tensor):
+        if chunks_tensor is None or chunks_tensor.size(0) == 0:
+            return None
         self.eval()
         device = next(self.parameters()).device
         chunks_tensor = torch.nan_to_num(chunks_tensor.to(device), nan=0.0, posinf=100.0, neginf=-100.0)
         with torch.no_grad():
-            preds = self.forward(chunks_tensor).squeeze(-1)  # (n_chunks,)
-
-            if preds.size(0) == 1:
-                return float(preds[0].item())
-
-            # Weighted aggregation: higher confidence predictions get more weight
-            weights = torch.abs(preds - 0.5) * 2.0 + 0.1  # min weight 0.1
-            w_sum = float(weights.sum())
-            weighted_mean = float((preds * weights).sum() / w_sum) if w_sum > 1e-6 else 0.5
-
-            # Use p75 only as a strong bot signal override
-            # Prevents edge case where low p75 overrides a high weighted_mean
-            p75 = float(torch.quantile(preds, 0.75).item())
-            if p75 > 0.7 and weighted_mean >= self.p75_min_weighted_mean:
-                return max(weighted_mean, p75)
-            return weighted_mean
+            raw_preds = self.forward(chunks_tensor)
+            if (
+                raw_preds.shape != (chunks_tensor.size(0), 1)
+                or not bool(torch.isfinite(raw_preds).all())
+                or not bool(((raw_preds >= 0.0) & (raw_preds <= 1.0)).all())
+            ):
+                raise RuntimeError("LSTM returned invalid chunk probabilities")
+            return raw_preds.squeeze(-1)
 
     def save_weights(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)

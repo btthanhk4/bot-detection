@@ -20,11 +20,36 @@ class TelemetrySpool:
         connection.execute("PRAGMA synchronous=FULL")
         if not self._initialized:
             connection.execute("PRAGMA journal_mode=WAL")
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS telemetry_spool ("
-                "id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, payload TEXT NOT NULL)"
-            )
-            connection.commit()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                schema = connection.execute(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'telemetry_spool'"
+                ).fetchone()
+                if schema is None:
+                    connection.execute(
+                        "CREATE TABLE telemetry_spool ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "session_id TEXT NOT NULL, payload TEXT NOT NULL)"
+                    )
+                elif "AUTOINCREMENT" not in schema[0].upper():
+                    connection.execute(
+                        "CREATE TABLE telemetry_spool_upgrade ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "session_id TEXT NOT NULL, payload TEXT NOT NULL)"
+                    )
+                    connection.execute(
+                        "INSERT INTO telemetry_spool_upgrade(id, session_id, payload) "
+                        "SELECT id, session_id, payload FROM telemetry_spool"
+                    )
+                    connection.execute("DROP TABLE telemetry_spool")
+                    connection.execute(
+                        "ALTER TABLE telemetry_spool_upgrade RENAME TO telemetry_spool"
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                connection.close()
+                raise
             self._initialized = True
         return connection
 

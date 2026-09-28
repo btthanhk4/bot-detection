@@ -1,6 +1,9 @@
 """Approximate the collector's bounded export for offline session replay."""
 
 
+TRAIN_FULL_TRAJECTORY_CHECKPOINTS = 32
+
+
 def export_window(records: list, end_index: int) -> list:
     """Return the collector's move/other-event selection after ``end_index``."""
     count = end_index + 1

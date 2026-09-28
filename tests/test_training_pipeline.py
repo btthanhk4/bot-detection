@@ -6,6 +6,7 @@ import torch
 
 from core_ml.dataset.loader import RealMouseSession
 from core_ml.model_bundle import release_evidence_valid
+from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
 from core_ml.train import (
     audit_training_dataset,
     build_tabular_vector,
@@ -16,12 +17,14 @@ from core_ml.train import (
     predict_lstm_sessions,
     iter_training_prefixes,
     iter_training_rolling_windows,
+    iter_training_sampled_windows,
     publish_model_artifacts,
     resolve_training_device,
     resolve_training_indices,
     train_lstm,
     validate_release_metrics,
     validate_rolling_release,
+    validate_known_release_cases,
     main as train_main,
 )
 from core_ml.experiments.run_all import (
@@ -169,6 +172,82 @@ def test_policy_v8_requires_full_session_100_checkpoint_evidence():
     assert not release_evidence_valid(manifest, "8", 0.96, 0.425)
 
 
+def test_policy_v9_requires_dense_replay_and_known_regressions():
+    passing = {
+        "roc_auc": 1.0, "precision": 1.0, "recall": 1.0,
+        "false_positive_rate": 0.0, "decision_coverage": 1.0,
+    }
+    def rolling(humans, bots):
+        return {
+            "human_sessions": humans, "bot_sessions": bots,
+            "human_ever_bot": 0, "human_ever_suspect": 0,
+            "bot_ever_human": 0, "human_windows": humans * 1000,
+            "bot_windows": bots * 1000, "human_bot_windows": 0,
+            "bot_human_windows": 0, "human_suspect_windows": 0,
+            "max_human_suspect_fraction": 0.0,
+        }
+
+    manifest = {"training": {
+        "decision_policy_version": "9",
+        "production_decision_threshold": 0.96,
+        "production_suspect_threshold": 0.45,
+        "environment_features_trained": False,
+        "minimum_mouse_points_for_bot": 25,
+        "collector_window_policy": "mouse_export_v1",
+        "rolling_checkpoints": 1000,
+        "rolling_full_replay": True,
+        "train_full_trajectory_windows": True,
+        "train_full_trajectory_checkpoints": 32,
+        "lstm_aggregation": "mean_p75_disagreement_v2",
+        "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
+        "dataset": {"split_counts": {"train": 599, "val": 60, "test": 90}},
+        "metrics": {"ensemble": {
+            **{split: dict(passing) for split in ("val", "early_val", "mid_val", "late_val")},
+            "rolling_val": rolling(14, 46), "rolling_test": rolling(24, 66),
+            "known_regressions": {
+                "session_count": len(KNOWN_FAILURE_WINDOWS),
+                "checked_windows": sum(len(times) for _, times in KNOWN_FAILURE_WINDOWS.values()),
+            },
+        }},
+    }}
+    assert release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["rolling_checkpoints"] = 100
+    assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["rolling_checkpoints"] = 1000
+    manifest["training"]["regression_case_fingerprint"] = "wrong"
+    assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["regression_case_fingerprint"] = REGRESSION_CASE_FINGERPRINT
+    manifest["training"]["metrics"]["ensemble"]["known_regressions"]["checked_windows"] = float("nan")
+    assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["metrics"]["ensemble"]["known_regressions"]["checked_windows"] = sum(
+        len(times) for _, times in KNOWN_FAILURE_WINDOWS.values()
+    )
+    manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_suspect_windows"] = 1500
+    assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_suspect_windows"] = 0
+    manifest["training"]["metrics"]["ensemble"]["rolling_val"]["max_human_suspect_fraction"] = 0.26
+    assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+
+
+def test_dense_release_gate_measures_suspect_duration_not_any_single_window():
+    metrics = {
+        "human_sessions": 14, "bot_sessions": 46,
+        "human_ever_bot": 0, "human_ever_suspect": 13,
+        "bot_ever_human": 0, "human_windows": 14000,
+        "bot_windows": 46000, "human_bot_windows": 0,
+        "bot_human_windows": 0, "human_suspect_windows": 700,
+        "max_human_suspect_fraction": 0.20,
+    }
+    validate_rolling_release(metrics, expected_checkpoints=1000)
+    metrics["human_suspect_windows"] = 1401
+    with pytest.raises(RuntimeError, match="excessive human SUSPECT windows"):
+        validate_rolling_release(metrics, expected_checkpoints=1000)
+    metrics["human_suspect_windows"] = 700
+    metrics["max_human_suspect_fraction"] = 0.26
+    with pytest.raises(RuntimeError, match="excessive human SUSPECT windows"):
+        validate_rolling_release(metrics, expected_checkpoints=1000)
+
+
 def test_early_training_windows_stop_at_requested_moves_without_copying_full_session():
     records = []
     for index in range(110):
@@ -207,6 +286,66 @@ def test_rolling_release_gate_catches_mid_session_human_false_positive():
     assert metrics["human_bot_windows"] >= 1
     with pytest.raises(RuntimeError, match="human sessions had a BOT verdict"):
         validate_rolling_release(metrics)
+
+
+def test_dense_release_replay_catches_error_missed_by_sparse_checkpoints():
+    from core_ml.collector_windows import rolling_windows
+
+    records = [
+        {"time": index, "x": index / 1100, "y": 0.2, "type": "move"}
+        for index in range(1100)
+    ]
+    sparse_times = {window[-1]["time"] for window in rolling_windows(records, checkpoints=100)}
+    dense_times = {window[-1]["time"] for window in rolling_windows(records, checkpoints=1000)}
+    missed_time = next(iter(sorted(dense_times - sparse_times)))
+
+    class Detector:
+        def predict(self, telemetry):
+            last_time = telemetry["mouse"]["records"][-1]["time"]
+            if telemetry["label"] == 0 and last_time == missed_time:
+                return {"verdict": "BOT"}
+            return {"verdict": "HUMAN" if telemetry["label"] == 0 else "BOT"}
+
+    telemetries = [
+        {"label": label, "mouse": {"records": records}}
+        for label in (0, 1)
+    ]
+    sparse = evaluate_rolling_for_release(
+        Detector(), telemetries, [0, 1], [0, 1], checkpoints=100,
+    )
+    dense = evaluate_rolling_for_release(
+        Detector(), telemetries, [0, 1], [0, 1], checkpoints=1000,
+    )
+    validate_rolling_release(sparse, expected_checkpoints=100)
+    assert dense["human_bot_windows"] == 1
+    with pytest.raises(RuntimeError, match="human sessions had a BOT verdict"):
+        validate_rolling_release(dense, expected_checkpoints=1000)
+
+
+def test_known_release_cases_fail_on_bad_verdict_or_missing_window():
+    records = [
+        {"time": index, "x": index / 100, "y": 0.2, "type": "move"}
+        for index in range(40)
+    ]
+    telemetry = {"dataset_session_id": "known-human", "mouse": {"records": records}}
+
+    class Detector:
+        def __init__(self, verdict):
+            self.verdict = verdict
+
+        def predict(self, _telemetry):
+            return {"verdict": self.verdict}
+
+    cases = {"known-human": (0, (31,))}
+    assert validate_known_release_cases(
+        Detector("SUSPECT"), [telemetry], [0], [0], cases=cases,
+    ) == {"session_count": 1, "checked_windows": 1}
+    with pytest.raises(RuntimeError, match="Known release regression failed"):
+        validate_known_release_cases(Detector("BOT"), [telemetry], [0], [0], cases=cases)
+    with pytest.raises(RuntimeError, match="Missing release regression window"):
+        validate_known_release_cases(
+            Detector("HUMAN"), [telemetry], [0], [0], cases={"known-human": (0, (100,))},
+        )
 
 
 def test_rolling_release_uses_full_replay_past_training_tail():
@@ -305,6 +444,23 @@ def test_training_rolling_windows_change_timing_only():
     assert windows[2][-1]["time"] - windows[2][0]["time"] == 2 * (
         windows[1][-1]["time"] - windows[1][0]["time"]
     )
+
+
+def test_sampled_training_windows_cover_entire_session_without_retaining_it():
+    from core_ml.collector_windows import rolling_windows
+
+    records = [
+        {"time": index * 10, "x": index / 6000, "y": 0.2, "type": "move"}
+        for index in range(6000)
+    ]
+    sampled = rolling_windows(records, checkpoints=16)
+    augmented = list(iter_training_sampled_windows(sampled))
+
+    assert len(augmented) == 16
+    assert augmented[0][-1]["time"] < records[-5000]["time"]
+    assert augmented[-1][-1]["time"] > records[-100]["time"]
+    assert all(len(window) <= 100 for window in augmented)
+    assert augmented[0][-1]["x"] == sampled[0][-1]["x"]
 
 
 def test_tabular_training_does_not_learn_synthetic_only_fingerprint_fields():

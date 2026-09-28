@@ -21,6 +21,7 @@ from core_ml.features.mouse_features import (
     prefix_through_moves,
     records_to_chunks as _canonical_records_to_chunks,
 )
+from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, rolling_windows
 
 
 logger = logging.getLogger("bot_detection.dataset")
@@ -36,6 +37,7 @@ class RealMouseSession:
     scenario: str
     early_records: list = None
     replay_records: list = None
+    sampled_training_windows: list = None
 
 
 class DatasetLabelConflictError(ValueError):
@@ -278,7 +280,7 @@ def parse_phase2_record(record: dict) -> list:
 
 
 def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: bool = False,
-                        replay_session_ids=None):
+                        replay_session_ids=None, training_window_session_ids=None):
     """
     Load Phase 2 data from MongoDB-exported JSON lines files.
     Phase 2 has real browser timestamps and richer data (~220MB).
@@ -392,6 +394,11 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                             mouse_records if replay_session_ids and session_id in replay_session_ids
                             else None
                         )
+                        sampled_training_windows = (
+                            rolling_windows(mouse_records, checkpoints=TRAIN_FULL_TRAJECTORY_CHECKPOINTS)
+                            if training_window_session_ids and session_id in training_window_session_ids
+                            else None
+                        )
                         # Cap at 5000 records per session to keep training fast.
                         if len(mouse_records) > 5000:
                             mouse_records = mouse_records[-5000:]
@@ -405,6 +412,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
                             scenario=scenario or "all",
                             early_records=early_records,
                             replay_records=replay_records,
+                            sampled_training_windows=sampled_training_windows,
                         )
                         sessions.append(session if with_metadata else (mouse_records, label))
                         seen_sessions[session_id] = label
@@ -433,7 +441,7 @@ def load_phase2_dataset(dataset_root: str, scenario: str = None, with_metadata: 
 
 def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bots",
                       include_phase2: bool = True, with_metadata: bool = False,
-                      replay_session_ids=None):
+                      replay_session_ids=None, training_window_session_ids=None):
     """
     Loads real mouse movement sessions from web_bot_detection_dataset.
     Loads Phase 1 (folder-per-session) and optionally Phase 2 (JSON lines with real timestamps).
@@ -536,6 +544,7 @@ def load_real_dataset(dataset_root: str, scenario: str = "humans_and_moderate_bo
         sessions.extend(load_phase2_dataset(
             dataset_root, scenario=scenario, with_metadata=True,
             replay_session_ids=replay_session_ids,
+            training_window_session_ids=training_window_session_ids,
         ))
 
     unique_by_trajectory = {}
