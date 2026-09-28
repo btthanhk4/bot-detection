@@ -199,6 +199,11 @@ class EnsembleBotDetector:
             or not self.lstm_available or not self.tabular_available
             or unsupported_mobile or legacy_touch_ambiguous
         )
+        tabular_score_in_domain = bool(
+            self.tabular_available and has_enough_mouse_data and usable_trajectory
+            and move_point_count >= self.min_mouse_points_for_bot
+            and not unsupported_mobile and not legacy_touch_ambiguous
+        )
         if decision_deferred:
             if not self.lstm_available or not self.tabular_available:
                 reasons.append("Decision deferred: required model unavailable")
@@ -246,6 +251,8 @@ class EnsembleBotDetector:
                 "behavioral_lstm_score": round(lstm_score, 4),
                 "behavioral_lstm_tail_score": round(lstm_tail_score, 4),
                 "tabular_score": round(tabular_score, 4),
+                "tabular_score_in_domain": tabular_score_in_domain,
+                "risk_score_in_domain": not decision_deferred,
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,
                 "usable_trajectory": usable_trajectory,

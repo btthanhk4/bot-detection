@@ -183,6 +183,26 @@ class TestBehavioralLSTM:
 
 
 class TestEnsembleDetector:
+    def test_tabular_score_is_not_applicable_without_trained_mouse_input(self):
+        class StrongTabular:
+            def predict_proba(self, _features):
+                return 0.999
+
+        detector = EnsembleBotDetector(tabular_model=StrongTabular())
+        no_mouse = detector.predict({"mouse": {"records": []}})
+        assert no_mouse["verdict"] == "SUSPECT"
+        assert no_mouse["breakdown"]["tabular_score"] == 0.999
+        assert no_mouse["breakdown"]["tabular_score_in_domain"] is False
+        assert no_mouse["breakdown"]["risk_score_in_domain"] is False
+
+        records = [
+            {"time": index * 20, "x": index / 100, "y": 0.2, "type": "move"}
+            for index in range(25)
+        ]
+        enough_mouse = detector.predict({"mouse": {"records": records}})
+        assert enough_mouse["breakdown"]["tabular_score_in_domain"] is True
+        assert enough_mouse["breakdown"]["risk_score_in_domain"] is True
+
     def test_mean_risk_is_monotonic_and_tail_only_abstains(self, monkeypatch):
         class Tabular:
             def __init__(self, probability):

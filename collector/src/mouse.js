@@ -144,22 +144,27 @@ export class MouseRecorder {
   }
 
   handleMouseMove(e) {
+    if (e.isTrusted === false) return;
     this.recordPoint('move', e.clientX, e.clientY);
   }
 
   handleMouseDown(e) {
+    if (e.isTrusted === false) return;
     this.recordPoint('down', e.clientX, e.clientY);
   }
 
   handleMouseUp(e) {
+    if (e.isTrusted === false) return;
     this.recordPoint('up', e.clientX, e.clientY);
   }
 
   handleClick(e) {
+    if (e.isTrusted === false) return;
     this.recordPoint('click', e.clientX, e.clientY);
   }
 
   handleWheel(e) {
+    if (e.isTrusted === false) return;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const time = Math.round(now - this.startTime);
     this.scrollEvents.push({

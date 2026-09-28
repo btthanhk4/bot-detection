@@ -2293,6 +2293,13 @@ function formatPageLabel(pageUrl) {
   }
 }
 
+function hasApplicableTabularScore(bd) {
+  return bd.tabular_score != null && Number.isFinite(Number(bd.tabular_score))
+    && bd.tabular_score_in_domain !== false
+    && bd.has_enough_mouse_data === true && bd.usable_trajectory === true
+    && !bd.unsupported_mobile && !bd.legacy_touch_ambiguous;
+}
+
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
@@ -2312,7 +2319,7 @@ function renderTrafficTable() {
     const lstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
       && Number.isFinite(Number(bd.behavioral_lstm_score))
       ? (Number(bd.behavioral_lstm_score) * 100).toFixed(1) : '--';
-    const tabScore = (bd.tabular_score !== undefined) ? (bd.tabular_score * 100).toFixed(1) : '--';
+    const tabScore = hasApplicableTabularScore(bd) ? (Number(bd.tabular_score) * 100).toFixed(1) : '--';
     const mousePoints = Number.isFinite(Number(bd.mouse_points))
       ? Number(bd.mouse_points)
       : (s.mouse_points_captured || 0);
@@ -2473,7 +2480,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
     if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('thuộc tính trình duyệt liên quan đến tự động hóa');
     if (bd.has_enough_mouse_data && bd.behavioral_lstm_score > 0.5) flags.push(`điểm rủi ro từ mô hình hành vi chuột: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%`);
-    if (bd.tabular_score > 0.5) flags.push(`điểm rủi ro từ mô hình thống kê chuột: ${(bd.tabular_score * 100).toFixed(1)}%`);
+    if (hasApplicableTabularScore(bd) && bd.tabular_score > 0.5) flags.push(`điểm rủi ro từ mô hình thống kê chuột: ${(bd.tabular_score * 100).toFixed(1)}%`);
     if (flags.length > 0) {
       explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
     } else {
@@ -2520,10 +2527,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dWeightLSTM').textContent = ((weights.w_lstm || 0) * 100).toFixed(0) + '%';
 
   const barT = document.getElementById('dBarTab');
-  barT.style.width = (tabScore * 100) + '%';
+  barT.style.width = hasApplicableTabularScore(bd) ? (tabScore * 100) + '%' : '0%';
   barT.style.background = tabScore > 0.5 ? 'var(--gradient-red)' : 'var(--gradient-purple)';
-  document.getElementById('dScoreTab').textContent = (tabScore * 100).toFixed(1) + '%';
-  document.getElementById('dWeightTab').textContent = ((weights.w_tabular || 0) * 100).toFixed(0) + '%';
+  document.getElementById('dScoreTab').textContent = hasApplicableTabularScore(bd) ? (tabScore * 100).toFixed(1) + '%' : '--';
+  document.getElementById('dWeightTab').textContent = hasApplicableTabularScore(bd) ? ((weights.w_tabular || 0) * 100).toFixed(0) + '%' : '--';
 
   const barH = document.getElementById('dBarHeur');
   barH.style.width = (heurScore * 100) + '%';
@@ -2614,7 +2621,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 function updateModelBars(s) {
   const bd = s.breakdown || {};
   const hasLstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null && Number.isFinite(Number(bd.behavioral_lstm_score));
-  const hasTabScore = bd.tabular_score != null && Number.isFinite(Number(bd.tabular_score));
+  const hasTabScore = hasApplicableTabularScore(bd);
   const hasHeuristicScore = bd.heuristic_score != null && Number.isFinite(Number(bd.heuristic_score));
   const lstm = hasLstmScore ? Number(bd.behavioral_lstm_score) * 100 : 0;
   const tab = hasTabScore ? Number(bd.tabular_score) * 100 : 0;
@@ -2629,7 +2636,7 @@ function updateModelBars(s) {
 
   const w = bd.weights_used || {};
   document.getElementById('weightsInfo').textContent =
-    `LSTM: ${((w.w_lstm || 0) * 100).toFixed(1)}% | Tab: ${((w.w_tabular || 0) * 100).toFixed(1)}% | Heur: ${((w.w_heuristic || 0) * 100).toFixed(1)}%`;
+    `LSTM: ${((w.w_lstm || 0) * 100).toFixed(1)}% | Tab: ${hasTabScore ? ((w.w_tabular || 0) * 100).toFixed(1) + '%' : '--'} | Heur: ${((w.w_heuristic || 0) * 100).toFixed(1)}%`;
 }
 
 function updateGauge(s) {

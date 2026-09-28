@@ -116,6 +116,24 @@ async function testTouchIsTaggedAndExcludedFromMouseChunks() {
   collector.destroy();
 }
 
+async function testDispatchedMouseEventsCannotSupplyBehavioralEvidence() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  const fake = { clientX: 10, clientY: 20, deltaX: 0, deltaY: 5, isTrusted: false };
+  recorder.handleMouseMove(fake);
+  recorder.handleMouseDown(fake);
+  recorder.handleMouseUp(fake);
+  recorder.handleClick(fake);
+  recorder.handleWheel(fake);
+  assert.strictEqual(recorder.records.length, 0);
+  assert.strictEqual(recorder.scrollEvents.length, 0);
+
+  recorder.handleMouseMove({ ...fake, isTrusted: true });
+  assert.strictEqual(recorder.records.length, 1);
+  assert.strictEqual(recorder.records[0].type, 'move');
+  collector.destroy();
+}
+
 async function testResizeDoesNotCreateMouseMovement() {
   const previousWindow = global.window;
   global.window = {
@@ -552,6 +570,7 @@ testRestartDuringFingerprinting()
   .then(testExhaustedRetryStillRespectsServerCooldown)
   .then(testFailedDetectionDoesNotPromoteClientFlag)
   .then(testTouchIsTaggedAndExcludedFromMouseChunks)
+  .then(testDispatchedMouseEventsCannotSupplyBehavioralEvidence)
   .then(testResizeDoesNotCreateMouseMovement)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
