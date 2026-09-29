@@ -55,7 +55,11 @@ from core_ml.model_bundle import (
     RELEASE_MINIMUM_METRICS,
     file_sha256,
 )
-from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
+from core_ml.models.ensemble import (
+    DECISION_POLICY_VERSION,
+    EXPLICIT_AUTOMATION_RULE,
+    EnsembleBotDetector,
+)
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 # Reproducibility
@@ -648,6 +652,43 @@ def validate_rolling_release(metrics: dict, *, expected_checkpoints: int = 0) ->
         raise RuntimeError("Rolling release gate failed: a bot session had a HUMAN verdict")
 
 
+def validate_explicit_automation_rule(detector) -> dict:
+    """Check both positive and near-miss zero-mouse inputs before publishing policy v10."""
+    headless = "Mozilla/5.0 Chrome/154.0.0.0 HeadlessChrome/154.0.0.0"
+    regular = "Mozilla/5.0 Chrome/154.0.0.0"
+    cases = (
+        (headless, headless, {"webdriver": True}, "BOT"),
+        (headless, headless, {"chromeDriverGlobal": True}, "BOT"),
+        (regular, headless, {"webdriver": True}, "SUSPECT"),
+        ("", headless, {"webdriver": True}, "SUSPECT"),
+        (headless, regular, {"webdriver": True}, "SUSPECT"),
+        (headless, headless, {"headlessUa": True}, "SUSPECT"),
+        (regular, regular, {}, "SUSPECT"),
+    )
+    for server_ua, browser_ua, flags, expected in cases:
+        result = detector.predict({
+            "_server_user_agent": server_ua,
+            "fingerprint": {"userAgent": browser_ua},
+            "botd": {"detectors": flags},
+            "mouse": {"records": []},
+        })
+        if result["verdict"] != expected or result["decision_state"] != (
+            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+        ):
+            raise RuntimeError("Explicit automation rule release gate failed")
+        if expected == "BOT" and (
+            result["breakdown"]["decision_basis"] != "explicit_automation"
+            or result["breakdown"]["risk_score_in_domain"]
+        ):
+            raise RuntimeError("Explicit automation rule metadata release gate failed")
+    return {
+        "rule": EXPLICIT_AUTOMATION_RULE,
+        "positive_cases": 2,
+        "negative_cases": 5,
+        "passed": len(cases),
+    }
+
+
 def validate_known_release_cases(detector, telemetries: list, indices, labels,
                                  cases: dict = KNOWN_FAILURE_WINDOWS) -> dict:
     """Check every previously failing time against the original full trajectory."""
@@ -1125,6 +1166,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         }
         for model, model_metrics in training_metrics.items()
     }
+    explicit_automation_rule_gate = validate_explicit_automation_rule(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1149,6 +1191,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "train_full_trajectory_checkpoints": TRAIN_FULL_TRAJECTORY_CHECKPOINTS,
             "lstm_aggregation": "mean_p75_disagreement_v2",
             "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
+            "explicit_automation_rule_gate": explicit_automation_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

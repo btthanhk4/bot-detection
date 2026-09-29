@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "73dc3d1e3bca78d320be97b1d17580575ad958e767b4a2c0a4e87ae633de1e88"
   },
-  "bundle_id": "8ccd676191a64dd18d215d4af8326e23",
-  "created_at": "2026-09-28T09:41:12.947554+00:00",
+  "bundle_id": "e3dd550e4d40453db0e17a743da7e992",
+  "created_at": "2026-09-29T01:11:08.019274+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -837,9 +837,15 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "9",
+    "decision_policy_version": "10",
     "early_augmentation": true,
     "environment_features_trained": false,
+    "explicit_automation_rule_gate": {
+      "negative_cases": 5,
+      "passed": 7,
+      "positive_cases": 2,
+      "rule": "headless_ua_and_framework_v1"
+    },
     "individual_model_evaluation_threshold": 0.5,
     "lstm_aggregation": "mean_p75_disagreement_v2",
     "lstm_p75_min_weighted_mean": 0.7,

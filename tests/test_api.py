@@ -298,6 +298,56 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     assert data["policy_version"] == DECISION_POLICY_VERSION
 
 
+def test_explicit_automation_rule_uses_http_user_agent_not_json_override(client):
+    headless = "Mozilla/5.0 HeadlessChrome/154.0.0.0"
+    payload = {
+        "sessionId": "sess_rule_detect",
+        "fingerprint": {"userAgent": headless},
+        "botd": {"detectors": {"webdriver": True}},
+        "mouse": {"records": []},
+        "_server_user_agent": headless,
+    }
+    uncorroborated = client.post("/api/v1/detect", json=payload)
+    assert uncorroborated.status_code == 200
+    assert uncorroborated.json()["verdict"] == "SUSPECT"
+
+    corroborated = client.post(
+        "/api/v1/detect", json=payload, headers={"User-Agent": headless},
+    )
+    assert corroborated.status_code == 200
+    decision = corroborated.json()
+    assert decision["verdict"] == "BOT"
+    assert decision["decision_state"] == "FINAL"
+    assert decision["breakdown"]["decision_basis"] == "explicit_automation"
+    assert decision["breakdown"]["risk_score_in_domain"] is False
+
+
+def test_telemetry_persists_explicit_automation_verdict(client, monkeypatch):
+    headless = "Mozilla/5.0 HeadlessChrome/154.0.0.0"
+    captured = {}
+
+    def save(_telemetry, analysis):
+        captured.update(analysis)
+        return True
+
+    monkeypatch.setattr("api_service.database.save_detection_result", save)
+    response = client.post(
+        "/api/v1/telemetry",
+        json={
+            "sessionId": "sess_rule_telemetry",
+            "visitorId": "visitor_rule",
+            "fingerprint": {"userAgent": headless},
+            "botd": {"detectors": {"chromeDriverGlobal": True}},
+            "mouse": {"records": []},
+        },
+        headers={"User-Agent": headless},
+    )
+    assert response.status_code == 200
+    assert response.json()["persisted"] is True
+    assert captured["verdict"] == "BOT"
+    assert captured["breakdown"]["decision_basis"] == "explicit_automation"
+
+
 def test_health_distinguishes_model_load_from_release_evidence(client):
     response = client.get("/health")
 

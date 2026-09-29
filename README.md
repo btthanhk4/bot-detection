@@ -92,13 +92,16 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v9 (current)
+### Policy v10 (current)
 
 The bundled model uses BOT threshold `0.96`, SUSPECT threshold `0.45`, and
 monotonic BiLSTM mean/p75 evidence with an abstention rule for model disagreement.
 Its release gate replays 1,000 checkpoints from each complete validation and
-test session, including known regression windows. See
-[Model release v9](docs/MODEL_RELEASE_V9.md) for measured outcomes and limits.
+test session, including known regression windows. A narrow explicit-automation
+rule can identify a self-declared HeadlessChrome browser with corroborating
+framework markers even without mouse input; ordinary no-mouse visits remain
+SUSPECT. See [No-mouse decisions](docs/NO_MOUSE_BOT_DECISION.md) and
+[Model release v10](docs/MODEL_RELEASE_V10.md) for measured outcomes and limits.
 These same-source splits have been used to select policy values and do not
 constitute independent production validation.
 
@@ -118,7 +121,8 @@ Chi tiết phép đo và giới hạn: [Model release v7](docs/MODEL_RELEASE_V7.
 Dữ liệu touch được tách khỏi model chuột; các phiên touch-only giữ nhãn SUSPECT.
 Quỹ đạo trùng lặp hoặc không có biến thiên thời gian/vị trí cũng giữ SUSPECT.
 BotD chỉ tăng điểm theo bằng chứng dương; khi chưa có quỹ đạo chuột hợp lệ,
-BotD không tự quyết định nhãn BOT.
+BotD đơn lẻ không tự quyết định nhãn BOT. Policy v10 có ngoại lệ hẹp cho
+HeadlessChrome tự khai báo cùng tín hiệu framework như mô tả ở trên.
 
 | Model | Test AUC-ROC | Test F1 | Test FPR |
 |-------|-------------|--------|---------|

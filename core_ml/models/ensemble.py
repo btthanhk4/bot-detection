@@ -2,8 +2,9 @@
 Multi-Modal Ensemble Bot Detector (v2)
 =======================================
 Fuses DELBOT-Mouse Behavioral BiLSTM, Tabular Environment XGBoost, and BotD Heuristic Rules.
-The fused score is not probability-calibrated. Client heuristics are untrusted
-signals, and a decision is deferred until an LSTM window can be constructed.
+The fused score is not probability-calibrated. Mouse-model decisions are
+deferred until a usable LSTM window exists; a narrow, separately reported
+explicit-automation rule can make a BOT decision without mouse evidence.
 """
 
 import numpy as np
@@ -21,7 +22,8 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "9"
+DECISION_POLICY_VERSION = "10"
+EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 
 
 class EnsembleBotDetector:
@@ -143,6 +145,19 @@ class EnsembleBotDetector:
             heuristic_score = max(heuristic_score, 0.80)
         reasons.extend(critical_flags)
 
+        # The HTTP UA is client-controlled too; this narrow rule recognizes
+        # self-identifying headless browsers, not disguised automation.
+        server_user_agent = str(payload.get("_server_user_agent") or "").lower()
+        explicit_automation = bool(
+            "headlesschrome/" in server_user_agent
+            and "headlesschrome/" in user_agent
+            and (
+                is_webdriver
+                or safe_bool(detectors.get("chromeDriverGlobal"))
+                or safe_bool(detectors.get("distinctiveProperties"))
+            )
+        )
+
         # 2. Behavioral LSTM evaluation
         chunks_tensor = extract_sequential_chunks(chunks)
         has_enough_mouse_data = chunks_tensor.size(0) > 0
@@ -190,21 +205,22 @@ class EnsembleBotDetector:
             and tabular_score < self.suspect_threshold
         )
 
-        # The full-session models are not validated for partial trajectories.
-        # A client-reported automation flag cannot bypass this evidence gate.
+        # The mouse models are not validated for partial trajectories. Only
+        # the explicit automation rule may make a decision outside this gate.
         move_point_count = int(mouse_stats.get("move_point_count", 0))
-        decision_deferred = (
+        mouse_evidence_deferred = (
             move_point_count < self.min_mouse_points_for_bot or not has_enough_mouse_data
             or not usable_trajectory
             or not self.lstm_available or not self.tabular_available
             or unsupported_mobile or legacy_touch_ambiguous
         )
+        decision_deferred = mouse_evidence_deferred and not explicit_automation
         tabular_score_in_domain = bool(
             self.tabular_available and has_enough_mouse_data and usable_trajectory
             and move_point_count >= self.min_mouse_points_for_bot
             and not unsupported_mobile and not legacy_touch_ambiguous
         )
-        if decision_deferred:
+        if mouse_evidence_deferred and not explicit_automation:
             if not self.lstm_available or not self.tabular_available:
                 reasons.append("Decision deferred: required model unavailable")
             elif unsupported_mobile:
@@ -222,7 +238,10 @@ class EnsembleBotDetector:
                 )
 
         # Thresholds are deployment settings and must match the reported decision policy.
-        if decision_deferred:
+        if explicit_automation:
+            verdict = "BOT"
+            reasons.append("Server-observed HeadlessChrome UA corroborates browser automation markers")
+        elif decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
             verdict = "BOT"
@@ -252,7 +271,13 @@ class EnsembleBotDetector:
                 "behavioral_lstm_tail_score": round(lstm_tail_score, 4),
                 "tabular_score": round(tabular_score, 4),
                 "tabular_score_in_domain": tabular_score_in_domain,
-                "risk_score_in_domain": not decision_deferred,
+                "risk_score_in_domain": not mouse_evidence_deferred and not explicit_automation,
+                "decision_basis": (
+                    "explicit_automation" if explicit_automation
+                    else "insufficient_evidence" if decision_deferred else "ensemble"
+                ),
+                "automation_rule": EXPLICIT_AUTOMATION_RULE if explicit_automation else None,
+                "mouse_evidence_deferred": mouse_evidence_deferred,
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,
                 "usable_trajectory": usable_trajectory,

@@ -12,7 +12,7 @@ from xgboost import XGBClassifier
 
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
 
@@ -183,6 +183,36 @@ class TestBehavioralLSTM:
 
 
 class TestEnsembleDetector:
+    def test_explicit_automation_requires_server_and_browser_corroboration(self):
+        headless = "Mozilla/5.0 HeadlessChrome/154.0.0.0"
+        regular = "Mozilla/5.0 Chrome/154.0.0.0"
+        detector = EnsembleBotDetector()
+        cases = (
+            (headless, headless, {"webdriver": True}, "BOT"),
+            (headless, headless, {"chromeDriverGlobal": True}, "BOT"),
+            (regular, headless, {"webdriver": True}, "SUSPECT"),
+            ("", headless, {"webdriver": True}, "SUSPECT"),
+            (headless, regular, {"webdriver": True}, "SUSPECT"),
+            (headless, headless, {"headlessUa": True}, "SUSPECT"),
+            (regular, regular, {}, "SUSPECT"),
+        )
+        for server_ua, browser_ua, flags, expected in cases:
+            result = detector.predict({
+                "_server_user_agent": server_ua,
+                "fingerprint": {"userAgent": browser_ua},
+                "botd": {"detectors": flags},
+                "mouse": {"records": []},
+            })
+            assert result["verdict"] == expected
+            assert result["is_bot"] is (expected == "BOT")
+            assert result["breakdown"]["decision_basis"] == (
+                "explicit_automation" if expected == "BOT" else "insufficient_evidence"
+            )
+            assert result["breakdown"]["risk_score_in_domain"] is False
+            assert result["decision_state"] == (
+                "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+            )
+
     def test_tabular_score_is_not_applicable_without_trained_mouse_input(self):
         class StrongTabular:
             def predict_proba(self, _features):
@@ -539,7 +569,7 @@ class TestEnsembleDetector:
         assert result["is_bot"] is False
         assert result["verdict"] == "SUSPECT"
         assert result["bot_probability"] < 0.70
-        assert result["policy_version"] == "9"
+        assert result["policy_version"] == DECISION_POLICY_VERSION
 
     def test_minimum_point_setting_cannot_exceed_retained_window(self):
         with pytest.raises(ValueError, match="retained record window"):

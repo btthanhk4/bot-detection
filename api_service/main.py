@@ -574,6 +574,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
         )
     _require_inference_models()
     data = payload.model_dump()
+    data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
 
     start_t = time.perf_counter()
     try:
@@ -638,6 +639,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
+    data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
 
     # Run AI analysis before persistence. Model failures are not database
     # outages and must not fill the persistence retry buffer with poison data.

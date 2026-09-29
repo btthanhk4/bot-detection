@@ -6,6 +6,7 @@ import torch
 
 from core_ml.dataset.loader import RealMouseSession
 from core_ml.model_bundle import release_evidence_valid
+from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
 from core_ml.train import (
     audit_training_dataset,
@@ -24,6 +25,7 @@ from core_ml.train import (
     train_lstm,
     validate_release_metrics,
     validate_rolling_release,
+    validate_explicit_automation_rule,
     validate_known_release_cases,
     main as train_main,
 )
@@ -211,6 +213,16 @@ def test_policy_v9_requires_dense_replay_and_known_regressions():
         }},
     }}
     assert release_evidence_valid(manifest, "9", 0.96, 0.45)
+    manifest["training"]["decision_policy_version"] = "10"
+    assert not release_evidence_valid(manifest, "10", 0.96, 0.45)
+    manifest["training"]["explicit_automation_rule_gate"] = {
+        "rule": "headless_ua_and_framework_v1",
+        "positive_cases": 2,
+        "negative_cases": 5,
+        "passed": 7,
+    }
+    assert release_evidence_valid(manifest, "10", 0.96, 0.45)
+    manifest["training"]["decision_policy_version"] = "9"
     manifest["training"]["rolling_checkpoints"] = 100
     assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
     manifest["training"]["rolling_checkpoints"] = 1000
@@ -227,6 +239,16 @@ def test_policy_v9_requires_dense_replay_and_known_regressions():
     manifest["training"]["metrics"]["ensemble"]["rolling_val"]["human_suspect_windows"] = 0
     manifest["training"]["metrics"]["ensemble"]["rolling_val"]["max_human_suspect_fraction"] = 0.26
     assert not release_evidence_valid(manifest, "9", 0.96, 0.45)
+
+
+def test_explicit_automation_rule_release_gate():
+    report = validate_explicit_automation_rule(EnsembleBotDetector())
+    assert report == {
+        "rule": "headless_ua_and_framework_v1",
+        "positive_cases": 2,
+        "negative_cases": 5,
+        "passed": 7,
+    }
 
 
 def test_dense_release_gate_measures_suspect_duration_not_any_single_window():

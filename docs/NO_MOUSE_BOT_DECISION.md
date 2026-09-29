@@ -8,9 +8,19 @@ when the exact same payload's mouse records were removed. This does not prove
 the session is a bot. Zero mouse movement is also normal for a short human
 visit, keyboard navigation, and unsupported touch input.
 
-Policy v9 correctly abstains (`SUSPECT`, `INSUFFICIENT_EVIDENCE`) on these
-sessions. The tabular score is now marked as out of domain and hidden in the
-dashboard when the mouse evidence is insufficient. The collector ignores
+Policy v10 still abstains (`SUSPECT`, `INSUFFICIENT_EVIDENCE`) on ordinary
+zero-mouse sessions and isolated BotD flags. It makes one narrow exception:
+the HTTP request User-Agent and browser-reported User-Agent both explicitly
+contain `HeadlessChrome/`, and BotD reports `webdriver`, `chromeDriverGlobal`,
+or `distinctiveProperties`. That combination yields `BOT/FINAL` with
+`decision_basis=explicit_automation`; the mouse-model risk score is marked
+out of domain and is not shown as a probability. The HTTP User-Agent is also
+client-controlled, so this rule detects self-identifying automation, not
+disguised or stealth bots. Do not use it as a standalone blocking policy
+without independent validation.
+
+The tabular score is marked as out of domain and hidden in the dashboard when
+the mouse evidence is insufficient. The collector ignores
 untrusted, DOM-dispatched mouse events; this prevents one observed fake-mouse
 path from creating an artificial final `HUMAN` decision. Browser automation
 input via DevTools may still produce trusted events, so this is not a general
@@ -24,7 +34,7 @@ opt-in final `/telemetry` submission. A Selenium straight-line case returned
 session. This fixes the test visibility problem, not the no-mouse inference
 limitation.
 
-## Criteria for a hard BOT decision without mouse
+## Criteria for a general no-mouse classifier
 
 1. Collect independently labeled zero-mouse human and automation sessions from
    the actual site and target browsers. Keep bot tool families and people used

@@ -55,10 +55,10 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
     ]
     detector, manifest = _load_detector(weights_dir, threshold)
     policy_version = str(manifest.get("training", {}).get("decision_policy_version", ""))
-    if policy_version == "9" and lstm_p75_min_mean != 0.70:
-        raise ValueError("lstm_p75_min_mean is a legacy-only setting and does not affect policy v9")
+    if policy_version in ("9", "10") and lstm_p75_min_mean != 0.70:
+        raise ValueError("lstm_p75_min_mean is a legacy-only setting and does not affect policy v9+")
     detector.suspect_threshold = suspect_threshold
-    if policy_version != "9" and hasattr(detector, "lstm_model"):
+    if policy_version not in ("9", "10") and hasattr(detector, "lstm_model"):
         detector.lstm_model.p75_min_weighted_mean = lstm_p75_min_mean
     training_hashes = set(
         manifest.get("training", {}).get("dataset", {})
@@ -162,7 +162,7 @@ def evaluate_robustness(dataset_root: str, weights_dir: str, *, split="val", che
         "threshold": threshold,
         "suspect_threshold": suspect_threshold,
         "decision_policy_version": policy_version,
-        "legacy_lstm_p75_min_mean": lstm_p75_min_mean if policy_version != "9" else None,
+        "legacy_lstm_p75_min_mean": lstm_p75_min_mean if policy_version not in ("9", "10") else None,
         "full_replay": full_replay,
         "desktop_fingerprint": desktop_fingerprint,
         "heuristic_score": heuristic_score,
