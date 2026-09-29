@@ -10,7 +10,7 @@ from core_ml.dataset.field_captures import (
     load_bot_captures,
     load_human_captures,
 )
-from core_ml.train import main as train_main, train_lstm
+from core_ml.train import main as train_main, train_lstm, validate_captured_bot_holdout
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 
@@ -84,6 +84,25 @@ def test_capture_report_counts_final_suspect_reasons_once_per_run(tmp_path):
         assert report["families"][family]["final_suspect_reasons"] == {
             "CLIENT_AUTOMATION_SIGNAL": 1, "INSUFFICIENT_MOUSE": 1,
         }
+
+
+def test_captured_holdout_rejects_final_human_but_allows_suspect(tmp_path):
+    _write(tmp_path / "a.json")
+    runs = load_bot_captures(str(tmp_path))
+
+    class Detector:
+        def __init__(self, verdict):
+            self.verdict = verdict
+
+        def predict(self, _payload):
+            return {"verdict": self.verdict}
+
+    human_report = evaluate_bot_captures(Detector("HUMAN"), runs)
+    with pytest.raises(RuntimeError, match="heavy.*1"):
+        validate_captured_bot_holdout(human_report)
+
+    suspect_report = evaluate_bot_captures(Detector("SUSPECT"), runs)
+    validate_captured_bot_holdout(suspect_report)
 
 
 def test_capture_loader_rejects_false_labels_and_duplicate_runs(tmp_path):

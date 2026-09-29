@@ -56,11 +56,19 @@ chỉ lưu chuột và mã người tham gia giả danh. Browser Playwright có 
 BotD báo automation, nên mẫu đó **chỉ đối chứng nhánh chuột**, không đối chứng
 profile. Không huấn luyện hay phát hành lại từ phép chẩn đoán này.
 
-| Phiên bản thử nghiệm | Kết quả trên 15 bot browser | Kiểm tra người thật cùng nguồn | Quyết định |
+| Phiên bản thử nghiệm | Kết quả trên 15 bot browser | Kiểm tra người thật tập test gốc | Quyết định |
 | --- | --- | --- | --- |
 | Baseline đang phục vụ | 0 BOT, 12 HUMAN, 3 SUSPECT | 1.255/24.000 cửa sổ test là SUSPECT | Giữ làm mốc so sánh, chưa bật chặn tự động |
 | Chỉ train lại XGBoost `4da81d59...` | 0 BOT, 0 HUMAN, 15 SUSPECT | 1.279/24.000 cửa sổ test là SUSPECT; BOT recall cuối test giảm từ 60/66 xuống 58/66 | Diagnostic-only, không phát hành |
 | Train lại BiLSTM + XGBoost `d27030f7...` | Circular (họ train) 5/5 BOT; heavy 0/5 BOT; scrub holdout 0/5 BOT | 3.446/24.000 cửa sổ test là SUSPECT, max 32,8%/phiên, vượt release gate | Diagnostic-only, không phát hành |
+| Train lại BiLSTM + XGBoost `0c7b1c0e...` | Circular và scrub (họ train) 8/10 BOT; heavy-mouse holdout 0/5 BOT, 5/5 HUMAN | 2.463/24.000 cửa sổ test là SUSPECT (10,26%); max 25,2%/phiên, đều vượt gate | Diagnostic-only, không phát hành |
+
+Phép thử giữ riêng `heavy-mouse` cho thấy candidate học được hai họ đã thấy nhưng
+không khái quát sang họ chưa thấy. Báo cáo holdout hiện được tính **trước** replay
+90.000 cửa sổ và lưu trong manifest cả khi candidate trượt gate; bot có nhãn bị
+kết luận HUMAN ở snapshot cuối sẽ làm candidate trượt ngay. Đây là kiểm tra chống
+lọt lỗi đã biết, không chứng minh khả năng phát hiện mọi bot mới. Chưa có nhóm
+người thật có nhãn độc lập trên cùng site để đánh giá trade-off false positive.
 
 **Kế hoạch tối ưu có kiểm chứng:**
 

@@ -758,6 +758,17 @@ def validate_known_release_cases(detector, telemetries: list, indices, labels,
     return {"session_count": len(cases), "checked_windows": checked}
 
 
+def validate_captured_bot_holdout(report):
+    """Reject known bot runs that the candidate calls HUMAN at the final snapshot."""
+    missed = {
+        family: counts["final_human"]
+        for family, counts in report["families"].items()
+        if counts["final_human"]
+    }
+    if missed:
+        raise RuntimeError(f"Captured bot family holdout classified HUMAN: {missed}")
+
+
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
          early_augmentation=True, diagnostic_only=False, capture_dir=None,
          capture_holdout_families=(), tabular_only=False, base_weights_dir=None):
@@ -1220,6 +1231,12 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     if training_device.type == "cpu":
         torch.set_num_threads(1)
     try:
+        if captured_holdout:
+            training_metrics["captured_bot_holdout"] = evaluate_bot_captures(
+                production_detector, captured_holdout,
+            )
+            print(f"  Captured family holdout: {training_metrics['captured_bot_holdout']}")
+            validate_captured_bot_holdout(training_metrics["captured_bot_holdout"])
         training_metrics["ensemble"] = evaluate_ensemble_for_release(
             production_detector,
             all_telemetries,
@@ -1232,11 +1249,6 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         training_metrics["ensemble"]["known_regressions"] = validate_known_release_cases(
             production_detector, all_telemetries, idx_test, y_test_tab,
         )
-        if captured_holdout:
-            training_metrics["captured_bot_holdout"] = evaluate_bot_captures(
-                production_detector, captured_holdout,
-            )
-            print(f"  Captured family holdout: {training_metrics['captured_bot_holdout']}")
     except RuntimeError as exc:
         if diagnostic_only:
             publish_model_artifacts(
@@ -1248,6 +1260,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     "diagnostic_only": True,
                     "decision_policy_version": "diagnostic",
                     "release_gate_failure": str(exc),
+                    "captured_bot_holdout": training_metrics.get("captured_bot_holdout"),
                     "early_augmentation": bool(early_augmentation),
                     "frozen_lstm_bundle_id": base_manifest["bundle_id"] if base_manifest else None,
                     "capture_train_families": sorted(
