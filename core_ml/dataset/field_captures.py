@@ -14,6 +14,8 @@ class BotCapture:
     family: str
     snapshots: tuple[dict, ...]
     observed_headers: bool = False
+    label: str = "BOT"
+    participant_id: str | None = None
 
     @property
     def sent_snapshots(self) -> tuple[dict, ...]:
@@ -28,8 +30,8 @@ class BotCapture:
         return self.snapshots[-1]
 
 
-def load_bot_captures(directory: str) -> list[BotCapture]:
-    """One file is one browser run; the runner supplies the BOT label."""
+def _load_captures(directory: str, *, label: str, schema: str) -> list[BotCapture]:
+    """One file is one independently labeled browser run."""
     root = Path(directory)
     if not root.is_dir():
         raise ValueError(f"Capture directory does not exist: {root}")
@@ -43,14 +45,19 @@ def load_bot_captures(directory: str) -> list[BotCapture]:
     for path in paths:
         with path.open(encoding="utf-8") as stream:
             data = json.load(stream)
-        if not isinstance(data, dict) or data.get("schema") != "bot-mouse-capture-v1":
+        if not isinstance(data, dict) or data.get("schema") != schema:
             raise ValueError(f"Unsupported capture schema in {path}")
         capture_id = data.get("captureId")
         family = data.get("family")
-        if (data.get("label") != "BOT" or not isinstance(capture_id, str)
+        if (data.get("label") != label or not isinstance(capture_id, str)
                 or not capture_id or capture_id in ids or not isinstance(family, str)
                 or not family):
             raise ValueError(f"Invalid label, family, or duplicate capture ID in {path}")
+        participant_id = data.get("participantId") if label == "HUMAN" else None
+        if label == "HUMAN" and (
+            not isinstance(participant_id, str) or not participant_id.strip()
+        ):
+            raise ValueError(f"Human capture requires a participant ID in {path}")
         ids.add(capture_id)
         raw_snapshots = data.get("snapshots")
         if not isinstance(raw_snapshots, list) or len(raw_snapshots) < 2:
@@ -90,8 +97,19 @@ def load_bot_captures(directory: str) -> list[BotCapture]:
         captures.append(BotCapture(
             capture_id, family, tuple(snapshots),
             agents is not None and all(bool(agent) for agent in agents),
+            label, participant_id,
         ))
     return captures
+
+
+def load_bot_captures(directory: str) -> list[BotCapture]:
+    """Load BOT-labeled runs, preserving the existing training contract."""
+    return _load_captures(directory, label="BOT", schema="bot-mouse-capture-v1")
+
+
+def load_human_captures(directory: str) -> list[BotCapture]:
+    """Load independently attested human controls for offline evaluation."""
+    return _load_captures(directory, label="HUMAN", schema="human-mouse-capture-v1")
 
 
 def capture_training_windows(capture: BotCapture) -> list[list]:

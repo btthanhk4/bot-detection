@@ -8,6 +8,7 @@ from core_ml.dataset.field_captures import (
     capture_training_windows,
     evaluate_bot_captures,
     load_bot_captures,
+    load_human_captures,
 )
 from core_ml.train import main as train_main, train_lstm
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -92,6 +93,25 @@ def test_capture_loader_rejects_false_labels_and_duplicate_runs(tmp_path):
     _write(tmp_path / "a.json")
     _write(tmp_path / "b.json")
     with pytest.raises(ValueError, match="duplicate capture ID"):
+        load_bot_captures(str(tmp_path))
+
+
+def test_human_capture_requires_explicit_label_and_participant(tmp_path):
+    _write(tmp_path / "a.json", label="HUMAN")
+    path = tmp_path / "a.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["schema"] = "human-mouse-capture-v1"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="participant ID"):
+        load_human_captures(str(tmp_path))
+
+    data["participantId"] = "volunteer-01"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    run = load_human_captures(str(tmp_path))[0]
+    assert run.label == "HUMAN"
+    assert run.participant_id == "volunteer-01"
+    assert len(run.sent_snapshots) == 2
+    with pytest.raises(ValueError, match="Unsupported capture schema"):
         load_bot_captures(str(tmp_path))
 
 

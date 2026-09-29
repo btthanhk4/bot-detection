@@ -34,6 +34,28 @@ chuột tại snapshot cuối. Các mã nguyên nhân là nhãn chẩn đoán, k
 Mẫu này quá nhỏ, cùng một website/generator và không có người thật đối chứng
 cùng site; không suy ra tỷ lệ lỗi production từ 15 lần chạy.
 
+**Chẩn đoán domain gap (cửa sổ collector cuối/phiên, bundle trên):**
+
+| Nguồn nhãn | Số phiên | HUMAN | SUSPECT | BOT | Trung vị độ thẳng | Trung vị tốc độ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Phase 1 người thật | 50 | 50 | 0 | 0 | 0,7604 | 0,3551 |
+| Phase 1 bot | 100 | 0 | 11 | 89 | 0,8664 | 0,1975 |
+| Phase 2 người thật | 59 | 57 | 2 | 0 | 0,3660 | 0,9002 |
+| Phase 2 bot | 240 | 0 | 38 | 202 | 0,8615 | 0,1596 |
+| Bot browser, 3 họ | 15 | 12 | 3 | 0 | 0,1556–0,2690 | 0,3170–0,5199 |
+
+Đây là phép **chẩn đoán trên cả train/validation/test của dataset gốc**,
+không phải chỉ số holdout hoặc tỷ lệ chính xác. Bot browser có hình học gần
+nhóm người thật hơn các bot gốc; trung vị XGBoost của ba họ bot browser chỉ
+0,0004–0,0059 (điểm model chưa hiệu chuẩn). Kết quả có thể chạy lại bằng
+`python -m core_ml.evaluate_mouse_domain --dataset-root <dataset> --capture-dir <bot-captures>`.
+Thêm `--human-capture-dir <human-captures>` để so sánh người thật cùng site
+khi đã có dữ liệu. Dữ liệu người thật cần được thu bằng thao tác thực, nhãn
+do người tham gia xác nhận; script private `bot-detection-test/collect-human-control.js`
+chỉ lưu chuột và mã người tham gia giả danh. Browser Playwright có thể làm
+BotD báo automation, nên mẫu đó **chỉ đối chứng nhánh chuột**, không đối chứng
+profile. Không huấn luyện hay phát hành lại từ phép chẩn đoán này.
+
 | Phiên bản thử nghiệm | Kết quả trên 15 bot browser | Kiểm tra người thật cùng nguồn | Quyết định |
 | --- | --- | --- | --- |
 | Baseline đang phục vụ | 0 BOT, 12 HUMAN, 3 SUSPECT | 1.255/24.000 cửa sổ test là SUSPECT | Giữ làm mốc so sánh, chưa bật chặn tự động |
