@@ -23,6 +23,53 @@ cannot overwrite the production bundle:
 python -m core_ml.train --allow-synthetic-only --weights-dir /tmp/bot-diagnostic-model
 ```
 
+## Browser-run bot captures
+
+The external `all-mouse-bots.js` runner can write each browser run to a local
+directory with `MOUSE_CAPTURE_DIR`. A file contains the collector requests
+actually sent, a separate final probe, and a BOT label supplied by the runner.
+Keep this directory private:
+it may contain browser fingerprints and page URLs. A run is one sample;
+repeated heartbeats from that run are correlated windows, not independent
+sessions. A basic no-mouse run is useful for evaluating BotD but contributes
+no mouse training windows. Recent captures also include the User-Agent observed
+on each HTTP request; offline replay uses that transport value for the
+headless-browser rule. Older captures without it cannot validate that rule.
+
+From the separate `bot-detection-test` directory on Windows PowerShell:
+
+```powershell
+$env:MOUSE_CAPTURE_DIR = 'C:\Users\Admin\bot-detection-test\captures'
+$env:RUNS_PER_SCENARIO = '5'
+node all-mouse-bots.js
+```
+
+Inspect the current bundle before training:
+
+```powershell
+python -m core_ml.evaluate_field_captures --capture-dir 'C:\Users\Admin\bot-detection-test\captures'
+```
+
+Train an isolated candidate, holding out at least one whole generator family:
+
+```powershell
+python -m core_ml.train --dataset-root 'C:\path\to\web_bot_detection_dataset' --capture-dir 'C:\Users\Admin\bot-detection-test\captures' --capture-holdout-family mouse-scrub-hover --tabular-only --diagnostic-only --weights-dir 'bot-lab\field-candidate\weights' --device cpu
+```
+
+The candidate manifest is marked `diagnostic_only`, so the serving release
+check rejects it. Compare its held-out family report with the frozen bundle,
+the existing human replay, and independently collected human sessions before
+considering a production retrain. Several seeds of one generator do not
+constitute an unseen bot family. Human sessions from the actual site should
+include ordinary mouse use, touchpad, scrolling, hovering, and drag selection.
+During this diagnostic run, each captured training window gets four times the
+tabular sample weight of a legacy training window; the value is recorded in
+the manifest and must be evaluated against human false positives.
+Omit `--tabular-only` to retrain BiLSTM too. In that diagnostic mode, BiLSTM
+chunk weights are normalized by the number of chunks per session, with a
+fourfold weight for each captured bot session. This prevents a long browser
+run from counting as many independent users.
+
 ## Google Colab GPU
 
 Select a GPU runtime first, then run:

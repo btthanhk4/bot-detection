@@ -222,6 +222,9 @@ def test_policy_v9_requires_dense_replay_and_known_regressions():
         "passed": 7,
     }
     assert release_evidence_valid(manifest, "10", 0.96, 0.45)
+    manifest["training"]["diagnostic_only"] = True
+    assert not release_evidence_valid(manifest, "10", 0.96, 0.45)
+    manifest["training"]["diagnostic_only"] = False
     manifest["training"]["decision_policy_version"] = "9"
     manifest["training"]["rolling_checkpoints"] = 100
     assert not release_evidence_valid(manifest, "9", 0.96, 0.45)

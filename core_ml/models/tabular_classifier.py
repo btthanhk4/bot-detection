@@ -44,7 +44,8 @@ class TabularBotClassifier:
         self.feature_names = []
 
     def fit(self, X: np.ndarray, y: np.ndarray, feature_names: list = None,
-            X_val: np.ndarray = None, y_val: np.ndarray = None):
+            X_val: np.ndarray = None, y_val: np.ndarray = None,
+            sample_weight: np.ndarray = None):
         """
         Train classifier on feature matrix X (n_samples, n_features) and binary labels y (0=Human, 1=Bot).
         Optionally uses validation set for early stopping.
@@ -56,6 +57,11 @@ class TabularBotClassifier:
 
         # Setup eval set for early stopping
         fit_params = {}
+        if sample_weight is not None:
+            weights = np.asarray(sample_weight, dtype=np.float32)
+            if weights.shape != (len(y),) or not np.all(np.isfinite(weights)) or np.any(weights <= 0):
+                raise ValueError("Sample weights must be positive and aligned with training rows")
+            fit_params["sample_weight"] = weights
         if X_val is not None and y_val is not None:
             X_val_scaled = self.scaler.transform(X_val)
             fit_params["eval_set"] = [(X_val_scaled, y_val)]

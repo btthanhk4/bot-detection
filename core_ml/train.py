@@ -18,6 +18,7 @@ import hashlib
 import json
 import argparse
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 import numpy as np
 
@@ -39,6 +40,11 @@ from core_ml.dataset.loader import (
     load_real_dataset,
     records_to_chunks,
 )
+from core_ml.dataset.field_captures import (
+    capture_training_windows,
+    evaluate_bot_captures,
+    load_bot_captures,
+)
 from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_window, rolling_windows
 from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
@@ -54,6 +60,7 @@ from core_ml.model_bundle import (
     RELEASE_MAXIMUM_METRICS,
     RELEASE_MINIMUM_METRICS,
     file_sha256,
+    verify_model_bundle,
 )
 from core_ml.models.ensemble import (
     DECISION_POLICY_VERSION,
@@ -120,7 +127,11 @@ def audit_training_dataset(telemetries: list, labels: list, splits: list) -> dic
         split_counts[split] = split_counts.get(split, 0) + 1
         trajectory_hashes_by_split.setdefault(split, []).append(signature)
         label_counts["bot" if label else "human"] += 1
-        source = "real" if str(telemetry.get("sessionId", "")).startswith("real_") else "synthetic"
+        session_id = str(telemetry.get("sessionId", ""))
+        source = "real" if session_id.startswith("real_") else (
+            "field" if session_id.startswith("field_") else "synthetic"
+        )
+        source_counts.setdefault(source, 0)
         source_counts[source] += 1
         rows.append(
             "|".join([
@@ -359,7 +370,8 @@ def iter_training_sampled_windows(windows: list):
 
 
 def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
-               epochs=30, batch_size=32, lr=0.002, patience=7, device="auto"):
+               epochs=30, batch_size=32, lr=0.002, patience=7, device="auto",
+               sample_weight=None):
     """Train LSTM with early stopping and LR scheduling."""
     training_device = resolve_training_device(device)
     lstm_model.to(training_device)
@@ -367,7 +379,14 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
     y_val_device = y_val.to(training_device)
     print(f"--> Training Behavioral BiLSTM Model on {training_device.type.upper()}...")
 
-    train_dataset = TensorDataset(X_train, y_train)
+    if sample_weight is not None:
+        weights = torch.as_tensor(sample_weight, dtype=torch.float32)
+        if (weights.shape != y_train.shape or not bool(torch.isfinite(weights).all())
+                or not bool((weights > 0).all())):
+            raise ValueError("LSTM sample weights must be positive and aligned")
+        train_dataset = TensorDataset(X_train, y_train, weights)
+    else:
+        train_dataset = TensorDataset(X_train, y_train)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
 
     criterion = nn.BCELoss()
@@ -381,12 +400,20 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
     lstm_model.train()
     for epoch in range(epochs):
         total_loss = 0.0
-        for batch_x, batch_y in train_loader:
+        for batch in train_loader:
+            batch_x, batch_y = batch[:2]
             batch_x = batch_x.to(training_device)
             batch_y = batch_y.to(training_device)
             optimizer.zero_grad()
             preds = lstm_model(batch_x)
-            bce_loss = criterion(preds.squeeze(-1), batch_y)
+            if sample_weight is None:
+                bce_loss = criterion(preds.squeeze(-1), batch_y)
+            else:
+                batch_weight = batch[2].to(training_device)
+                losses = nn.functional.binary_cross_entropy(
+                    preds.squeeze(-1), batch_y, reduction="none",
+                )
+                bce_loss = (losses * batch_weight).sum() / batch_weight.sum()
             reg_loss = lstm_model.get_regularization_loss()
             loss = bce_loss + reg_loss
             loss.backward()
@@ -426,10 +453,14 @@ def train_lstm(lstm_model, X_train, y_train, X_val, y_val,
     lstm_model.eval()
 
 
-def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=None):
+def train_tabular(tabular_model, X_train, y_train, X_val, y_val, feature_names=None,
+                  sample_weight=None):
     """Train XGBoost with validation set."""
     print("--> Training Tabular XGBoost Classifier...")
-    tabular_model.fit(X_train, y_train, feature_names=feature_names, X_val=X_val, y_val=y_val)
+    tabular_model.fit(
+        X_train, y_train, feature_names=feature_names, X_val=X_val, y_val=y_val,
+        **({"sample_weight": sample_weight} if sample_weight is not None else {}),
+    )
     importances = tabular_model.get_feature_importances()
     top5 = list(importances.items())[:5]
     print(f"    Top 5 Features: {top5}")
@@ -728,7 +759,8 @@ def validate_known_release_cases(detector, telemetries: list, indices, labels,
 
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
-         early_augmentation=True, diagnostic_only=False):
+         early_augmentation=True, diagnostic_only=False, capture_dir=None,
+         capture_holdout_families=(), tabular_only=False, base_weights_dir=None):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -739,6 +771,25 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     weights_dir = os.path.abspath(weights_dir or production_weights_dir)
     if diagnostic_only and os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir):
         raise ValueError("Diagnostic models require a separate --weights-dir")
+    if capture_dir and (not diagnostic_only or os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir)):
+        raise ValueError("Field captures require --diagnostic-only and a separate --weights-dir")
+    if tabular_only and (not capture_dir or not diagnostic_only):
+        raise ValueError("--tabular-only requires diagnostic field captures")
+    base_manifest = None
+    if tabular_only:
+        base_weights_dir = os.path.abspath(base_weights_dir or production_weights_dir)
+        base_manifest = verify_model_bundle(
+            base_weights_dir,
+            list(ENV_FEATURE_NAMES) + MOUSE_STAT_FEATURE_NAMES,
+        )
+    captured_runs = load_bot_captures(capture_dir) if capture_dir else []
+    heldout_families = set(capture_holdout_families)
+    if captured_runs:
+        available_families = {run.family for run in captured_runs}
+        if not heldout_families or not heldout_families <= available_families:
+            raise ValueError("Specify one or more captured --capture-holdout-family values")
+        if not available_families - heldout_families:
+            raise ValueError("At least one other captured family must remain for training")
     os.makedirs(weights_dir, exist_ok=True)
 
     # ================================================================
@@ -866,7 +917,34 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         all_labels.append(label)
         all_splits.append(split)
 
+    captured_holdout = []
+    captured_train = 0
+    field_train_indices = set()
+    for run in captured_runs:
+        if run.family in heldout_families:
+            captured_holdout.append(run)
+            continue
+        windows = capture_training_windows(run)
+        if not windows:
+            continue
+        final = windows[-1]
+        field_train_indices.add(len(all_telemetries))
+        all_telemetries.append({
+            "sessionId": f"field_{run.capture_id}",
+            "fingerprint": {},
+            "botd": {"heuristicScore": 0.0, "detectors": {}},
+            "mouse": {"records": final, "chunks": records_to_chunks(final)},
+            "_training_rolling_windows": windows[:-1],
+        })
+        all_labels.append(1)
+        all_splits.append("train")
+        captured_train += 1
+    if captured_runs and (not captured_train or not captured_holdout):
+        raise ValueError("Captured training and holdout families need usable browser runs")
+
     print(f"  Total samples: {len(all_telemetries)} (Humans: {all_labels.count(0)}, Bots: {all_labels.count(1)})")
+    if captured_runs:
+        print(f"  Captured runs: train={captured_train}, family holdout={len(captured_holdout)}")
 
     dataset_audit = audit_training_dataset(all_telemetries, all_labels, all_splits)
     print(f"  Dataset fingerprint: {dataset_audit['fingerprint_sha256'][:16]}...")
@@ -937,6 +1015,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
     X_train_tab, X_val_tab, X_test_tab = X_tab[idx_train], X_tab[idx_val], X_tab[idx_test]
     y_train_tab, y_val_tab, y_test_tab = y_tab[idx_train], y_tab[idx_val], y_tab[idx_test]
+    row_weights = [4.0 if int(index) in field_train_indices else 1.0 for index in idx_train]
 
     augmented_prefix_count = 0
     augmented_rolling_count = 0
@@ -953,6 +1032,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     prefix,
                 ))
                 extra_labels.append(int(y_tab[session_idx]))
+                row_weights.append(4.0 if int(session_idx) in field_train_indices else 1.0)
                 augmented_prefix_count += 1
             sampled_windows = telemetry.get("_training_rolling_windows")
             rolling = (
@@ -967,6 +1047,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     window,
                 ))
                 extra_labels.append(int(y_tab[session_idx]))
+                row_weights.append(4.0 if int(session_idx) in field_train_indices else 1.0)
                 augmented_rolling_count += 1
         if extra_vectors:
             X_train_tab = np.vstack([X_train_tab, np.asarray(extra_vectors, dtype=np.float32)])
@@ -985,9 +1066,16 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     tabular_model = TabularBotClassifier(
         n_estimators=300,
         max_depth=6,
-        scale_pos_weight=sum(y_train_tab == 0) / max(1, sum(y_train_tab == 1)),
+        scale_pos_weight=(
+            sum(w for w, label in zip(row_weights, y_train_tab) if label == 0)
+            / max(1.0, sum(w for w, label in zip(row_weights, y_train_tab) if label == 1))
+        ),
     )
-    train_tabular(tabular_model, X_train_tab, y_train_tab, X_val_tab, y_val_tab, feature_names=feature_names)
+    train_tabular(
+        tabular_model, X_train_tab, y_train_tab, X_val_tab, y_val_tab,
+        feature_names=feature_names,
+        sample_weight=np.asarray(row_weights, dtype=np.float32) if captured_runs else None,
+    )
 
     # ================================================================
     # PHASE 5: Train Behavioral BiLSTM
@@ -1016,6 +1104,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
         X_chunks_train = X_chunks_tensor[train_idx]
         y_chunks_train = y_chunks_tensor[train_idx]
+        lstm_train_owners = [all_chunk_session_indices[int(index)] for index in train_idx]
         X_chunks_val = X_chunks_tensor[val_idx]
         y_chunks_val = y_chunks_tensor[val_idx]
         early_chunk_count = 0
@@ -1023,6 +1112,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         if early_augmentation:
             early_chunks = []
             early_labels = []
+            early_owners = []
             for session_idx in idx_train:
                 telemetry = all_telemetries[int(session_idx)]
                 records = telemetry.get("early_records") or (telemetry.get("mouse") or {}).get("records") or []
@@ -1031,6 +1121,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     if prefix_chunks.size(0):
                         early_chunks.append(prefix_chunks[-1])
                         early_labels.append(float(y_tab[session_idx]))
+                        early_owners.append(int(session_idx))
                         early_chunk_count += 1
                 sampled_windows = telemetry.get("_training_rolling_windows")
                 rolling = (
@@ -1043,20 +1134,36 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     if window_chunks.size(0):
                         early_chunks.append(window_chunks[-1])
                         early_labels.append(float(y_tab[session_idx]))
+                        early_owners.append(int(session_idx))
                         rolling_chunk_count += 1
             if early_chunks:
                 X_chunks_train = torch.cat([X_chunks_train, torch.stack(early_chunks)])
                 y_chunks_train = torch.cat([
                     y_chunks_train, torch.tensor(early_labels, dtype=torch.float32)
                 ])
+                lstm_train_owners.extend(early_owners)
         print(f"    Additional train-only early chunks: {early_chunk_count}")
         print(f"    Additional train-only rolling/timing chunks: {rolling_chunk_count}")
         print(f"    LSTM chunks — Train: {len(train_idx)} | Val: {len(val_idx)} | Test: {len(test_idx)}")
 
         lstm_model = MouseTrajectoryLSTM(input_dim=8, hidden_dim=64)
-        if len(train_idx) and len(val_idx):
+        if tabular_only:
+            if not lstm_model.load_weights(os.path.join(base_weights_dir, "behavioral_lstm.pt")):
+                raise RuntimeError("Frozen base LSTM could not be loaded")
+            lstm_trained = True
+            print(f"    Frozen BiLSTM from bundle {base_manifest['bundle_id']}")
+        elif len(train_idx) and len(val_idx):
+            lstm_sample_weights = None
+            if captured_runs:
+                counts = Counter(lstm_train_owners)
+                lstm_sample_weights = torch.tensor([
+                    (4.0 if owner in field_train_indices else 1.0) / counts[owner]
+                    for owner in lstm_train_owners
+                ], dtype=torch.float32)
+                lstm_sample_weights /= lstm_sample_weights.mean()
             train_lstm(lstm_model, X_chunks_train, y_chunks_train, X_chunks_val, y_chunks_val,
-                       epochs=30, patience=7, device=training_device.type)
+                       epochs=30, patience=7, device=training_device.type,
+                       sample_weight=lstm_sample_weights)
             lstm_trained = True
         else:
             print("    Insufficient session-separated chunks; leaving LSTM untrained.")
@@ -1125,6 +1232,11 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         training_metrics["ensemble"]["known_regressions"] = validate_known_release_cases(
             production_detector, all_telemetries, idx_test, y_test_tab,
         )
+        if captured_holdout:
+            training_metrics["captured_bot_holdout"] = evaluate_bot_captures(
+                production_detector, captured_holdout,
+            )
+            print(f"  Captured family holdout: {training_metrics['captured_bot_holdout']}")
     except RuntimeError as exc:
         if diagnostic_only:
             publish_model_artifacts(
@@ -1137,6 +1249,13 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
                     "decision_policy_version": "diagnostic",
                     "release_gate_failure": str(exc),
                     "early_augmentation": bool(early_augmentation),
+                    "frozen_lstm_bundle_id": base_manifest["bundle_id"] if base_manifest else None,
+                    "capture_train_families": sorted(
+                        {run.family for run in captured_runs} - heldout_families
+                    ),
+                    "capture_holdout_families": sorted(heldout_families),
+                    "capture_tabular_window_weight": 4.0 if captured_runs else None,
+                    "capture_lstm_session_weight": 4.0 if captured_runs and not tabular_only else None,
                     "dataset": dataset_audit,
                 },
             )
@@ -1164,7 +1283,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             split: {name: float(value) for name, value in values.items()}
             for split, values in model_metrics.items()
         }
-        for model, model_metrics in training_metrics.items()
+        for model, model_metrics in training_metrics.items() if model != "captured_bot_holdout"
     }
     explicit_automation_rule_gate = validate_explicit_automation_rule(production_detector)
     publish_model_artifacts(
@@ -1173,6 +1292,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         weights_dir,
         feature_names=feature_names,
         training_metadata={
+            "diagnostic_only": bool(diagnostic_only),
+            "frozen_lstm_bundle_id": base_manifest["bundle_id"] if base_manifest else None,
             "seed": SEED,
             "training_device": training_device.type,
             "individual_model_evaluation_threshold": 0.5,
@@ -1197,10 +1318,18 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,
             "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,
             "dataset": dataset_audit,
+            "captured_bot_holdout": training_metrics.get("captured_bot_holdout"),
+            "capture_train_families": sorted(
+                {run.family for run in captured_runs} - heldout_families
+            ),
+            "capture_holdout_families": sorted(heldout_families),
+            "capture_tabular_window_weight": 4.0 if captured_runs else None,
+            "capture_lstm_session_weight": 4.0 if captured_runs and not tabular_only else None,
             "metrics": serializable_metrics,
         },
     )
-    print(f"\n  Published ensemble artifacts -> {weights_dir}")
+    action = "Saved diagnostic ensemble" if diagnostic_only else "Published ensemble artifacts"
+    print(f"\n  {action} -> {weights_dir}")
     print("\n" + "=" * 60)
     print("  TRAINING COMPLETE")
     print("=" * 60)
@@ -1230,6 +1359,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Save a failed candidate to a separate directory for offline analysis",
     )
+    parser.add_argument("--capture-dir", default="", help="Local labeled browser captures")
+    parser.add_argument(
+        "--capture-holdout-family", action="append", default=[],
+        help="Reserve an entire bot generator family for evaluation; repeatable",
+    )
+    parser.add_argument("--tabular-only", action="store_true", help="Keep the base BiLSTM frozen")
+    parser.add_argument("--base-weights-dir", default="", help="Bundle supplying the frozen BiLSTM")
     args = parser.parse_args()
     main(
         dataset_root=args.dataset_root,
@@ -1238,4 +1374,8 @@ if __name__ == "__main__":
         weights_dir=args.weights_dir or None,
         early_augmentation=not args.no_early_augmentation,
         diagnostic_only=args.diagnostic_only,
+        capture_dir=args.capture_dir or None,
+        capture_holdout_families=args.capture_holdout_family,
+        tabular_only=args.tabular_only,
+        base_weights_dir=args.base_weights_dir or None,
     )
