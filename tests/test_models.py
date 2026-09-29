@@ -213,6 +213,35 @@ class TestEnsembleDetector:
                 "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
             )
 
+    def test_confirmed_profile_decision_does_not_depend_on_mouse_models(self):
+        class BrokenLstm:
+            def predict_session_scores(self, _chunks):
+                raise RuntimeError("LSTM unavailable")
+
+        class BrokenTabular:
+            def predict_proba(self, _features):
+                raise RuntimeError("Tabular unavailable")
+
+        detector = EnsembleBotDetector(lstm_model=BrokenLstm(), tabular_model=BrokenTabular())
+        headless = "Mozilla/5.0 HeadlessChrome/154.0.0.0"
+        for count in (0, 25):
+            records = [
+                {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+                for i in range(count)
+            ]
+            result = detector.predict({
+                "_server_user_agent": headless,
+                "fingerprint": {"userAgent": headless},
+                "botd": {"detectors": {"webdriver": True}},
+                "mouse": {"records": records},
+            })
+            assert result["verdict"] == "BOT"
+            assert result["decision_state"] == "FINAL"
+            assert result["breakdown"]["decision_basis"] == "explicit_automation"
+            assert result["breakdown"]["behavioral_lstm_score"] is None
+            assert result["breakdown"]["tabular_score"] is None
+            assert result["breakdown"]["risk_score_in_domain"] is False
+
     def test_tabular_score_is_not_applicable_without_trained_mouse_input(self):
         class StrongTabular:
             def predict_proba(self, _features):
@@ -306,7 +335,7 @@ class TestEnsembleDetector:
         bot_payload = {
             "fingerprint": {"hardwareConcurrency": 1, "deviceMemory": 2},
             "botd": {
-                "heuristicScore": 0.85,
+                "heuristicScore": 0.999,
                 "detectors": {"webdriver": True, "headlessUa": True},
                 "reasons": ["navigator.webdriver is true"],
             },

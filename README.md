@@ -109,6 +109,8 @@ A [browser bot pilot](docs/FIELD_BOT_PILOT_2026-09-29.md) reproduced HUMAN
 decisions on heavy-mouse, circular, and scrub-hover Playwright runs. Its
 captured data and candidate models are diagnostic only; the bundled production
 model is unchanged.
+The [profile-first review](docs/PROFILE_FIRST_REVIEW_2026-09-29.md) explains
+why the current BotD/fingerprint signals cannot resolve most stealth runs.
 
 During a MongoDB outage, acknowledged telemetry is committed to the local
 SQLite spool on a persistent Docker volume. Keep the API on one host/worker;

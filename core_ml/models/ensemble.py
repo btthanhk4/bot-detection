@@ -158,12 +158,13 @@ class EnsembleBotDetector:
             )
         )
 
-        # 2. Behavioral LSTM evaluation
-        chunks_tensor = extract_sequential_chunks(chunks)
-        has_enough_mouse_data = chunks_tensor.size(0) > 0
+        # A confirmed profile rule is independent of mouse inference. Do not
+        # let a failed or out-of-domain mouse model mask that decision.
+        has_enough_mouse_data = bool(chunks)
         lstm_score = 0.5
         lstm_tail_score = 0.5
-        if has_enough_mouse_data and self.lstm_available:
+        if not explicit_automation and has_enough_mouse_data and self.lstm_available:
+            chunks_tensor = extract_sequential_chunks(chunks)
             if hasattr(self.lstm_model, "predict_session_scores"):
                 scores = self.lstm_model.predict_session_scores(chunks_tensor)
                 if not isinstance(scores, (tuple, list)) or len(scores) != 2:
@@ -179,28 +180,36 @@ class EnsembleBotDetector:
                 reasons.append("Elevated mouse-behavior model evidence")
 
         # 3. Tabular model evaluation (Canonical single source of truth vector)
-        env_vec = extract_env_vector(fingerprint, botd)
-        mouse_stat_vec = extract_mouse_stat_vector(mouse_stats)
-        combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
-        tabular_score = self._require_model_probability(
-            self.tabular_model.predict_proba(combined_tabular_vec), "Tabular model"
-        ) if self.tabular_available else 0.5
+        tabular_score = 0.5
+        if self.tabular_available and not explicit_automation:
+            env_vec = extract_env_vector(fingerprint, botd)
+            mouse_stat_vec = extract_mouse_stat_vector(mouse_stats)
+            combined_tabular_vec = np.concatenate([env_vec, mouse_stat_vec])
+            tabular_score = self._require_model_probability(
+                self.tabular_model.predict_proba(combined_tabular_vec), "Tabular model"
+            )
 
         heuristic_score = self._sanitize_probability(heuristic_score, 0.0)
 
         # BotD is positive evidence only. Its absence cannot dilute strong ML evidence.
-        w_l = max(0.0, self.w_lstm) if self.lstm_available and has_enough_mouse_data else 0.0
-        w_t = max(0.0, self.w_tabular) if self.tabular_available else 0.0
+        w_l = max(0.0, self.w_lstm) if (
+            self.lstm_available and has_enough_mouse_data and not explicit_automation
+        ) else 0.0
+        w_t = max(0.0, self.w_tabular) if (
+            self.tabular_available and not explicit_automation
+        ) else 0.0
         ml_total = w_l + w_t
         baseline = (w_l * lstm_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
         tail_baseline = (w_l * lstm_tail_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
-        heuristic_weight = min(1.0, max(0.0, self.w_heuristic) * heuristic_score)
+        heuristic_weight = 0.0 if explicit_automation else min(
+            1.0, max(0.0, self.w_heuristic) * heuristic_score
+        )
         final_proba = baseline + (1.0 - baseline) * heuristic_weight
         suspicion_score = tail_baseline + (1.0 - tail_baseline) * heuristic_weight
         # Strong within-session behavioral evidence warrants abstention when
         # the tabular model disagrees, even if the blended score is low.
         behavioral_disagreement = (
-            self.lstm_available and self.tabular_available and has_enough_mouse_data
+            not explicit_automation and self.lstm_available and self.tabular_available and has_enough_mouse_data
             and lstm_score >= 0.425 and lstm_tail_score >= 0.70
             and tabular_score < self.suspect_threshold
         )
@@ -216,7 +225,7 @@ class EnsembleBotDetector:
         )
         decision_deferred = mouse_evidence_deferred and not explicit_automation
         tabular_score_in_domain = bool(
-            self.tabular_available and has_enough_mouse_data and usable_trajectory
+            self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
             and move_point_count >= self.min_mouse_points_for_bot
             and not unsupported_mobile and not legacy_touch_ambiguous
         )
@@ -267,9 +276,9 @@ class EnsembleBotDetector:
             "confidence": round(confidence, 4),
             "reasons": reasons,
             "breakdown": {
-                "behavioral_lstm_score": round(lstm_score, 4),
-                "behavioral_lstm_tail_score": round(lstm_tail_score, 4),
-                "tabular_score": round(tabular_score, 4),
+                "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
+                "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
+                "tabular_score": None if explicit_automation else round(tabular_score, 4),
                 "tabular_score_in_domain": tabular_score_in_domain,
                 "risk_score_in_domain": not mouse_evidence_deferred and not explicit_automation,
                 "decision_basis": (
@@ -294,9 +303,9 @@ class EnsembleBotDetector:
                     "w_tabular": round((1 - heuristic_weight) * w_t / ml_total, 3) if ml_total else 0,
                     "w_heuristic": round(heuristic_weight, 3),
                 },
-                "fusion_baseline": round(baseline, 4),
-                "suspicion_risk_score": round(suspicion_score, 4),
+                "fusion_baseline": None if explicit_automation else round(baseline, 4),
+                "suspicion_risk_score": None if explicit_automation else round(suspicion_score, 4),
                 "behavioral_disagreement": behavioral_disagreement,
-                "heuristic_lift": round(final_proba - baseline, 4),
+                "heuristic_lift": None if explicit_automation else round(final_proba - baseline, 4),
             },
         }
