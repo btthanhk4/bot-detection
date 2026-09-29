@@ -42,6 +42,7 @@ Thumbs.db
 telemetry_buffer.json
 /var/
 /bot-lab/
+/.gitnexus/
 
 # Model checkpoints & dataset caches (large binaries)
 *.tar.gz

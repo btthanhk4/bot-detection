@@ -1,14 +1,71 @@
 # BÁO CÁO QUÁ TRÌNH XÂY DỰNG & TỐI ƯU MÔ HÌNH PHÁT HIỆN BOT
 
-> **Trạng thái: PHỤ LỤC LỊCH SỬ, KHÔNG PHẢI KẾT QUẢ HIỆN HÀNH.** Đây là bản diễn giải trước khi sửa feature contract và
-> data leakage. Kết quả máy đọc đã được chạy lại ngày 2026-09-15 trên 749 session;
-> nguồn số liệu hiện hành là [`core_ml/experiment_results.json`](core_ml/experiment_results.json)
-> và bảng tóm tắt trong [`README.md`](README.md). Không dùng các bảng lịch sử bên
-> dưới làm kết quả cuối cùng nếu chúng khác hai nguồn trên.
+> **Phần 1 trở đi là phụ lục lịch sử, không phải kết quả hiện hành.** Các bảng cũ
+> được viết trước khi sửa feature contract và data leakage. Kết quả đánh giá
+> lại ngày 2026-09-15 nằm trong [`core_ml/experiment_results.json`](core_ml/experiment_results.json),
+> nhưng trạng thái release và thí nghiệm browser mới hơn được tóm tắt ngay dưới đây.
+> Không lấy các con số lịch sử làm bằng chứng sẵn sàng production.
 
 > **Đề tài:** Xây dựng mô hình phân biệt bot và người truy cập trang web  
 > **Dataset:** Web Bot Detection Dataset (M4D-ITI) — Phase 1  
-> **Cập nhật trạng thái:** 2026-09-15
+> **Cập nhật trạng thái:** 2026-09-29
+
+---
+
+## Trạng thái hiện tại và hướng tối ưu (2026-09-29)
+
+**Bundle đang phục vụ:** `e3dd550e4d40453db0e17a743da7e992`, decision policy 10.
+Hệ thống dùng BiLSTM, XGBoost trên thống kê chuột và BotD. Dataset huấn luyện
+chưa có profile trình duyệt có nhãn tương ứng, nên các cột environment của
+XGBoost được điền 0 khi train; không được diễn giải điểm XGBoost hiện tại là
+khả năng phân loại fingerprint. Quy tắc profile độc lập hiện chỉ kết luận BOT
+cho HeadlessChrome tự khai kèm dấu hiệu automation được đối chiếu với HTTP UA.
+Không có chuột, profile yếu hoặc không khớp miền huấn luyện vẫn là SUSPECT;
+không tự động nâng tất cả lên BOT.
+
+**Bằng chứng browser có nhãn:** 15 lần chạy Playwright trên cùng website,
+5 lần mỗi họ heavy-mouse, circular-spiral và scrub-hover. Đây là nhãn từ
+runner, không lấy từ model. Tại snapshot cuối đã gửi lên collector: 0/15 BOT,
+12/15 HUMAN, 3/15 SUSPECT. Cả 3 SUSPECT đều có mã
+`MODEL_DISAGREEMENT`; không có phiên nào trong nhóm này bị hoãn vì thiếu
+chuột tại snapshot cuối. Các mã nguyên nhân là nhãn chẩn đoán, không làm thay
+đổi kết luận. Chi tiết giao thức và các candidate ở
+[`docs/FIELD_BOT_PILOT_2026-09-29.md`](docs/FIELD_BOT_PILOT_2026-09-29.md).
+Mẫu này quá nhỏ, cùng một website/generator và không có người thật đối chứng
+cùng site; không suy ra tỷ lệ lỗi production từ 15 lần chạy.
+
+| Phiên bản thử nghiệm | Kết quả trên 15 bot browser | Kiểm tra người thật cùng nguồn | Quyết định |
+| --- | --- | --- | --- |
+| Baseline đang phục vụ | 0 BOT, 12 HUMAN, 3 SUSPECT | 1.255/24.000 cửa sổ test là SUSPECT | Giữ làm mốc so sánh, chưa bật chặn tự động |
+| Chỉ train lại XGBoost `4da81d59...` | 0 BOT, 0 HUMAN, 15 SUSPECT | 1.279/24.000 cửa sổ test là SUSPECT; BOT recall cuối test giảm từ 60/66 xuống 58/66 | Diagnostic-only, không phát hành |
+| Train lại BiLSTM + XGBoost `d27030f7...` | Circular (họ train) 5/5 BOT; heavy 0/5 BOT; scrub holdout 0/5 BOT | 3.446/24.000 cửa sổ test là SUSPECT, max 32,8%/phiên, vượt release gate | Diagnostic-only, không phát hành |
+
+**Kế hoạch tối ưu có kiểm chứng:**
+
+1. **Đã bắt đầu:** gắn `suspect_reason_codes` vào breakdown và đếm nguyên
+   nhân ở snapshot cuối theo họ bot. Mã có thể đồng xuất hiện; tổng theo mã
+   không nhất thiết bằng số SUSPECT. Không đổi verdict, score hoặc ngưỡng.
+2. **Thu nhãn độc lập:** khoảng 30-50 lần/họ bot với biến thiên seed, tốc độ,
+   viewport và cách thao tác; thêm 20-30 người thật tự nguyện dùng chính site,
+   gồm chuột, touchpad, kéo chọn, ít di chuột. Lưu payload collector đã gửi,
+   header HTTP quan sát được, nhãn nguồn chạy, phiên bản script/model và từng
+   snapshot. Đây là cỡ mẫu khảo sát, không phải chứng nhận production.
+3. **Sửa domain gap trước retrain:** đánh giá riêng Phase 1 (timestamp ước
+   lượng) và Phase 2/browser (timestamp quan sát), làm ablation đặc trưng nhịp
+   thời gian, độ lặp, độ cong. Chia theo phiên/người/họ generator trước khi
+   tạo cửa sổ; giữ nguyên một họ bot làm holdout.
+4. **Thử từng thay đổi:** XGBoost trên bộ train cân bằng theo phiên; BiLSTM
+   trên dữ liệu có timestamp thật; cuối cùng mới đánh giá lại fusion/ngưỡng
+   trên validation. So sánh số bot bị HUMAN, người thật bị BOT, thời lượng
+   SUSPECT và replay dày của bundle cũ với candidate.
+5. **Release gate:** chỉ phát hành khi không tăng false BOT ở nhóm người thật
+   độc lập, giảm bot HUMAN trên họ chưa gặp và qua toàn bộ regression/replay.
+   Chạy shadow trước; chưa bật chặn tự động khi chưa có nhãn đối chứng.
+
+**Giới hạn còn mở:** chưa có đủ dữ liệu người thật trên website này, các bot
+giả chuột tinh vi vẫn thường bị HUMAN và BotD không phát hiện các generator
+đã che automation marker. Vì vậy chưa thể xác nhận độ chính xác production
+hoặc tuyên bố mô hình đã tối ưu tối đa.
 
 ---
 

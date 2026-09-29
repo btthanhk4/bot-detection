@@ -55,10 +55,34 @@ def test_capture_windows_deduplicate_but_keep_one_browser_run(tmp_path):
     report = evaluate_bot_captures(Detector(), runs)
     assert report["runs"] == 1
     assert report["families"]["heavy"] == {
-        "runs": 1, "final_bot": 1, "final_human": 0,
+        "runs": 1, "final_bot": 1, "final_human": 0, "final_suspect": 0,
         "ever_human": 0, "ever_bot": 1,
         "probe_bot": 0, "probe_human": 1,
+        "final_suspect_reasons": {},
     }
+
+
+def test_capture_report_counts_final_suspect_reasons_once_per_run(tmp_path):
+    _write(tmp_path / "a.json")
+    _write(tmp_path / "b.json", capture_id="run-2", family="scrub", session_id="sess-2")
+    runs = load_bot_captures(str(tmp_path))
+
+    class Detector:
+        def predict(self, payload):
+            return {
+                "verdict": "SUSPECT",
+                "breakdown": {"suspect_reason_codes": [
+                    "INSUFFICIENT_MOUSE", "CLIENT_AUTOMATION_SIGNAL",
+                ]},
+            }
+
+    report = evaluate_bot_captures(Detector(), runs)
+    assert report["runs"] == 2
+    for family in ("heavy", "scrub"):
+        assert report["families"][family]["final_suspect"] == 1
+        assert report["families"][family]["final_suspect_reasons"] == {
+            "CLIENT_AUTOMATION_SIGNAL": 1, "INSUFFICIENT_MOUSE": 1,
+        }
 
 
 def test_capture_loader_rejects_false_labels_and_duplicate_runs(tmp_path):

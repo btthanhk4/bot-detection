@@ -346,6 +346,33 @@ def test_telemetry_persists_explicit_automation_verdict(client, monkeypatch):
     assert response.json()["persisted"] is True
     assert captured["verdict"] == "BOT"
     assert captured["breakdown"]["decision_basis"] == "explicit_automation"
+    assert captured["breakdown"]["suspect_reason_codes"] == []
+
+
+def test_telemetry_persists_suspect_diagnostic_codes(client, monkeypatch):
+    captured = {}
+
+    def save(_telemetry, analysis):
+        captured.update(analysis)
+        return True
+
+    monkeypatch.setattr("api_service.database.save_detection_result", save)
+    response = client.post(
+        "/api/v1/telemetry",
+        json={
+            "sessionId": "sess_suspect_diagnostic",
+            "visitorId": "visitor_suspect_diagnostic",
+            "botd": {"heuristicScore": 0.95},
+            "mouse": {"records": []},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["persisted"] is True
+    assert captured["verdict"] == "SUSPECT"
+    assert captured["breakdown"]["suspect_reason_codes"] == [
+        "INSUFFICIENT_MOUSE", "HIGH_CLIENT_HEURISTIC_SCORE",
+    ]
 
 
 def test_health_distinguishes_model_load_from_release_evidence(client):

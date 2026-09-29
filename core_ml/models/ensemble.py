@@ -260,6 +260,27 @@ class EnsembleBotDetector:
         else:
             verdict = "HUMAN"
 
+        suspect_reason_codes = []
+        if verdict == "SUSPECT":
+            if decision_deferred:
+                if not self.lstm_available or not self.tabular_available:
+                    suspect_reason_codes.append("MODEL_UNAVAILABLE")
+                elif (unsupported_mobile or legacy_touch_ambiguous
+                      or (touch_record_count and not move_point_count)):
+                    suspect_reason_codes.append("UNSUPPORTED_INPUT")
+                elif not usable_trajectory and move_point_count >= self.min_mouse_points_for_bot:
+                    suspect_reason_codes.append("DEGENERATE_TRAJECTORY")
+                else:
+                    suspect_reason_codes.append("INSUFFICIENT_MOUSE")
+            if critical_flags:
+                suspect_reason_codes.append("CLIENT_AUTOMATION_SIGNAL")
+            if heuristic_score >= 0.8:
+                suspect_reason_codes.append("HIGH_CLIENT_HEURISTIC_SCORE")
+            if behavioral_disagreement:
+                suspect_reason_codes.append("MODEL_DISAGREEMENT")
+            if not decision_deferred and max(final_proba, suspicion_score) >= self.suspect_threshold:
+                suspect_reason_codes.append("INTERMEDIATE_RISK")
+
         # is_bot aligns with verdict (not a separate threshold)
         is_bot = (verdict == "BOT")
 
@@ -297,6 +318,7 @@ class EnsembleBotDetector:
                 "unsupported_mobile": unsupported_mobile,
                 "legacy_touch_ambiguous": legacy_touch_ambiguous,
                 "decision_deferred": decision_deferred,
+                "suspect_reason_codes": suspect_reason_codes,
                 "minimum_mouse_points": self.min_mouse_points_for_bot,
                 "weights_used": {
                     "w_lstm": round((1 - heuristic_weight) * w_l / ml_total, 3) if ml_total else 0,

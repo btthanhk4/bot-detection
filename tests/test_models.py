@@ -720,3 +720,52 @@ class TestEnsembleDetector:
         assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
         assert result["is_bot"] is False
         assert result["breakdown"]["legacy_touch_ambiguous"] is True
+
+
+def test_suspect_reason_codes_do_not_change_verdicts():
+    class FixedModel:
+        def __init__(self, score):
+            self.score = score
+
+        def predict_session_proba(self, _features):
+            return self.score
+
+        def predict_proba(self, _features):
+            return self.score
+
+    records = [
+        {"time": i * 20, "x": i / 100, "y": 0.2, "type": "move"}
+        for i in range(25)
+    ]
+    detector = EnsembleBotDetector(
+        lstm_model=FixedModel(0.05), tabular_model=FixedModel(0.05)
+    )
+    cases = [
+        ({}, "SUSPECT", {"INSUFFICIENT_MOUSE"}),
+        ({"botd": {"heuristicScore": 0.99}}, "SUSPECT", {
+            "INSUFFICIENT_MOUSE", "HIGH_CLIENT_HEURISTIC_SCORE",
+        }),
+        ({"mouse": {"records": [
+            {**record, "x": 0.2} for record in records
+        ]}}, "SUSPECT", {"DEGENERATE_TRAJECTORY"}),
+        ({"fingerprint": {"userAgent": "iPhone"}, "mouse": {"records": records}},
+         "SUSPECT", {"UNSUPPORTED_INPUT"}),
+        ({"botd": {"detectors": {"webdriver": True}}, "mouse": {"records": records}},
+         "SUSPECT", {"CLIENT_AUTOMATION_SIGNAL", "HIGH_CLIENT_HEURISTIC_SCORE"}),
+        ({"mouse": {"records": records}}, "HUMAN", set()),
+    ]
+    for payload, verdict, expected_codes in cases:
+        result = detector.predict(payload)
+        assert result["verdict"] == verdict
+        assert expected_codes.issubset(result["breakdown"]["suspect_reason_codes"])
+        if verdict != "SUSPECT":
+            assert result["breakdown"]["suspect_reason_codes"] == []
+
+    unavailable = EnsembleBotDetector(lstm_available=False).predict({})
+    assert unavailable["breakdown"]["suspect_reason_codes"] == ["MODEL_UNAVAILABLE"]
+
+    intermediate = EnsembleBotDetector(
+        lstm_model=FixedModel(0.55), tabular_model=FixedModel(0.55)
+    ).predict({"mouse": {"records": records}})
+    assert intermediate["verdict"] == "SUSPECT"
+    assert intermediate["breakdown"]["suspect_reason_codes"] == ["INTERMEDIATE_RISK"]

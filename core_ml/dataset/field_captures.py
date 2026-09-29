@@ -1,6 +1,7 @@
 """Load labeled browser captures without treating correlated snapshots as sessions."""
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,15 +110,21 @@ def evaluate_bot_captures(detector, captures: list[BotCapture]) -> dict:
     """Report one outcome per run and per family, including interim HUMAN verdicts."""
     families = {}
     for capture in captures:
-        verdicts = [detector.predict(payload)["verdict"] for payload in capture.sent_snapshots]
+        predictions = [detector.predict(payload) for payload in capture.sent_snapshots]
+        verdicts = [prediction["verdict"] for prediction in predictions]
         probe_verdict = detector.predict(capture.probe_payload)["verdict"]
         family = families.setdefault(capture.family, {
-            "runs": 0, "final_bot": 0, "final_human": 0,
+            "runs": 0, "final_bot": 0, "final_human": 0, "final_suspect": 0,
             "ever_human": 0, "ever_bot": 0, "probe_bot": 0, "probe_human": 0,
+            "final_suspect_reasons": Counter(),
         })
         family["runs"] += 1
         family["final_bot"] += verdicts[-1] == "BOT"
         family["final_human"] += verdicts[-1] == "HUMAN"
+        family["final_suspect"] += verdicts[-1] == "SUSPECT"
+        if verdicts[-1] == "SUSPECT":
+            codes = predictions[-1].get("breakdown", {}).get("suspect_reason_codes") or ["UNSPECIFIED"]
+            family["final_suspect_reasons"].update(set(codes))
         family["ever_human"] += "HUMAN" in verdicts
         family["ever_bot"] += "BOT" in verdicts
         family["probe_bot"] += probe_verdict == "BOT"
@@ -125,5 +132,8 @@ def evaluate_bot_captures(detector, captures: list[BotCapture]) -> dict:
     return {
         "runs": len(captures),
         "runs_without_transport_ua": sum(not capture.observed_headers for capture in captures),
-        "families": dict(sorted(families.items())),
+        "families": {
+            name: {**counts, "final_suspect_reasons": dict(sorted(counts["final_suspect_reasons"].items()))}
+            for name, counts in sorted(families.items())
+        },
     }
