@@ -16,6 +16,7 @@ if (!fs.existsSync(distDir)) {
 // Read modules
 let fpCode = fs.readFileSync(path.join(srcDir, 'fingerprint.js'), 'utf-8');
 let botdCode = fs.readFileSync(path.join(srcDir, 'botd.js'), 'utf-8');
+let profileCode = fs.readFileSync(path.join(srcDir, 'profile.js'), 'utf-8');
 let mouseCode = fs.readFileSync(path.join(srcDir, 'mouse.js'), 'utf-8');
 let indexCode = fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8');
 
@@ -30,6 +31,7 @@ function stripEsModules(code) {
 
 fpCode = stripEsModules(fpCode);
 botdCode = stripEsModules(botdCode);
+profileCode = stripEsModules(profileCode);
 mouseCode = stripEsModules(mouseCode);
 indexCode = stripEsModules(indexCode);
 
@@ -44,6 +46,9 @@ ${fpCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- BotD Client-Side Heuristics ---
 ${botdCode.split('\n').map(l => '  ' + l).join('\n')}
+
+  // --- Passive Browser Profile Observations ---
+${profileCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- DELBOT Mouse Dynamics Recorder ---
 ${mouseCode.split('\n').map(l => '  ' + l).join('\n')}

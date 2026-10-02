@@ -8,7 +8,7 @@
 
 > **Đề tài:** Xây dựng mô hình phân biệt bot và người truy cập trang web  
 > **Dataset:** Web Bot Detection Dataset (M4D-ITI) — Phase 1  
-> **Cập nhật trạng thái:** 2026-09-29
+> **Cập nhật trạng thái:** 2026-10-02
 
 ---
 
@@ -96,6 +96,81 @@ người thật có nhãn độc lập trên cùng site để đánh giá trade-
 giả chuột tinh vi vẫn thường bị HUMAN và BotD không phát hiện các generator
 đã che automation marker. Vì vậy chưa thể xác nhận độ chính xác production
 hoặc tuyên bố mô hình đã tối ưu tối đa.
+
+---
+
+## Thử nghiệm profile shadow (2026-10-02)
+
+Đã triển khai bước đầu của kế hoạch nghiên cứu: collector thu profile của trang
+và Worker, gồm UA, platform, trạng thái webdriver và Client Hints (kể cả
+`fullVersionList`). Mỗi probe có timeout tối đa 1 giây mặc định; Worker được
+dọn khi hoàn tất, timeout hoặc hủy collector. API trả phân tích riêng ở
+`breakdown.profile_shadow` và lưu cùng telemetry. Các tín hiệu này **chưa
+tham gia score/verdict của policy 10**; không thay trọng số hoặc weights model.
+
+Nhánh shadow thử phát hiện HeadlessChrome ở UA/Client Hints và webdriver trong
+Worker. Mâu thuẫn OS chỉ tạo gợi ý SUSPECT; thiếu API, CSP chặn Worker, khác CPU,
+locale hay phiên bản UA không tự tạo bằng chứng BOT. Profile không có tín hiệu
+không được coi là bằng chứng HUMAN. Hai tín hiệu cùng nguồn không phải hai
+bằng chứng độc lập.
+
+**Benchmark mới:** 24 phiên automation trên trang fixture local, gồm 6 phiên
+Playwright thường và 18 phiên stealth (heavy-wander, circular, scrub-hover;
+3 seed/họ/origin). Chạy collector UMD thật, gửi 4 snapshot/phiên đến HTTP server
+local và giữ một probe riêng để chẩn đoán. Đây là kịch bản được dựng cho thử
+nghiệm profile; không phải chạy lại y nguyên 15 phiên trên website ngày 29/09.
+
+| Nhóm | Số phiên | Baseline BOT / SUSPECT / HUMAN | Overlay shadow BOT / SUSPECT / HUMAN |
+| --- | ---: | --- | --- |
+| Playwright thường, cả hai origin | 6 | 6 / 0 / 0 | 6 / 0 / 0 |
+| Stealth trên localhost secure context | 9 | 0 / 3 / 6 | 9 / 0 / 0 |
+| Stealth trên HTTP insecure context | 9 | 0 / 3 / 6 | 0 / 3 / 6 |
+
+Origin an toàn vẫn để lộ brand `HeadlessChrome` trong Client Hints của trang
+và Worker dù UA đã được stealth sửa. HTTP không cung cấp Client Hints và UA
+Worker cũng được sửa, nên chưa giảm điểm mù ở nhóm HTTP. Cả 24 Worker hoạt động,
+không có page error. Kết quả so sánh dùng bundle
+`e3dd550e4d40453db0e17a743da7e992`, không retrain trên benchmark này.
+
+**Chưa có người thật đối chứng:** không suy ra false-positive rate, không xem
+9/9 là khả năng phát hiện mọi stealth bot, không phát hành overlay thành policy.
+HTTP website hiện tại vẫn có điểm mù. Dữ liệu/script bot nằm ngoài Git trong
+`C:/Users/Admin/bot-detection-test`; chỉ báo cáo tổng hợp được commit.
+
+Đã sửa thêm bộ test collector: dùng vị trí resolver động và watchdog để test
+có promise chưa hoàn tất không âm thầm kết thúc thành công. Kiểm thử mới bao
+phủ profile bị thiếu/sai định dạng, timeout/CSP, hủy Worker, privacy CPU/locale,
+Android, bảo toàn verdict/weights và round-trip detect/telemetry.
+
+Lần kiểm tra này: **301 test Python, test collector/profile và Ruff đều qua**.
+Không chạy lại replay 90.000 cửa sổ cho thay đổi diagnostic-only này và không
+dùng kết quả shadow để chứng nhận một policy mới.
+
+**Bước tiếp theo:** thu người thật bằng trình duyệt thường, có cả privacy mode;
+đánh giá từng tín hiệu trước khi cho tham gia quyết định. Nhánh HTTP cần thử
+đặc trưng chuỗi click/scroll/di chuyển và dữ liệu bot có timestamp thật theo
+hướng FP-Agent, rồi mới retrain XGBoost và đối chiếu holdout theo họ bot/người.
+Giữ BeCAPTCHA-Mouse ở bước nghiên cứu neuromotor sau khi xin quyền dùng dữ liệu
+và xác minh thông tin thời gian; chưa cài trọn các thư viện fingerprint.
+
+Nguồn tham khảo:
+
+- [FP-Inconsistent, bài báo](https://arxiv.org/html/2406.07647v2) và
+  [repo tác giả](https://github.com/hariv/fp_inconsistent): phương pháp kiểm tra
+  tính nhất quán; chưa sao chép bộ luật hoặc dùng tỷ lệ của bài báo làm metric DATACAT.
+- [CreepJS](https://github.com/abrahamjuliot/creepjs): tham khảo kiểm tra profile
+  bị can thiệp; fingerprint protection không đồng nghĩa automation.
+- [bot-signal](https://github.com/okasi/bot-signal): maintainer ghi nhận khác CPU
+  giữa trang/Worker trên Opera; DATACAT loại tín hiệu này khỏi shadow verdict.
+- [MDN userAgentData](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/userAgentData):
+  giới hạn secure context và hỗ trợ browser.
+- [FP-Agent, bài báo](https://arxiv.org/html/2605.01247v1) và
+  [repo](https://github.com/ethanbwang/fp-agent): tham khảo bước phân tích tương tác;
+  chưa tải dữ liệu OSF hay tích hợp classifier của tác giả.
+- [BeCAPTCHA-Mouse](https://github.com/BiDAlab/BeCAPTCHA-Mouse): benchmark cần xin
+  quyền truy cập, raw được mô tả chỉ có x/y; chưa dùng để huấn luyện.
+
+Báo cáo và lệnh tái hiện: [PROFILE_SHADOW_REVIEW_2026-10-02.md](docs/PROFILE_SHADOW_REVIEW_2026-10-02.md).
 
 ---
 

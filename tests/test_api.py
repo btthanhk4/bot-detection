@@ -385,6 +385,35 @@ def test_health_distinguishes_model_load_from_release_evidence(client):
     assert health["release_gate_evidence_present"] is True
 
 
+def test_profile_shadow_survives_detect_and_telemetry_without_promoting_verdict(client, monkeypatch):
+    captured = {}
+
+    def save(_telemetry, analysis):
+        captured.update(analysis)
+        return True
+
+    monkeypatch.setattr("api_service.database.save_detection_result", save)
+    payload = {
+        "sessionId": "profile-shadow", "visitorId": "profile-visitor",
+        "botd": {"profile": {
+            "schema": "browser-profile-v1", "workerStatus": "unsupported",
+            "main": {"clientHints": {"brands": [{"brand": "HeadlessChrome", "version": "153"}]}},
+        }},
+        "mouse": {"records": []},
+    }
+    response = client.post("/api/v1/detect", json=payload)
+    assert response.status_code == 200
+    decision = response.json()
+    assert decision["verdict"] == "SUSPECT"
+    assert decision["policy_version"] == DECISION_POLICY_VERSION
+    assert decision["breakdown"]["profile_shadow"]["shadow_verdict"] == "BOT"
+    response = client.post("/api/v1/telemetry", json=payload)
+    assert response.status_code == 200
+    assert response.json()["persisted"] is True
+    assert captured["verdict"] == "SUSPECT"
+    assert captured["breakdown"]["profile_shadow"] == decision["breakdown"]["profile_shadow"]
+
+
 def test_detect_empty_payload(client):
     res = client.post("/api/v1/detect", json={})
     assert res.status_code == 200

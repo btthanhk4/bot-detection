@@ -5,6 +5,7 @@
 
 import { getFingerprintComponents } from './fingerprint.js';
 import { runBotDetectors } from './botd.js';
+import { collectBrowserProfile } from './profile.js';
 import { MouseRecorder } from './mouse.js';
 
 function boundedUrl(value) {
@@ -78,6 +79,15 @@ export class BotCollector {
     if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
     this.cachedFingerprint = { visitorId, components };
     this.cachedBotd = runBotDetectors(components);
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (controller) this.abortControllers.add(controller);
+    try {
+      const profile = await collectBrowserProfile({ signal: controller?.signal });
+      if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
+      this.cachedBotd.profile = profile;
+    } finally {
+      if (controller) this.abortControllers.delete(controller);
+    }
 
     await this.sendTelemetry('init');
 
@@ -113,6 +123,7 @@ export class BotCollector {
       const { visitorId, components } = await getFingerprintComponents();
       this.cachedFingerprint = { visitorId, components };
       this.cachedBotd = runBotDetectors(components);
+      this.cachedBotd.profile = await collectBrowserProfile();
     }
 
     const mouseData = this.mouseRecorder.exportData();

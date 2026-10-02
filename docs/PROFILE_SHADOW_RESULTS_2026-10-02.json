@@ -1,0 +1,164 @@
+{
+  "analysis_version": "profile_consistency_v1",
+  "bundle_id": "e3dd550e4d40453db0e17a743da7e992",
+  "groups": [
+    {
+      "baseline_ever_bot": 3,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 3
+      },
+      "family": "plain-plain-control-insecure-http",
+      "final_signals": {
+        "PAGE_HEADLESS_UA": 3,
+        "WORKER_HEADLESS_UA": 3
+      },
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 3,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "BOT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 3,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 3
+      },
+      "family": "plain-plain-control-secure-localhost",
+      "final_signals": {
+        "PAGE_HEADLESS_CLIENT_HINTS": 3,
+        "PAGE_HEADLESS_UA": 3,
+        "WORKER_HEADLESS_CLIENT_HINTS": 3,
+        "WORKER_HEADLESS_UA": 3
+      },
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 3,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "BOT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "family": "stealth-circular-insecure-http",
+      "final_signals": {},
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 0,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "SUSPECT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "family": "stealth-circular-secure-localhost",
+      "final_signals": {
+        "PAGE_HEADLESS_CLIENT_HINTS": 3,
+        "WORKER_HEADLESS_CLIENT_HINTS": 3
+      },
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 3,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "BOT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-heavy-wander-insecure-http",
+      "final_signals": {},
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 0,
+      "shadow_ever_human": 3,
+      "shadow_final": {
+        "HUMAN": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-heavy-wander-secure-localhost",
+      "final_signals": {
+        "PAGE_HEADLESS_CLIENT_HINTS": 3,
+        "WORKER_HEADLESS_CLIENT_HINTS": 3
+      },
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 3,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "BOT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-scrub-hover-insecure-http",
+      "final_signals": {},
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 0,
+      "shadow_ever_human": 3,
+      "shadow_final": {
+        "HUMAN": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-scrub-hover-secure-localhost",
+      "final_signals": {
+        "PAGE_HEADLESS_CLIENT_HINTS": 3,
+        "WORKER_HEADLESS_CLIENT_HINTS": 3
+      },
+      "label": "BOT",
+      "runs": 3,
+      "runs_with_profile_checks": 3,
+      "shadow_ever_bot": 3,
+      "shadow_ever_human": 0,
+      "shadow_final": {
+        "BOT": 3
+      }
+    }
+  ],
+  "human_participants": 0,
+  "human_runs": 0,
+  "mode": "shadow",
+  "release_approved": false,
+  "runs": 24
+}

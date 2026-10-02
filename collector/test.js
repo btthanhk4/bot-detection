@@ -80,6 +80,49 @@ async function testDestroyAbortsStatusRequest() {
   assert.strictEqual(collector.abortControllers.size, 0);
 }
 
+async function testDestroyDuringProfileCollectionStopsWorkerAndInitialSend() {
+  const previousWorker = global.Worker;
+  let terminated = 0;
+  let requests = 0;
+  let workerStarted = false;
+  global.Worker = class {
+    constructor() { workerStarted = true; }
+    terminate() { terminated++; }
+  };
+  global.fetch = async () => { requests++; return { ok: true }; };
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  try {
+    const resolverIndex = digestResolvers.length;
+    const starting = collector.start();
+    await waitFor(() => digestResolvers.length > resolverIndex);
+    digestResolvers[resolverIndex]();
+    await waitFor(() => workerStarted);
+    collector.destroy();
+    await starting;
+    assert.strictEqual(requests, 0, 'destroyed profile initialization must not send telemetry');
+    assert.strictEqual(terminated, 1, 'destroy must terminate the profile worker');
+    assert.strictEqual(collector.abortControllers.size, 0);
+  } finally {
+    collector.destroy();
+    if (previousWorker === undefined) delete global.Worker;
+    else global.Worker = previousWorker;
+  }
+}
+
+async function testPayloadPreservesPassiveProfileWithoutChangingBotdScore() {
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
+  collector.cachedBotd = {
+    heuristicScore: 0, isBot: false,
+    profile: { schema: 'browser-profile-v1', main: { userAgent: 'Chrome' } },
+  };
+  const payload = await collector.getPayload();
+  assert.strictEqual(payload.botd.profile.schema, 'browser-profile-v1');
+  assert.strictEqual(payload.botd.heuristicScore, 0);
+  assert.strictEqual(payload.botd.isBot, false);
+  collector.destroy();
+}
+
 async function testFailedDetectionDoesNotPromoteClientFlag() {
   const collector = new BotCollector({ detectUrl: '/detect' });
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
@@ -405,9 +448,10 @@ async function testIntervalSendsHeartbeatOnlyWhenNeeded() {
     return { ok: true };
   };
   const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 1000 });
+  const resolverIndex = digestResolvers.length;
   const start = collector.start();
-  await waitFor(() => digestResolvers.length === 3);
-  digestResolvers[2]();
+  await waitFor(() => digestResolvers.length > resolverIndex);
+  digestResolvers[resolverIndex]();
   await start;
   const tick = activeIntervals.get(collector.timer);
   assert.strictEqual(attempts, 1);
@@ -555,8 +599,15 @@ async function testOlderRetryCannotDiscardNewerFailedSnapshot() {
   collector.destroy();
 }
 
+const testDeadline = setTimeout(() => {
+  console.error('collector tests did not complete');
+  process.exit(1);
+}, 15000);
+
 testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
+  .then(testDestroyDuringProfileCollectionStopsWorkerAndInitialSend)
+  .then(testPayloadPreservesPassiveProfileWithoutChangingBotdScore)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(testOversizedPagehideRetainsMouseAndMobileDomain)
@@ -576,7 +627,10 @@ testRestartDuringFingerprinting()
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
-  .then(() => console.log('collector lifecycle tests: OK'))
+  .then(() => {
+    clearTimeout(testDeadline);
+    console.log('collector lifecycle tests: OK');
+  })
   .catch((error) => {
     console.error(error);
     process.exit(1);
