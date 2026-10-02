@@ -8,6 +8,10 @@ bounded browser-profile observations and a separately versioned, diagnostic-only
 analysis (`profile_consistency_v1`). No production threshold or model weights
 changed. `release_approved` is false for every shadow analysis and report.
 
+Profile cancellation covers both startup and lazy status/payload collection.
+Cold pagehide does not start this optional probe. Regression tests reproduced
+the missing lazy cancellation before the fix and passed after it.
+
 The collector caches the observations under `botd.profile`. The API returns and
 persists `breakdown.profile_shadow`. The CLI's overlay is an experimental
 comparison: automation evidence suggests BOT, OS inconsistency can raise HUMAN

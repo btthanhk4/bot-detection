@@ -918,15 +918,9 @@
       if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
       this.cachedFingerprint = { visitorId, components };
       this.cachedBotd = runBotDetectors(components);
-      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      if (controller) this.abortControllers.add(controller);
-      try {
-        const profile = await collectBrowserProfile({ signal: controller?.signal });
-        if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
-        this.cachedBotd.profile = profile;
-      } finally {
-        if (controller) this.abortControllers.delete(controller);
-      }
+      const profile = await this.collectProfile();
+      if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
+      this.cachedBotd.profile = profile;
 
       await this.sendTelemetry('init');
 
@@ -957,12 +951,24 @@
       }
     }
 
+    async collectProfile() {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      if (controller) this.abortControllers.add(controller);
+      try {
+        return await collectBrowserProfile({ signal: controller?.signal });
+      } finally {
+        if (controller) this.abortControllers.delete(controller);
+      }
+    }
+
     async getPayload(action = 'heartbeat') {
       if (!this.cachedFingerprint) {
         const { visitorId, components } = await getFingerprintComponents();
         this.cachedFingerprint = { visitorId, components };
         this.cachedBotd = runBotDetectors(components);
-        this.cachedBotd.profile = await collectBrowserProfile();
+        if (action !== 'pagehide' && !this.destroyed) {
+          this.cachedBotd.profile = await this.collectProfile();
+        }
       }
 
       const mouseData = this.mouseRecorder.exportData();

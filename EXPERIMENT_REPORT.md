@@ -146,6 +146,9 @@ Lần kiểm tra này: **301 test Python, test collector/profile và Ruff đều
 Không chạy lại replay 90.000 cửa sổ cho thay đổi diagnostic-only này và không
 dùng kết quả shadow để chứng nhận một policy mới.
 
+Rà soát cuối bổ sung hủy probe cho đường lấy payload/status trước `start()` và
+bỏ probe mới khi pagehide; regression test đã tái hiện lỗi trước khi sửa.
+
 **Bước tiếp theo:** thu người thật bằng trình duyệt thường, có cả privacy mode;
 đánh giá từng tín hiệu trước khi cho tham gia quyết định. Nhánh HTTP cần thử
 đặc trưng chuỗi click/scroll/di chuyển và dữ liệu bot có timestamp thật theo

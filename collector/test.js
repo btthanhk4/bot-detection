@@ -123,6 +123,58 @@ async function testPayloadPreservesPassiveProfileWithoutChangingBotdScore() {
   collector.destroy();
 }
 
+async function testLazyStatusProfileIsCancelledOnDestroy() {
+  const previousWorker = global.Worker;
+  let workerStarted = false;
+  let terminated = 0;
+  let requests = 0;
+  global.Worker = class {
+    constructor() { workerStarted = true; }
+    terminate() { terminated++; }
+  };
+  global.fetch = async () => { requests++; return { ok: true }; };
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  try {
+    const resolverIndex = digestResolvers.length;
+    const checking = collector.checkBotStatus();
+    await waitFor(() => digestResolvers.length > resolverIndex);
+    digestResolvers[resolverIndex]();
+    await waitFor(() => workerStarted);
+    assert.strictEqual(collector.abortControllers.size, 1, 'lazy profile must register cancellation');
+    collector.destroy();
+    assert.strictEqual((await checking).error, 'collector_inactive');
+    assert.strictEqual(terminated, 1);
+    assert.strictEqual(requests, 0);
+  } finally {
+    collector.destroy();
+    if (previousWorker === undefined) delete global.Worker;
+    else global.Worker = previousWorker;
+  }
+}
+
+async function testColdPagehideDoesNotStartOptionalProfileProbe() {
+  const previousWorker = global.Worker;
+  let workers = 0;
+  global.Worker = class {
+    constructor() { workers++; }
+    terminate() {}
+  };
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  try {
+    const resolverIndex = digestResolvers.length;
+    const payloadPromise = collector.getPayload('pagehide');
+    await waitFor(() => digestResolvers.length > resolverIndex);
+    digestResolvers[resolverIndex]();
+    const payload = await payloadPromise;
+    assert.strictEqual(payload.action, 'pagehide');
+    assert.strictEqual(workers, 0, 'pagehide must not wait for an optional worker probe');
+  } finally {
+    collector.destroy();
+    if (previousWorker === undefined) delete global.Worker;
+    else global.Worker = previousWorker;
+  }
+}
+
 async function testFailedDetectionDoesNotPromoteClientFlag() {
   const collector = new BotCollector({ detectUrl: '/detect' });
   collector.cachedFingerprint = { visitorId: 'visitor', components: {} };
@@ -608,6 +660,8 @@ testRestartDuringFingerprinting()
   .then(testDestroyAbortsStatusRequest)
   .then(testDestroyDuringProfileCollectionStopsWorkerAndInitialSend)
   .then(testPayloadPreservesPassiveProfileWithoutChangingBotdScore)
+  .then(testLazyStatusProfileIsCancelledOnDestroy)
+  .then(testColdPagehideDoesNotStartOptionalProfileProbe)
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(testOversizedPagehideRetainsMouseAndMobileDomain)
