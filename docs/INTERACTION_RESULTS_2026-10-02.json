@@ -1,0 +1,541 @@
+{
+  "bundle_id": "e3dd550e4d40453db0e17a743da7e992",
+  "feature_version": "interaction_window_v1",
+  "groups": [
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "family": "stealth-circular-fixed-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.04216,
+          "median": 0.026363,
+          "min": 0.002039
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 959.0,
+          "median": 899.0,
+          "min": 899.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.549761,
+          "median": 1.547693,
+          "min": 1.449688
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 16.0,
+          "median": 16.0,
+          "min": 16.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 91.0,
+          "median": 91.0,
+          "min": 90.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 76.0,
+          "median": 75.5,
+          "min": 75.0
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.287676,
+          "median": 1.266705,
+          "min": 1.262933
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 51.0,
+          "median": 50.0,
+          "min": 50.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "family": "stealth-circular-jitter-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.068349,
+          "median": 0.055756,
+          "min": 0.046308
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 1721.0,
+          "median": 1685.0,
+          "min": 1612.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.262049,
+          "median": 1.240329,
+          "min": 1.068921
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 44.0,
+          "median": 40.0,
+          "min": 32.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 145.0,
+          "median": 134.0,
+          "min": 105.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 107.0,
+          "median": 99.5,
+          "min": 91.0
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.494602,
+          "median": 0.41751,
+          "min": 0.357222
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.378526,
+          "median": 1.364031,
+          "min": 1.347124
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 82.0,
+          "median": 67.0,
+          "min": 67.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-heavy-wander-fixed-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.085878,
+          "median": 0.066219,
+          "min": 0.046018
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 1037.0,
+          "median": 1004.0,
+          "min": 988.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.514779,
+          "median": 1.464239,
+          "min": 1.401333
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 16.0,
+          "median": 16.0,
+          "min": 16.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 105.0,
+          "median": 97.0,
+          "min": 95.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 76.0,
+          "median": 76.0,
+          "min": 75.5
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.304903,
+          "median": 1.293447,
+          "min": 1.286665
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 51.0,
+          "median": 51.0,
+          "min": 50.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "family": "stealth-heavy-wander-jitter-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.046858,
+          "median": 0.045604,
+          "min": 0.03623
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 1843.0,
+          "median": 1789.0,
+          "min": 1718.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.235736,
+          "median": 1.074844,
+          "min": 0.952639
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 45.0,
+          "median": 43.0,
+          "min": 42.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 169.0,
+          "median": 154.0,
+          "min": 108.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 129.5,
+          "median": 122.0,
+          "min": 91.5
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.493317,
+          "median": 0.408502,
+          "min": 0.401856
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.363713,
+          "median": 1.356529,
+          "min": 1.341317
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 84.0,
+          "median": 83.0,
+          "min": 83.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "family": "stealth-scrub-hover-fixed-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.074924,
+          "median": 0.019301,
+          "min": 0.011551
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 909.0,
+          "median": 896.0,
+          "min": 894.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.806695,
+          "median": 1.48627,
+          "min": 1.47091
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 16.0,
+          "median": 15.0,
+          "min": 15.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 92.0,
+          "median": 91.0,
+          "min": 90.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 77.0,
+          "median": 76.0,
+          "min": 75.5
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.282779,
+          "median": 1.265848,
+          "min": 1.264167
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 50.0,
+          "median": 50.0,
+          "min": 50.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 2,
+        "SUSPECT": 1
+      },
+      "family": "stealth-scrub-hover-jitter-insecure-http",
+      "features": {
+        "click_interval_cv": {
+          "available_runs": 3,
+          "max": 0.160334,
+          "median": 0.038766,
+          "min": 0.035572
+        },
+        "click_interval_median_ms": {
+          "available_runs": 3,
+          "max": 1720.0,
+          "median": 1702.0,
+          "min": 1669.0
+        },
+        "move_interval_cv": {
+          "available_runs": 3,
+          "max": 1.192616,
+          "median": 1.022931,
+          "min": 0.937417
+        },
+        "move_interval_median_ms": {
+          "available_runs": 3,
+          "max": 45.0,
+          "median": 45.0,
+          "min": 40.0
+        },
+        "move_zero_interval_ratio": {
+          "available_runs": 3,
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0
+        },
+        "pre_click_pause_median_ms": {
+          "available_runs": 3,
+          "max": 136.0,
+          "median": 121.0,
+          "min": 93.0
+        },
+        "press_duration_median_ms": {
+          "available_runs": 3,
+          "max": 90.5,
+          "median": 69.0,
+          "min": 60.5
+        },
+        "scroll_delta_abs_cv": {
+          "available_runs": 3,
+          "max": 0.464371,
+          "median": 0.427573,
+          "min": 0.397962
+        },
+        "scroll_interval_cv": {
+          "available_runs": 3,
+          "max": 1.375218,
+          "median": 1.354164,
+          "min": 1.333917
+        },
+        "scroll_interval_median_ms": {
+          "available_runs": 3,
+          "max": 83.0,
+          "median": 67.0,
+          "min": 67.0
+        },
+        "vertical_scroll_reversal_ratio": {
+          "available_runs": 3,
+          "max": 0.647059,
+          "median": 0.647059,
+          "min": 0.647059
+        }
+      },
+      "final_count_medians": {
+        "clicks": 6,
+        "clicks_with_preceding_move": 3,
+        "mouse_events": 100,
+        "moves": 82,
+        "paired_presses": 6,
+        "scroll_events": 18,
+        "touch_events_excluded": 0
+      },
+      "label": "BOT",
+      "runs": 3,
+      "sent_snapshots": 15
+    }
+  ],
+  "human_participants": 0,
+  "human_runs": 0,
+  "mode": "measurement_only",
+  "note": "Final retained windows, not session totals or production accuracy; no classifier fitted",
+  "release_approved": false,
+  "runs": 18
+}

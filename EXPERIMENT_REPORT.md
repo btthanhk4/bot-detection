@@ -177,6 +177,43 @@ Báo cáo và lệnh tái hiện: [PROFILE_SHADOW_REVIEW_2026-10-02.md](docs/PRO
 
 ---
 
+## Đo tương tác và benchmark HTTP bổ sung (2026-10-02)
+
+Đã sửa lỗi bộ đọc capture loại bỏ `scrollEvents`: replay hiện giữ dữ liệu cuộn
+hợp lệ, báo lỗi nếu dữ liệu sai thay vì âm thầm bỏ qua. Tám regression case đã
+thất bại trước sửa và qua sau sửa. Nhánh `breakdown.interaction_shadow` bổ sung
+11 đặc trưng nhịp move/click, thời gian nhấn, khoảng dừng trước click và cuộn.
+Thiếu quan sát trả `null`; dữ liệu bị giới hạn 100 record/50 wheel event, tách
+touch và không ghép nhầm các lần nhấn thiếu cặp. Đây là phép đo cửa sổ giữ lại,
+không phải tổng cả phiên, không đưa ra verdict và không thay score/weights.
+
+Theo lựa chọn hiện tại của người dùng, **chưa có người thật đối chứng, tiếp tục
+thử nghiệm offline**. Không retrain hoặc thay bundle đang phục vụ. Đã chạy thêm
+18 phiên stealth HTTP local, ba họ heavy-wander/circular/scrub-hover, nhịp cố định
+và jitter, ba seed mỗi cấu hình. Collector thật gửi 90 snapshot; probe không
+tham gia đánh giá, không có page error. Cả 18 phiên có dữ liệu click/cuộn để đo
+nhịp; benchmark 24 phiên trước đó không đủ click/cuộn cho phép đo này.
+
+Kết luận cuối của baseline trên benchmark mới vẫn là **0 BOT, 10 SUSPECT,
+8 HUMAN**; có 9 phiên từng bị HUMAN. Nhánh mới chưa cải thiện các verdict này.
+Phân bố click-CV giữa nhịp cố định/jitter có giao nhau, nên chưa có cơ sở thêm
+luật “nhịp đều là BOT”. Không dùng tỷ lệ này làm metric production hoặc so sánh
+trực tiếp với fixture cũ. Bundle/policy vẫn là `e3dd550e4d40453db0e17a743da7e992`/10.
+
+Kiểm chứng: **339 test Python, test collector/profile và Ruff đều qua**; có một
+cảnh báo deprecation thư viện test. Không chạy lại replay 90.000 cửa sổ và không
+phát hành weights mới. Chi tiết và lệnh tái hiện:
+[INTERACTION_REVIEW_2026-10-02.md](docs/INTERACTION_REVIEW_2026-10-02.md),
+[kết quả tổng hợp](docs/INTERACTION_RESULTS_2026-10-02.json).
+
+Bước tiếp theo là mở rộng benchmark theo họ bot/tốc độ/viewport, rồi thu người
+thật độc lập khi có thể. Không trộn timestamp ước lượng của Phase 1 với timestamp
+browser để train nhịp tương tác, không điền thiếu click/cuộn thành số 0. Tách theo
+người/phiên/họ generator trước khi tạo cửa sổ; giữ một họ bot chưa gặp để kiểm
+chứng khả năng khái quát trước khi thêm đặc trưng vào XGBoost.
+
+---
+
 ## 1. TỔNG QUAN KIẾN TRÚC HỆ THỐNG
 
 ### 1.1 Pipeline tổng thể

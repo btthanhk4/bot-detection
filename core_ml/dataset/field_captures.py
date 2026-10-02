@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core_ml.features.mouse_features import sanitize_mouse_records
+from core_ml.features.interaction_features import MAX_SCROLL_EVENTS, sanitize_scroll_events
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,14 @@ def _load_captures(directory: str, *, label: str, schema: str) -> list[BotCaptur
                 raise ValueError(f"Invalid mouse records in {path}")
             cleaned = {key: value for key, value in payload.items() if key != "_server_user_agent"}
             cleaned["mouse"] = {"records": valid}
+            if "scrollEvents" in payload["mouse"]:
+                raw_scroll = payload["mouse"]["scrollEvents"]
+                if not isinstance(raw_scroll, list) or len(raw_scroll) > MAX_SCROLL_EVENTS:
+                    raise ValueError(f"Invalid collector scroll window in {path}")
+                scroll = sanitize_scroll_events(raw_scroll)
+                if len(scroll) != len(raw_scroll):
+                    raise ValueError(f"Invalid scroll events in {path}")
+                cleaned["mouse"]["scrollEvents"] = scroll
             if agents is not None and agents[index]:
                 cleaned["_server_user_agent"] = agents[index][:512]
             snapshots.append(cleaned)

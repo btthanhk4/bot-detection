@@ -10,6 +10,7 @@ explicit-automation rule can make a BOT decision without mouse evidence.
 import numpy as np
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
 from core_ml.features.profile_consistency import analyze_profile_consistency
+from core_ml.features.interaction_features import extract_interaction_features
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
     compute_statistical_features,
@@ -299,6 +300,7 @@ class EnsembleBotDetector:
             "reasons": reasons,
             "breakdown": {
                 "profile_shadow": analyze_profile_consistency(payload),
+                "interaction_shadow": extract_interaction_features(mouse),
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
                 "tabular_score": None if explicit_automation else round(tabular_score, 4),

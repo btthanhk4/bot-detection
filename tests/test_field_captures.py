@@ -167,6 +167,32 @@ def test_capture_rejects_misaligned_observed_headers(tmp_path):
         load_bot_captures(str(tmp_path))
 
 
+def test_capture_loader_preserves_scroll_for_interaction_replay(tmp_path):
+    _write(tmp_path / "a.json")
+    path = tmp_path / "a.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    scroll = [{"time": 250, "deltaX": 0, "deltaY": 120}]
+    data["snapshots"][1]["mouse"]["scrollEvents"] = scroll
+    path.write_text(json.dumps(data), encoding="utf-8")
+    capture = load_bot_captures(str(tmp_path))[0]
+    assert capture.final_payload["mouse"]["scrollEvents"] == scroll
+    assert "scrollEvents" not in capture.sent_snapshots[0]["mouse"]
+
+
+@pytest.mark.parametrize("scroll", [None, {}, [None], [{"time": -1, "deltaY": 5}],
+                                    [{"time": 10, "deltaY": True}],
+                                    [{"time": 10, "deltaY": float("nan")}],
+                                    [{"time": 10, "deltaY": 5}] * 51])
+def test_capture_loader_rejects_invalid_scroll_instead_of_erasing_it(tmp_path, scroll):
+    _write(tmp_path / "a.json")
+    path = tmp_path / "a.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["snapshots"][0]["mouse"]["scrollEvents"] = scroll
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="scroll"):
+        load_bot_captures(str(tmp_path))
+
+
 @pytest.mark.parametrize("invalid_action", ["heartbeat", "test-final"])
 def test_capture_rejects_missing_final_probe(tmp_path, invalid_action):
     _write(tmp_path / "a.json")

@@ -414,6 +414,35 @@ def test_profile_shadow_survives_detect_and_telemetry_without_promoting_verdict(
     assert captured["breakdown"]["profile_shadow"] == decision["breakdown"]["profile_shadow"]
 
 
+def test_interaction_measurements_round_trip_without_promoting_verdict(client, monkeypatch):
+    captured = {}
+
+    def save(_telemetry, analysis):
+        captured.update(analysis)
+        return True
+
+    monkeypatch.setattr("api_service.database.save_detection_result", save)
+    payload = {
+        "sessionId": "interaction-shadow", "visitorId": "interaction-visitor",
+        "mouse": {"records": [], "scrollEvents": [
+            {"time": i * 20, "deltaX": 0, "deltaY": 120} for i in range(4)
+        ]},
+    }
+    response = client.post("/api/v1/detect", json=payload)
+    assert response.status_code == 200
+    decision = response.json()
+    measurement = decision["breakdown"]["interaction_shadow"]
+    assert measurement["features"]["scroll_interval_cv"] == 0
+    assert measurement["features"]["move_interval_cv"] is None
+    assert measurement["mode"] == "measurement_only"
+    assert decision["verdict"] == "SUSPECT"
+    response = client.post("/api/v1/telemetry", json=payload)
+    assert response.status_code == 200
+    assert response.json()["persisted"] is True
+    assert captured["breakdown"]["interaction_shadow"] == measurement
+    assert captured["verdict"] == decision["verdict"]
+
+
 def test_detect_empty_payload(client):
     res = client.post("/api/v1/detect", json={})
     assert res.status_code == 200
