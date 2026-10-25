@@ -9,6 +9,7 @@ explicit-automation rule can make a BOT decision without mouse evidence.
 
 import numpy as np
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
+from core_ml.features.input_provenance import SYNTHETIC_CLICK_RULE, analyze_input_provenance
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
@@ -25,7 +26,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "10"
+DECISION_POLICY_VERSION = "11"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 
 
@@ -166,9 +167,17 @@ class EnsembleBotDetector:
         candidate_evidence = (
             corroborated_profile_evidence(payload, profile_report) if profile_candidate else []
         )
-        automation_rule = EXPLICIT_AUTOMATION_RULE if explicit_automation else (
-            PROFILE_CANDIDATE_RULE if candidate_evidence else None
-        )
+        # Press timing and click geometry come from trusted browser events; the
+        # rule needs both signals repeated, so one fast tap or lucky centre is not enough.
+        input_provenance = analyze_input_provenance(mouse)
+        if explicit_automation:
+            automation_rule = EXPLICIT_AUTOMATION_RULE
+        elif input_provenance["synthetic_click_rule"]:
+            automation_rule = SYNTHETIC_CLICK_RULE
+        elif candidate_evidence:
+            automation_rule = PROFILE_CANDIDATE_RULE
+        else:
+            automation_rule = None
         explicit_automation = automation_rule is not None
 
         # A confirmed profile rule is independent of mouse inference. Do not
@@ -262,12 +271,18 @@ class EnsembleBotDetector:
         # Thresholds are deployment settings and must match the reported decision policy.
         if explicit_automation:
             verdict = "BOT"
-            reasons.append(
-                "Server-observed HeadlessChrome UA corroborates browser automation markers"
-                if automation_rule == EXPLICIT_AUTOMATION_RULE else
-                "Experimental policy: client-reported HeadlessChrome is corroborated across "
-                "browser contexts or by an explicit automation marker"
-            )
+            if automation_rule == EXPLICIT_AUTOMATION_RULE:
+                reasons.append("Server-observed HeadlessChrome UA corroborates browser automation markers")
+            elif automation_rule == SYNTHETIC_CLICK_RULE:
+                reasons.append(
+                    f"Synthetic clicks: {input_provenance['clicks_centred']} clicks at the exact control "
+                    f"centre, {input_provenance['instant_releases']} released in under 5 ms"
+                )
+            else:
+                reasons.append(
+                    "Experimental policy: client-reported HeadlessChrome is corroborated across "
+                    "browser contexts or by an explicit automation marker"
+                )
         elif decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
@@ -324,13 +339,15 @@ class EnsembleBotDetector:
                     "evidence_codes": candidate_evidence,
                 }} if profile_candidate else {}),
                 "interaction_shadow": extract_interaction_features(mouse),
+                "input_provenance": input_provenance,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
                 "tabular_score": None if explicit_automation else round(tabular_score, 4),
                 "tabular_score_in_domain": tabular_score_in_domain,
                 "risk_score_in_domain": not mouse_evidence_deferred and not explicit_automation,
                 "decision_basis": (
-                    "explicit_automation" if explicit_automation
+                    "synthetic_input" if automation_rule == SYNTHETIC_CLICK_RULE
+                    else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),
                 "automation_rule": automation_rule,

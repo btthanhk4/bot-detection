@@ -2982,6 +2982,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const v = deferred ? 'SUSPECT' : (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
   const riskAvailable = hasApplicableRiskScore({ breakdown: bd, decision_state: dataObj.decision_state });
   const ruleDecision = bd.decision_basis === 'explicit_automation';
+  const syntheticDecision = bd.decision_basis === 'synthetic_input';
+  const provenance = bd.input_provenance || {};
 
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
@@ -2995,7 +2997,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // Verdict Explain in Vietnamese
   let explainText = '';
   if (v === 'BOT') {
-    explainText = ruleDecision
+    explainText = syntheticDecision
+      ? `<strong>Hệ thống kết luận là BOT theo quy tắc click giả lập:</strong> ${provenance.clicks_centred} lần click trúng chính giữa nút (lệch tối đa 1 px), trong đó ${provenance.instant_releases} lần nhả chuột dưới 5 ms. Tay người không bấm và nhả nhanh như vậy, và hiếm khi trúng tâm nhiều lần liên tiếp. `
+      : ruleDecision
       ? '<strong>Hệ thống kết luận là BOT theo quy tắc tự động hóa rõ ràng:</strong> User-Agent của request và trình duyệt đều tự nhận HeadlessChrome, đồng thời có dấu hiệu công cụ tự động hóa. Không có điểm rủi ro từ mô hình chuột cho phiên này. '
       : `<strong>Hệ thống kết luận là BOT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> `;
     const flags = [];

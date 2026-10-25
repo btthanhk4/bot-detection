@@ -1,6 +1,6 @@
 # Vận hành bản bàn giao thu traffic thật
 
-Tài liệu này áp dụng cho SDK 1.1.0 và source pilot cùng gói. Phân biệt sẵn
+Tài liệu này áp dụng cho SDK 1.2.0 và source pilot cùng gói. Phân biệt sẵn
 sàng thu dữ liệu với chứng nhận độ chính xác model. Chưa có website cụ thể;
 mỗi website cần kiểm tra thực tế sau khi nhúng.
 

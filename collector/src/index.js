@@ -8,7 +8,7 @@ import { runBotDetectors } from './botd.js';
 import { collectBrowserProfile } from './profile.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.1.0';
+export const COLLECTOR_VERSION = '1.2.0';
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);

@@ -1,0 +1,471 @@
+{
+  "dataset": "DELBOT-Mouse circle drawings (MIT); one sample = one drawing, not one person",
+  "counts": {
+    "circles_human_pc1": 187,
+    "circles_human_pc2": 459,
+    "circles_human_pc2_pad": 62,
+    "circles_human_vm": 140,
+    "circles_human_fast": 9,
+    "pynput": 408,
+    "pyhm": 55,
+    "naturalmousemotion": 234,
+    "gan": 1899
+  },
+  "protocol": "leave-one-bot-family-out; humans split 60/20/20 per source; threshold = 99th percentile of validation-human scores; 3 seeds",
+  "results": {
+    "current20": {
+      "n_features": 20,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8888,
+          "auc_min": 0.8751,
+          "recall_at_val_fpr1_mean": 0.2974,
+          "test_human_fpr_mean": 0.019
+        },
+        "pyhm": {
+          "auc_mean": 0.989,
+          "auc_min": 0.9841,
+          "recall_at_val_fpr1_mean": 0.8364,
+          "test_human_fpr_mean": 0.021
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.99,
+          "auc_min": 0.9816,
+          "recall_at_val_fpr1_mean": 0.8006,
+          "test_human_fpr_mean": 0.0171
+        },
+        "gan": {
+          "auc_mean": 0.9147,
+          "auc_min": 0.9011,
+          "recall_at_val_fpr1_mean": 0.3367,
+          "test_human_fpr_mean": 0.0171
+        }
+      },
+      "os_bots_mean_auc": 0.9559,
+      "os_bots_mean_recall": 0.6448,
+      "worst_os_recall": 0.2974
+    },
+    "kinematic": {
+      "n_features": 19,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8486,
+          "auc_min": 0.8403,
+          "recall_at_val_fpr1_mean": 0.1765,
+          "test_human_fpr_mean": 0.0114
+        },
+        "pyhm": {
+          "auc_mean": 0.9446,
+          "auc_min": 0.9334,
+          "recall_at_val_fpr1_mean": 0.3636,
+          "test_human_fpr_mean": 0.0229
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.819,
+          "auc_min": 0.8056,
+          "recall_at_val_fpr1_mean": 0.0755,
+          "test_human_fpr_mean": 0.021
+        },
+        "gan": {
+          "auc_mean": 0.8548,
+          "auc_min": 0.8391,
+          "recall_at_val_fpr1_mean": 0.1267,
+          "test_human_fpr_mean": 0.0171
+        }
+      },
+      "os_bots_mean_auc": 0.8707,
+      "os_bots_mean_recall": 0.2052,
+      "worst_os_recall": 0.0755
+    },
+    "neuromotor": {
+      "n_features": 13,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8367,
+          "auc_min": 0.8312,
+          "recall_at_val_fpr1_mean": 0.2369,
+          "test_human_fpr_mean": 0.0267
+        },
+        "pyhm": {
+          "auc_mean": 0.7982,
+          "auc_min": 0.7928,
+          "recall_at_val_fpr1_mean": 0.0848,
+          "test_human_fpr_mean": 0.0171
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.6016,
+          "auc_min": 0.5874,
+          "recall_at_val_fpr1_mean": 0.0043,
+          "test_human_fpr_mean": 0.0038
+        },
+        "gan": {
+          "auc_mean": 0.8438,
+          "auc_min": 0.8414,
+          "recall_at_val_fpr1_mean": 0.2199,
+          "test_human_fpr_mean": 0.0171
+        }
+      },
+      "os_bots_mean_auc": 0.7455,
+      "os_bots_mean_recall": 0.1087,
+      "worst_os_recall": 0.0043
+    },
+    "timing": {
+      "n_features": 10,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.9559,
+          "auc_min": 0.9428,
+          "recall_at_val_fpr1_mean": 0.3685,
+          "test_human_fpr_mean": 0.0152
+        },
+        "pyhm": {
+          "auc_mean": 1.0,
+          "auc_min": 1.0,
+          "recall_at_val_fpr1_mean": 1.0,
+          "test_human_fpr_mean": 0.0267
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9147,
+          "auc_min": 0.9014,
+          "recall_at_val_fpr1_mean": 0.3134,
+          "test_human_fpr_mean": 0.021
+        },
+        "gan": {
+          "auc_mean": 0.9388,
+          "auc_min": 0.933,
+          "recall_at_val_fpr1_mean": 0.2584,
+          "test_human_fpr_mean": 0.019
+        }
+      },
+      "os_bots_mean_auc": 0.9569,
+      "os_bots_mean_recall": 0.5606,
+      "worst_os_recall": 0.3134
+    },
+    "current20+kinematic": {
+      "n_features": 39,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8759,
+          "auc_min": 0.8656,
+          "recall_at_val_fpr1_mean": 0.3587,
+          "test_human_fpr_mean": 0.0229
+        },
+        "pyhm": {
+          "auc_mean": 0.9923,
+          "auc_min": 0.9855,
+          "recall_at_val_fpr1_mean": 0.9455,
+          "test_human_fpr_mean": 0.019
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9628,
+          "auc_min": 0.9419,
+          "recall_at_val_fpr1_mean": 0.3219,
+          "test_human_fpr_mean": 0.019
+        },
+        "gan": {
+          "auc_mean": 0.919,
+          "auc_min": 0.9088,
+          "recall_at_val_fpr1_mean": 0.4313,
+          "test_human_fpr_mean": 0.0267
+        }
+      },
+      "os_bots_mean_auc": 0.9437,
+      "os_bots_mean_recall": 0.542,
+      "worst_os_recall": 0.3219
+    },
+    "current20+neuromotor": {
+      "n_features": 33,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8936,
+          "auc_min": 0.8823,
+          "recall_at_val_fpr1_mean": 0.3472,
+          "test_human_fpr_mean": 0.019
+        },
+        "pyhm": {
+          "auc_mean": 0.9878,
+          "auc_min": 0.9843,
+          "recall_at_val_fpr1_mean": 0.6242,
+          "test_human_fpr_mean": 0.0133
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.967,
+          "auc_min": 0.9624,
+          "recall_at_val_fpr1_mean": 0.2863,
+          "test_human_fpr_mean": 0.0076
+        },
+        "gan": {
+          "auc_mean": 0.9417,
+          "auc_min": 0.9255,
+          "recall_at_val_fpr1_mean": 0.2793,
+          "test_human_fpr_mean": 0.0114
+        }
+      },
+      "os_bots_mean_auc": 0.9495,
+      "os_bots_mean_recall": 0.4192,
+      "worst_os_recall": 0.2863
+    },
+    "current20+timing": {
+      "n_features": 30,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.9689,
+          "auc_min": 0.9662,
+          "recall_at_val_fpr1_mean": 0.4273,
+          "test_human_fpr_mean": 0.0152
+        },
+        "pyhm": {
+          "auc_mean": 1.0,
+          "auc_min": 1.0,
+          "recall_at_val_fpr1_mean": 1.0,
+          "test_human_fpr_mean": 0.0248
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9828,
+          "auc_min": 0.9794,
+          "recall_at_val_fpr1_mean": 0.6952,
+          "test_human_fpr_mean": 0.019
+        },
+        "gan": {
+          "auc_mean": 0.9683,
+          "auc_min": 0.9617,
+          "recall_at_val_fpr1_mean": 0.3558,
+          "test_human_fpr_mean": 0.0171
+        }
+      },
+      "os_bots_mean_auc": 0.9839,
+      "os_bots_mean_recall": 0.7075,
+      "worst_os_recall": 0.4273
+    },
+    "current20+neuromotor+timing": {
+      "n_features": 43,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.9543,
+          "auc_min": 0.9466,
+          "recall_at_val_fpr1_mean": 0.4395,
+          "test_human_fpr_mean": 0.0248
+        },
+        "pyhm": {
+          "auc_mean": 1.0,
+          "auc_min": 1.0,
+          "recall_at_val_fpr1_mean": 1.0,
+          "test_human_fpr_mean": 0.0229
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9663,
+          "auc_min": 0.9608,
+          "recall_at_val_fpr1_mean": 0.51,
+          "test_human_fpr_mean": 0.0229
+        },
+        "gan": {
+          "auc_mean": 0.9669,
+          "auc_min": 0.9644,
+          "recall_at_val_fpr1_mean": 0.3842,
+          "test_human_fpr_mean": 0.0133
+        }
+      },
+      "os_bots_mean_auc": 0.9735,
+      "os_bots_mean_recall": 0.6498,
+      "worst_os_recall": 0.4395
+    },
+    "all": {
+      "n_features": 62,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.9633,
+          "auc_min": 0.9557,
+          "recall_at_val_fpr1_mean": 0.6095,
+          "test_human_fpr_mean": 0.0343
+        },
+        "pyhm": {
+          "auc_mean": 1.0,
+          "auc_min": 1.0,
+          "recall_at_val_fpr1_mean": 1.0,
+          "test_human_fpr_mean": 0.0324
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9336,
+          "auc_min": 0.931,
+          "recall_at_val_fpr1_mean": 0.359,
+          "test_human_fpr_mean": 0.0229
+        },
+        "gan": {
+          "auc_mean": 0.9737,
+          "auc_min": 0.9698,
+          "recall_at_val_fpr1_mean": 0.5201,
+          "test_human_fpr_mean": 0.0133
+        }
+      },
+      "os_bots_mean_auc": 0.9656,
+      "os_bots_mean_recall": 0.6562,
+      "worst_os_recall": 0.359
+    },
+    "current20+click_gap": {
+      "n_features": 21,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.8959,
+          "auc_min": 0.879,
+          "recall_at_val_fpr1_mean": 0.3129,
+          "test_human_fpr_mean": 0.0133
+        },
+        "pyhm": {
+          "auc_mean": 0.9918,
+          "auc_min": 0.9858,
+          "recall_at_val_fpr1_mean": 0.9333,
+          "test_human_fpr_mean": 0.0152
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9805,
+          "auc_min": 0.9768,
+          "recall_at_val_fpr1_mean": 0.4544,
+          "test_human_fpr_mean": 0.0095
+        },
+        "gan": {
+          "auc_mean": 0.9249,
+          "auc_min": 0.9123,
+          "recall_at_val_fpr1_mean": 0.3821,
+          "test_human_fpr_mean": 0.0229
+        }
+      },
+      "os_bots_mean_auc": 0.9561,
+      "os_bots_mean_recall": 0.5669,
+      "worst_os_recall": 0.3129
+    },
+    "current20+event_timing": {
+      "n_features": 29,
+      "held_out": {
+        "pynput": {
+          "auc_mean": 0.9822,
+          "auc_min": 0.9728,
+          "recall_at_val_fpr1_mean": 0.6797,
+          "test_human_fpr_mean": 0.0152
+        },
+        "pyhm": {
+          "auc_mean": 0.9986,
+          "auc_min": 0.9957,
+          "recall_at_val_fpr1_mean": 1.0,
+          "test_human_fpr_mean": 0.0267
+        },
+        "naturalmousemotion": {
+          "auc_mean": 0.9938,
+          "auc_min": 0.9905,
+          "recall_at_val_fpr1_mean": 0.9074,
+          "test_human_fpr_mean": 0.0229
+        },
+        "gan": {
+          "auc_mean": 0.9645,
+          "auc_min": 0.9554,
+          "recall_at_val_fpr1_mean": 0.3295,
+          "test_human_fpr_mean": 0.021
+        }
+      },
+      "os_bots_mean_auc": 0.9915,
+      "os_bots_mean_recall": 0.8624,
+      "worst_os_recall": 0.6797
+    }
+  },
+  "importance_all_features": [
+    {
+      "feature": "tim_click_gap_px",
+      "gain": 168.538
+    },
+    {
+      "feature": "neu_near_zero_accel_frac",
+      "gain": 119.179
+    },
+    {
+      "feature": "base_jerk_mean",
+      "gain": 60.199
+    },
+    {
+      "feature": "tim_micro_jitter_frac",
+      "gain": 54.751
+    },
+    {
+      "feature": "base_mean_accel",
+      "gain": 51.97
+    },
+    {
+      "feature": "tim_dt_p50",
+      "gain": 44.086
+    },
+    {
+      "feature": "kin_path_px",
+      "gain": 28.097
+    },
+    {
+      "feature": "neu_speed_cv",
+      "gain": 22.33
+    },
+    {
+      "feature": "kin_angvel_p10",
+      "gain": 20.14
+    },
+    {
+      "feature": "tim_dt_entropy",
+      "gain": 17.813
+    },
+    {
+      "feature": "base_click_to_move_ratio",
+      "gain": 13.753
+    },
+    {
+      "feature": "neu_peaks",
+      "gain": 13.199
+    },
+    {
+      "feature": "neu_peaks_per_s",
+      "gain": 11.125
+    },
+    {
+      "feature": "neu_sparc",
+      "gain": 7.88
+    },
+    {
+      "feature": "kin_straightness",
+      "gain": 7.083
+    },
+    {
+      "feature": "tim_dt_mode_share",
+      "gain": 6.823
+    },
+    {
+      "feature": "neu_primary_dist_ratio",
+      "gain": 5.449
+    },
+    {
+      "feature": "base_velocity_autocorrelation",
+      "gain": 4.331
+    },
+    {
+      "feature": "base_std_accel",
+      "gain": 4.108
+    },
+    {
+      "feature": "kin_curv_p10",
+      "gain": 1.912
+    },
+    {
+      "feature": "base_direction_changes_x",
+      "gain": 1.885
+    },
+    {
+      "feature": "kin_angvel_p90",
+      "gain": 1.604
+    },
+    {
+      "feature": "kin_duration_s",
+      "gain": 1.539
+    },
+    {
+      "feature": "base_movement_efficiency",
+      "gain": 1.249
+    },
+    {
+      "feature": "neu_strokes",
+      "gain": 1.124
+    }
+  ]
+}

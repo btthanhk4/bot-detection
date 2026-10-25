@@ -556,6 +556,15 @@
       this.recordingStartedAt = Date.now();
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
       this.isListening = false;
+      // Click geometry and press timing. Offsets are in CSS pixels relative to the
+      // centre of the clicked control; no element text or identifiers are kept.
+      this.clickEvents = [];
+      this.lastPressStamp = null;
+      this.lastReleaseStamp = null;
+      this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
+      this.pointerStats = { pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0 };
+      this.handlePointerMove = this.handlePointerMove.bind(this);
+      this.handlePointerRawUpdate = this.handlePointerRawUpdate.bind(this);
       this.handleMouseMove = this.handleMouseMove.bind(this);
       this.handleMouseDown = this.handleMouseDown.bind(this);
       this.handleMouseUp = this.handleMouseUp.bind(this);
@@ -577,6 +586,11 @@
       window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
       window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
       window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
+      // Coalesced samples and raw updates are only exposed in secure contexts.
+      window.addEventListener('pointermove', this.handlePointerMove, { passive: true });
+      if (window.isSecureContext && 'onpointerrawupdate' in window) {
+        window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, { passive: true });
+      }
     }
 
     stop() {
@@ -590,6 +604,8 @@
       window.removeEventListener('touchstart', this.handleTouchStart);
       window.removeEventListener('touchmove', this.handleTouchMove);
       window.removeEventListener('touchend', this.handleTouchEnd);
+      window.removeEventListener('pointermove', this.handlePointerMove);
+      window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate);
     }
 
     clear() {
@@ -686,26 +702,90 @@
 
     handleMouseMove(e) {
       if (e.isTrusted === false) return;
+      this.counters.mousemove++;
       this.recordPoint('move', e.clientX, e.clientY);
+    }
+
+    eventStamp(e) {
+      if (e && typeof e.timeStamp === 'number' && Number.isFinite(e.timeStamp) && e.timeStamp > 0) return e.timeStamp;
+      return typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
 
     handleMouseDown(e) {
       if (e.isTrusted === false) return;
+      this.counters.mousedown++;
+      this.lastPressStamp = this.eventStamp(e);
+      this.lastReleaseStamp = null;
       this.recordPoint('down', e.clientX, e.clientY);
     }
 
     handleMouseUp(e) {
       if (e.isTrusted === false) return;
+      this.lastReleaseStamp = this.eventStamp(e);
       this.recordPoint('up', e.clientX, e.clientY);
     }
 
     handleClick(e) {
       if (e.isTrusted === false) return;
+      this.counters.click++;
       this.recordPoint('click', e.clientX, e.clientY);
+      this.recordClickGeometry(e);
+    }
+
+    recordClickGeometry(e) {
+      // detail === 0 marks keyboard or assistive activation, which has no pointer position.
+      if (!e || e.detail === 0 || typeof e.clientX !== 'number' || typeof e.clientY !== 'number') return;
+      let target = e.target;
+      try {
+        if (target && typeof target.closest === 'function') {
+          target = target.closest('a,button,input,select,textarea,label,summary,[role="button"],[role="link"]') || target;
+        }
+        if (!target || typeof target.getBoundingClientRect !== 'function') return;
+        const rect = target.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return;
+        const round2 = (value) => Math.round(value * 100) / 100;
+        const press = this.lastPressStamp;
+        const release = this.lastReleaseStamp;
+        const hold = press !== null && release !== null && release >= press && release - press < 10000
+          ? round2(release - press) : null;
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        this.clickEvents.push({
+          time: Math.round(now - this.startTime),
+          hold,
+          ox: round2(e.clientX - (rect.left + rect.width / 2)),
+          oy: round2(e.clientY - (rect.top + rect.height / 2)),
+          w: Math.round(rect.width),
+          h: Math.round(rect.height),
+        });
+        if (this.clickEvents.length > 40) this.clickEvents = this.clickEvents.slice(-30);
+      } catch (err) {
+        // Geometry is optional evidence; never break the host page.
+      } finally {
+        this.lastPressStamp = null;
+        this.lastReleaseStamp = null;
+      }
+    }
+
+    handlePointerMove(e) {
+      if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
+      const stats = this.pointerStats;
+      stats.pointermove++;
+      if (typeof e.getCoalescedEvents === 'function') {
+        let count = 0;
+        try { count = e.getCoalescedEvents().length; } catch (err) { count = 0; }
+        stats.coalescedTotal += count;
+        if (count > stats.coalescedMax) stats.coalescedMax = count;
+        if (count > 1) stats.coalescedMulti++;
+      }
+    }
+
+    handlePointerRawUpdate(e) {
+      if (e && e.isTrusted !== false && e.pointerType === 'mouse') this.pointerStats.rawUpdates++;
     }
 
     handleWheel(e) {
       if (e.isTrusted === false) return;
+      this.counters.wheel++;
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const time = Math.round(now - this.startTime);
       this.scrollEvents.push({
@@ -835,6 +915,12 @@
           .sort((a, b) => a.time - b.time),
         stats: this.getStats(),
         scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
+        clickEvents: this.clickEvents.slice(-30),
+        counters: { ...this.counters },
+        pointerStats: {
+          ...this.pointerStats,
+          secureContext: typeof window !== 'undefined' && window.isSecureContext === true,
+        },
         coordinateFrame: {
           id: this.recordingId,
           width: this.coordinateWidth,
@@ -860,7 +946,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.1.0';
+  const COLLECTOR_VERSION = '1.2.0';
 
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);

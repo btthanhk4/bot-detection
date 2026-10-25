@@ -6,7 +6,7 @@
 
 ## Bàn giao thu traffic nghiên cứu
 
-Bản SDK 1.1.0 hỗ trợ nhúng một tag có `data-datacat`, mã đợt thu và mã website.
+Bản SDK 1.2.0 hỗ trợ nhúng một tag có `data-datacat`, mã đợt thu và mã website.
 Xem [hướng dẫn giáo viên](pilot/README.md),
 [triển khai và export dataset](docs/PILOT_OPERATOR_GUIDE.md),
 [kiểm chứng bản bàn giao](docs/PILOT_HANDOFF_REVIEW_2026-10-19.md).
@@ -101,7 +101,16 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v10 (current)
+### Policy v11 (current)
+
+Policy v11 giữ nguyên hai model và ngưỡng của v10, thêm luật `synthetic_click_v1`:
+ít nhất 3 click trúng tâm control (lệch ≤ 1 px) và ít nhất 2 lần nhả chuột dưới 5 ms
+thì kết luận BOT. Luật bắt click mặc định của Playwright, Puppeteer và Selenium; bot
+click ngẫu nhiên và có độ trễ bấm vẫn không bị bắt. Xem
+[Model release v11](docs/MODEL_RELEASE_V11.md) và
+[tổng hợp công thức chuột](docs/MOUSE_FORMULA_REVIEW_2026-10-25.md).
+
+### Policy v10
 
 The bundled model uses BOT threshold `0.96`, SUSPECT threshold `0.45`, and
 monotonic BiLSTM mean/p75 evidence with an abstention rule for model disagreement.

@@ -47,7 +47,12 @@ from core_ml.dataset.field_captures import (
 )
 from core_ml.dataset.manual_labels import manual_training_samples
 from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_window, rolling_windows
-from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
+from core_ml.release_cases import (
+    KNOWN_FAILURE_WINDOWS,
+    REGRESSION_CASE_FINGERPRINT,
+    SYNTHETIC_INPUT_CASES,
+    SYNTHETIC_INPUT_RULE_GATE,
+)
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
     extract_sequential_chunks,
@@ -721,6 +726,27 @@ def validate_explicit_automation_rule(detector) -> dict:
     }
 
 
+def validate_synthetic_input_rule(detector) -> dict:
+    """Check positive and human look-alike click fixtures before publishing policy 11."""
+    for expected, clicks in SYNTHETIC_INPUT_CASES:
+        result = detector.predict({
+            "_server_user_agent": "Mozilla/5.0 Chrome/154.0.0.0",
+            "fingerprint": {"userAgent": "Mozilla/5.0 Chrome/154.0.0.0"},
+            "botd": {"detectors": {}},
+            "mouse": {"records": [], "clickEvents": clicks},
+        })
+        if result["verdict"] != expected or result["decision_state"] != (
+            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+        ):
+            raise RuntimeError("Synthetic input rule release gate failed")
+        if expected == "BOT" and (
+            result["breakdown"]["decision_basis"] != "synthetic_input"
+            or result["breakdown"]["risk_score_in_domain"]
+        ):
+            raise RuntimeError("Synthetic input rule metadata release gate failed")
+    return dict(SYNTHETIC_INPUT_RULE_GATE)
+
+
 def validate_known_release_cases(detector, telemetries: list, indices, labels,
                                  cases: dict = KNOWN_FAILURE_WINDOWS) -> dict:
     """Check every previously failing time against the original full trajectory."""
@@ -1315,6 +1341,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         for model, model_metrics in training_metrics.items() if model != "captured_bot_holdout"
     }
     explicit_automation_rule_gate = validate_explicit_automation_rule(production_detector)
+    synthetic_input_rule_gate = validate_synthetic_input_rule(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1342,6 +1369,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "lstm_aggregation": "mean_p75_disagreement_v2",
             "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
             "explicit_automation_rule_gate": explicit_automation_rule_gate,
+            "synthetic_input_rule_gate": synthetic_input_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

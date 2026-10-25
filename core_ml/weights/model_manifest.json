@@ -1,10 +1,10 @@
 {
   "artifacts": {
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
-    "tabular_model.joblib": "73dc3d1e3bca78d320be97b1d17580575ad958e767b4a2c0a4e87ae633de1e88"
+    "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "e3dd550e4d40453db0e17a743da7e992",
-  "created_at": "2026-09-29T01:11:08.019274+00:00",
+  "bundle_id": "22ad0bcbd9a641a098ddcc92a64c85ac",
+  "created_at": "2026-10-25T17:05:16.785034+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -61,6 +61,11 @@
   "training": {
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
+    "capture_holdout_families": [],
+    "capture_lstm_session_weight": null,
+    "capture_tabular_window_weight": null,
+    "capture_train_families": [],
+    "captured_bot_holdout": null,
     "collector_window_policy": "mouse_export_v1",
     "dataset": {
       "fingerprint_sha256": "0f1644aeb20abc38454f3b0c79912908511e712f54b885a1c4b9a2e9397e74fe",
@@ -837,7 +842,8 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "10",
+    "decision_policy_version": "11",
+    "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
     "explicit_automation_rule_gate": {
@@ -846,9 +852,11 @@
       "positive_cases": 2,
       "rule": "headless_ua_and_framework_v1"
     },
+    "frozen_lstm_bundle_id": null,
     "individual_model_evaluation_threshold": 0.5,
     "lstm_aggregation": "mean_p75_disagreement_v2",
     "lstm_p75_min_weighted_mean": 0.7,
+    "manual_training": null,
     "metrics": {
       "ensemble": {
         "early_test": {
@@ -1027,6 +1035,13 @@
     "rolling_checkpoints": 1000,
     "rolling_full_replay": true,
     "seed": 42,
+    "synthetic_input_rule_gate": {
+      "fixture_fingerprint": "d9082d0ba702c24c377adac54a718242147ad75a7b62d5ca36867d5585bb681c",
+      "negative_cases": 7,
+      "passed": 9,
+      "positive_cases": 2,
+      "rule": "synthetic_click_v1"
+    },
     "train_full_trajectory_checkpoints": 32,
     "train_full_trajectory_windows": true,
     "training_device": "cpu"

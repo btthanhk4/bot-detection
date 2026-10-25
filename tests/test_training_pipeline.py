@@ -222,6 +222,18 @@ def test_policy_v9_requires_dense_replay_and_known_regressions():
         "passed": 7,
     }
     assert release_evidence_valid(manifest, "10", 0.96, 0.45)
+    # Policy 11 keeps every v10 gate and adds the synthetic-click fixtures.
+    from core_ml.release_cases import SYNTHETIC_INPUT_RULE_GATE
+    manifest["training"]["decision_policy_version"] = "11"
+    assert not release_evidence_valid(manifest, "11", 0.96, 0.45)
+    manifest["training"]["synthetic_input_rule_gate"] = dict(SYNTHETIC_INPUT_RULE_GATE, passed=8)
+    assert not release_evidence_valid(manifest, "11", 0.96, 0.45)
+    manifest["training"]["synthetic_input_rule_gate"] = dict(SYNTHETIC_INPUT_RULE_GATE)
+    assert release_evidence_valid(manifest, "11", 0.96, 0.45)
+    explicit_gate = manifest["training"].pop("explicit_automation_rule_gate")
+    assert not release_evidence_valid(manifest, "11", 0.96, 0.45)
+    manifest["training"]["explicit_automation_rule_gate"] = explicit_gate
+    manifest["training"]["decision_policy_version"] = "10"
     manifest["training"]["diagnostic_only"] = True
     assert not release_evidence_valid(manifest, "10", 0.96, 0.45)
     manifest["training"]["diagnostic_only"] = False

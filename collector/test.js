@@ -229,6 +229,59 @@ async function testDispatchedMouseEventsCannotSupplyBehavioralEvidence() {
   collector.destroy();
 }
 
+async function testClickGeometryAndPressTimingAreRecorded() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  const button = {
+    getBoundingClientRect: () => ({ left: 100, top: 50, width: 80, height: 20 }),
+    closest: () => null,
+  };
+  // Hardware-like click: held 96 ms, 7 px left of centre.
+  recorder.handleMouseDown({ clientX: 133, clientY: 61, timeStamp: 1000, isTrusted: true });
+  recorder.handleMouseUp({ clientX: 133, clientY: 61, timeStamp: 1096.4, isTrusted: true });
+  recorder.handleClick({ clientX: 133, clientY: 61, detail: 1, target: button, isTrusted: true });
+  // Automation-like click: zero hold, exact centre.
+  recorder.handleMouseDown({ clientX: 140, clientY: 60, timeStamp: 2000, isTrusted: true });
+  recorder.handleMouseUp({ clientX: 140, clientY: 60, timeStamp: 2000.2, isTrusted: true });
+  recorder.handleClick({ clientX: 140, clientY: 60, detail: 1, target: button, isTrusted: true });
+  // Keyboard activation (detail 0) and dispatched clicks carry no pointer geometry.
+  recorder.handleClick({ clientX: 0, clientY: 0, detail: 0, target: button, isTrusted: true });
+  recorder.handleClick({ clientX: 140, clientY: 60, detail: 1, target: button, isTrusted: false });
+  // A click without a preceding press has no hold time.
+  recorder.handleClick({ clientX: 150, clientY: 55, detail: 1, target: button, isTrusted: true });
+
+  const data = recorder.exportData();
+  assert.deepStrictEqual(data.clickEvents.map(({ hold, ox, oy, w, h }) => ({ hold, ox, oy, w, h })), [
+    { hold: 96.4, ox: -7, oy: 1, w: 80, h: 20 },
+    { hold: 0.2, ox: 0, oy: 0, w: 80, h: 20 },
+    { hold: null, ox: 10, oy: -5, w: 80, h: 20 },
+  ]);
+  assert.strictEqual(data.counters.click, 4);
+  assert.strictEqual(data.counters.mousedown, 2);
+
+  const element = { getBoundingClientRect: () => { throw new Error('detached'); }, closest: () => null };
+  recorder.handleClick({ clientX: 1, clientY: 1, detail: 1, target: element, isTrusted: true });
+  assert.strictEqual(recorder.exportData().clickEvents.length, 3, 'geometry errors must not break the page');
+  collector.destroy();
+}
+
+async function testPointerStatsCountCoalescedMouseSamples() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: true, getCoalescedEvents: () => [1, 2, 3] });
+  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: true, getCoalescedEvents: () => [1] });
+  recorder.handlePointerMove({ pointerType: 'touch', isTrusted: true, getCoalescedEvents: () => [1, 2] });
+  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: false, getCoalescedEvents: () => [1, 2] });
+  recorder.handlePointerRawUpdate({ pointerType: 'mouse', isTrusted: true });
+  const stats = recorder.exportData().pointerStats;
+  assert.strictEqual(stats.pointermove, 2);
+  assert.strictEqual(stats.coalescedTotal, 4);
+  assert.strictEqual(stats.coalescedMax, 3);
+  assert.strictEqual(stats.coalescedMulti, 1);
+  assert.strictEqual(stats.rawUpdates, 1);
+  collector.destroy();
+}
+
 async function testResizeDoesNotCreateMouseMovement() {
   const previousWindow = global.window;
   global.window = {
@@ -677,6 +730,8 @@ testRestartDuringFingerprinting()
   .then(testTouchIsTaggedAndExcludedFromMouseChunks)
   .then(testDispatchedMouseEventsCannotSupplyBehavioralEvidence)
   .then(testResizeDoesNotCreateMouseMovement)
+  .then(testClickGeometryAndPressTimingAreRecorded)
+  .then(testPointerStatsCountCoalescedMouseSamples)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)

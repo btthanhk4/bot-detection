@@ -43,7 +43,7 @@ def build_release(root, output, evidence_path, *, source=False):
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=False)
     manifest = {
-        "release": "datacat-pilot-1.1.0", "created_at": datetime.now(timezone.utc).isoformat(),
+        "release": "datacat-pilot-1.2.0", "created_at": datetime.now(timezone.utc).isoformat(),
         "kind": "operator-source" if source else "teacher-embed",
         "api_configuration_required": True, "website_acceptance_required": True,
         "git_head": revision.stdout.strip() if revision.returncode == 0 else None,
