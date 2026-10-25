@@ -1,0 +1,462 @@
+{
+  "baseline_policy": "10",
+  "browser_runs": 42,
+  "bundle_id": "e3dd550e4d40453db0e17a743da7e992",
+  "candidate_policy": "10+profile_corroborated_v1",
+  "groups": [
+    {
+      "baseline_ever_bot": 3,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 3
+      },
+      "candidate_ever_bot": 3,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "plain-plain-control-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "BOT->BOT": 12
+      }
+    },
+    {
+      "baseline_ever_bot": 3,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 3
+      },
+      "candidate_ever_bot": 3,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "plain-plain-control-secure-localhost",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "BOT->BOT": 12
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "SUSPECT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-circular-fixed-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "SUSPECT->SUSPECT": 15
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "SUSPECT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-circular-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "SUSPECT->SUSPECT": 12
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "SUSPECT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-circular-jitter-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "SUSPECT->SUSPECT": 15
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "candidate_ever_bot": 3,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 3
+      },
+      "changed_runs": 3,
+      "changed_snapshots": 12,
+      "family": "stealth-circular-secure-localhost",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 12,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "SUSPECT->BOT": 12
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 3,
+      "candidate_final": {
+        "HUMAN": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-heavy-wander-fixed-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->HUMAN": 12,
+        "SUSPECT->SUSPECT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 3,
+      "candidate_final": {
+        "HUMAN": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-heavy-wander-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->HUMAN": 9,
+        "SUSPECT->SUSPECT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 3,
+      "candidate_final": {
+        "HUMAN": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-heavy-wander-jitter-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->HUMAN": 12,
+        "SUSPECT->SUSPECT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 3,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 3
+      },
+      "changed_runs": 3,
+      "changed_snapshots": 12,
+      "family": "stealth-heavy-wander-secure-localhost",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 12,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->BOT": 9,
+        "SUSPECT->BOT": 3
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "SUSPECT": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "SUSPECT": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-scrub-hover-fixed-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "SUSPECT->SUSPECT": 15
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 3,
+      "candidate_final": {
+        "HUMAN": 3
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-scrub-hover-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->HUMAN": 4,
+        "SUSPECT->SUSPECT": 8
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 2,
+        "SUSPECT": 1
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 3,
+      "candidate_final": {
+        "HUMAN": 2,
+        "SUSPECT": 1
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "stealth-scrub-hover-jitter-insecure-http",
+      "label": "BOT",
+      "profile_covered_snapshots": 15,
+      "rule_hits": 0,
+      "runs": 3,
+      "sent_snapshots": 15,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->HUMAN": 7,
+        "SUSPECT->SUSPECT": 8
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 3,
+      "baseline_final": {
+        "HUMAN": 3
+      },
+      "candidate_ever_bot": 3,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 3
+      },
+      "changed_runs": 3,
+      "changed_snapshots": 12,
+      "family": "stealth-scrub-hover-secure-localhost",
+      "label": "BOT",
+      "profile_covered_snapshots": 12,
+      "rule_hits": 12,
+      "runs": 3,
+      "sent_snapshots": 12,
+      "source": "browser",
+      "transitions": {
+        "HUMAN->BOT": 3,
+        "SUSPECT->BOT": 9
+      }
+    },
+    {
+      "baseline_ever_bot": 89,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 89,
+        "SUSPECT": 11
+      },
+      "candidate_ever_bot": 89,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 89,
+        "SUSPECT": 11
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "phase1",
+      "label": "BOT",
+      "profile_covered_snapshots": 0,
+      "rule_hits": 0,
+      "runs": 100,
+      "sent_snapshots": 100,
+      "source": "mouse_only",
+      "transitions": {
+        "BOT->BOT": 89,
+        "SUSPECT->SUSPECT": 11
+      }
+    },
+    {
+      "baseline_ever_bot": 202,
+      "baseline_ever_human": 0,
+      "baseline_final": {
+        "BOT": 202,
+        "SUSPECT": 38
+      },
+      "candidate_ever_bot": 202,
+      "candidate_ever_human": 0,
+      "candidate_final": {
+        "BOT": 202,
+        "SUSPECT": 38
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "phase2",
+      "label": "BOT",
+      "profile_covered_snapshots": 0,
+      "rule_hits": 0,
+      "runs": 240,
+      "sent_snapshots": 240,
+      "source": "mouse_only",
+      "transitions": {
+        "BOT->BOT": 202,
+        "SUSPECT->SUSPECT": 38
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 50,
+      "baseline_final": {
+        "HUMAN": 50
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 50,
+      "candidate_final": {
+        "HUMAN": 50
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "phase1",
+      "label": "HUMAN",
+      "profile_covered_snapshots": 0,
+      "rule_hits": 0,
+      "runs": 50,
+      "sent_snapshots": 50,
+      "source": "mouse_only",
+      "transitions": {
+        "HUMAN->HUMAN": 50
+      }
+    },
+    {
+      "baseline_ever_bot": 0,
+      "baseline_ever_human": 57,
+      "baseline_final": {
+        "HUMAN": 57,
+        "SUSPECT": 2
+      },
+      "candidate_ever_bot": 0,
+      "candidate_ever_human": 57,
+      "candidate_final": {
+        "HUMAN": 57,
+        "SUSPECT": 2
+      },
+      "changed_runs": 0,
+      "changed_snapshots": 0,
+      "family": "phase2",
+      "label": "HUMAN",
+      "profile_covered_snapshots": 0,
+      "rule_hits": 0,
+      "runs": 59,
+      "sent_snapshots": 59,
+      "source": "mouse_only",
+      "transitions": {
+        "HUMAN->HUMAN": 57,
+        "SUSPECT->SUSPECT": 2
+      }
+    }
+  ],
+  "human_browser_runs": 0,
+  "human_participants": 0,
+  "note": "No training. Sent snapshots only, excluding final probes. Mouse-only controls have no browser profile and cannot validate profile false-positive rates.",
+  "release_approved": false
+}

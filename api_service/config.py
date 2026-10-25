@@ -55,6 +55,10 @@ class Settings:
     ]
     ADMIN_TOKEN: str = os.getenv("BOT_ADMIN_TOKEN", "").strip()
     READ_TOKEN: str = (os.getenv("BOT_READ_TOKEN") or ADMIN_TOKEN).strip()
+    # Signs dashboard session cookies. Leave empty only for throwaway runs: a
+    # random per-process secret logs everyone out on every restart.
+    SESSION_SECRET: str = os.getenv("BOT_SESSION_SECRET", "").strip()
+    SESSION_TTL_HOURS: int = _env_int("BOT_SESSION_TTL_HOURS", 12, 1, 24 * 30)
     TRUST_PROXY_HEADERS: bool = os.getenv("BOT_TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
     TRUSTED_PROXIES: List[str] = [
         proxy.strip()
@@ -79,6 +83,8 @@ class Settings:
     RATE_LIMIT_PER_MINUTE: int = _env_int("BOT_RATE_LIMIT_PER_MINUTE", 240, 0)
     MAX_PAYLOAD_BYTES: int = _env_int("BOT_MAX_PAYLOAD_BYTES", 262144, 1024)
     DATA_RETENTION_DAYS: int = _env_int("BOT_DATA_RETENTION_DAYS", 30, 1, 3650)
+    CAPTURE_ENABLED: bool = os.getenv("BOT_CAPTURE_ENABLED", "false").lower() in ("1", "true", "yes")
+    CAPTURE_RETENTION_DAYS: int = _env_int("BOT_CAPTURE_RETENTION_DAYS", 7, 1, 365)
 
 
 settings = Settings()

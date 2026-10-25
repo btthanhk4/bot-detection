@@ -6,9 +6,11 @@ JSON file buffer. Uses pymongo with connection pooling and automatic reconnectio
 
 Collections:
   - detection_results: All analyzed sessions with AI verdicts
+  - telemetry_captures: Opt-in immutable snapshots with first model observation
 """
 
 import os
+import json
 import logging
 import math
 import threading
@@ -188,6 +190,10 @@ def _ensure_indexes(db):
         ),
         (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {"expireAfterSeconds": RETENTION_SECONDS}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
+        (db["telemetry_captures"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
+        (db["telemetry_captures"], "sessionId_1_received_at_1", [("sessionId", 1), ("received_at", 1)], {}),
+        (db["telemetry_captures"], "study_site_received_event",
+         [("study_id", 1), ("site_id", 1), ("received_at", 1), ("event_id", 1)], {}),
     ]
     for collection, name, keys, options in indexes:
         try:
@@ -265,6 +271,51 @@ def _writes_are_blocked(db, session_id: str) -> bool:
     return db["deleted_sessions"].find_one(
         {"sessionId": session_id, "expires_at": {"$gt": now}}, {"_id": 1}
     ) is not None
+
+
+def save_telemetry_capture(snapshot: dict, analysis: Optional[dict] = None) -> Optional[str]:
+    """Insert a raw snapshot once; attach only its first successful prediction.
+
+    A retry never changes raw data, capture provenance, or the retention clock.
+    None means an expired/tombstoned event, not an unavailable database.
+    """
+    db = get_db()
+    if db is None or (db is _db and not _indexes_ready):
+        raise DatabasePersistenceError("Research capture database is unavailable")
+    try:
+        session_id = snapshot["sessionId"]
+        expires_at = datetime.fromtimestamp(snapshot["expires_at_ms"] / 1000, timezone.utc)
+        if expires_at <= datetime.now(timezone.utc) or _writes_are_blocked(db, session_id):
+            return None
+        collection = db["telemetry_captures"]
+        identifier = snapshot["event_id"]
+        doc = {**snapshot, "_id": identifier, "expires_at": expires_at}
+        try:
+            collection.update_one({"_id": identifier}, {"$setOnInsert": doc}, upsert=True)
+        except DuplicateKeyError:
+            # Concurrent identical inserts are successful idempotent retries.
+            if collection.find_one({"_id": identifier}, {"_id": 1}) is None:
+                raise
+        if analysis is not None:
+            analysis_json = json.dumps(analysis, ensure_ascii=True, allow_nan=False)
+            collection.update_one(
+                {"_id": identifier, "analysis_json": {"$exists": False}},
+                {"$set": {"analysis_json": analysis_json}},
+            )
+        try:
+            blocked = _writes_are_blocked(db, session_id)
+        except DatabaseIngestionPaused:
+            collection.delete_many({"sessionId": session_id})
+            raise
+        if blocked:
+            collection.delete_many({"sessionId": session_id})
+            return None
+        return identifier
+    except DatabaseIngestionPaused:
+        raise
+    except Exception as exc:
+        logger.exception("[DB] Research capture write failed")
+        raise DatabasePersistenceError("Failed to persist research capture") from exc
 
 
 def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
@@ -612,7 +663,8 @@ def delete_session(session_id: str) -> Optional[bool]:
             upsert=True,
         )
         result = db["detection_results"].delete_one({"sessionId": session_id})
-        return result.deleted_count > 0
+        captures = db["telemetry_captures"].delete_many({"sessionId": session_id})
+        return result.deleted_count > 0 or captures.deleted_count > 0
     except Exception as e:
         logger.error(f"[DB] Delete failed: {e}")
         return None
@@ -633,6 +685,7 @@ def delete_all_sessions() -> Optional[int]:
         )
         db["deleted_sessions"].delete_many({})
         result = db["detection_results"].delete_many({})
+        db["telemetry_captures"].delete_many({})
         db["service_control"].update_one(
             {"_id": "ingestion"},
             # Give the API process time to clear its replay buffer before

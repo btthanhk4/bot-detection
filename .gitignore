@@ -39,6 +39,10 @@ yarn-error.log*
 Thumbs.db
 
 # Runtime state
+.env
+.env.*
+!.env.example
+!.env.pilot.example
 telemetry_buffer.json
 /var/
 /bot-lab/

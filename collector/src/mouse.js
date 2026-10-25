@@ -15,6 +15,8 @@ export class MouseRecorder {
     this.scrollEvents = [];  // separate scroll tracking
     this.coordinateWidth = null;
     this.coordinateHeight = null;
+    this.recordingId = 0;
+    this.recordingStartedAt = Date.now();
     this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.isListening = false;
     this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -54,6 +56,8 @@ export class MouseRecorder {
   }
 
   clear() {
+    this.recordingId++;
+    this.recordingStartedAt = Date.now();
     this.records = [];
     this.chunks = [];
     this.lastMoveRecord = null;
@@ -294,6 +298,15 @@ export class MouseRecorder {
         .sort((a, b) => a.time - b.time),
       stats: this.getStats(),
       scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
+      coordinateFrame: {
+        id: this.recordingId,
+        width: this.coordinateWidth,
+        height: this.coordinateHeight,
+        normalizedAxes: true,
+        startedAtEpochMs: this.recordingStartedAt,
+        timestampResolutionMs: 1,
+        coordinateDecimals: 5,
+      },
     };
   }
 }

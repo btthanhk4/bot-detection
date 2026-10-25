@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,8 @@ def isolated_telemetry_spool(tmp_path, monkeypatch):
     from api_service import main
     from api_service.spool import TelemetrySpool
 
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", False)
+    monkeypatch.setattr(main, "delete_research_data", lambda session_id=None: None)
     monkeypatch.setattr(
         main, "_spool",
         TelemetrySpool(tmp_path / "telemetry-spool.sqlite", main.settings.MAX_BUFFER_SIZE),
@@ -42,6 +45,242 @@ def client():
 
 
 READ_HEADERS = {"X-Read-Token": "test-read-token"}
+
+
+def test_research_capture_survives_unavailable_models(client, monkeypatch):
+    from api_service import database, main
+
+    saved = []
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True, raising=False)
+    monkeypatch.setattr(main, "lstm_loaded", False)
+    monkeypatch.setattr(
+        database, "save_telemetry_capture",
+        lambda snapshot, analysis=None: saved.append(snapshot) or snapshot["event_id"],
+        raising=False,
+    )
+    response = client.post("/api/v1/telemetry", json={
+        "sessionId": "capture-no-model", "visitorId": "visitor", "timestamp": 1000, "sequence": 0,
+    })
+
+    assert response.status_code == 202
+    assert response.json()["recorded"] is True
+    assert response.json()["analysis_available"] is False
+    assert response.json()["capture_id"] == saved[0]["event_id"]
+    assert "verdict" not in response.json()
+
+
+def test_research_capture_precedes_inference_failure(client, monkeypatch):
+    from api_service import database, main
+
+    steps = []
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True, raising=False)
+    monkeypatch.setattr(main, "_require_inference_models", lambda: None)
+
+    def save(snapshot, analysis=None):
+        steps.append("capture")
+        return snapshot["event_id"]
+
+    def fail(_data):
+        steps.append("inference")
+        raise RuntimeError("broken runtime")
+
+    monkeypatch.setattr(database, "save_telemetry_capture", save, raising=False)
+    monkeypatch.setattr(main.ensemble_detector, "predict", fail)
+    response = client.post("/api/v1/telemetry", json={"sessionId": "s", "visitorId": "v"})
+
+    assert steps == ["capture", "inference"]
+    assert response.status_code == 202
+    assert response.json()["analysis_available"] is False
+
+
+def test_research_capture_recovers_after_restart_without_running_model(client, monkeypatch):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+    monkeypatch.setattr(main, "lstm_loaded", False)
+
+    def outage(*args):
+        raise database.DatabasePersistenceError("offline")
+
+    monkeypatch.setattr(database, "save_telemetry_capture", outage)
+    payload = {"sessionId": "offline", "visitorId": "visitor", "timestamp": 1000, "sequence": 0,
+               "mouse": {"scrollEvents": [{"time": 123, "deltaY": 50}]}}
+    response = client.post("/api/v1/telemetry", json=payload)
+    assert response.status_code == 202
+    assert response.json()["buffered"] is True
+    assert main._spool.count() == 1
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
+
+    saved = []
+    monkeypatch.setattr(database, "save_telemetry_capture",
+                        lambda event, analysis: saved.append((event, analysis)) or event["event_id"])
+    monkeypatch.setattr(main.ensemble_detector, "predict",
+                        lambda *args: pytest.fail("Raw recovery must not run inference"))
+    main._flush_telemetry_buffer()
+
+    assert main._spool.count() == 0
+    assert len(saved) == 1
+    assert saved[0][1] is None
+    assert json.loads(saved[0][0]["payload_json"])["mouse"] == payload["mouse"]
+    assert saved[0][0]["event_id"] == response.json()["capture_id"]
+
+
+def test_research_capture_replay_preserves_original_decision_version(client, monkeypatch):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+    monkeypatch.setattr(main, "_require_inference_models", lambda: None)
+    monkeypatch.setattr(main, "model_bundle_id", "bundle-original")
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: {"verdict": "BOT"})
+
+    def outage(*args):
+        raise database.DatabasePersistenceError("offline")
+
+    monkeypatch.setattr(database, "save_telemetry_capture", outage)
+    monkeypatch.setattr(database, "save_detection_result", outage)
+    response = client.post("/api/v1/telemetry", json={"sessionId": "s", "visitorId": "v"})
+    assert response.status_code == 200
+    assert response.json()["capture_buffered"] is True
+    with main._telemetry_buffer_lock:
+        main.telemetry_buffer.clear()
+
+    saved = []
+    monkeypatch.setattr(main, "model_bundle_id", "bundle-new")
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: pytest.fail("Must reuse old analysis"))
+    monkeypatch.setattr(database, "save_telemetry_capture",
+                        lambda event, analysis: saved.append((event, analysis)) or event["event_id"])
+    monkeypatch.setattr(database, "save_detection_result", lambda *args: "s")
+    main._flush_telemetry_buffer()
+    assert main._spool.count() == 0
+    decisions = [analysis for _, analysis in saved if analysis is not None]
+    assert decisions == [{"verdict": "BOT", "model_bundle_id": "bundle-original"}]
+    assert all(event["capture_bundle_id"] == "bundle-original" for event, _ in saved)
+
+
+@pytest.mark.parametrize("failure", ["full", "disk"])
+def test_research_capture_never_acknowledges_failed_storage(client, monkeypatch, failure):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+
+    def outage(*args):
+        raise database.DatabasePersistenceError("offline")
+
+    def enqueue(event):
+        if failure == "disk":
+            raise OSError("disk full")
+        return None
+
+    monkeypatch.setattr(database, "save_telemetry_capture", outage)
+    monkeypatch.setattr(main._spool, "enqueue", enqueue)
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: pytest.fail("No capture, no inference"))
+    response = client.post("/api/v1/telemetry", json={"sessionId": "s", "visitorId": "v"})
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "10"
+    assert not main.telemetry_buffer
+
+
+def test_research_capture_retry_uses_same_id_and_attaches_actual_analysis(client, monkeypatch):
+    from api_service import database, main
+
+    saved = []
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+    monkeypatch.setattr(main, "_require_inference_models", lambda: None)
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: {"verdict": "SUSPECT"})
+    monkeypatch.setattr(database, "save_telemetry_capture",
+                        lambda event, analysis=None: saved.append((event, analysis)) or event["event_id"])
+    monkeypatch.setattr(database, "save_detection_result", lambda *args: "s")
+    payload = {"sessionId": "s", "visitorId": "v", "timestamp": 1234, "sequence": 0}
+    first = client.post("/api/v1/telemetry", json=payload)
+    retry = client.post("/api/v1/telemetry", json=payload)
+    assert first.json()["capture_id"] == retry.json()["capture_id"]
+    assert first.json()["analysis_available"] is True
+    assert [analysis is None for _, analysis in saved] == [True, False, True, False]
+    assert saved[1][1]["model_bundle_id"] == main.model_bundle_id
+
+
+def test_research_capture_replay_requeues_outage_without_inference(client, monkeypatch):
+    from api_service import database, main
+    from api_service.capture import build_capture
+
+    capture = build_capture({"sessionId": "s", "visitorId": "v"}, received_at=int(time.time() * 1000),
+                            client_ip="ip", user_agent="ua", bundle_id="old", policy_version="10",
+                            retention_days=7)
+    assert main._buffer_telemetry({"sessionId": "s", "_capture_snapshot": capture})
+
+    def outage(*args):
+        raise database.DatabasePersistenceError("offline")
+
+    monkeypatch.setattr(database, "save_telemetry_capture", outage)
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: pytest.fail("Must not infer"))
+    for _ in range(main.settings.MAX_TELEMETRY_RETRIES + 2):
+        main._flush_telemetry_buffer()
+    assert main._spool.count() == 1
+    assert len(main.telemetry_buffer) == 1
+    main._purge_session_from_memory("s")
+    assert main._spool.count() == 0
+
+
+def test_expired_research_capture_is_removed_during_database_outage(client, monkeypatch):
+    from api_service import database, main
+    from api_service.capture import build_capture
+
+    capture = build_capture({"sessionId": "s", "visitorId": "v"}, received_at=0,
+                            client_ip="ip", user_agent="ua", bundle_id="old", policy_version="10",
+                            retention_days=7)
+    # A non-capture event at the head must not prevent expired research cleanup.
+    assert main._buffer_telemetry({"sessionId": "ahead"}, {"verdict": "SUSPECT"})
+    assert main._buffer_telemetry({"sessionId": "s", "_capture_snapshot": capture})
+    monkeypatch.setattr(database, "save_telemetry_capture", lambda *args: pytest.fail("Already expired"))
+    monkeypatch.setattr(database, "save_detection_result", lambda *args: None)
+    monkeypatch.setattr(database, "is_database_ready", lambda: False)
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: pytest.fail("Must not infer"))
+    main._flush_telemetry_buffer()
+    assert main._spool.count() == 1
+    assert [event["sessionId"] for event in main.telemetry_buffer] == ["ahead"]
+
+
+def test_capture_is_recorded_even_when_latest_session_rejects_stale_event(client, monkeypatch):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+    monkeypatch.setattr(main, "_require_inference_models", lambda: None)
+    monkeypatch.setattr(main.ensemble_detector, "predict", lambda data: {"verdict": "SUSPECT"})
+    monkeypatch.setattr(database, "save_telemetry_capture", lambda event, analysis=None: event["event_id"])
+    monkeypatch.setattr(database, "save_detection_result", lambda *args: None)
+    monkeypatch.setattr(database, "is_database_ready", lambda: True)
+    response = client.post("/api/v1/telemetry", json={"sessionId": "s", "visitorId": "v"})
+    assert response.json()["recorded"] is True
+    assert response.json()["persisted"] is False
+    assert response.json()["capture_persisted"] is True
+
+
+@pytest.mark.parametrize("paused", [True, False])
+def test_research_capture_rejection_is_not_buffered(client, monkeypatch, paused):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+
+    def reject(*args):
+        if paused:
+            raise database.DatabaseIngestionPaused(5)
+        return None
+
+    monkeypatch.setattr(database, "save_telemetry_capture", reject)
+    response = client.post("/api/v1/telemetry", json={"sessionId": "s", "visitorId": "v"})
+    assert response.status_code == (503 if paused else 409)
+    assert main._spool.count() == 0
+
+
+def test_invalid_capture_payload_never_reaches_storage(client, monkeypatch):
+    from api_service import database, main
+
+    monkeypatch.setattr(main.settings, "CAPTURE_ENABLED", True)
+    monkeypatch.setattr(database, "save_telemetry_capture", lambda *args: pytest.fail("Invalid payload"))
+    response = client.post("/api/v1/telemetry",
+                           content='{"sessionId":"s","visitorId":"v","fingerprint":{"x":1e999}}')
+    assert response.status_code == 422
 
 
 def test_model_bundle_verification_detects_tampering(tmp_path):
@@ -593,7 +832,10 @@ def test_get_bot_collector_sdk(client):
     assert "BotCollector" in res.text
 
 
-def test_dashboard_uses_only_real_mouse_trajectory(client):
+def test_dashboard_uses_only_real_mouse_trajectory(client, monkeypatch):
+    from api_service import auth
+
+    monkeypatch.setattr(auth, "session_user", lambda token: {"username": "admin", "role": "admin"})
     res = client.get("/dashboard")
     assert res.status_code == 200
     assert "<title>DATACAT</title>" in res.text
@@ -615,11 +857,12 @@ def test_dashboard_uses_only_real_mouse_trajectory(client):
     assert "Fallback: generate representative trajectory" not in res.text
     assert "const controller = new AbortController()" in res.text
     assert "let activePoll = null" in res.text
-    assert "sessionStorage.removeItem('bot_read_token');" in res.text
+    assert "handleUnauthorized(res)" in res.text
+    assert "bot_read_token" not in res.text
     assert "http://159.223.91.163/san-pham" not in res.text
     assert "data.sessions.map(sessionRevision)" in res.text
     assert "refreshSelectedTrajectory(selectedSession)" in res.text
-    assert "Models Online / Database Degraded" in res.text
+    assert "Mô hình tốt, cơ sở dữ liệu suy giảm" in res.text
     assert "const POLL_INTERVAL = 5000" in res.text
     assert "function parseScreenResolution(value)" in res.text
     assert "for (let i = 0; i < 40; i++)" in res.text

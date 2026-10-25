@@ -8,7 +8,285 @@
 
 > **Đề tài:** Xây dựng mô hình phân biệt bot và người truy cập trang web  
 > **Dataset:** Web Bot Detection Dataset (M4D-ITI) — Phase 1  
-> **Cập nhật trạng thái:** 2026-10-02
+> **Cập nhật báo cáo:** 2026-10-23; kiểm thử local không phải đợt thu traffic tự nhiên mới.
+
+---
+
+## STT traffic và nhãn dataset thủ công (2026-10-23)
+
+Đã thêm registry cấp STT theo session, giữ số khi heartbeat/retry/restart,
+backfill phiên còn lưu theo lần đầu server ghi nhận, và phân trang cursor.
+STT không phải định danh người hoặc bằng chứng traffic của nhà cung cấp;
+thứ tự khi DB outage chỉ xác lập sau phục hồi, số đã cấp không tái sử dụng.
+
+Dashboard có nút gán BOT/HUMAN/UNKNOWN, nguồn, mã nhóm, ghi chú, reviewer,
+xác nhận và revision. Nhãn riêng với dự đoán AI, có lịch sử và quyền admin.
+Snapshot đã chọn được giữ riêng không phụ thuộc TTL vận hành; xóa phiên
+bao gồm cả dữ liệu dataset/nhãn. Export thêm manual-labels JSONL có checksum,
+loader không tự lấy verdict AI làm ground truth.
+
+Có đường nạp mẫu chuột đã gán nhãn vào train thử bằng các nhóm chỉ định,
+chỉ ở candidate diagnostic/thư mục riêng. Chưa chạy retrain hoặc đổi weights.
+Provider/commercial assertions mặc định chưa là nhãn học đáng tin cậy.
+Các kiểm thử bổ sung gồm STT đồng thời, cursor, archive/TTL, xung đột revision,
+auth, export/import và giao diện browser desktop/mobile với MongoDB thật.
+
+Kiểm chứng local: **537 test Python qua**, Ruff và collector qua. Smoke thực
+qua 10 nhóm collector/storage và 7 nhóm bổ sung cho registry/nhãn/giao diện/
+export/import/xóa dataset. Model bundle vẫn là
+`e3dd550e4d40453db0e17a743da7e992`; chưa train lại hay deploy cloud.
+Chứng cứ riêng ngoài Git: `C:/Users/Admin/bot-detection-research/pilot-runtime/manual-labels-acceptance-2026-10-23/evidence.json`.
+
+Chi tiết sử dụng và giới hạn: [MANUAL_LABELING.md](docs/MANUAL_LABELING.md).
+
+## Hoàn thiện bản bàn giao thu traffic thật (2026-10-19)
+
+Đã rà soát luồng collector/API/capture/spool/export và bổ sung SDK **1.1.0**:
+tag tự nhúng có study/site ID, metadata page/version/coordinate frame,
+receipt phân biệt raw đã lưu/đã buffer với beacon mới queued, chống nhúng
+lặp và giữ tương thích SDK thủ công. Model, policy và weights không đổi.
+
+Đã có CLI export/verify snapshot nghiên cứu theo study/site/thời gian, giữ
+hash raw và phiên bản analysis, tạo template nhãn UNKNOWN thay vì lấy dự
+đoán model làm ground truth. Kiểm thử MongoDB thật phát hiện và sửa lỗi
+kiểm tra timestamp BSON Int64; đã thêm regression test. Có stack Compose
+pilot độc lập SilkMoon và hướng dẫn nhúng/vận hành/backup trước TTL.
+
+Kiểm chứng cuối: **517 test Python qua**, Ruff và test collector qua;
+Compose pilot config hợp lệ. Browser Chromium + MongoDB thật qua **10 nhóm
+kiểm tra**, xuất/verify **6 snapshot thuộc 2 phiên**, gồm retry mất response,
+pagehide, outage, restart API và TTL. Các kết quả này chứng minh luồng thu
+dữ liệu trong môi trường kiểm thử, không chứng minh accuracy model.
+
+Website cuối chưa có; chưa nghiệm thu TLS/CSP/CORS hoặc deploy cloud trong
+lượt này. Docker daemon trên máy không chạy, nên chưa tuyên bố build/chạy
+image Docker. Gói code/SDK có thể bàn giao để cấu hình pilot, sau đó cần một
+đợt nghiệm thu nhỏ trên website thực.
+
+- [Hướng dẫn giáo viên](pilot/README.md).
+- [Hướng dẫn vận hành và export](docs/PILOT_OPERATOR_GUIDE.md).
+- [Chi tiết sửa lỗi và chứng cứ](docs/PILOT_HANDOFF_REVIEW_2026-10-19.md).
+
+## Kế hoạch hoàn thiện khóa luận theo phạm vi giới hạn (2026-10-19)
+
+Đã lập kế hoạch và protocol benchmark cho bài toán phát hiện bot trình duyệt
+desktop trên một website, tập trung ba nhóm hành vi: tuyến tính, theo mẫu
+lặp và macro tác vụ. Đây là phạm vi đề xuất cần thống nhất với giảng viên,
+không phải tuyên bố đã nhận diện tốt các nhóm này.
+
+Ưu tiên đầu tiên là bàn giao script để thầy chạy traffic, kiểm chứng lưu/
+export snapshot và thu nhãn độc lập. Mốc dataset dự kiến: 15 người x 6 phiên
+và ba họ bot x 60 lượt; chia người/config block trước khi tạo cửa sổ. Dữ liệu
+cũ tiếp tục là development/regression. Script human control mở Playwright
+chỉ là đối chứng chuột; cần browser native để đánh giá profile người thật.
+
+Thực nghiệm E0-E4 tách heuristic, XGBoost, BiLSTM, fusion baseline và candidate.
+Báo ma trận 2x3, lỗi người/bot, SUSPECT, coverage và diễn tiến qua snapshot;
+không tính SUSPECT là bot phát hiện đúng. Tối ưu trên train/validation, khóa
+candidate trước test mới. Chưa chạy thêm thí nghiệm hoặc thay model trong
+lượt lập kế hoạch; 482 test là kết quả kiểm tra source của lượt trước.
+
+Kế hoạch khoảng 14-20 ngày công là ước lượng, chưa có hạn nộp/rubric để xác
+nhận. Mục tiêu là hoàn thiện nhiều nhất trong phạm vi hiện tại, có dữ liệu và
+kết quả tái hiện; không bảo đảm điểm 10 hoặc độ chính xác production.
+
+- [Kế hoạch chi tiết](docs/THESIS_COMPLETION_PLAN_2026-10-19.md).
+- [Protocol benchmark v1](docs/THESIS_BENCHMARK_PROTOCOL_V1.md).
+- [Đề cương tóm tắt gửi thầy](docs/THESIS_PROPOSAL_2026-10-19.md).
+
+## Phân tích chi tiết từng thao tác chuột (2026-10-19)
+
+Đã bổ sung `core_ml/analyze_mouse_actions.py` để phân tích offline từng sự kiện:
+tọa độ, thời gian, vector vận tốc, gia tốc, jerk, góc đổi hướng và độ cong;
+tổng hợp theo từng đoạn di chuyển, cặp nhấn–thả, click và sự kiện wheel.
+Các đại lượng được tính lại từ tọa độ/thời gian, không tin vào tốc độ client gửi.
+Thiếu dữ liệu được giữ là `null`; timestamp trùng, khoảng nghỉ, nguồn touch,
+đầu vào lỗi và cặp nhấn–thả không đầy đủ đều được xử lý riêng.
+
+Đã chạy trên **18 lượt bot / 90 cửa sổ gửi thực tế đã lưu**, xuất JSON hợp lệ
+cho toàn bộ cửa sổ. Ba báo cáo chi tiết circular, heavy-wander, scrub-hover
+lưu tại `C:/Users/Admin/bot-detection-research/mouse-actions-2026-10-19`.
+Thêm **38 test**, toàn bộ suite **482 test qua**; Ruff qua, còn một cảnh báo
+deprecation của Starlette TestClient.
+
+Đây là lớp đo đạc offline, chưa đưa vào điểm phân loại hoặc dashboard.
+Collector hiện chỉ gửi tối đa 100 sự kiện và chưa có button, pointer type,
+khung tọa độ hay wheel deltaMode. Vì thế chưa thể gọi là lịch sử đầy đủ của
+cả phiên, cũng chưa có bằng chứng tăng độ chính xác. Bước kế tiếp là bổ sung
+schema và batch thu sự kiện có định danh/chống trùng, sau đó kiểm chứng đặc
+trưng mới bằng dữ liệu người thật và bot trên cùng website trước khi train.
+
+Chi tiết, lệnh chạy và kế hoạch triển khai:
+[MOUSE_ACTION_ANALYSIS_2026-10-19.md](docs/MOUSE_ACTION_ANALYSIS_2026-10-19.md).
+
+## Thử nghiệm huấn luyện model chuột từ ý tưởng repo tham khảo (2026-10-13)
+
+Đã xác minh ba clone DELBOT-Mouse, bot-signal, BeCAPTCHA-Mouse và đọc phần
+biểu diễn quỹ đạo, chia dữ liệu, cửa sổ hành vi và hướng dẫn benchmark.
+DELBOT có ví dụ chia ngẫu nhiên sau khi tạo chunk; thí nghiệm này không dùng
+cách chia đó. BeCAPTCHA repo không chứa detector/dataset được cấp sẵn để train.
+
+Đã triển khai `core_ml/experiments/mouse_ablation.py` và train **9 model XGBoost
+thử nghiệm** (3 cấu hình x 3 họ bot giữ lại). So sánh 20 đặc trưng cũ, thêm
+bot từ runner, và thêm 5 đặc trưng chuyển động cục bộ. Phiên được chia trước
+khi tạo cửa sổ; fixed/jitter cùng họ không được chia sang train và test.
+Trọng số cân bằng theo lớp và phiên, không theo độ dài phiên. Ngưỡng và
+hyperparameter được giữ cố định, không điều chỉnh theo kết quả test.
+
+**Kết quả chưa đạt, không thay bundle chính:** bản 25 đặc trưng nhận nhầm
+HUMAN ở kết luận cuối của **18/18 lượt bot thuộc các họ giữ lại**. XGBoost
+đóng băng hiện tại khi chạy riêng nhận 5 BOT, 8 HUMAN, 5 SUSPECT trên cùng
+các cửa sổ. Đây là so sánh thành phần XGBoost, không phải kết luận ensemble.
+9 phiên người thật test không có cửa sổ BOT trong các lượt thử, nhưng cùng
+9 phiên được dùng lại qua ba fold, không phải 27 người; cũng chưa có người
+thật đối chứng cùng website. Kết quả này không chứng nhận production.
+
+Model thử nghiệm lưu ngoài repo tại
+`C:/Users/Admin/bot-detection-research/mouse-ablation-2026-10-13-v1`;
+không thay trọng số, API hay collector. Bộ kiểm thử thêm 27 ca, gồm kiểm tra
+rò rỉ dữ liệu, cửa sổ thiếu dữ liệu, cân bằng phiên và nạp lại artifact.
+Kiểm tra cuối: `python -m pytest -q` qua **444 test**, còn một cảnh báo
+deprecation của Starlette TestClient; Ruff qua. Test code qua không có nghĩa
+là chất lượng model thử nghiệm đã cải thiện.
+
+Chi tiết giao thức, nguồn code và phân tích kết quả:
+[MOUSE_ABLATION_REVIEW_2026-10-13.md](docs/MOUSE_ABLATION_REVIEW_2026-10-13.md).
+Kết quả đầy đủ:
+[MOUSE_ABLATION_RESULTS_2026-10-13.json](docs/MOUSE_ABLATION_RESULTS_2026-10-13.json).
+
+---
+
+## Tích hợp policy profile thử nghiệm vào luồng predict (2026-10-13)
+
+Đã bổ sung `predict(payload, profile_candidate=True)` trong ensemble chính để
+chạy A/B thực sự, không chỉ đổi nhãn ở công cụ báo cáo. Mặc định vẫn là false;
+API/server chưa bật policy này. Candidate có phiên bản riêng
+`10+profile_corroborated_v1`, không dùng lại chứng nhận release của policy 10.
+
+Tham khảo BotD về dấu vết automation và fpscanner về đối chiếu page/worker:
+HeadlessChrome phải xuất hiện ở cả hai ngữ cảnh, hoặc đi kèm một marker
+automation boolean rõ ràng. Không coi hai trường UA/brands trong cùng ngữ cảnh
+là hai nguồn; worker lỗi không được dùng để đối chiếu. Lệch OS, thiếu API,
+điểm heuristic cao hoặc chuyển động đều không tự động kích hoạt quy tắc.
+
+**Replay 42 lượt BOT có nhãn runner, 186 snapshot đã gửi:**
+
+| Kết luận cuối | Baseline | Candidate |
+| --- | ---: | ---: |
+| BOT | 6 | 15 |
+| HUMAN (bỏ sót bot) | 20 | 14 |
+| SUSPECT | 16 | 13 |
+
+9 lượt đổi kết luận là stealth circular/heavy-wander/scrub-hover trên
+secure localhost, nơi Client Hints còn lộ HeadlessChrome ở page và worker.
+36 snapshot đổi kết luận. Nhóm HTTP không cải thiện. Đây là replay dữ liệu
+đã dùng để phân tích rule, không phải kiểm thử độc lập hay tỷ lệ production.
+
+449 phiên dataset chuột (109 HUMAN, 340 BOT) giữ nguyên kết luận cuối.
+Dataset này không có profile, nên không chứng minh candidate không nhận nhầm
+người thật. **Chưa có người thật đối chứng với profile trên website; chưa bật
+candidate mặc định, chưa retrain, chưa deploy hoặc push.**
+
+Kiểm chứng: **417 test Python passed**, Ruff, test collector và Compose config
+đều qua. Chi tiết, nguồn, giới hạn và lệnh tái hiện:
+[PROFILE_POLICY_REVIEW_2026-10-13.md](docs/PROFILE_POLICY_REVIEW_2026-10-13.md).
+Kết quả máy đọc:
+[PROFILE_CANDIDATE_RESULTS_2026-10-13.json](docs/PROFILE_CANDIDATE_RESULTS_2026-10-13.json).
+
+---
+
+## Nghiên cứu mã nguồn mở và đặc trưng chuyển động cục bộ (2026-10-13)
+
+Đã clone 9 repository tham khảo vào `C:/Users/Admin/bot-detection-research`,
+nằm ngoài repo sản phẩm: BotD, FingerprintJS, fpscanner, CreepJS, bot-signal,
+DELBOT-Mouse, BeCAPTCHA-Mouse, CrowdSec và Baskerville. Đã ghi commit nguồn;
+không cài dependency hay chạy script của các repo này, không đưa chúng lên GitHub sản phẩm.
+
+`interaction_window_v2` bổ sung 5 đặc trưng liên tục về biến thiên tốc độ,
+độ thẳng và độ đều khi đổi hướng trong các cửa sổ 14 điểm, dịch từng điểm.
+Giữ nguyên 11 đặc trưng cũ. Touch, khoảng nghỉ dài và timestamp trùng không
+bị nối thành cùng một đoạn; dữ liệu không đủ giữ `null`. Tất cả vẫn ở chế độ
+`measurement_only`, `release_approved: false`, không tham gia quyết định model.
+
+Replay offline cùng bundle trên **18 lượt bot, 90 snapshot, 6 họ kịch bản**:
+kết luận cuối vẫn **8 HUMAN, 10 SUSPECT, 0 BOT**. Đây là lỗi bỏ sót đã biết,
+không phải cải thiện độ chính xác. Không có người thật trong bộ capture này.
+Không đổi trọng số, ngưỡng, collector hay artifact model; chưa retrain/deploy.
+
+Đã thêm **23 test**, toàn bộ suite **389 passed**; Ruff, test collector và
+`docker compose config --quiet` đều qua. Phép đo cục bộ 100 điểm/87 cửa sổ,
+200 lần mỗi cách tính, cho median 4,132 ms so với 17,760 ms của cách tính
+CV tham chiếu bằng `pstdev`. Đây chỉ là tốc độ trích xuất đặc trưng mới,
+không phải tốc độ HTTP hay so sánh với production v1 vốn tính ít đặc trưng hơn.
+
+Chi tiết, nguồn tham khảo và kế hoạch kiểm chứng:
+[LOCAL_MOTION_REVIEW_2026-10-13.md](docs/LOCAL_MOTION_REVIEW_2026-10-13.md).
+Kết quả tổng hợp: [INTERACTION_RESULTS_2026-10-13.json](docs/INTERACTION_RESULTS_2026-10-13.json).
+
+---
+
+## Triển khai nền tảng thu snapshot nghiên cứu (2026-10-12)
+
+Đã bổ sung chế độ opt-in `BOT_CAPTURE_ENABLED` (mặc định false), lưu snapshot
+telemetry vào `telemetry_captures` trước inference. Bản JSON nghiên cứu giữ
+scroll/touch/profile sau validation, không dùng projection rút gọn của dashboard.
+
+- Snapshot có timestamp và sequence được chống trùng bằng hash nội dung;
+  payload thiếu định danh ổn định dùng UUID, không gộp nhầm các lần gửi.
+- Model không sẵn sàng hoặc inference lỗi không làm mất raw đã thu: API chỉ
+  trả 202/recorded sau khi MongoDB hoặc SQLite đã ghi thành công; không tạo verdict giả.
+- Prediction đầu tiên ghi thành công được lưu riêng với bundle thực sự dùng;
+  replay không chạy lại model hoặc gắn prediction cũ với bundle mới.
+- TTL capture mặc định 7 ngày; maintenance dọn capture hết hạn trong spool
+  kể cả khi MongoDB lỗi. Admin delete xóa cả bản tổng hợp và lịch sử capture.
+- Hàng đợi/đĩa không nhận được dữ liệu thì trả lỗi retryable, không xác nhận ghi giả.
+
+Hai regression test đã thất bại trên luồng cũ trước khi sửa (503 và không ghi
+raw khi model lỗi). Bộ kiểm thử mới bổ sung retry, dữ liệu đầy đủ, outage,
+restart/replay, phiên bản prediction, TTL và tình huống xóa đồng thời.
+Hướng dẫn chi tiết: [RESEARCH_CAPTURE.md](docs/RESEARCH_CAPTURE.md).
+
+**Kiểm chứng local:** `python -m pytest -q`: 366 passed; `python -m ruff
+check .`: passed; `npm test` trong collector: build/lifecycle/profile passed;
+`docker compose config --quiet`: passed. Generated collector không đổi.
+Có một cảnh báo deprecation từ Starlette/httpx trong test, không phải test failure.
+Thay đổi index tác động luồng DB/readiness dùng chung, nên đã chạy cả suite
+thay vì chỉ test capture. Bộ test DB hiện dùng test double, chưa phải MongoDB thật.
+
+**Giới hạn:** chưa bật cờ trên server, chưa deploy, chưa chạy lại benchmark
+model hay thu traffic/vendor mới. Đây không phải bằng chứng tăng độ chính xác.
+Docker daemon local chưa chạy nên chưa xác minh MongoDB/TTL thật. Chưa có
+export dataset và mapping nhãn vendor; cần hoàn thiện trước đợt thu chính.
+
+---
+
+## Nghiên cứu hướng thương mại và chuẩn bị thu traffic thật (2026-10-12)
+
+Đã đối chiếu tài liệu chính thức của Cloudflare, DataDome, Fingerprint,
+Kasada, HUMAN và Akamai với source hiện tại. Phân tích cơ chế, nguồn tài liệu,
+tính khả thi, corner case và kế hoạch kiểm chứng nằm trong
+[COMMERCIAL_BOT_DETECTION_RESEARCH_2026-10-12.md](docs/COMMERCIAL_BOT_DETECTION_RESEARCH_2026-10-12.md).
+Đây là nghiên cứu và đề xuất; chưa tích hợp vendor, đổi model/policy hay chạy
+benchmark mới trong lần cập nhật này. Không xác nhận trạng thái server từ
+việc đọc source local.
+
+**Ưu tiên được đề xuất:** kho sự kiện và nhãn có nguồn; chống trùng/phát lại;
+profile có trạng thái khả dụng; candidate tương tác ngắn; lịch sử không đếm
+lặp và fusion theo miền đầu vào. Request nghiệp vụ cần tích hợp backend/CDN
+website; TLS fingerprint và học biểu diễn tự giám sát để ở giai đoạn sau.
+Giữ BiLSTM + XGBoost + heuristic làm baseline và ba verdict HUMAN/SUSPECT/BOT.
+
+**Điểm phát hiện khi nghiên cứu, trước bản sửa bên trên:** `detection_results`
+cập nhật theo phiên, chưa lưu mọi snapshot; collector có cửa sổ giới hạn và
+ingestion chạy inference trước persistence. Chế độ capture mới giải quyết
+phần lưu snapshot độc lập; export và mapping đến kết quả vendor còn cần
+hoàn thiện trước đợt thu chính. Trial vendor nên chạy đồng thời với traffic
+thật; nhãn thương mại là tham khảo, không mặc định là ground truth.
+
+Kế hoạch thu thật của giảng viên thay đổi ưu tiên trước đây chỉ thử offline.
+Cần nhóm người thật dùng browser thường và các lần chạy bot biết nguồn để đo
+nhận nhầm. Tỷ lệ SUSPECT phải tách theo nguyên nhân, thời điểm và miền đầu vào;
+không giảm bằng cách ép các phiên thiếu bằng chứng sang HUMAN hoặc BOT.
 
 ---
 

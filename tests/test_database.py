@@ -47,7 +47,9 @@ def test_ensure_indexes_rebuilds_conflicting_options():
     )
     deleted = FakeCollection()
 
-    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
+    captures = FakeCollection()
+    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted,
+                             "telemetry_captures": captures})
 
     assert ready is True
     assert detections.dropped == ["sessionId_1", "created_at_-1"]
@@ -56,6 +58,8 @@ def test_ensure_indexes_rebuilds_conflicting_options():
     assert len(detections.updates) == 1
     assert detections.indexes["sessionId_1"]["unique"] is True
     assert deleted.indexes["expires_at_1"]["expireAfterSeconds"] == 0
+    assert captures.indexes["expires_at_1"]["expireAfterSeconds"] == 0
+    assert captures.indexes["sessionId_1_received_at_1"]["key"] == [("sessionId", 1), ("received_at", 1)]
 
 
 def test_ensure_indexes_keeps_legacy_ttl_when_timestamp_backfill_fails():
@@ -68,7 +72,7 @@ def test_ensure_indexes_keeps_legacy_ttl_when_timestamp_backfill_fails():
     )
 
     ready = _ensure_indexes(
-        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+        {"detection_results": detections, "deleted_sessions": FakeCollection(), "telemetry_captures": FakeCollection()}
     )
 
     assert ready is False
@@ -89,7 +93,8 @@ def test_ensure_indexes_keeps_matching_indexes():
         {"expires_at_1": {"key": [("expires_at", 1)], "expireAfterSeconds": 0}}
     )
 
-    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted})
+    ready = _ensure_indexes({"detection_results": detections, "deleted_sessions": deleted,
+                             "telemetry_captures": FakeCollection()})
 
     assert ready is True
     assert detections.dropped == []
@@ -108,7 +113,7 @@ def test_ensure_indexes_migrates_retention_from_creation_to_last_activity():
     )
 
     ready = _ensure_indexes(
-        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+        {"detection_results": detections, "deleted_sessions": FakeCollection(), "telemetry_captures": FakeCollection()}
     )
 
     assert ready is True
@@ -123,7 +128,7 @@ def test_ensure_indexes_removes_unwanted_unique_option():
     )
 
     ready = _ensure_indexes(
-        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+        {"detection_results": detections, "deleted_sessions": FakeCollection(), "telemetry_captures": FakeCollection()}
     )
 
     assert ready is True
@@ -143,7 +148,7 @@ def test_ensure_indexes_restores_previous_index_when_rebuild_fails():
     )
 
     ready = _ensure_indexes(
-        {"detection_results": detections, "deleted_sessions": FakeCollection()}
+        {"detection_results": detections, "deleted_sessions": FakeCollection(), "telemetry_captures": FakeCollection()}
     )
 
     assert ready is False
@@ -168,6 +173,7 @@ def test_delete_all_blocks_writes_until_delete_finishes(monkeypatch):
         "service_control": control,
         "deleted_sessions": TrackingCollection(),
         "detection_results": TrackingCollection(deleted_count=7),
+        "telemetry_captures": TrackingCollection(),
     }
     monkeypatch.setattr("api_service.database.get_db", lambda: database)
 
@@ -385,6 +391,7 @@ def test_readiness_retries_failed_index_setup(monkeypatch):
     database = {
         "detection_results": FakeCollection(),
         "deleted_sessions": FakeCollection(),
+        "telemetry_captures": FakeCollection(),
     }
     monkeypatch.setattr(database_module, "_client", SimpleNamespace(admin=Admin()))
     monkeypatch.setattr(database_module, "_db", database)

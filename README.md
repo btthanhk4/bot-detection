@@ -4,7 +4,16 @@
 > **Tác giả:** Thành (`btthanhk4`) | **GVHD:** Thầy Mai  
 > **Dataset:** [Web Bot Detection Dataset (M4D-ITI)](https://m4d.iti.gr/web-bot-detection-dataset/)
 
-## Tổng quan
+## Bàn giao thu traffic nghiên cứu
+
+Bản SDK 1.1.0 hỗ trợ nhúng một tag có `data-datacat`, mã đợt thu và mã website.
+Xem [hướng dẫn giáo viên](pilot/README.md),
+[triển khai và export dataset](docs/PILOT_OPERATOR_GUIDE.md),
+[kiểm chứng bản bàn giao](docs/PILOT_HANDOFF_REVIEW_2026-10-19.md).
+Stack pilot độc lập nằm ở `docker-compose.pilot.yml`. Model và ngưỡng hiện
+được giữ nguyên; sẵn sàng thu dữ liệu không đồng nghĩa chứng nhận accuracy.
+
+## Tổng quan mô hình
 
 Hệ thống phát hiện bot đa phương thức (multi-modal), kết hợp ba nhánh phân tích: hành vi chuột, đặc trưng trình duyệt và luật phát hiện automation.
 
@@ -232,6 +241,13 @@ python -m simulator.run_simulation --mode benchmark --endpoint http://127.0.0.1:
 ```
 
 ---
+
+## Thu snapshot nghiên cứu
+
+Chế độ `BOT_CAPTURE_ENABLED=true` lưu từng snapshot telemetry trước inference,
+giữ dữ liệu khi model lỗi và dùng SQLite khi MongoDB mất kết nối. Mặc định tắt;
+TTL mặc định 7 ngày. Không thay đổi model hoặc verdict. Hướng dẫn bật, response,
+giới hạn dung lượng và các bước kiểm chứng: [RESEARCH_CAPTURE.md](docs/RESEARCH_CAPTURE.md).
 
 ## API Endpoints
 

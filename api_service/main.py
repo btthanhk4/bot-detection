@@ -14,16 +14,22 @@ import os
 import secrets
 import threading
 import time
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager, suppress
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
+from api_service import auth
 from api_service.config import settings
+from api_service.capture import build_capture
 from api_service.spool import TelemetrySpool
+from api_service.research_labels import (
+    delete_research_data, enrich_sessions, register_traffic, set_manual_label, traffic_page,
+)
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
@@ -87,6 +93,10 @@ class RequestBodyLimitMiddleware:
 @asynccontextmanager
 async def app_lifespan(_app):
     await run_in_threadpool(_restore_telemetry_spool)
+    try:
+        await run_in_threadpool(auth.ensure_user_indexes)
+    except Exception:
+        logger.warning("Dashboard user index setup deferred", exc_info=True)
     maintenance_task = asyncio.create_task(_maintenance_loop())
     try:
         yield
@@ -103,6 +113,8 @@ async def app_lifespan(_app):
 
             await run_in_threadpool(close_database)
 
+
+auth.configure_secret(settings.SESSION_SECRET)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -276,6 +288,29 @@ def _requeue_buffered_event(data: dict, *, front: bool = True):
     return False
 
 
+def _persist_capture(snapshot: dict, analysis: Optional[dict] = None) -> dict:
+    """Persist research data without using inference as an ingestion gate."""
+    from api_service.database import DatabaseIngestionPaused, save_telemetry_capture
+
+    try:
+        persisted = bool(save_telemetry_capture(snapshot, analysis))
+    except DatabaseIngestionPaused as exc:
+        raise HTTPException(status_code=503, detail="Telemetry ingestion is temporarily paused",
+                            headers={"Retry-After": str(min(exc.retry_after_seconds, 300))}) from exc
+    except Exception:
+        logger.exception("Research capture persistence failed; attempting durable spool")
+        buffered = _buffer_telemetry({
+            "sessionId": snapshot["sessionId"], "_capture_snapshot": snapshot,
+        }, analysis)
+        if not buffered:
+            raise HTTPException(status_code=503, detail="Research capture storage unavailable",
+                                headers={"Retry-After": "10"})
+        return {"capture_id": snapshot["event_id"], "persisted": False, "buffered": True}
+    if not persisted:
+        raise HTTPException(status_code=409, detail="Research capture expired or session deleted")
+    return {"capture_id": snapshot["event_id"], "persisted": True, "buffered": False}
+
+
 def _flush_telemetry_buffer(max_events: Optional[int] = None):
     """Persist a bounded batch after MongoDB recovers without duplicate flushers."""
     global _telemetry_replay_inflight
@@ -287,9 +322,22 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
             DatabaseIngestionPaused,
             is_database_ready,
             save_detection_result,
+            save_telemetry_capture,
         )
 
         with _telemetry_buffer_lock:
+            # Retention must not be blocked by an earlier failed DB write.
+            retained = []
+            now_ms = int(time.time() * 1000)
+            for event in telemetry_buffer:
+                capture = event.get("_capture_snapshot")
+                if capture is not None and capture["expires_at_ms"] <= now_ms:
+                    if event.get("_spool_id") is not None:
+                        _spool.delete(event["_spool_id"])
+                else:
+                    retained.append(event)
+            telemetry_buffer.clear()
+            telemetry_buffer.extend(retained)
             pending_count = len(telemetry_buffer)
         replay_count = pending_count if max_events is None else min(pending_count, max(0, max_events))
 
@@ -301,8 +349,16 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 _telemetry_replay_inflight += 1
 
             try:
-                analysis = data.pop("_buffered_analysis", None)
-                if not isinstance(analysis, dict):
+                analysis = data.get("_buffered_analysis")
+                capture = data.get("_capture_snapshot")
+                if capture is not None and capture["expires_at_ms"] <= int(time.time() * 1000):
+                    # Enforce research retention even during a prolonged Mongo
+                    # outage; expired raw data must not occupy the spool forever.
+                    if data.get("_spool_id") is not None:
+                        _spool.delete(data["_spool_id"])
+                    continue
+                register_traffic(capture if capture is not None else data)
+                if capture is None and not isinstance(analysis, dict):
                     try:
                         analysis = ensemble_detector.predict(data)
                         _attach_model_metadata(analysis)
@@ -327,7 +383,10 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                         continue
                 data.pop("_replay_attempts", None)
                 try:
-                    persisted = bool(save_detection_result(data, analysis))
+                    if capture is not None:
+                        persisted = bool(save_telemetry_capture(capture, analysis))
+                    else:
+                        persisted = bool(save_detection_result(data, analysis))
                 except DatabaseIngestionPaused:
                     # An admin delete intentionally invalidates old replay data.
                     if data.get("_spool_id") is not None:
@@ -393,6 +452,14 @@ def check_rate_limit(client_ip: str) -> bool:
         return True
 
 
+class CollectorMetadata(BaseModel):
+    schemaVersion: Literal[1]
+    sdkVersion: str = Field(min_length=1, max_length=32)
+    pageInstanceId: str = Field(min_length=1, max_length=128)
+    studyId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    siteId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+
 class TelemetryPayload(BaseModel):
     sessionId: Optional[str] = Field(default=None, max_length=128)
     visitorId: Optional[str] = Field(default=None, max_length=128)
@@ -404,6 +471,7 @@ class TelemetryPayload(BaseModel):
     fingerprint: Optional[Dict[str, Any]] = None
     botd: Optional[Dict[str, Any]] = None
     mouse: Optional[Dict[str, Any]] = None
+    collector: Optional[CollectorMetadata] = None
 
     @field_validator("mouse")
     @classmethod
@@ -461,28 +529,51 @@ def get_client_ip(request: Request) -> str:
     return peer_ip
 
 
-def require_admin(request: Request):
-    if not settings.ADMIN_TOKEN:
-        raise HTTPException(status_code=503, detail="Admin API is disabled until BOT_ADMIN_TOKEN is configured")
-    supplied = request.headers.get("X-Admin-Token", "")
+def _cookie_user(request: Request) -> Optional[dict]:
+    """Resolve the dashboard session cookie, enforcing a CSRF header on writes."""
+    token = request.cookies.get(auth.SESSION_COOKIE, "")
+    if not token:
+        return None
+    user = auth.session_user(token)
+    if user and request.method not in ("GET", "HEAD", "OPTIONS"):
+        if request.headers.get(auth.CSRF_HEADER, "").lower() != auth.CSRF_VALUE:
+            raise HTTPException(status_code=403, detail="Missing CSRF header")
+    return user
+
+
+def _bearer(request: Request, header: str) -> str:
+    supplied = request.headers.get(header, "")
     authorization = request.headers.get("Authorization", "")
     if authorization.lower().startswith("bearer "):
         supplied = authorization[7:].strip()
-    if not supplied or not secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
-        raise HTTPException(status_code=401, detail="Invalid admin token")
+    return supplied
+
+
+def require_admin(request: Request):
+    supplied = _bearer(request, "X-Admin-Token")
+    if supplied and settings.ADMIN_TOKEN and secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
+        return {"username": "token", "role": "admin"}
+    user = _cookie_user(request)
+    if user and user["role"] == "admin":
+        return user
+    if not settings.ADMIN_TOKEN and not request.cookies.get(auth.SESSION_COOKIE):
+        raise HTTPException(status_code=503, detail="Admin API is disabled until BOT_ADMIN_TOKEN is configured")
+    raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
 
 def require_read_access(request: Request):
-    if not settings.READ_TOKEN:
+    supplied = _bearer(request, "X-Read-Token")
+    if supplied:
+        if settings.READ_TOKEN and secrets.compare_digest(supplied, settings.READ_TOKEN):
+            return {"username": "token", "role": "viewer"}
+        if settings.ADMIN_TOKEN and secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
+            return {"username": "token", "role": "admin"}
+    user = _cookie_user(request)
+    if user:
+        return user
+    if not settings.READ_TOKEN and not request.cookies.get(auth.SESSION_COOKIE):
         raise HTTPException(status_code=503, detail="Monitoring API is disabled until BOT_READ_TOKEN is configured")
-    supplied = request.headers.get("X-Read-Token", "")
-    authorization = request.headers.get("Authorization", "")
-    if authorization.lower().startswith("bearer "):
-        supplied = authorization[7:].strip()
-    valid_read = bool(supplied) and secrets.compare_digest(supplied, settings.READ_TOKEN)
-    valid_admin = bool(settings.ADMIN_TOKEN and supplied) and secrets.compare_digest(supplied, settings.ADMIN_TOKEN)
-    if not valid_read and not valid_admin:
-        raise HTTPException(status_code=401, detail="Invalid read token")
+    raise HTTPException(status_code=401, detail="Invalid read credentials")
 
 
 @app.get("/")
@@ -544,6 +635,10 @@ def health_check():
         "release_gate_evidence_present": release_gate_evidence_present,
         "inference_ready": runtime_ready,
         "database": database_ready,
+        "research_capture": {
+            "enabled": settings.CAPTURE_ENABLED,
+            "retention_days": settings.CAPTURE_RETENTION_DAYS,
+        },
     }
     with _telemetry_buffer_lock:
         content["telemetry_buffer"] = {
@@ -635,20 +730,50 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     if not data.get("visitorId"):
         raise HTTPException(status_code=422, detail="visitorId is required")
 
-    _require_inference_models()
-
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
 
-    # Run AI analysis before persistence. Model failures are not database
-    # outages and must not fill the persistence retry buffer with poison data.
+    capture = None
+    capture_status = None
+    if settings.CAPTURE_ENABLED:
+        try:
+            capture = build_capture(
+                {key: value for key, value in data.items()
+                 if key not in {"client_ip", "received_at", "_server_user_agent"}},
+                received_at=data["received_at"], client_ip=client_ip,
+                user_agent=data["_server_user_agent"], bundle_id=model_bundle_id,
+                policy_version=str(DECISION_POLICY_VERSION),
+                retention_days=settings.CAPTURE_RETENTION_DAYS,
+            )
+        except (ValueError, OverflowError, RecursionError) as exc:
+            raise HTTPException(status_code=422, detail="Telemetry cannot be captured as finite JSON") from exc
+    traffic_number = await run_in_threadpool(register_traffic, data)
+    if capture is not None:
+        capture_status = await run_in_threadpool(_persist_capture, capture)
+
     try:
+        _require_inference_models()
         analysis = await run_in_threadpool(ensemble_detector.predict, data)
         _attach_model_metadata(analysis)
     except Exception as exc:
         logger.exception("Telemetry inference failed")
+        if capture_status is not None:
+            if capture_status["persisted"]:
+                background_tasks.add_task(_flush_telemetry_buffer)
+            return JSONResponse(status_code=202, content={
+                "status": "captured", "recorded": True, "analysis_available": False,
+                "traffic_number": traffic_number,
+                **capture_status,
+            })
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
+
+    if capture is not None:
+        # Attach the decision actually made for this snapshot, never a later
+        # replay under different weights. Raw capture already survived inference.
+        capture_status = await run_in_threadpool(_persist_capture, capture, analysis)
 
     # Save the analyzed event to MongoDB.
     persisted = False
@@ -692,10 +817,14 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     return {
         "status": "success" if persisted else "degraded",
-        "recorded": persisted or buffered,
+        "recorded": persisted or buffered or capture_status is not None,
         "persisted": persisted,
         "buffered": buffered,
         "model_bundle_id": model_bundle_id,
+        "traffic_number": traffic_number,
+        **({"capture_id": capture_status["capture_id"], "analysis_available": True,
+            "capture_persisted": capture_status["persisted"],
+            "capture_buffered": capture_status["buffered"]} if capture_status else {}),
     }
 
 
@@ -712,6 +841,10 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
     total = get_total_count()
     if results is None or total is None:
         raise HTTPException(status_code=503, detail="Database query failed")
+    try:
+        results = enrich_sessions(results)
+    except Exception:
+        logger.warning("Research session metadata unavailable", exc_info=True)
 
     return {
         "total": total,
@@ -767,17 +900,142 @@ def get_bot_collector_sdk():
     raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
 
 
+def _read_page(name: str) -> str:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"{name} not found.")
+    with open(path, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
+_PAGE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                 "Referrer-Policy": "same-origin"}
+
+
+def _is_https(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    peer = request.client.host if request.client else ""
+    return _is_trusted_proxy(peer) and request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+
+
+def _set_session_cookie(response, request: Request, token: str, max_age: int) -> None:
+    response.set_cookie(
+        auth.SESSION_COOKIE, token, max_age=max_age, httponly=True, samesite="strict",
+        secure=_is_https(request), path="/",
+    )
+
+
+@app.get("/login", response_class=HTMLResponse)
+def get_login_page(request: Request):
+    """Serve the sign-in page; signed-in users go straight to the dashboard."""
+    if auth.session_user(request.cookies.get(auth.SESSION_COOKIE, "")):
+        return RedirectResponse("/dashboard", status_code=302)
+    return HTMLResponse(content=_read_page("login.html"), headers=_PAGE_HEADERS)
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
-def get_dashboard():
-    """
-    Serves the real-time SOC Monitoring Dashboard for Bot Detection.
-    """
-    dashboard_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
-    dashboard_path = os.path.abspath(dashboard_path)
-    if os.path.exists(dashboard_path):
-        with open(dashboard_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), status_code=200)
-    raise HTTPException(status_code=404, detail="Dashboard not found.")
+def get_dashboard(request: Request):
+    """Serve the monitoring dashboard to signed-in users only."""
+    if not auth.session_user(request.cookies.get(auth.SESSION_COOKIE, "")):
+        return RedirectResponse("/login", status_code=302)
+    return HTMLResponse(content=_read_page("dashboard.html"), headers=_PAGE_HEADERS)
+
+
+_PUBLIC_ASSETS = {"datacat-logo.png": "image/png"}
+
+
+@app.get("/assets/{name}")
+def get_public_asset(name: str):
+    media_type = _PUBLIC_ASSETS.get(name)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", name)
+    if media_type is None or not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
+class LoginPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=auth.MAX_PASSWORD_LENGTH)
+
+
+class PasswordChangePayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    current_password: str = Field(min_length=1, max_length=auth.MAX_PASSWORD_LENGTH)
+    new_password: str = Field(min_length=1, max_length=auth.MAX_PASSWORD_LENGTH)
+
+
+@app.post("/api/v1/auth/login")
+async def auth_login(payload: LoginPayload, request: Request):
+    client_ip = get_client_ip(request)
+    if not check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="Quá nhiều yêu cầu, thử lại sau.",
+                            headers={"Retry-After": "60"})
+    wait = auth.lockout_remaining(client_ip, payload.username)
+    if wait:
+        raise HTTPException(status_code=429, detail="Đăng nhập sai quá nhiều lần, hãy thử lại sau.",
+                            headers={"Retry-After": str(wait)})
+    try:
+        user = await run_in_threadpool(auth.authenticate, payload.username, payload.password)
+    except Exception as exc:
+        logger.exception("Login lookup failed")
+        raise HTTPException(status_code=503, detail="Dịch vụ tài khoản tạm thời không khả dụng") from exc
+    if user is None:
+        auth.record_failure(client_ip, payload.username)
+        raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
+    auth.clear_failures(client_ip, payload.username)
+    ttl = settings.SESSION_TTL_HOURS * 3600
+    token = auth.issue_session(user["username"], user.get("role", "viewer"), user["password_hash"], ttl)
+    try:
+        users = auth.get_users_collection()
+        if users is not None:
+            users.update_one({"username_lower": user["username"].lower()},
+                             {"$set": {"last_login_at": datetime.now(timezone.utc)}})
+    except Exception:
+        logger.warning("Could not record last login", exc_info=True)
+    response = JSONResponse({"username": user["username"], "role": user.get("role", "viewer")},
+                            headers={"Cache-Control": "no-store"})
+    _set_session_cookie(response, request, token, ttl)
+    return response
+
+
+@app.post("/api/v1/auth/logout")
+def auth_logout(request: Request):
+    response = JSONResponse({"status": "signed_out"}, headers={"Cache-Control": "no-store"})
+    response.delete_cookie(auth.SESSION_COOKIE, path="/", samesite="strict", secure=_is_https(request))
+    return response
+
+
+@app.get("/api/v1/auth/me")
+def auth_me(user=Depends(require_read_access)):
+    return {"username": user["username"], "role": user["role"],
+            "session_hours": settings.SESSION_TTL_HOURS}
+
+
+@app.post("/api/v1/auth/password")
+def auth_change_password(payload: PasswordChangePayload, request: Request):
+    session = _cookie_user(request)
+    if not session:
+        raise HTTPException(status_code=401, detail="Cần đăng nhập")
+    user = auth.find_user(session["username"], use_cache=False)
+    if not user or not auth.verify_password(payload.current_password, user["password_hash"]):
+        raise HTTPException(status_code=403, detail="Mật khẩu hiện tại không đúng")
+    problem = auth.validate_new_password(payload.new_password, user["username"])
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    users = auth.get_users_collection()
+    if users is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    new_hash = auth.hash_password(payload.new_password)
+    users.update_one({"username_lower": user["username"].lower()},
+                     {"$set": {"password_hash": new_hash,
+                               "password_changed_at": datetime.now(timezone.utc)}})
+    auth.invalidate_user_cache(user["username"])
+    ttl = settings.SESSION_TTL_HOURS * 3600
+    response = JSONResponse({"status": "password_changed"}, headers={"Cache-Control": "no-store"})
+    _set_session_cookie(response, request, auth.issue_session(user["username"], user.get("role", "viewer"), new_hash, ttl), ttl)
+    return response
 
 
 @app.get("/api/v1/telemetry/raw/{session_id}")
@@ -828,8 +1086,12 @@ def delete_session(session_id: str, _admin=Depends(require_admin)):
     success = db_delete(session_id)
     if success is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        research_deleted = delete_research_data(session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Dataset deletion incomplete; retry") from exc
     removed_from_memory = _purge_session_from_memory(session_id)
-    if success or removed_from_memory:
+    if success or removed_from_memory or research_deleted:
         return {"status": "deleted", "sessionId": session_id}
     raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
@@ -841,8 +1103,12 @@ def delete_all_sessions(_admin=Depends(require_admin)):
     count = db_delete_all()
     if count is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        research_deleted = delete_research_data()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Dataset deletion incomplete; retry") from exc
     _clear_in_memory_sessions()
-    return {"status": "deleted", "count": count}
+    return {"status": "deleted", "count": max(count, research_deleted or 0)}
 
 
 @app.get("/api/v1/stats/summary")
@@ -885,4 +1151,53 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
             doc[key] = int(doc[key].timestamp() * 1000)
 
     doc["mouse_trajectory"] = (doc.get("mouse_trajectory") or [])[:200]
+    try:
+        doc = enrich_sessions([doc])[0]
+    except Exception:
+        logger.warning("Research session metadata unavailable", exc_info=True)
     return _sanitize_bson_value(doc)
+
+
+@app.get("/api/v1/research/traffic")
+def research_traffic(
+    limit: int = Query(default=50, ge=1, le=200),
+    before_number: Optional[int] = Query(default=None, ge=1),
+    _read=Depends(require_read_access),
+):
+    try:
+        return traffic_page(limit, before_number)
+    except Exception as exc:
+        logger.exception("Traffic registry query failed")
+        raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc
+
+
+class ManualLabelPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    label: Literal["BOT", "HUMAN", "UNKNOWN"]
+    source: Literal["manual_review", "controlled_bot", "known_human", "provider_claim", "commercial_tool"]
+    group_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    reviewer: str = Field(min_length=1, max_length=128)
+    notes: str = Field(min_length=1, max_length=2000)
+    confirmed: bool = Field(strict=True, default=False)
+    expected_revision: int = Field(strict=True, ge=0)
+
+
+@app.put("/api/v1/sessions/{session_id}/label")
+def label_session(session_id: str, payload: ManualLabelPayload, _admin=Depends(require_admin)):
+    annotation = payload.model_dump(exclude={"expected_revision"})
+    if not annotation["reviewer"].strip() or not annotation["notes"].strip():
+        raise HTTPException(status_code=422, detail="Reviewer and evidence notes are required")
+    if ((payload.source == "controlled_bot" and payload.label == "HUMAN")
+            or (payload.source == "known_human" and payload.label == "BOT")):
+        raise HTTPException(status_code=422, detail="Label conflicts with its source")
+    try:
+        return set_manual_label(session_id, annotation, payload.expected_revision)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Manual label persistence failed")
+        raise HTTPException(status_code=503, detail="Label storage unavailable; nothing acknowledged") from exc

@@ -552,6 +552,8 @@
       this.scrollEvents = [];  // separate scroll tracking
       this.coordinateWidth = null;
       this.coordinateHeight = null;
+      this.recordingId = 0;
+      this.recordingStartedAt = Date.now();
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
       this.isListening = false;
       this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -591,6 +593,8 @@
     }
 
     clear() {
+      this.recordingId++;
+      this.recordingStartedAt = Date.now();
       this.records = [];
       this.chunks = [];
       this.lastMoveRecord = null;
@@ -831,6 +835,15 @@
           .sort((a, b) => a.time - b.time),
         stats: this.getStats(),
         scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
+        coordinateFrame: {
+          id: this.recordingId,
+          width: this.coordinateWidth,
+          height: this.coordinateHeight,
+          normalizedAxes: true,
+          startedAtEpochMs: this.recordingStartedAt,
+          timestampResolutionMs: 1,
+          coordinateDecimals: 5,
+        },
       };
     }
   }
@@ -847,6 +860,8 @@
 
 
 
+  const COLLECTOR_VERSION = '1.1.0';
+
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);
   }
@@ -856,6 +871,11 @@
       this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
       this.detectUrl = options.detectUrl || '/api/v1/detect';
       this.sessionId = options.sessionId || this.generateSessionId();
+      this.pageInstanceId = this.generateSessionId();
+      this.studyId = String(options.studyId || '').slice(0, 64);
+      this.siteId = String(options.siteId || '').slice(0, 64);
+      this.lastReceipt = null;
+      this.lastDelivery = null;
       this.autoSendInterval = options.autoSendInterval !== undefined ? options.autoSendInterval : 15000;
       this.idleHeartbeatInterval = Math.max(
         this.autoSendInterval,
@@ -983,6 +1003,13 @@
         action,
         timestamp: Date.now(),
         sequence,
+        collector: {
+          schemaVersion: 1,
+          sdkVersion: COLLECTOR_VERSION,
+          pageInstanceId: this.pageInstanceId,
+          ...(this.studyId ? { studyId: this.studyId } : {}),
+          ...(this.siteId ? { siteId: this.siteId } : {}),
+        },
         pageUrl: typeof window !== 'undefined' ? boundedUrl(window.location.href) : '',
         referrer: typeof document !== 'undefined' ? boundedUrl(document.referrer) : '',
         visitorId: this.cachedFingerprint.visitorId,
@@ -1014,15 +1041,16 @@
       return tracked;
     }
 
-    async fetchWithTimeout(url, options, timeoutMs = 10000) {
+    async fetchWithTimeout(url, options, timeoutMs = 10000, consumeResponse = null) {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
       if (controller) this.abortControllers.add(controller);
       try {
-        return await fetch(url, {
+        const response = await fetch(url, {
           ...options,
           ...(controller ? { signal: controller.signal } : {}),
         });
+        return consumeResponse ? await consumeResponse(response) : response;
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
         if (controller) this.abortControllers.delete(controller);
@@ -1076,15 +1104,21 @@
     }
 
     async transmitTelemetry(body, action) {
+      let delivery = null;
       try {
         if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
           // text/plain is CORS-safelisted, so a cross-origin unload beacon does
           // not depend on an asynchronous preflight that the browser may cancel.
           const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
           const success = navigator.sendBeacon(this.endpointUrl, blob);
-          if (success) return true;
+          if (success) {
+            this.lastDelivery = { transport: 'beacon', queued: true, acknowledged: false };
+            return true;
+          }
         }
 
+        delivery = { transport: 'fetch', status: null, acknowledged: false };
+        this.lastDelivery = delivery;
         const res = await this.fetchWithTimeout(this.endpointUrl, {
           method: 'POST',
           headers: {
@@ -1096,6 +1130,28 @@
           },
           body,
           keepalive: action === 'pagehide',
+        }, 10000, async (response) => {
+          delivery.status = response.status ?? null;
+          if (response.ok && typeof response.json === 'function') {
+            try {
+              const receipt = await response.json();
+              if (receipt && receipt.recorded === true) {
+                const captureFlags = Object.prototype.hasOwnProperty.call(receipt, 'capture_persisted');
+                this.lastReceipt = {
+                  receivedAt: Date.now(),
+                  captureId: typeof receipt.capture_id === 'string' ? receipt.capture_id : null,
+                  persisted: captureFlags ? receipt.capture_persisted === true : receipt.persisted === true,
+                  buffered: captureFlags ? receipt.capture_buffered === true : receipt.buffered === true,
+                  analysisAvailable: receipt.analysis_available === true,
+                };
+                delivery.acknowledged = true;
+              }
+            } catch (error) {
+              if (error.name === 'AbortError') throw error;
+              // A transport success alone does not confirm a recorded snapshot.
+            }
+          }
+          return response;
         });
         if (!res.ok && res.headers && typeof res.headers.get === 'function') {
           const retryAfterSeconds = Number(res.headers.get('Retry-After'));
@@ -1109,6 +1165,7 @@
         }
         return res.ok;
       } catch (e) {
+        if (delivery) delivery.error = String(e.message || e).slice(0, 256);
         return false;
       }
     }
@@ -1190,23 +1247,24 @@
         if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) {
           return { is_bot: false, verdict: 'UNKNOWN', decision_state: 'UNAVAILABLE', bot_probability: null, fallback: true, error: 'collector_inactive' };
         }
-        const res = await this.fetchWithTimeout(this.detectUrl, {
+        return await this.fetchWithTimeout(this.detectUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
+        }, 10000, async (res) => {
+          if (!res.ok) {
+            return {
+              is_bot: false,
+              verdict: 'UNKNOWN',
+              decision_state: 'UNAVAILABLE',
+              bot_probability: null,
+              fallback: true,
+              status: res.status,
+              error: `HTTP ${res.status}`,
+            };
+          }
+          return await res.json();
         });
-        if (!res.ok) {
-          return {
-            is_bot: false,
-            verdict: 'UNKNOWN',
-            decision_state: 'UNAVAILABLE',
-            bot_probability: null,
-            fallback: true,
-            status: res.status,
-            error: `HTTP ${res.status}`,
-          };
-        }
-        return await res.json();
       } catch (e) {
         return {
           is_bot: false,
@@ -1226,6 +1284,68 @@
   }
 
 
+
+
+  // --- Opt-in research pilot integration ---
+  /** Opt-in single-tag integration; legacy manual BotCollector usage is unchanged. */
+  function bootstrapPilot(Collector) {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+    const script = document.currentScript;
+    if (!script || !script.hasAttribute('data-datacat')) return null;
+    try {
+      const studyId = script.getAttribute('data-study-id') || '';
+      const siteId = script.getAttribute('data-site-id') || '';
+      if (![studyId, siteId].every((value) => /^[A-Za-z0-9_-]{1,64}$/.test(value))) {
+        throw new Error('data-study-id and data-site-id must contain 1-64 letters, digits, _ or -');
+      }
+      const endpointUrl = new URL(script.getAttribute('data-endpoint') || 'api/v1/telemetry', script.src);
+      if (!['http:', 'https:'].includes(endpointUrl.protocol)
+          || (window.location.protocol === 'https:' && endpointUrl.protocol !== 'https:')) {
+        throw new Error('Use an HTTPS API endpoint when embedding on an HTTPS website');
+      }
+      const interval = Number(script.getAttribute('data-interval-ms') || 15000);
+      if (!Number.isInteger(interval) || interval < 1000 || interval > 60000) {
+        throw new Error('data-interval-ms must be an integer between 1000 and 60000');
+      }
+      if (window.DatacatPilot) {
+        const current = window.DatacatPilot.collector;
+        if (!current || current.endpointUrl !== endpointUrl.href
+            || current.studyId !== studyId || current.siteId !== siteId) {
+          throw new Error('A different DATACAT pilot is already configured on this page');
+        }
+        return window.DatacatPilot;
+      }
+      if (window._bc && typeof window._bc.sendTelemetry === 'function') {
+        throw new Error('An existing manual collector (_bc) is active; use one integration method');
+      }
+      const collector = new Collector({
+        endpointUrl: endpointUrl.href,
+        detectUrl: new URL('detect', endpointUrl).href,
+        studyId, siteId, autoSendInterval: interval,
+      });
+      const pilot = {
+        collector,
+        stop: () => collector.destroy(),
+        getStatus: () => ({
+          sessionId: collector.sessionId, studyId, siteId,
+          stopped: collector.destroyed,
+          lastReceipt: collector.lastReceipt,
+          lastDelivery: collector.lastDelivery,
+        }),
+      };
+      window.DatacatPilot = pilot;
+      pilot.ready = collector.start().catch((error) => {
+        console.error('[DATACAT] Collector initialization failed:', error);
+        return false;
+      });
+      return pilot;
+    } catch (error) {
+      console.error('[DATACAT] Pilot configuration:', error.message);
+      return null;
+    }
+  }
+
+  bootstrapPilot(BotCollector);
 
 
   return BotCollector;

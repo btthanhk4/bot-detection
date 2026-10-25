@@ -45,6 +45,7 @@ from core_ml.dataset.field_captures import (
     evaluate_bot_captures,
     load_bot_captures,
 )
+from core_ml.dataset.manual_labels import manual_training_samples
 from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_window, rolling_windows
 from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
@@ -771,7 +772,8 @@ def validate_captured_bot_holdout(report):
 
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
          early_augmentation=True, diagnostic_only=False, capture_dir=None,
-         capture_holdout_families=(), tabular_only=False, base_weights_dir=None):
+         capture_holdout_families=(), tabular_only=False, base_weights_dir=None,
+         manual_export_dir=None, manual_train_groups=()):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -782,6 +784,9 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     weights_dir = os.path.abspath(weights_dir or production_weights_dir)
     if diagnostic_only and os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir):
         raise ValueError("Diagnostic models require a separate --weights-dir")
+    if manual_export_dir and (not diagnostic_only or os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir)):
+        raise ValueError("Manual labels require --diagnostic-only and a separate --weights-dir")
+    manual_samples = manual_training_samples(manual_export_dir, manual_train_groups) if manual_export_dir else []
     if capture_dir and (not diagnostic_only or os.path.normcase(weights_dir) == os.path.normcase(production_weights_dir)):
         raise ValueError("Field captures require --diagnostic-only and a separate --weights-dir")
     if tabular_only and (not capture_dir or not diagnostic_only):
@@ -952,6 +957,17 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         captured_train += 1
     if captured_runs and (not captured_train or not captured_holdout):
         raise ValueError("Captured training and holdout families need usable browser runs")
+
+    for sample in manual_samples:
+        windows = sample["windows"]
+        all_telemetries.append({
+            "sessionId": f"field_manual_{sample['run_id']}",
+            "fingerprint": {}, "botd": {"heuristicScore": 0.0, "detectors": {}},
+            "mouse": {"records": windows[-1], "chunks": records_to_chunks(windows[-1])},
+            "_training_rolling_windows": windows[:-1],
+        })
+        all_labels.append(sample["label"])
+        all_splits.append("train")
 
     print(f"  Total samples: {len(all_telemetries)} (Humans: {all_labels.count(0)}, Bots: {all_labels.count(1)})")
     if captured_runs:
@@ -1331,6 +1347,11 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,
             "release_maximum_metrics": RELEASE_MAXIMUM_METRICS,
             "dataset": dataset_audit,
+            "manual_training": {
+                "runs": len(manual_samples), "train_groups": sorted(set(manual_train_groups)),
+                "export_manifest_sha256": file_sha256(os.path.join(manual_export_dir, "manifest.json")),
+                "new_field_generalization_measured": False,
+            } if manual_export_dir else None,
             "captured_bot_holdout": training_metrics.get("captured_bot_holdout"),
             "capture_train_families": sorted(
                 {run.family for run in captured_runs} - heldout_families
@@ -1379,6 +1400,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--tabular-only", action="store_true", help="Keep the base BiLSTM frozen")
     parser.add_argument("--base-weights-dir", default="", help="Bundle supplying the frozen BiLSTM")
+    parser.add_argument("--manual-export-dir", default="", help="Verified research export with independent manual labels")
+    parser.add_argument("--manual-train-group", action="append", default=[], help="Explicit train-only group; repeatable")
     args = parser.parse_args()
     main(
         dataset_root=args.dataset_root,
@@ -1391,4 +1414,6 @@ if __name__ == "__main__":
         capture_holdout_families=args.capture_holdout_family,
         tabular_only=args.tabular_only,
         base_weights_dir=args.base_weights_dir or None,
+        manual_export_dir=args.manual_export_dir or None,
+        manual_train_groups=args.manual_train_group,
     )

@@ -10,6 +10,7 @@ explicit-automation rule can make a BOT decision without mouse evidence.
 import numpy as np
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
 from core_ml.features.profile_consistency import analyze_profile_consistency
+from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
@@ -72,11 +73,13 @@ class EnsembleBotDetector:
             raise RuntimeError(f"{name} returned an invalid probability")
         return numeric
 
-    def predict(self, telemetry_payload: dict) -> dict:
+    def predict(self, telemetry_payload: dict, *, profile_candidate: bool = False) -> dict:
         """
         Takes raw telemetry JSON payload from collector and outputs unified decision.
         Completely safe against None, empty dicts, missing keys, or malformed data.
         """
+        if type(profile_candidate) is not bool:
+            raise ValueError("profile_candidate must be an explicit boolean")
         payload = telemetry_payload if isinstance(telemetry_payload, dict) else {}
         fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
         botd = payload.get("botd") if isinstance(payload.get("botd"), dict) else {}
@@ -159,6 +162,14 @@ class EnsembleBotDetector:
                 or safe_bool(detectors.get("distinctiveProperties"))
             )
         )
+        profile_report = analyze_profile_consistency(payload)
+        candidate_evidence = (
+            corroborated_profile_evidence(payload, profile_report) if profile_candidate else []
+        )
+        automation_rule = EXPLICIT_AUTOMATION_RULE if explicit_automation else (
+            PROFILE_CANDIDATE_RULE if candidate_evidence else None
+        )
+        explicit_automation = automation_rule is not None
 
         # A confirmed profile rule is independent of mouse inference. Do not
         # let a failed or out-of-domain mouse model mask that decision.
@@ -251,7 +262,12 @@ class EnsembleBotDetector:
         # Thresholds are deployment settings and must match the reported decision policy.
         if explicit_automation:
             verdict = "BOT"
-            reasons.append("Server-observed HeadlessChrome UA corroborates browser automation markers")
+            reasons.append(
+                "Server-observed HeadlessChrome UA corroborates browser automation markers"
+                if automation_rule == EXPLICIT_AUTOMATION_RULE else
+                "Experimental policy: client-reported HeadlessChrome is corroborated across "
+                "browser contexts or by an explicit automation marker"
+            )
         elif decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
@@ -294,12 +310,19 @@ class EnsembleBotDetector:
             "bot_probability": round(final_proba, 4),
             "risk_score": round(final_proba, 4),
             "score_calibrated": False,
-            "policy_version": DECISION_POLICY_VERSION,
+            "policy_version": (
+                f"{DECISION_POLICY_VERSION}+{PROFILE_CANDIDATE_RULE}"
+                if profile_candidate else DECISION_POLICY_VERSION
+            ),
             "decision_state": "INSUFFICIENT_EVIDENCE" if decision_deferred else "FINAL",
             "confidence": round(confidence, 4),
             "reasons": reasons,
             "breakdown": {
-                "profile_shadow": analyze_profile_consistency(payload),
+                "profile_shadow": profile_report,
+                **({"profile_candidate": {
+                    "release_approved": False,
+                    "evidence_codes": candidate_evidence,
+                }} if profile_candidate else {}),
                 "interaction_shadow": extract_interaction_features(mouse),
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
@@ -310,7 +333,7 @@ class EnsembleBotDetector:
                     "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),
-                "automation_rule": EXPLICIT_AUTOMATION_RULE if explicit_automation else None,
+                "automation_rule": automation_rule,
                 "mouse_evidence_deferred": mouse_evidence_deferred,
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,

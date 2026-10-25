@@ -19,6 +19,7 @@ let botdCode = fs.readFileSync(path.join(srcDir, 'botd.js'), 'utf-8');
 let profileCode = fs.readFileSync(path.join(srcDir, 'profile.js'), 'utf-8');
 let mouseCode = fs.readFileSync(path.join(srcDir, 'mouse.js'), 'utf-8');
 let indexCode = fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8');
+let pilotCode = fs.readFileSync(path.join(srcDir, 'pilot.js'), 'utf-8');
 
 // Strip ES module imports and exports
 function stripEsModules(code) {
@@ -34,6 +35,7 @@ botdCode = stripEsModules(botdCode);
 profileCode = stripEsModules(profileCode);
 mouseCode = stripEsModules(mouseCode);
 indexCode = stripEsModules(indexCode);
+pilotCode = stripEsModules(pilotCode);
 
 let bundle = `(function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
@@ -55,6 +57,9 @@ ${mouseCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- Unified BotCollector SDK ---
 ${indexCode.split('\n').map(l => '  ' + l).join('\n')}
+
+  // --- Opt-in research pilot integration ---
+${pilotCode.split('\n').map(l => '  ' + l).join('\n')}
 
   return BotCollector;
 }));

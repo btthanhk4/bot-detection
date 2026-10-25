@@ -1,0 +1,7 @@
+{
+  "name": "datacat-pilot-verification",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": { "smoke": "node smoke-test.cjs" },
+  "devDependencies": { "playwright": "1.63.0" }
+}

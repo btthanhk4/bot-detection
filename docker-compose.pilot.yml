@@ -1,0 +1,40 @@
+name: datacat-pilot
+
+services:
+  api:
+    build: .
+    ports:
+      - "${BOT_PILOT_PORT:-8000}:8000"
+    environment:
+      BOT_CAPTURE_ENABLED: "true"
+      BOT_CAPTURE_RETENTION_DAYS: "${BOT_CAPTURE_RETENTION_DAYS:-7}"
+      BOT_DATA_RETENTION_DAYS: "${BOT_DATA_RETENTION_DAYS:-30}"
+      BOT_CORS_ORIGINS: "${BOT_CORS_ORIGINS:?Set BOT_CORS_ORIGINS to the instrumented website origins}"
+      BOT_ADMIN_TOKEN: "${BOT_ADMIN_TOKEN:?Set BOT_ADMIN_TOKEN}"
+      BOT_READ_TOKEN: "${BOT_READ_TOKEN:?Set BOT_READ_TOKEN}"
+      BOT_SESSION_SECRET: "${BOT_SESSION_SECRET:?Set BOT_SESSION_SECRET}"
+      BOT_RATE_LIMIT_PER_MINUTE: "${BOT_RATE_LIMIT_PER_MINUTE:-240}"
+      BOT_TELEMETRY_SPOOL_PATH: /app/var/telemetry-spool.sqlite
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: bot_detection_pilot
+    volumes:
+      - spool:/app/var
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  spool:
+  mongo:
