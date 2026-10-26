@@ -240,9 +240,9 @@ Production deployment (nginx gateway + Let's Encrypt, renewed by `certbot.timer`
 
 | URL | Service |
 |---|---|
-| `https://datacat.io.vn` | SilkMoon demo shop; collector injected by the gateway, telemetry proxied same-origin |
+| `https://datacat.io.vn` | Admin dashboard (metrics); `www` redirects here |
 | `https://api.datacat.io.vn` | DATACAT API and `bot-collector.js` for other websites |
-| `https://dashboard.datacat.io.vn` | Admin dashboard |
+| `https://silkmoon.datacat.io.vn` | SilkMoon demo shop; collector injected by the gateway, telemetry proxied same-origin |
 
 ### 2. Huấn luyện mô hình
 

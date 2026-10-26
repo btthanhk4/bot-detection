@@ -12,7 +12,7 @@ services:
       - BOT_API_PORT=8000
       - BOT_API_WORKERS=1
       - BOT_TELEMETRY_SPOOL_PATH=/app/var/telemetry-spool.sqlite
-      - BOT_CORS_ORIGINS=${BOT_CORS_ORIGINS:-https://datacat.io.vn}
+      - BOT_CORS_ORIGINS=${BOT_CORS_ORIGINS:-https://silkmoon.datacat.io.vn}
       - BOT_DECISION_THRESHOLD=0.96
       - BOT_SUSPECT_THRESHOLD=0.45
       - BOT_MIN_MOUSE_POINTS_FOR_BOT=25
