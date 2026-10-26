@@ -56,7 +56,7 @@ SYNTHETIC_INPUT_RULE_GATE = {
 
 
 def _automation(signals=None, worker=None, permission=None, detectors=None, http_ua=None, browser_ua=None,
-                accept_language=True, renderer=None, datacenter=None):
+                accept_language=True, renderer=None, datacenter=None, page_ms=None, active=False):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     return {
         "_server_user_agent": http_ua or ua,
@@ -68,7 +68,10 @@ def _automation(signals=None, worker=None, permission=None, detectors=None, http
             "automation": {"schema": "automation-v1", "signals": signals or {}, "worker": worker,
                            "notificationPermissionMismatch": permission},
         },
-        "mouse": {"records": []},
+        "mouse": {"records": [], **({
+            "pageAgeMs": page_ms,
+            "counters": {"mousemove": 40 if active else 0, "mousedown": 0, "click": 0, "wheel": 0},
+        } if page_ms is not None else {})},
     }
 
 
@@ -101,12 +104,20 @@ AUTOMATION_EVIDENCE_CASES = (
         permission=True, worker={"cpuMismatch": False})),
     ("SUSPECT", None, _automation(
         renderer="ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)")),
-    # Policy 14: the zero-mouse crawler seen from Google Cloud on 2026-10-26
-    # (SwiftShader WebGL, rtt 0, europe-west4 address). Cloud addresses alone are
-    # VPN-compatible and hypervisor GPUs are ordinary VM use, so neither may decide.
-    ("BOT", "environment_tampering", _automation(
+    # Policy 14/16: the zero-mouse crawler seen from Google Cloud on 2026-10-26
+    # (SwiftShader WebGL, rtt 0, europe-west4 address, 14 s without input). Cloud
+    # addresses alone are VPN-compatible and hypervisor GPUs are ordinary VM use,
+    # so neither may decide; a cloud desktop with a person at it must not either.
+    ("BOT", "idle_cloud_browser", _automation(
         renderer="ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
-        signals={"rttZero": True}, datacenter="gcp")),
+        signals={"rttZero": True}, datacenter="gcp", page_ms=14000)),
+    ("SUSPECT", None, _automation(
+        renderer="ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        signals={"rttZero": True}, datacenter="aws", page_ms=60000, active=True)),
+    ("SUSPECT", None, _automation(
+        renderer="ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        signals={"rttZero": True}, datacenter="aws", page_ms=3000)),
+    ("SUSPECT", None, _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp")),
     ("SUSPECT", None, _automation(datacenter="aws")),
     ("SUSPECT", None, _automation(renderer="VirtualBox Graphics Adapter", signals={"rttZero": True},
                                   datacenter="digitalocean")),
@@ -127,8 +138,15 @@ AUTOMATION_EVIDENCE_RULE_GATE_V13 = {
     "fixture_fingerprint": "2543f760aaf58a22773b2b5c79cae5718be6b31888256c37d399a80d386bc7ac",
 }
 
-AUTOMATION_EVIDENCE_RULE_GATE = {
+# Frozen gate of policies 14-15.
+AUTOMATION_EVIDENCE_RULE_GATE_V14 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1"],
+    "positive_cases": 6, "negative_cases": 9, "passed": 15,
+    "fixture_fingerprint": "27b8fa2ec1a09e7037b050a1203931ea97a35ea4f55ca16eadaa91a8b19773a2",
+}
+
+AUTOMATION_EVIDENCE_RULE_GATE = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1"],
     "positive_cases": sum(expected == "BOT" for expected, _, _ in AUTOMATION_EVIDENCE_CASES),
     "negative_cases": sum(expected != "BOT" for expected, _, _ in AUTOMATION_EVIDENCE_CASES),
     "passed": len(AUTOMATION_EVIDENCE_CASES),
@@ -182,7 +200,24 @@ SYNTHETIC_DEVICE_CASES = (
     ("SUSPECT", None, _device(zero_pressure=3, ua="Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0")),
     ("SUSPECT", None, _device(bulk=2)),
     ("SUSPECT", None, _device([{"t": "x", "h": 1, "k": "c"}, {"t": 5, "h": -3, "k": "c"}, None, {"t": 9, "k": "zz"}])),
+    # Policy 16: Vietnamese Telex through Unikey/EVKey ("Hương" + f -> "Hường"):
+    # the input method injects Backspace and letters with ~0 ms holds. A script
+    # typing accented text sends them as plain keys, with no Backspace.
+    ("SUSPECT", None, _device(
+        _strokes([92, 71, 104, 66], [212, 148, 305, 176])
+        + [dict(s, t=s["t"] + 900) for s in _strokes([0.5, 0.5, 0.5], [1.2, 1.2, 1.2], kind="b")]
+        + [dict(s, t=s["t"] + 904) for s in _strokes([0.5], [1.2], kind="n")]
+        + [dict(s, t=s["t"] + 905) for s in _strokes([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], [1.2] * 8)])),
+    ("BOT", "synthetic_typing_v1", _device(
+        [dict(s, k="n" if i % 3 == 0 else "c") for i, s in enumerate(_strokes([1.5] * 12, [1.2] * 12))])),
 )
+
+# Frozen gate of policy 15.
+SYNTHETIC_DEVICE_RULE_GATE_V15 = {
+    "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
+    "positive_cases": 3, "negative_cases": 8, "passed": 11,
+    "fixture_fingerprint": "5727b7e21ed1e868cd94b1566219b6632023c45463e021c07bda389e9e867de1",
+}
 
 SYNTHETIC_DEVICE_RULE_GATE = {
     "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],

@@ -815,8 +815,9 @@ def test_short_page_does_not_erase_an_earlier_firm_verdict(monkeypatch):
     detections = _memory_db(monkeypatch)
     assert save_detection_result(*_page(1_000, "HUMAN"))
     # Next page of the same tab, left after one second with 12 mouse points.
-    assert save_detection_result(*_page(2_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) is None
+    assert save_detection_result(*_page(2_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) == "tab"
     assert detections.docs["tab"]["verdict"] == "HUMAN"
+    assert detections.docs["tab"]["event_timestamp"] == 2_000, "activity is still recorded"
     assert detections.docs["tab"]["decision_state"] == "FINAL"
 
 
@@ -830,8 +831,9 @@ def test_deferred_page_then_firm_page_upgrades_the_session(monkeypatch):
 def test_firm_bot_verdict_is_never_washed_out_by_a_later_page(monkeypatch):
     detections = _memory_db(monkeypatch)
     assert save_detection_result(*_page(1_000, "BOT"))
-    assert save_detection_result(*_page(2_000, "HUMAN")) is None
-    assert save_detection_result(*_page(3_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) is None
+    assert save_detection_result(*_page(2_000, "HUMAN")) == "tab"
+    assert save_detection_result(*_page(3_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) == "tab"
+    assert detections.docs["tab"]["verdict"] == "BOT"
     assert save_detection_result(*_page(4_000, "BOT"))
     assert detections.docs["tab"]["verdict"] == "BOT"
 

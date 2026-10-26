@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "31daa4ac4c5c40eeacdaacc68717010a",
-  "created_at": "2026-10-26T12:17:22.987967+00:00",
+  "bundle_id": "673dc8ddd0224da5beb02132a18b3a7e",
+  "created_at": "2026-10-26T13:41:44.399525+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,13 +62,14 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "27b8fa2ec1a09e7037b050a1203931ea97a35ea4f55ca16eadaa91a8b19773a2",
-      "negative_cases": 9,
-      "passed": 15,
+      "fixture_fingerprint": "d8a9be4f1e11f12e582f799fb567fc962bb608eb56f3fa44a7b544a2ff56c225",
+      "negative_cases": 12,
+      "passed": 18,
       "positive_cases": 6,
       "rules": [
         "automation_marker_v1",
-        "environment_tampering_v1"
+        "environment_tampering_v1",
+        "idle_cloud_browser_v1"
       ]
     },
     "capture_holdout_families": [],
@@ -852,7 +853,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "15",
+    "decision_policy_version": "16",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
@@ -1046,10 +1047,10 @@
     "rolling_full_replay": true,
     "seed": 42,
     "synthetic_device_rule_gate": {
-      "fixture_fingerprint": "5727b7e21ed1e868cd94b1566219b6632023c45463e021c07bda389e9e867de1",
-      "negative_cases": 8,
-      "passed": 11,
-      "positive_cases": 3,
+      "fixture_fingerprint": "47c4086dc5817b2bf0f60d7c5e2bafe77cbc2254ff875f4291272fd3604a1442",
+      "negative_cases": 9,
+      "passed": 13,
+      "positive_cases": 4,
       "rules": [
         "synthetic_typing_v1",
         "synthetic_pointer_v1"

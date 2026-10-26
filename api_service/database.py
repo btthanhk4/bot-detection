@@ -263,6 +263,23 @@ def _ensure_indexes(db):
     return all_ready
 
 
+# Fields refreshed when a later page may not replace the session's verdict.
+_ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at")
+
+
+def is_session_closed(session_id: str) -> bool:
+    """True while an admin delete tombstones this session id (writes are refused)."""
+    db = get_db()
+    if db is None or not session_id:
+        return False
+    try:
+        return db["deleted_sessions"].find_one(
+            {"sessionId": str(session_id), "expires_at": {"$gt": datetime.now(timezone.utc)}}, {"_id": 1}
+        ) is not None
+    except Exception:
+        return False
+
+
 def _writes_are_blocked(db, session_id: str) -> bool:
     now = datetime.now(timezone.utc)
     control = db["service_control"].find_one({"_id": "ingestion"}, {"blocked_until": 1})
@@ -401,6 +418,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "score_calibrated": analysis.get("score_calibrated") is True,
             "policy_version": str(analysis.get("policy_version") or "")[:32],
             "is_bot": verdict == "BOT",
+            "verdict_locked": bool((analysis.get("breakdown") or {}).get("verdict_locked", verdict == "BOT")),
             "confidence": _safe_probability(analysis.get("confidence")),
             "model_bundle_id": str(analysis.get("model_bundle_id") or "")[:128],
             "breakdown": _sanitize_bson_value(analysis.get("breakdown", {})),
@@ -443,24 +461,30 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             }
         # A session spans every page of a tab. A later page may not erase a firm
         # decision: a short page without enough evidence keeps the earlier FINAL
-        # verdict, and a FINAL BOT stays BOT (release gates count "ever BOT").
+        # verdict, and a locked FINAL BOT stays BOT (release gates count "ever
+        # BOT"). Only verdicts marked unlocked (idle cloud browser) may be overturned.
         sticky_filter = (
             {"decision_state": {"$ne": "FINAL"}}
             if doc["decision_state"] != "FINAL"
-            else {"$or": [{"is_bot": {"$ne": True}}, {"decision_state": {"$ne": "FINAL"}}]}
+            else {"$or": [{"is_bot": {"$ne": True}}, {"decision_state": {"$ne": "FINAL"}},
+                          {"verdict_locked": False}]}
             if verdict != "BOT"
             else {}
         )
-        update_filter = {
-            "sessionId": session_id,
-            "$and": [
-                event_order_filter,
-                {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
-                sticky_filter,
-            ],
-        }
+        base_conditions = [
+            event_order_filter,
+            {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
+        ]
+        update_filter = {"sessionId": session_id, "$and": [*base_conditions, sticky_filter]}
         collection = db["detection_results"]
         result = collection.update_one(update_filter, {"$set": doc}, upsert=False)
+        if result.matched_count == 0 and sticky_filter:
+            # The earlier verdict stands; still record that the session is active.
+            result = collection.update_one(
+                {"sessionId": session_id, "$and": base_conditions},
+                {"$set": {key: doc[key] for key in _ACTIVITY_FIELDS}},
+                upsert=False,
+            )
         if result.matched_count == 0:
             insert_doc = {**doc, "created_at": now}
             try:

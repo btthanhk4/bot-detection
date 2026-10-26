@@ -1131,6 +1131,17 @@ def test_rejected_telemetry_is_not_added_to_fallback_buffer(client, monkeypatch)
         assert all(event.get("sessionId") != session_id for event in telemetry_buffer)
 
 
+def test_deleted_live_session_tells_the_collector_to_rotate(client, monkeypatch):
+    monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
+    monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
+    monkeypatch.setattr("api_service.database.is_session_closed", lambda session_id: session_id == "deleted-tab")
+
+    closed = client.post("/api/v1/telemetry", json={"sessionId": "deleted-tab", "visitorId": "visitor"}).json()
+    assert closed["recorded"] is False and closed["session_closed"] is True
+    stale = client.post("/api/v1/telemetry", json={"sessionId": "stale-tab", "visitorId": "visitor"}).json()
+    assert "session_closed" not in stale
+
+
 def test_database_outage_uses_fallback_buffer(client, monkeypatch):
     from api_service.main import telemetry_buffer, _telemetry_buffer_lock
 

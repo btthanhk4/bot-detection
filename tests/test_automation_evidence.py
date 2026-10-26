@@ -171,7 +171,14 @@ def test_datacenter_address_corroborates_but_never_anchors():
     assert alone["families"] == {"NETWORK": ["server.datacenter_ip"]} and alone["rule"] is None
     no_anchor = _automation(signals={"uaHintsMismatch": True, "toStringPatched": True}, datacenter="gcp")
     assert analyze_automation_evidence(no_anchor)["rule"] is None
-    crawler = _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp")
-    report = analyze_automation_evidence(crawler)
-    assert set(report["families"]) == {"GPU", "HEADLESS_ENV", "NETWORK"}
-    assert report["rule"] == ENVIRONMENT_TAMPERING_RULE
+    # On a cloud address the CPU rasteriser and zero RTT are what the VM explains.
+    vm = analyze_automation_evidence(_automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp"))
+    assert vm["families"] == {"NETWORK": ["server.datacenter_ip", "server.software_renderer", "signals.rttZero"]}
+    assert vm["cloud_vm"] is True and vm["rule"] is None
+    idle = _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp", page_ms=14000)
+    assert analyze_automation_evidence(idle)["rule"] == "idle_cloud_browser_v1"
+    used = _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp", page_ms=14000, active=True)
+    assert analyze_automation_evidence(used)["rule"] is None
+    # Away from the cloud the same signals keep counting on their own.
+    home = analyze_automation_evidence(_automation(renderer="SwiftShader", signals={"rttZero": True}))
+    assert set(home["families"]) == {"GPU", "HEADLESS_ENV"}

@@ -881,8 +881,16 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     if persisted:
         background_tasks.add_task(_flush_telemetry_buffer)
 
+    # An admin deleted this session while the tab stayed open: tell the collector
+    # to continue under a new id instead of being refused until the tombstone expires.
+    session_closed = False
+    if not persisted and not buffered:
+        from api_service.database import is_session_closed
+        session_closed = bool(await run_in_threadpool(is_session_closed, data.get("sessionId")))
+
     return {
         "status": "success" if persisted else "degraded",
+        **({"session_closed": True} if session_closed else {}),
         "recorded": persisted or buffered or capture_status is not None,
         "persisted": persisted,
         "buffered": buffered,

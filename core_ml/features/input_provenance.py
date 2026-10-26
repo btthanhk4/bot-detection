@@ -40,7 +40,9 @@ INPUT_PROVENANCE_VERSION = "input_provenance_v2"
 MAX_KEYSTROKES = 60
 BURST_GAP_MS = 1500.0
 TYPING_FAST_MIN_KEYS = 8
-TYPING_FAST_MEDIAN_HOLD_MS = 20.0
+# 12 ms (policy 16, was 20): rapid-trigger keyboards release earlier than the
+# CMU keyboards (human floor 30.2 ms); scripts measured at 1.4-3.5 ms.
+TYPING_FAST_MEDIAN_HOLD_MS = 12.0
 TYPING_RHYTHM_MIN_KEYS = 11
 TYPING_RHYTHM_MAX_CV = 0.10
 ZERO_PRESSURE_MIN_PRESSES = 2
@@ -106,20 +108,53 @@ def _pointer_stats(raw):
     }
 
 
+# Key kinds sent by the collector: c = ASCII character, n = non-ASCII character
+# (collector >= 1.6; older ones sent these as c), b = Backspace/Delete
+# (>= 1.6; older: o), o = other key, u = virtual keyboard (dropped).
+KEY_KINDS = ("c", "n", "b", "o")
+# Vietnamese Telex/VNI input methods (Unikey, EVKey) replace typed letters by
+# injecting Backspace and accented letters with ~0 ms holds. A burst with an
+# instant Backspace is an input method at work, not a script, and is not judged.
+# Scripts typing accented text send no Backspace and are still judged.
+INJECTED_HOLD_MS = 10.0
+
+
 def sanitize_keystrokes(raw):
-    """Keep well-formed physical-keyboard strokes (timing only) in time order."""
+    """Keep well-formed physical-keyboard strokes (timing and kind only) in time order."""
     if not isinstance(raw, list):
         return []
     clean = []
     for stroke in raw[-MAX_KEYSTROKES:]:
-        if not isinstance(stroke, dict) or stroke.get("k") not in ("c", "o"):
+        if not isinstance(stroke, dict) or stroke.get("k") not in KEY_KINDS:
             continue
         at = _number(stroke.get("t"), 0, 10**9)
         if at is None:
             continue
         hold = stroke.get("h")
-        clean.append({"t": at, "h": _number(hold, 0, 5000) if hold is not None else None})
+        clean.append({"t": at, "k": stroke["k"], "h": _number(hold, 0, 5000) if hold is not None else None})
     return sorted(clean, key=lambda stroke: stroke["t"])
+
+
+def _letter_runs(burst):
+    """Consecutive character keys (ASCII or accented); any other key ends the run."""
+    runs, current = [], []
+    for stroke in burst:
+        if stroke["k"] in ("c", "n"):
+            current.append(stroke)
+        else:
+            if current:
+                runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    return runs
+
+
+def _input_method_injection(burst):
+    return any(
+        stroke["k"] == "b" and stroke["h"] is not None and stroke["h"] < INJECTED_HOLD_MS
+        for stroke in burst
+    )
 
 
 def _bursts(strokes):
@@ -139,20 +174,26 @@ def analyze_typing(keyboard) -> dict:
     strokes = sanitize_keystrokes(keyboard.get("keystrokes"))
     coarse = keyboard.get("coarsePointer") is True
     fastest_median_hold, lowest_interval_cv = None, None
-    # Sliding windows: one typed field can sit next to a pause or a different field.
+    input_method_bursts = 0
+    # Sliding windows over runs of consecutive character keys: one typed field can
+    # sit next to a pause, a correction or a different field.
     # CMU benchmark, same windows: lowest 8-key median hold 30.2 ms, lowest 11-key CV 0.139.
     for burst in _bursts(strokes):
-        holds = [s["h"] for s in burst if s["h"] is not None]
-        for start in range(len(holds) - TYPING_FAST_MIN_KEYS + 1):
-            median = statistics.median(holds[start:start + TYPING_FAST_MIN_KEYS])
-            fastest_median_hold = median if fastest_median_hold is None else min(fastest_median_hold, median)
-        for start in range(len(burst) - TYPING_RHYTHM_MIN_KEYS + 1):
-            window = burst[start:start + TYPING_RHYTHM_MIN_KEYS]
-            intervals = [b["t"] - a["t"] for a, b in zip(window, window[1:])]
-            mean = sum(intervals) / len(intervals)
-            if mean > 0:
-                cv = statistics.pstdev(intervals) / mean
-                lowest_interval_cv = cv if lowest_interval_cv is None else min(lowest_interval_cv, cv)
+        if _input_method_injection(burst):
+            input_method_bursts += 1
+            continue
+        for run in _letter_runs(burst):
+            holds = [s["h"] for s in run if s["h"] is not None]
+            for start in range(len(holds) - TYPING_FAST_MIN_KEYS + 1):
+                median = statistics.median(holds[start:start + TYPING_FAST_MIN_KEYS])
+                fastest_median_hold = median if fastest_median_hold is None else min(fastest_median_hold, median)
+            for start in range(len(run) - TYPING_RHYTHM_MIN_KEYS + 1):
+                window = run[start:start + TYPING_RHYTHM_MIN_KEYS]
+                intervals = [b["t"] - a["t"] for a, b in zip(window, window[1:])]
+                mean = sum(intervals) / len(intervals)
+                if mean > 0:
+                    cv = statistics.pstdev(intervals) / mean
+                    lowest_interval_cv = cv if lowest_interval_cv is None else min(lowest_interval_cv, cv)
     codes = []
     if not coarse and fastest_median_hold is not None and fastest_median_hold < TYPING_FAST_MEDIAN_HOLD_MS:
         codes.append("TYPING_INSTANT_HOLD")
@@ -164,6 +205,7 @@ def analyze_typing(keyboard) -> dict:
     return {
         "keystrokes": len(strokes),
         "coarse_pointer": coarse,
+        "input_method_bursts": input_method_bursts,
         "fastest_median_hold_ms": None if fastest_median_hold is None else round(fastest_median_hold, 1),
         "lowest_interval_cv": None if lowest_interval_cv is None else round(lowest_interval_cv, 3),
         "bulk_inserts": int(bulk or 0),

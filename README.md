@@ -101,7 +101,15 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v15 (current)
+### Policy v16 (current)
+
+Policy v16 (collector 1.6.0) sửa các tình huống biên tìm được khi rà soát: người Việt gõ
+Telex qua Unikey/EVKey không còn bị nhầm là gõ máy (mô phỏng 3.000 lượt: 93 % → 0 %), người
+dùng máy tính ảo trên cloud không còn bị gán BOT vĩnh viễn (luật `idle_cloud_browser_v1`
+thay cho việc đếm bằng chứng tương quan), tab bị xóa phiên tự chuyển phiên mới, và giới hạn
+tốc độ đủ cho ~60 tab sau một IP. Xem [Model release v16](docs/MODEL_RELEASE_V16.md).
+
+### Policy v15
 
 Policy v15 (collector 1.4.0) bắt bot qua cách sự kiện đầu vào được tạo ra:
 `synthetic_typing_v1` (giữ phím < 20 ms hoặc nhịp phím đều với CV < 0,10, ngưỡng kiểm

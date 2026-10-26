@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.5.0';
+export const COLLECTOR_VERSION = '1.6.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -334,6 +334,11 @@ export class BotCollector {
         if (response.ok && typeof response.json === 'function') {
           try {
             const receipt = await response.json();
+            if (receipt && receipt.session_closed === true && this.persistSession) {
+              // The session was deleted on the server; continue under a fresh id.
+              this.sessionId = this.generateSessionId();
+              this.touchSession();
+            }
             if (receipt && receipt.recorded === true) {
               const captureFlags = Object.prototype.hasOwnProperty.call(receipt, 'capture_persisted');
               this.lastReceipt = {

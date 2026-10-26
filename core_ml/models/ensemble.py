@@ -12,6 +12,7 @@ from core_ml.features.env_features import extract_env_vector, safe_bool, safe_fl
 from core_ml.features.automation_evidence import (
     AUTOMATION_MARKER_RULE,
     ENVIRONMENT_TAMPERING_RULE,
+    IDLE_CLOUD_BROWSER_RULE,
     analyze_automation_evidence,
 )
 from core_ml.features.input_provenance import (
@@ -33,7 +34,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "15"
+DECISION_POLICY_VERSION = "16"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -294,6 +295,11 @@ class EnsembleBotDetector:
                     f"{automation_evidence['family_count']} independent checks: "
                     + ", ".join(sorted(automation_evidence["families"]))
                 )
+            elif automation_rule == IDLE_CLOUD_BROWSER_RULE:
+                reasons.append(
+                    "Unattended cloud browser: cloud-provider address, software (CPU) WebGL renderer and "
+                    f"no pointer, wheel or key input for {int(automation_evidence['idle_page_ms'] / 1000)} s"
+                )
             elif automation_rule == SYNTHETIC_CLICK_RULE:
                 reasons.append(
                     f"Synthetic clicks: {input_provenance['clicks_centred']} clicks at the exact control "
@@ -387,11 +393,15 @@ class EnsembleBotDetector:
                 "decision_basis": (
                     "automation_marker" if automation_rule == AUTOMATION_MARKER_RULE
                     else "environment_tampering" if automation_rule == ENVIRONMENT_TAMPERING_RULE
+                    else "idle_cloud_browser" if automation_rule == IDLE_CLOUD_BROWSER_RULE
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),
                 "automation_rule": automation_rule,
+                # Storage keeps a locked BOT verdict for the whole session; only the
+                # idle-cloud rule may be overturned by later human input.
+                "verdict_locked": verdict == "BOT" and automation_rule != IDLE_CLOUD_BROWSER_RULE,
                 "mouse_evidence_deferred": mouse_evidence_deferred,
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,

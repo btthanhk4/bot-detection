@@ -1127,9 +1127,13 @@
       if (!e || e.isTrusted === false || e.repeat || MouseRecorder.isSecretField(e.target)) return;
       const at = this.keyNow();
       this.lastKeyDownAt = at;
-      // 'u': virtual keyboards report Unidentified/229 and have no real press duration.
-      const kind = e.key === 'Unidentified' || e.keyCode === 229
-        ? 'u' : (typeof e.key === 'string' && e.key.length === 1 ? 'c' : 'o');
+      // u: virtual keyboards/IME composition (Unidentified, 229), no real press duration.
+      // c: ASCII character, n: accented/other character, b: Backspace/Delete (Vietnamese
+      // input methods inject these with ~0 ms holds), o: any other key. No key values.
+      let kind = 'o';
+      if (e.key === 'Unidentified' || e.keyCode === 229) kind = 'u';
+      else if (e.key === 'Backspace' || e.key === 'Delete') kind = 'b';
+      else if (typeof e.key === 'string' && e.key.length === 1) kind = e.key.charCodeAt(0) < 128 ? 'c' : 'n';
       const stroke = { t: Math.round(at * 10) / 10, h: null, k: kind };
       this.keystrokes.push(stroke);
       if (this.keystrokes.length > 80) this.keystrokes = this.keystrokes.slice(-60);
@@ -1291,6 +1295,9 @@
         scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
         clickEvents: this.clickEvents.slice(-30),
         counters: { ...this.counters },
+        // Time since navigation start: lets the API tell a page left idle for a while
+        // from one that was only just opened.
+        pageAgeMs: typeof performance !== 'undefined' ? Math.round(performance.now()) : null,
         pointerStats: {
           ...this.pointerStats,
           secureContext: typeof window !== 'undefined' && window.isSecureContext === true,
@@ -1328,7 +1335,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.5.0';
+  const COLLECTOR_VERSION = '1.6.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -1653,6 +1660,11 @@
           if (response.ok && typeof response.json === 'function') {
             try {
               const receipt = await response.json();
+              if (receipt && receipt.session_closed === true && this.persistSession) {
+                // The session was deleted on the server; continue under a fresh id.
+                this.sessionId = this.generateSessionId();
+                this.touchSession();
+              }
               if (receipt && receipt.recorded === true) {
                 const captureFlags = Object.prototype.hasOwnProperty.call(receipt, 'capture_persisted');
                 this.lastReceipt = {

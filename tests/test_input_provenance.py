@@ -193,9 +193,9 @@ def test_sliding_windows_find_a_scripted_field_inside_human_typing():
 
 
 def test_thresholds_are_strict_at_the_boundary():
-    at_limit = _strokes([20.0] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
+    at_limit = _strokes([12.0] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
     assert "TYPING_INSTANT_HOLD" not in analyze_typing({"keystrokes": at_limit})["codes"]
-    below = _strokes([19.9] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
+    below = _strokes([11.9] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
     assert "TYPING_INSTANT_HOLD" in analyze_typing({"keystrokes": below})["codes"]
 
 

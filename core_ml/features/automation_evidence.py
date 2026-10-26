@@ -16,12 +16,23 @@ top (policy 12):
 Families were chosen from a probe matrix (2026-10-26): genuine Chrome and Edge
 raised no signal; Puppeteer+stealth raised four families; headed patchright
 raised none (it is a genuine browser, caught only by behaviour).
+
+Policy 16: on a cloud address, a CPU rasteriser and a zero network RTT are what
+any virtual machine shows, people on cloud desktops included, so they are folded
+into the NETWORK family instead of counting as independent contradictions. An
+unattended cloud browser is caught by ``idle_cloud_browser_v1`` instead: cloud
+address, CPU rasteriser and no input at all for 10 s of page time. That verdict
+is not locked; later human input may overturn it.
 """
 
 import re
 
 AUTOMATION_MARKER_RULE = "automation_marker_v1"
 ENVIRONMENT_TAMPERING_RULE = "environment_tampering_v1"
+IDLE_CLOUD_BROWSER_RULE = "idle_cloud_browser_v1"
+IDLE_CLOUD_MIN_PAGE_MS = 10_000
+# Evidence that a cloud virtual machine explains on its own.
+_CLOUD_EXPLAINED = {"GPU": "server.software_renderer", "HEADLESS_ENV": "signals.rttZero"}
 AUTOMATION_EVIDENCE_VERSION = "automation_evidence_v1"
 TAMPERING_MIN_FAMILIES = 3
 TAMPERING_ANCHOR_FAMILIES = ("HEADLESS_ENV", "GPU", "PERMISSION")
@@ -113,6 +124,29 @@ def _hits(sources, spec):
     return found
 
 
+def _number(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number == number and abs(number) != float("inf") else None
+
+
+def _idle_page_ms(payload):
+    """Page time without any pointer, wheel or key input; None if not measurable."""
+    mouse = _mapping(payload.get("mouse"))
+    age = _number(mouse.get("pageAgeMs"))
+    counters = _mapping(mouse.get("counters"))
+    if age is None or not counters:
+        return None
+    keyboard = _mapping(mouse.get("keyboard"))
+    activity = sum(_number(counters.get(name)) or 0 for name in ("mousemove", "mousedown", "click", "wheel"))
+    activity += len(keyboard.get("keystrokes") or []) + len(mouse.get("records") or [])
+    return age if activity == 0 else 0.0
+
+
 def analyze_automation_evidence(payload: dict) -> dict:
     payload = payload if isinstance(payload, dict) else {}
     sources, has_probes = _sources(payload)
@@ -122,16 +156,36 @@ def analyze_automation_evidence(payload: dict) -> dict:
         hits = _hits(sources, spec)
         if hits:
             families[family] = hits
+    cloud = "NETWORK" in families
+    if cloud:
+        for family, hit in _CLOUD_EXPLAINED.items():
+            if hit in families.get(family, []):
+                families[family].remove(hit)
+                families["NETWORK"].append(hit)
+                if not families[family]:
+                    del families[family]
     tampering = (
         len(families) >= TAMPERING_MIN_FAMILIES
         and any(anchor in families for anchor in TAMPERING_ANCHOR_FAMILIES)
     )
-    rule = AUTOMATION_MARKER_RULE if markers else ENVIRONMENT_TAMPERING_RULE if tampering else None
+    idle_ms = _idle_page_ms(payload)
+    idle_cloud = (
+        cloud and "server.software_renderer" in families["NETWORK"]
+        and idle_ms is not None and idle_ms >= IDLE_CLOUD_MIN_PAGE_MS
+    )
+    rule = (
+        AUTOMATION_MARKER_RULE if markers
+        else ENVIRONMENT_TAMPERING_RULE if tampering
+        else IDLE_CLOUD_BROWSER_RULE if idle_cloud
+        else None
+    )
     return {
         "analysis_version": AUTOMATION_EVIDENCE_VERSION,
         "probes_present": has_probes,
         "markers": markers,
         "families": families,
         "family_count": len(families),
+        "cloud_vm": cloud and len(families["NETWORK"]) > 1,
+        "idle_page_ms": idle_ms,
         "rule": rule,
     }

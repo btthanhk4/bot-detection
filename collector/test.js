@@ -84,8 +84,13 @@ async function testKeyboardTimingAndPressPressure() {
   recorder.handleKeyDown(key('keydown', { key: 'x', code: 'KeyX', repeat: true }));
   recorder.handleKeyDown(key('keydown', { key: 'p', code: 'KeyP', target: { type: 'password' } }));
   recorder.handleKeyDown({ isTrusted: false, key: 'b', code: 'KeyB', target: { type: 'text' } });
-  const strokes = recorder.exportData().keyboard.keystrokes;
-  assert.deepStrictEqual(strokes.map((s) => s.k), ['c', 'o', 'u'], 'kinds only; repeats, password fields and untrusted events skipped');
+  recorder.handleKeyDown(key('keydown', { key: 'Backspace', code: 'Backspace' }));
+  recorder.handleKeyDown(key('keydown', { key: 'ờ', code: '' }));
+  const exported = recorder.exportData();
+  const strokes = exported.keyboard.keystrokes;
+  assert.deepStrictEqual(strokes.map((s) => s.k), ['c', 'o', 'u', 'b', 'n'],
+    'kinds only (ASCII, other, virtual, Backspace, accented); repeats, password fields and untrusted events skipped');
+  assert.ok(Number.isFinite(exported.pageAgeMs) && exported.pageAgeMs >= 0, 'page age is reported');
   assert.ok(strokes[0].h !== null && strokes[0].h >= 0, 'the released key has a hold time');
   assert.ok(strokes.every((s) => !('key' in s) && !('code' in s)), 'no key values leave the page');
 
