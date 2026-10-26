@@ -24,6 +24,8 @@ services:
       - BOT_READ_TOKEN=${BOT_READ_TOKEN:-}
       - BOT_SESSION_SECRET=${BOT_SESSION_SECRET:-}
       - BOT_SESSION_TTL_HOURS=${BOT_SESSION_TTL_HOURS:-12}
+      - BOT_TELEMETRY_ORIGINS=${BOT_TELEMETRY_ORIGINS:-}
+      - BOT_DETECT_RESPONSE=${BOT_DETECT_RESPONSE:-full}
       - MONGO_URI=${MONGO_URI:-mongodb://silkmoon-mongodb:27017}
       - MONGO_DB=${MONGO_DB:-bot_detection}
     restart: unless-stopped

@@ -34,13 +34,14 @@ _FAMILIES = {
         "detectors": ("headlessUa",),
         "signals": ("headlessScreen", "appVersionAutomation", "rttZero",
                     "pluginsPrototypeMismatch", "mimeTypesPrototypeMismatch", "sequentum"),
+        "server": ("headless_client_hints_header",),
     },
     "GPU": {"signals": ("gpuOsMismatch",), "worker": ("rendererMismatch",)},
     "PERMISSION": {"top": ("notificationPermissionMismatch",)},
     "CONTEXT": {"worker": ("cpuMismatch", "uaMismatch", "platformMismatch")},
     "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched")},
     "CLIENT_HINTS": {"signals": ("uaHintsMismatch", "malformedBrands"), "server": ("http_ua_mismatch",)},
-    "HTTP": {"server": ("missing_accept_language",)},
+    "HTTP": {"server": ("missing_accept_language", "missing_fetch_metadata")},
 }
 
 
@@ -64,6 +65,12 @@ def _sources(payload):
                                  and browser_ua[:512] != http_ua[:512]),
         "missing_accept_language": bool(chromium and headers.get("observed") is True
                                         and headers.get("accept_language") is False),
+        # Over HTTPS, Chromium attaches Sec-Fetch-* to every fetch/beacon; their
+        # absence means the request did not come from a browser page.
+        "missing_fetch_metadata": bool(chromium and headers.get("observed") is True
+                                       and headers.get("forwarded_proto") == "https"
+                                       and not headers.get("sec_fetch_site")),
+        "headless_client_hints_header": "headlesschrome" in str(headers.get("sec_ch_ua") or "").lower(),
     }
     return {
         "detectors": _mapping(botd.get("detectors")),

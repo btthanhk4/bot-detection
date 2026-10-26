@@ -1656,3 +1656,27 @@ def test_raw_and_detail_endpoints_report_database_query_failure(client, monkeypa
 
     assert raw.status_code == 503
     assert detail.status_code == 503
+
+
+def test_telemetry_and_detect_respect_origin_allowlist(client, monkeypatch):
+    from api_service import main
+    monkeypatch.setattr(main.settings, "TELEMETRY_ALLOWED_ORIGINS", ["https://shop.example"])
+    body = {"sessionId": "origin-check", "visitorId": "v", "mouse": {"records": []}}
+    foreign = client.post("/api/v1/telemetry", json=body, headers={"Origin": "http://chat.other.dev"})
+    assert foreign.status_code == 403
+    assert client.post("/api/v1/detect", json=body, headers={"Origin": "http://chat.other.dev"}).status_code == 403
+    assert client.post("/api/v1/detect", json=body, headers={"Origin": "https://shop.example"}).status_code == 200
+    # Requests without an Origin header (server-side callers) are not blocked by this check.
+    assert client.post("/api/v1/detect", json=body).status_code == 200
+
+
+def test_minimal_detect_response_hides_evidence_from_anonymous_callers(client, monkeypatch):
+    from api_service import main
+    monkeypatch.setattr(main.settings, "DETECT_RESPONSE", "minimal")
+    body = {"sessionId": "oracle", "visitorId": "v", "botd": {"detectors": {"webdriver": True}}, "mouse": {"records": []}}
+    anonymous = client.post("/api/v1/detect", json=body).json()
+    assert anonymous["verdict"] == "BOT"
+    assert set(anonymous) == {"is_bot", "verdict", "decision_state", "policy_version", "model_bundle_id",
+                              "sessionId", "visitorId"}
+    authorised = client.post("/api/v1/detect", json=body, headers=READ_HEADERS).json()
+    assert "breakdown" in authorised and "bot_probability" in authorised

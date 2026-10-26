@@ -59,6 +59,16 @@ class Settings:
     # random per-process secret logs everyone out on every restart.
     SESSION_SECRET: str = os.getenv("BOT_SESSION_SECRET", "").strip()
     SESSION_TTL_HOURS: int = _env_int("BOT_SESSION_TTL_HOURS", 12, 1, 24 * 30)
+    # Pages allowed to submit telemetry/detect requests (exact Origin values).
+    # Empty keeps the historical behaviour of accepting any origin.
+    TELEMETRY_ALLOWED_ORIGINS: List[str] = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv("BOT_TELEMETRY_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    # "minimal" hides scores and evidence from unauthenticated /detect callers so a
+    # bot cannot use the endpoint as an oracle; "full" keeps the old response.
+    DETECT_RESPONSE: str = os.getenv("BOT_DETECT_RESPONSE", "full").strip().lower()
     TRUST_PROXY_HEADERS: bool = os.getenv("BOT_TRUST_PROXY_HEADERS", "false").lower() in ("1", "true", "yes")
     TRUSTED_PROXIES: List[str] = [
         proxy.strip()

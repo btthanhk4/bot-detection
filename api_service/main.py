@@ -549,12 +549,35 @@ def _bearer(request: Request, header: str) -> str:
     return supplied
 
 
+def _require_allowed_origin(request: Request) -> None:
+    """Reject browsers posting from pages that are not part of the study."""
+    allowed = settings.TELEMETRY_ALLOWED_ORIGINS
+    origin = (request.headers.get("origin") or "").rstrip("/")
+    if allowed and origin and origin not in allowed:
+        raise HTTPException(status_code=403, detail="Origin is not allowed to submit telemetry")
+
+
+def _has_read_credentials(request: Request) -> bool:
+    try:
+        require_read_access(request)
+        return True
+    except HTTPException:
+        return False
+
+
+_MINIMAL_DETECT_FIELDS = ("is_bot", "verdict", "decision_state", "policy_version", "model_bundle_id",
+                          "sessionId", "visitorId")
+
+
 def _observed_headers(request: Request) -> dict:
     """Header facts that a script cannot change from inside the page."""
     return {
         "observed": True,
         "accept_language": bool((request.headers.get("accept-language") or "").strip()),
         "sec_ch_ua": (request.headers.get("sec-ch-ua") or "")[:256],
+        "sec_fetch_site": (request.headers.get("sec-fetch-site") or "")[:32],
+        "sec_fetch_mode": (request.headers.get("sec-fetch-mode") or "")[:32],
+        "forwarded_proto": (request.headers.get("x-forwarded-proto") or request.url.scheme or "")[:8],
     }
 
 
@@ -676,6 +699,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
             detail="Rate limit exceeded. Too many requests from this IP.",
             headers={"Retry-After": "60"},
         )
+    _require_allowed_origin(request)
     _require_inference_models()
     data = payload.model_dump()
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
@@ -696,6 +720,8 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     result["sessionId"] = data.get("sessionId")
     result["visitorId"] = data.get("visitorId")
 
+    if settings.DETECT_RESPONSE == "minimal" and not _has_read_credentials(request):
+        return {key: result.get(key) for key in _MINIMAL_DETECT_FIELDS}
     return result
 
 
@@ -712,6 +738,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             detail="Rate limit exceeded.",
             headers={"Retry-After": "60"},
         )
+    _require_allowed_origin(request)
 
     # Robust parsing supporting application/json, text/plain (sendBeacon), or raw bytes
     try:

@@ -104,3 +104,17 @@ def test_reason_names_the_evidence():
     assert any("GPU" in r and "PERMISSION" in r for r in reasons)
     marker = predict(_automation(signals={"seleniumGlobals": True}))["reasons"]
     assert any("signals.seleniumGlobals" in r for r in marker)
+
+
+def test_https_fetch_metadata_and_client_hint_headers():
+    https = _automation()
+    https["_server_headers"].update({"forwarded_proto": "https", "sec_fetch_site": "same-origin"})
+    assert analyze_automation_evidence(https)["families"] == {}
+    https["_server_headers"]["sec_fetch_site"] = ""
+    assert analyze_automation_evidence(https)["families"] == {"HTTP": ["server.missing_fetch_metadata"]}
+    plain_http = _automation()
+    plain_http["_server_headers"].update({"forwarded_proto": "http", "sec_fetch_site": ""})
+    assert analyze_automation_evidence(plain_http)["families"] == {}
+    hinted = _automation()
+    hinted["_server_headers"]["sec_ch_ua"] = '"HeadlessChrome";v="155", "Chromium";v="155"'
+    assert analyze_automation_evidence(hinted)["families"] == {"HEADLESS_ENV": ["server.headless_client_hints_header"]}
