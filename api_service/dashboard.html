@@ -1696,7 +1696,6 @@ body::before { display: none; }
 .sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 20px; text-decoration: none; color: #fff; }
 .sidebar-brand img { border-radius: 50%; background: #fff; }
 .sidebar-brand strong { display: block; font-size: 17px; letter-spacing: .04em; }
-.sidebar-brand small { display: block; font-size: 11px; color: var(--nav-text); margin-top: 2px; }
 .sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .nav-section { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--nav-section); padding: 16px 10px 6px; }
 .nav-item {
@@ -1718,7 +1717,6 @@ body::before { display: none; }
 }
 .topbar-title { min-width: 0; flex: 1; }
 .topbar-title h1 { font-size: 19px; font-weight: 700; color: var(--text-primary); line-height: 1.2; }
-.topbar-title p { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-right { display: flex; align-items: center; gap: 18px; }
 .header-clock { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .icon-btn { display: none; align-items: center; justify-content: center; width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; }
@@ -1738,7 +1736,6 @@ body::before { display: none; }
 .main { max-width: 1640px; margin: 0 auto; padding: 24px 28px 56px; }
 .view[hidden] { display: none; }
 .view > * + * { margin-top: 20px; }
-.view-hint { color: var(--text-muted); font-size: 13px; background: var(--brand-soft); border-radius: 8px; padding: 10px 14px; }
 
 /* KPI cards */
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin: 0; }
@@ -1800,6 +1797,7 @@ body::before { display: none; }
 .btn-primary { border: 0; background: var(--brand); color: var(--on-brand); } .btn-primary:hover { background: var(--brand-hover); } .btn-primary:disabled { opacity: .6; cursor: default; }
 .btn-secondary { border: 1px solid var(--border-strong); background: var(--bg-card); color: var(--text-secondary); width: fit-content; } .btn-secondary:hover { background: var(--bg-secondary); }
 
+.detail-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 body.read-only .delete-btn, body.read-only .delete-all-btn, body.read-only .label-btn[onclick*="openLabelDialog"] { display: none; }
 
 .view { display: flex; flex-direction: column; gap: 20px; }
@@ -1846,7 +1844,6 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 .btn-secondary { border-color: var(--border-strong); background: var(--bg-card); color: var(--text-secondary); }
 .btn-secondary:hover { background: var(--bg-secondary); }
 .user-avatar { background: var(--brand); color: var(--on-brand); }
-.view-hint { background: var(--brand-soft); color: var(--text-secondary); }
 .role-badge { background: var(--brand-soft); color: var(--accent-green); }
 .panel-header { background: var(--bg-card); border-bottom-color: var(--line); }
 .traffic-table thead th { background: var(--bg-secondary); color: var(--text-muted); }
@@ -1920,12 +1917,11 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 <aside class="sidebar" id="sidebar" aria-label="Điều hướng chính">
   <a class="sidebar-brand" href="#overview">
     <img src="/assets/datacat-logo.png" alt="" width="36" height="36">
-    <span><strong>DATACAT</strong><small>Bot Detection Console</small></span>
+    <span><strong>DATACAT</strong></span>
   </a>
   <nav class="sidebar-nav">
     <div class="nav-section">Giám sát</div>
     <a class="nav-item" href="#overview" data-view="overview"><svg class="ui-icon"><use href="#icon-layout"></use></svg>Tổng quan</a>
-    <a class="nav-item" href="#models" data-view="models"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Mô hình &amp; lý do</a>
     <div class="nav-section">Quản trị</div>
     <a class="nav-item" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
     <a class="nav-item" href="#account" data-view="account"><svg class="ui-icon"><use href="#icon-user"></use></svg>Tài khoản</a>
@@ -1944,7 +1940,6 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
   <button class="icon-btn menu-btn" id="menuBtn" aria-label="Mở menu"><svg class="ui-icon"><use href="#icon-menu"></use></svg></button>
   <div class="topbar-title">
     <h1 id="pageTitle">Tổng quan</h1>
-    <p id="pageSubtitle">Giám sát lưu lượng và phân loại bot theo thời gian thực</p>
   </div>
   <div class="topbar-right">
     <div class="header-clock" id="headerClock">--:--:--</div>
@@ -1964,7 +1959,7 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 
 <!-- ═══════ MAIN ═══════ -->
 <main class="main" id="main">
-  <section class="view" id="view-overview" data-title="Tổng quan" data-subtitle="Giám sát lưu lượng và phân loại bot theo thời gian thực">
+  <section class="view" id="view-overview" data-title="Tổng quan">
 <!-- ALERT BANNER -->
   <div class="alert-banner" id="alertBanner">
     <span class="alert-icon"><svg class="ui-icon"><use href="#icon-alert"></use></svg></span>
@@ -2095,89 +2090,82 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
         </div>
       </div>
 
-      <!-- RISK GAUGE -->
+      <!-- SELECTED SESSION: risk, model contributions, reasons -->
+      <div class="detail-col">
+        <!-- RISK GAUGE -->
+        <div class="panel animate-in">
+          <div class="panel-header">
+            <div class="panel-title"><svg class="ui-icon"><use href="#icon-target"></use></svg>Điểm rủi ro phiên đang chọn</div>
+          </div>
+          <div class="gauge-wrapper">
+            <svg class="gauge-svg" viewBox="0 0 160 100">
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:var(--fill-human)"/>
+                  <stop offset="50%" style="stop-color:var(--fill-suspect)"/>
+                  <stop offset="100%" style="stop-color:var(--fill-bot)"/>
+                </linearGradient>
+              </defs>
+              <!-- Background arc -->
+              <path d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="var(--chart-track)" stroke-width="10" stroke-linecap="round"/>
+              <!-- Filled arc -->
+              <path id="gaugeArc" d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+              <!-- Value text -->
+              <text x="80" y="72" text-anchor="middle" class="gauge-text" font-size="24" id="gaugeValue">--%</text>
+              <text x="80" y="90" text-anchor="middle" class="gauge-label-text" id="gaugeLabel">Chọn một phiên</text>
+            </svg>
+          </div>
+        </div>
+
+      <!-- MODEL BREAKDOWN -->
       <div class="panel animate-in">
         <div class="panel-header">
-          <div class="panel-title"><svg class="ui-icon"><use href="#icon-target"></use></svg>Điểm rủi ro phiên đang chọn</div>
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Đóng góp từng thành phần</div>
         </div>
-        <div class="gauge-wrapper">
-          <svg class="gauge-svg" viewBox="0 0 160 100">
-            <defs>
-              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" style="stop-color:var(--fill-human)"/>
-                <stop offset="50%" style="stop-color:var(--fill-suspect)"/>
-                <stop offset="100%" style="stop-color:var(--fill-bot)"/>
-              </linearGradient>
-            </defs>
-            <!-- Background arc -->
-            <path d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="var(--chart-track)" stroke-width="10" stroke-linecap="round"/>
-            <!-- Filled arc -->
-            <path id="gaugeArc" d="M 20 85 A 60 60 0 0 1 140 85" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round"
-              stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
-            <!-- Value text -->
-            <text x="80" y="72" text-anchor="middle" class="gauge-text" font-size="24" id="gaugeValue">--%</text>
-            <text x="80" y="90" text-anchor="middle" class="gauge-label-text" id="gaugeLabel">Chọn một phiên</text>
-          </svg>
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  
-  </section>
-
-  <section class="view" id="view-models" data-title="Mô hình &amp; lý do" data-subtitle="Đóng góp của từng thành phần với phiên đang chọn" hidden>
-    <p class="view-hint">Chọn một phiên ở bảng &ldquo;Luồng truy cập&rdquo; (trang Tổng quan) để xem chi tiết tại đây.</p>
-<!-- BOTTOM ROW -->
-  <div class="bottom-grid">
-
-    <!-- MODEL BREAKDOWN -->
-    <div class="panel animate-in">
-      <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Đóng góp từng thành phần</div>
-      </div>
-      <div class="model-bars-wrapper" id="modelBars">
-        <div class="model-bar">
-          <span class="model-bar-label">BiLSTM</span>
-          <div class="model-bar-track"><div class="model-bar-fill" id="barLSTM" style="width:0%;background:var(--gradient-cyan)"></div></div>
-          <span class="model-bar-value" style="color:var(--accent-green)" id="valLSTM">--</span>
-        </div>
-        <div class="model-bar">
-          <span class="model-bar-label">XGBoost</span>
-          <div class="model-bar-track"><div class="model-bar-fill" id="barTabular" style="width:0%;background:var(--gradient-purple)"></div></div>
-          <span class="model-bar-value" style="color:var(--accent-green)" id="valTabular">--</span>
-        </div>
-        <div class="model-bar">
-          <span class="model-bar-label">Heuristic</span>
-          <div class="model-bar-track"><div class="model-bar-fill" id="barHeuristic" style="width:0%;background:var(--gradient-orange)"></div></div>
-          <span class="model-bar-value" style="color:var(--accent-orange)" id="valHeuristic">--</span>
-        </div>
-        <div style="padding: 0.6rem 1.35rem 0; border-top: 1px solid var(--border-subtle); margin-top: 0.5rem;">
-          <div class="model-bar" style="margin-bottom:0.4rem; padding:0">
-            <span class="model-bar-label" style="font-weight:700;color:var(--text-primary)">Trọng số</span>
-            <div class="model-bar-track" style="background:transparent; height:auto"><span id="weightsInfo" style="font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono)">--</span></div>
-            <span class="model-bar-value"></span>
+        <div class="model-bars-wrapper" id="modelBars">
+          <div class="model-bar">
+            <span class="model-bar-label">BiLSTM</span>
+            <div class="model-bar-track"><div class="model-bar-fill" id="barLSTM" style="width:0%;background:var(--gradient-cyan)"></div></div>
+            <span class="model-bar-value" style="color:var(--accent-green)" id="valLSTM">--</span>
+          </div>
+          <div class="model-bar">
+            <span class="model-bar-label">XGBoost</span>
+            <div class="model-bar-track"><div class="model-bar-fill" id="barTabular" style="width:0%;background:var(--gradient-purple)"></div></div>
+            <span class="model-bar-value" style="color:var(--accent-green)" id="valTabular">--</span>
+          </div>
+          <div class="model-bar">
+            <span class="model-bar-label">Heuristic</span>
+            <div class="model-bar-track"><div class="model-bar-fill" id="barHeuristic" style="width:0%;background:var(--gradient-orange)"></div></div>
+            <span class="model-bar-value" style="color:var(--accent-orange)" id="valHeuristic">--</span>
+          </div>
+          <div style="padding: 0.6rem 1.35rem 0; border-top: 1px solid var(--border-subtle); margin-top: 0.5rem;">
+            <div class="model-bar" style="margin-bottom:0.4rem; padding:0">
+              <span class="model-bar-label" style="font-weight:700;color:var(--text-primary)">Trọng số</span>
+              <div class="model-bar-track" style="background:transparent; height:auto"><span id="weightsInfo" style="font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono)">--</span></div>
+              <span class="model-bar-value"></span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- DETECTION REASONS -->
-    <div class="panel animate-in">
-      <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg>Lý do phát hiện (Detection Reasons)</div>
+      <!-- DETECTION REASONS -->
+      <div class="panel animate-in">
+        <div class="panel-header">
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg>Lý do phát hiện (Detection Reasons)</div>
+        </div>
+        <div class="reasons-list" id="reasonsList">
+          <div class="empty-state">Bấm vào phiên Bot để xem lý do phát hiện</div>
+        </div>
       </div>
-      <div class="reasons-list" id="reasonsList">
-        <div class="empty-state">Bấm vào phiên Bot để xem lý do phát hiện</div>
       </div>
-    </div>
 
+    </div>
   </div>
 
   </section>
 
-  <section class="view" id="view-system" data-title="Hệ thống" data-subtitle="Trạng thái dịch vụ, mô hình và hàng đợi dữ liệu" hidden>
+  <section class="view" id="view-system" data-title="Hệ thống" hidden>
     <div class="sys-grid" id="sysGrid">
       <div class="sys-card"><span class="sys-label">Dịch vụ</span><strong id="sysStatus">--</strong><small id="sysStatusNote">--</small></div>
       <div class="sys-card"><span class="sys-label">Cơ sở dữ liệu</span><strong id="sysDb">--</strong><small>MongoDB</small></div>
@@ -2206,7 +2194,7 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
     </details>
   </section>
 
-  <section class="view" id="view-account" data-title="Tài khoản" data-subtitle="Thông tin đăng nhập và bảo mật" hidden>
+  <section class="view" id="view-account" data-title="Tài khoản" hidden>
     <div class="account-grid">
       <div class="panel account-card">
         <div class="account-head"><span class="user-avatar large" id="accAvatar">A</span>
@@ -3926,7 +3914,7 @@ function pollAll() {
 }
 
 // ──── App shell: views, user, account ────
-const VIEWS = ['overview', 'models', 'system', 'account'];
+const VIEWS = ['overview', 'system', 'account'];
 let currentUser = null;
 
 function showView(name) {
@@ -3939,7 +3927,6 @@ function showView(name) {
   });
   const section = document.getElementById('view-' + name);
   setText('pageTitle', section.dataset.title);
-  setText('pageSubtitle', section.dataset.subtitle);
   document.title = section.dataset.title + ' · DATACAT';
   closeSidebar();
   window.scrollTo(0, 0);
