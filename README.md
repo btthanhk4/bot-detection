@@ -230,9 +230,19 @@ pip install -r requirements.txt
 ```
 
 Set `BOT_READ_TOKEN` for dashboard data access and `BOT_ADMIN_TOKEN` for delete
-actions. Docker Compose publishes port `8000`; production should put this port
-behind an HTTPS reverse proxy. Copy the values from `.env.example` into the
-server environment and restrict `BOT_CORS_ORIGINS` to trusted website origins.
+actions. Docker Compose binds port `8000` to `127.0.0.1` only; public traffic must
+come through an HTTPS reverse proxy on the same Docker network (the API trusts
+`X-Forwarded-*` from `172.16.0.0/12`). Copy the values from `.env.example` into the
+server environment and restrict `BOT_CORS_ORIGINS` and `BOT_TELEMETRY_ORIGINS` to
+trusted website origins.
+
+Production deployment (nginx gateway + Let's Encrypt, renewed by `certbot.timer`):
+
+| URL | Service |
+|---|---|
+| `https://datacat.io.vn` | SilkMoon demo shop; collector injected by the gateway, telemetry proxied same-origin |
+| `https://api.datacat.io.vn` | DATACAT API and `bot-collector.js` for other websites |
+| `https://dashboard.datacat.io.vn` | Admin dashboard |
 
 ### 2. Huấn luyện mô hình
 
