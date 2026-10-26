@@ -136,3 +136,60 @@ AUTOMATION_EVIDENCE_RULE_GATE = {
         json.dumps(AUTOMATION_EVIDENCE_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }
+
+
+def _device(keystrokes=None, zero_pressure=0, ua=None, coarse=False, bulk=0):
+    ua = ua or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+    return {
+        "_server_user_agent": ua,
+        "fingerprint": {"userAgent": ua},
+        "botd": {"detectors": {}},
+        "mouse": {
+            "records": [],
+            "pointerStats": {"mouseDowns": max(zero_pressure, 3), "zeroPressureDowns": zero_pressure},
+            "keyboard": {"keystrokes": keystrokes or [], "bulkInserts": bulk, "bulkMaxLength": 17 if bulk else 0,
+                         "coarsePointer": coarse},
+        },
+    }
+
+
+def _strokes(holds, intervals, kind="c"):
+    t, out = 1000.0, []
+    for hold, gap in zip(holds, intervals):
+        out.append({"t": round(t, 1), "h": hold, "k": kind})
+        t += gap
+    return out
+
+
+# Policy 15 fixtures, measured 2026-10-26 on Playwright/Patchright/Puppeteer:
+# default keyboard.type (holds 1-7 ms), keyboard.type with delay (holds and
+# spacing ~105 ms), and Puppeteer presses with pressure 0. Negatives: CMU-like
+# human typing, an Android virtual keyboard (Unidentified keys), a phone with a
+# coarse pointer, too few keys, one zero-pressure press, Firefox, bulk insert only.
+_HUMAN_HOLDS = [92, 71, 104, 66, 118, 83, 97, 59, 88, 131, 74, 95, 102, 68]
+_HUMAN_GAPS = [212, 148, 305, 176, 260, 131, 228, 190, 342, 158, 207, 263, 185, 240]
+SYNTHETIC_DEVICE_CASES = (
+    ("BOT", "synthetic_typing_v1", _device(_strokes([2.1, 2.5, 1.5, 2.0, 2.2, 2.5, 2.8, 2.4, 2.4, 2.2, 4.2, 5.9],
+                                                     [1.2, 0.9, 1.4, 1.1, 0.8, 1.3, 1.0, 0.9, 1.2, 1.1, 1.0, 1.0]))),
+    ("BOT", "synthetic_typing_v1", _device(_strokes([105.6, 106.1, 106.0, 105.8, 104.9, 106.3, 105.2, 105.9, 106.0, 105.4, 105.7, 105.5],
+                                                     [106.0, 106.4, 106.1, 105.9, 106.6, 106.2, 105.8, 106.3, 106.0, 106.1, 106.2, 106.0]))),
+    ("BOT", "synthetic_pointer_v1", _device(zero_pressure=3)),
+    ("SUSPECT", None, _device(_strokes(_HUMAN_HOLDS, _HUMAN_GAPS))),
+    ("SUSPECT", None, _device(_strokes([0.0] * 12, [140, 210, 180, 250, 160, 300, 190, 220, 170, 260, 200, 230], kind="u"))),
+    ("SUSPECT", None, _device(_strokes([1.0] * 12, [140, 210, 180, 250, 160, 300, 190, 220, 170, 260, 200, 230]), coarse=True)),
+    ("SUSPECT", None, _device(_strokes([2.0] * 7, [1.0] * 7))),
+    ("SUSPECT", None, _device(zero_pressure=1)),
+    ("SUSPECT", None, _device(zero_pressure=3, ua="Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0")),
+    ("SUSPECT", None, _device(bulk=2)),
+    ("SUSPECT", None, _device([{"t": "x", "h": 1, "k": "c"}, {"t": 5, "h": -3, "k": "c"}, None, {"t": 9, "k": "zz"}])),
+)
+
+SYNTHETIC_DEVICE_RULE_GATE = {
+    "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
+    "positive_cases": sum(expected == "BOT" for expected, _, _ in SYNTHETIC_DEVICE_CASES),
+    "negative_cases": sum(expected != "BOT" for expected, _, _ in SYNTHETIC_DEVICE_CASES),
+    "passed": len(SYNTHETIC_DEVICE_CASES),
+    "fixture_fingerprint": hashlib.sha256(
+        json.dumps(SYNTHETIC_DEVICE_CASES, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest(),
+}

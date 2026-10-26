@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.3.0';
+export const COLLECTOR_VERSION = '1.4.0';
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);
@@ -192,7 +192,10 @@ export class BotCollector {
     const mouse = payload && payload.mouse ? payload.mouse : {};
     const records = Array.isArray(mouse.records) ? mouse.records : [];
     const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
-    return JSON.stringify([payload.pageUrl || '', records, scrollEvents]);
+    // Typing and clicks are activity too, even when the pointer does not move.
+    const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
+    const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
+    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks]);
   }
 
   /**

@@ -3090,6 +3090,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       ? `<strong>Hệ thống kết luận là BOT vì có dấu vết công cụ tự động hóa:</strong> ${escapeHtml((automationEvidence.markers || []).join(', '))}. Trình duyệt người dùng bình thường không có các dấu vết này. `
       : tamperDecision
       ? `<strong>Hệ thống kết luận là BOT vì môi trường trình duyệt mâu thuẫn ở ${automationEvidence.family_count} nhóm kiểm tra độc lập:</strong> ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}. Đây là dấu hiệu của công cụ giả mạo môi trường (stealth). `
+      : syntheticDecision && bd.automation_rule === 'synthetic_typing_v1'
+      ? `<strong>Hệ thống kết luận là BOT theo quy tắc gõ phím giả lập:</strong> ${(provenance.typing || {}).fastest_median_hold_ms != null && ((provenance.typing || {}).codes || []).includes('TYPING_INSTANT_HOLD') ? `mỗi phím chỉ được giữ khoảng ${provenance.typing.fastest_median_hold_ms} ms (người thật thấp nhất khoảng 30 ms)` : `khoảng cách giữa các lần nhấn phím đều tăm tắp (hệ số biến thiên ${(provenance.typing || {}).lowest_interval_cv}, người thật thấp nhất 0,14)`}. Ngưỡng được kiểm chứng trên 20.400 lượt gõ của 51 người (CMU keystroke benchmark). `
+      : syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1'
+      ? `<strong>Hệ thống kết luận là BOT theo quy tắc nhấn chuột giả lập:</strong> ${provenance.zero_pressure_presses} lần nhấn chuột báo áp lực 0. Theo chuẩn Pointer Events, chuột thật đang nhấn luôn báo 0,5; giá trị 0 đến từ sự kiện do công cụ tự động hóa bơm vào. `
       : syntheticDecision
       ? `<strong>Hệ thống kết luận là BOT theo quy tắc click giả lập:</strong> ${provenance.clicks_centred} lần click trúng chính giữa nút (lệch tối đa 1 px), trong đó ${provenance.instant_releases} lần nhả chuột dưới 5 ms. Tay người không bấm và nhả nhanh như vậy, và hiếm khi trúng tâm nhiều lần liên tiếp. `
       : ruleDecision

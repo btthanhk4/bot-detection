@@ -15,12 +15,35 @@ Either signal alone has human look-alikes (touchpad tap-to-click releases
 instantly; a careful user can hit a centre by chance), so the release rule
 requires both, repeated. Coalesced-sample counts are reported for research only:
 browsers expose them in secure contexts only, and there is no human baseline yet.
+
+Policy 15 adds two device-level signals measured on 2026-10-26 (Playwright,
+Patchright, Puppeteer against Edge/Chrome 155-156):
+
+* Typing. ``keyboard.type`` holds each key 1-20 ms by default; with a ``delay``
+  every key is held and spaced alike (keydown-interval CV 0.07). In the CMU
+  keystroke benchmark (51 people, 20,400 typings of one password, the most
+  rhythmic human typing there is) no typing has a median hold under 33 ms and
+  none has an interval CV under 0.139. Virtual keyboards (key "Unidentified",
+  coarse pointers) are excluded: they report press and release together.
+* Pressure. The Pointer Events spec requires a pressed mouse to report
+  pressure 0.5; Puppeteer's CDP clicks report 0. Checked on Chromium only.
 """
 
 import math
+import statistics
 
 SYNTHETIC_CLICK_RULE = "synthetic_click_v1"
-INPUT_PROVENANCE_VERSION = "input_provenance_v1"
+SYNTHETIC_TYPING_RULE = "synthetic_typing_v1"
+SYNTHETIC_POINTER_RULE = "synthetic_pointer_v1"
+INPUT_PROVENANCE_VERSION = "input_provenance_v2"
+
+MAX_KEYSTROKES = 60
+BURST_GAP_MS = 1500.0
+TYPING_FAST_MIN_KEYS = 8
+TYPING_FAST_MEDIAN_HOLD_MS = 20.0
+TYPING_RHYTHM_MIN_KEYS = 11
+TYPING_RHYTHM_MAX_CV = 0.10
+ZERO_PRESSURE_MIN_PRESSES = 2
 
 MAX_CLICK_EVENTS = 30
 MIN_TARGET_PX = 16
@@ -83,8 +106,73 @@ def _pointer_stats(raw):
     }
 
 
-def analyze_input_provenance(mouse) -> dict:
-    """Return click/press evidence and whether the synthetic-click rule fires."""
+def sanitize_keystrokes(raw):
+    """Keep well-formed physical-keyboard strokes (timing only) in time order."""
+    if not isinstance(raw, list):
+        return []
+    clean = []
+    for stroke in raw[-MAX_KEYSTROKES:]:
+        if not isinstance(stroke, dict) or stroke.get("k") not in ("c", "o"):
+            continue
+        at = _number(stroke.get("t"), 0, 10**9)
+        if at is None:
+            continue
+        hold = stroke.get("h")
+        clean.append({"t": at, "h": _number(hold, 0, 5000) if hold is not None else None})
+    return sorted(clean, key=lambda stroke: stroke["t"])
+
+
+def _bursts(strokes):
+    bursts, current = [], []
+    for stroke in strokes:
+        if current and stroke["t"] - current[-1]["t"] > BURST_GAP_MS:
+            bursts.append(current)
+            current = []
+        current.append(stroke)
+    if current:
+        bursts.append(current)
+    return bursts
+
+
+def analyze_typing(keyboard) -> dict:
+    keyboard = keyboard if isinstance(keyboard, dict) else {}
+    strokes = sanitize_keystrokes(keyboard.get("keystrokes"))
+    coarse = keyboard.get("coarsePointer") is True
+    fastest_median_hold, lowest_interval_cv = None, None
+    # Sliding windows: one typed field can sit next to a pause or a different field.
+    # CMU benchmark, same windows: lowest 8-key median hold 30.2 ms, lowest 11-key CV 0.139.
+    for burst in _bursts(strokes):
+        holds = [s["h"] for s in burst if s["h"] is not None]
+        for start in range(len(holds) - TYPING_FAST_MIN_KEYS + 1):
+            median = statistics.median(holds[start:start + TYPING_FAST_MIN_KEYS])
+            fastest_median_hold = median if fastest_median_hold is None else min(fastest_median_hold, median)
+        for start in range(len(burst) - TYPING_RHYTHM_MIN_KEYS + 1):
+            window = burst[start:start + TYPING_RHYTHM_MIN_KEYS]
+            intervals = [b["t"] - a["t"] for a, b in zip(window, window[1:])]
+            mean = sum(intervals) / len(intervals)
+            if mean > 0:
+                cv = statistics.pstdev(intervals) / mean
+                lowest_interval_cv = cv if lowest_interval_cv is None else min(lowest_interval_cv, cv)
+    codes = []
+    if not coarse and fastest_median_hold is not None and fastest_median_hold < TYPING_FAST_MEDIAN_HOLD_MS:
+        codes.append("TYPING_INSTANT_HOLD")
+    if not coarse and lowest_interval_cv is not None and lowest_interval_cv < TYPING_RHYTHM_MAX_CV:
+        codes.append("TYPING_METRONOME")
+    bulk = _number(keyboard.get("bulkInserts"), 0, 10**6)
+    if bulk:
+        codes.append("BULK_TEXT_INSERT")  # reported only; autofill and dictation look alike
+    return {
+        "keystrokes": len(strokes),
+        "coarse_pointer": coarse,
+        "fastest_median_hold_ms": None if fastest_median_hold is None else round(fastest_median_hold, 1),
+        "lowest_interval_cv": None if lowest_interval_cv is None else round(lowest_interval_cv, 3),
+        "bulk_inserts": int(bulk or 0),
+        "codes": codes,
+    }
+
+
+def analyze_input_provenance(mouse, user_agent: str = "") -> dict:
+    """Return click, typing and press evidence and which synthetic-input rule fires."""
     mouse = mouse if isinstance(mouse, dict) else {}
     clicks = sanitize_click_events(mouse.get("clickEvents"))
     measured = [c for c in clicks if MIN_TARGET_PX <= c["w"] and MIN_TARGET_PX <= c["h"]]
@@ -105,6 +193,21 @@ def analyze_input_provenance(mouse) -> dict:
         and len(centred_instant) >= RULE_MIN_INSTANT_RELEASES
     )
     holds = sorted(c["hold"] for c in timed)
+    typing = analyze_typing(mouse.get("keyboard"))
+    typing_fired = bool({"TYPING_INSTANT_HOLD", "TYPING_METRONOME"} & set(typing["codes"]))
+    stats = mouse.get("pointerStats") if isinstance(mouse.get("pointerStats"), dict) else {}
+    zero_pressure = int(_number(stats.get("zeroPressureDowns"), 0, 10**6) or 0)
+    chromium = "chrome/" in str(user_agent).lower() and "firefox/" not in str(user_agent).lower()
+    pointer_fired = chromium and zero_pressure >= ZERO_PRESSURE_MIN_PRESSES
+    if pointer_fired:
+        codes.append("ZERO_PRESSURE_PRESS")
+    codes += typing["codes"]
+    fired = (
+        SYNTHETIC_POINTER_RULE if pointer_fired
+        else SYNTHETIC_CLICK_RULE if rule_fired
+        else SYNTHETIC_TYPING_RULE if typing_fired
+        else None
+    )
     return {
         "analysis_version": INPUT_PROVENANCE_VERSION,
         "clicks_measured": len(measured),
@@ -114,5 +217,8 @@ def analyze_input_provenance(mouse) -> dict:
         "median_hold_ms": holds[len(holds) // 2] if holds else None,
         "evidence_codes": codes,
         "synthetic_click_rule": SYNTHETIC_CLICK_RULE if rule_fired else None,
+        "synthetic_input_rule": fired,
+        "zero_pressure_presses": zero_pressure,
+        "typing": typing,
         "pointer_stats": _pointer_stats(mouse.get("pointerStats")),
     }

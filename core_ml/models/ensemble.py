@@ -14,7 +14,9 @@ from core_ml.features.automation_evidence import (
     ENVIRONMENT_TAMPERING_RULE,
     analyze_automation_evidence,
 )
-from core_ml.features.input_provenance import SYNTHETIC_CLICK_RULE, analyze_input_provenance
+from core_ml.features.input_provenance import (
+    SYNTHETIC_CLICK_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_TYPING_RULE, analyze_input_provenance,
+)
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
@@ -31,8 +33,9 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "14"
+DECISION_POLICY_VERSION = "15"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
+SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
 
 class EnsembleBotDetector:
@@ -172,16 +175,16 @@ class EnsembleBotDetector:
         candidate_evidence = (
             corroborated_profile_evidence(payload, profile_report) if profile_candidate else []
         )
-        # Press timing and click geometry come from trusted browser events; the
-        # rule needs both signals repeated, so one fast tap or lucky centre is not enough.
-        input_provenance = analyze_input_provenance(mouse)
+        # Press timing, click geometry, typing rhythm and press pressure come from
+        # trusted browser events; each rule needs its signal repeated.
+        input_provenance = analyze_input_provenance(mouse, user_agent=str(fingerprint.get("userAgent") or ""))
         automation_evidence = analyze_automation_evidence(payload)
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
             automation_rule = automation_evidence["rule"]
-        elif input_provenance["synthetic_click_rule"]:
-            automation_rule = SYNTHETIC_CLICK_RULE
+        elif input_provenance["synthetic_input_rule"]:
+            automation_rule = input_provenance["synthetic_input_rule"]
         elif candidate_evidence:
             automation_rule = PROFILE_CANDIDATE_RULE
         else:
@@ -296,6 +299,23 @@ class EnsembleBotDetector:
                     f"Synthetic clicks: {input_provenance['clicks_centred']} clicks at the exact control "
                     f"centre, {input_provenance['instant_releases']} released in under 5 ms"
                 )
+            elif automation_rule == SYNTHETIC_TYPING_RULE:
+                typing = input_provenance["typing"]
+                reasons.append(
+                    "Synthetic typing: "
+                    + ", ".join(filter(None, (
+                        f"median key hold {typing['fastest_median_hold_ms']} ms"
+                        if "TYPING_INSTANT_HOLD" in typing["codes"] else None,
+                        f"keystroke interval CV {typing['lowest_interval_cv']}"
+                        if "TYPING_METRONOME" in typing["codes"] else None,
+                    )))
+                    + " (no human typing in the CMU benchmark comes close)"
+                )
+            elif automation_rule == SYNTHETIC_POINTER_RULE:
+                reasons.append(
+                    f"Synthetic mouse presses: {input_provenance['zero_pressure_presses']} presses reported "
+                    "pressure 0; a physical mouse with a button down reports 0.5"
+                )
             else:
                 reasons.append(
                     "Experimental policy: client-reported HeadlessChrome is corroborated across "
@@ -367,7 +387,7 @@ class EnsembleBotDetector:
                 "decision_basis": (
                     "automation_marker" if automation_rule == AUTOMATION_MARKER_RULE
                     else "environment_tampering" if automation_rule == ENVIRONMENT_TAMPERING_RULE
-                    else "synthetic_input" if automation_rule == SYNTHETIC_CLICK_RULE
+                    else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),

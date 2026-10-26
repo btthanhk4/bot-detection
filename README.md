@@ -101,7 +101,15 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v14 (current)
+### Policy v15 (current)
+
+Policy v15 (collector 1.4.0) bắt bot qua cách sự kiện đầu vào được tạo ra:
+`synthetic_typing_v1` (giữ phím < 20 ms hoặc nhịp phím đều với CV < 0,10, ngưỡng kiểm
+chứng trên 20.400 lượt gõ của bộ CMU: 0 người vi phạm) và `synthetic_pointer_v1` (chuột
+báo áp lực 0 khi đang nhấn, trái chuẩn Pointer Events). Lần đầu Patchright có giao diện
+bị bắt khi gõ phím. Xem [Model release v15](docs/MODEL_RELEASE_V15.md).
+
+### Policy v14
 
 Policy v14 thêm nhóm bằng chứng NETWORK (địa chỉ client nằm trong dải IP công bố của Google
 Cloud, AWS, Oracle, DigitalOcean, Linode, Vultr) và tín hiệu GPU phần mềm (SwiftShader,

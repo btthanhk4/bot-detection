@@ -1,6 +1,6 @@
 {
   "name": "@bot-detection/collector",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Custom client-side bot telemetry collector inspired by FingerprintJS, BotD, and DELBOT-Mouse",
   "main": "dist/bot-collector.js",
   "module": "src/index.js",

@@ -48,6 +48,21 @@ export function collectAutomationSignals(nav, win, doc) {
     }
   } catch (e) { unavailable.push('playwrightGlobals'); }
 
+  // Research only (not used by any rule): with a DevTools Protocol client attached
+  // (Runtime.enable) console previews read Error#name a second time. Measured on
+  // Chrome/Edge 155-156: genuine 1 read per call, Playwright/Puppeteer/Selenium 2,
+  // Patchright 1. Open DevTools also reads twice, so developers look the same.
+  out.cdpRuntime = false;
+  try {
+    if (chromium && win.console && typeof win.console.debug === 'function') {
+      let reads = 0;
+      class ProbeError extends Error {}
+      Object.defineProperty(ProbeError.prototype, 'name', { configurable: true, get() { reads++; return 'Error'; } });
+      win.console.debug(new ProbeError(''));
+      out.cdpRuntime = reads >= 2;
+    }
+  } catch (e) { unavailable.push('cdpRuntime'); }
+
   out.seleniumGlobals = false;
   try {
     const props = ['__driver_evaluate', '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate',

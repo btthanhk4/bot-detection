@@ -52,6 +52,8 @@ from core_ml.release_cases import (
     REGRESSION_CASE_FINGERPRINT,
     AUTOMATION_EVIDENCE_CASES,
     AUTOMATION_EVIDENCE_RULE_GATE,
+    SYNTHETIC_DEVICE_CASES,
+    SYNTHETIC_DEVICE_RULE_GATE,
     SYNTHETIC_INPUT_CASES,
     SYNTHETIC_INPUT_RULE_GATE,
 )
@@ -749,6 +751,23 @@ def validate_synthetic_input_rule(detector) -> dict:
     return dict(SYNTHETIC_INPUT_RULE_GATE)
 
 
+def validate_synthetic_device_rules(detector) -> dict:
+    """Check typing-rhythm and press-pressure fixtures before publishing policy 15."""
+    for expected, rule, payload in SYNTHETIC_DEVICE_CASES:
+        result = detector.predict(payload)
+        if result["verdict"] != expected or result["decision_state"] != (
+            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+        ):
+            raise RuntimeError("Synthetic device rule release gate failed")
+        if expected == "BOT" and (
+            result["breakdown"]["decision_basis"] != "synthetic_input"
+            or result["breakdown"]["automation_rule"] != rule
+            or result["breakdown"]["risk_score_in_domain"]
+        ):
+            raise RuntimeError("Synthetic device rule metadata release gate failed")
+    return dict(SYNTHETIC_DEVICE_RULE_GATE)
+
+
 def validate_automation_evidence_rules(detector) -> dict:
     """Check framework-marker and tampering fixtures before publishing policy 12."""
     for expected, basis, payload in AUTOMATION_EVIDENCE_CASES:
@@ -1360,6 +1379,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     explicit_automation_rule_gate = validate_explicit_automation_rule(production_detector)
     synthetic_input_rule_gate = validate_synthetic_input_rule(production_detector)
     automation_evidence_rule_gate = validate_automation_evidence_rules(production_detector)
+    synthetic_device_rule_gate = validate_synthetic_device_rules(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1389,6 +1409,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "explicit_automation_rule_gate": explicit_automation_rule_gate,
             "synthetic_input_rule_gate": synthetic_input_rule_gate,
             "automation_evidence_rule_gate": automation_evidence_rule_gate,
+            "synthetic_device_rule_gate": synthetic_device_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

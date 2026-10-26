@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "e34b19cc251d4c4bb5a22ce3ab0e9b2f",
-  "created_at": "2026-10-26T09:46:25.612364+00:00",
+  "bundle_id": "31daa4ac4c5c40eeacdaacc68717010a",
+  "created_at": "2026-10-26T12:17:22.987967+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -852,7 +852,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "14",
+    "decision_policy_version": "15",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
@@ -1045,6 +1045,16 @@
     "rolling_checkpoints": 1000,
     "rolling_full_replay": true,
     "seed": 42,
+    "synthetic_device_rule_gate": {
+      "fixture_fingerprint": "5727b7e21ed1e868cd94b1566219b6632023c45463e021c07bda389e9e867de1",
+      "negative_cases": 8,
+      "passed": 11,
+      "positive_cases": 3,
+      "rules": [
+        "synthetic_typing_v1",
+        "synthetic_pointer_v1"
+      ]
+    },
     "synthetic_input_rule_gate": {
       "fixture_fingerprint": "d9082d0ba702c24c377adac54a718242147ad75a7b62d5ca36867d5585bb681c",
       "negative_cases": 7,

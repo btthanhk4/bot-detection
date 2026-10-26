@@ -585,6 +585,21 @@
       }
     } catch (e) { unavailable.push('playwrightGlobals'); }
 
+    // Research only (not used by any rule): with a DevTools Protocol client attached
+    // (Runtime.enable) console previews read Error#name a second time. Measured on
+    // Chrome/Edge 155-156: genuine 1 read per call, Playwright/Puppeteer/Selenium 2,
+    // Patchright 1. Open DevTools also reads twice, so developers look the same.
+    out.cdpRuntime = false;
+    try {
+      if (chromium && win.console && typeof win.console.debug === 'function') {
+        let reads = 0;
+        class ProbeError extends Error {}
+        Object.defineProperty(ProbeError.prototype, 'name', { configurable: true, get() { reads++; return 'Error'; } });
+        win.console.debug(new ProbeError(''));
+        out.cdpRuntime = reads >= 2;
+      }
+    } catch (e) { unavailable.push('cdpRuntime'); }
+
     out.seleniumGlobals = false;
     try {
       const props = ['__driver_evaluate', '__webdriver_evaluate', '__selenium_evaluate', '__fxdriver_evaluate',
@@ -827,7 +842,20 @@
       this.lastPressStamp = null;
       this.lastReleaseStamp = null;
       this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
-      this.pointerStats = { pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0 };
+      this.pointerStats = {
+        pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
+        mouseDowns: 0, zeroPressureDowns: 0,
+      };
+      // Keystroke timing only: no key values, field names or text; password fields are skipped.
+      this.keystrokes = [];
+      this.pendingKeys = {};
+      this.lastKeyDownAt = null;
+      this.bulkInserts = 0;
+      this.bulkMaxLength = 0;
+      this.handlePointerDown = this.handlePointerDown.bind(this);
+      this.handleKeyDown = this.handleKeyDown.bind(this);
+      this.handleKeyUp = this.handleKeyUp.bind(this);
+      this.handleInput = this.handleInput.bind(this);
       this.handlePointerMove = this.handlePointerMove.bind(this);
       this.handlePointerRawUpdate = this.handlePointerRawUpdate.bind(this);
       this.handleMouseMove = this.handleMouseMove.bind(this);
@@ -856,6 +884,10 @@
       if (window.isSecureContext && 'onpointerrawupdate' in window) {
         window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, { passive: true });
       }
+      window.addEventListener('pointerdown', this.handlePointerDown, { passive: true });
+      window.addEventListener('keydown', this.handleKeyDown, { capture: true, passive: true });
+      window.addEventListener('keyup', this.handleKeyUp, { capture: true, passive: true });
+      window.addEventListener('input', this.handleInput, { capture: true, passive: true });
     }
 
     stop() {
@@ -871,6 +903,10 @@
       window.removeEventListener('touchend', this.handleTouchEnd);
       window.removeEventListener('pointermove', this.handlePointerMove);
       window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate);
+      window.removeEventListener('pointerdown', this.handlePointerDown);
+      window.removeEventListener('keydown', this.handleKeyDown, true);
+      window.removeEventListener('keyup', this.handleKeyUp, true);
+      window.removeEventListener('input', this.handleInput, true);
     }
 
     clear() {
@@ -882,6 +918,9 @@
       this.scrollEvents = [];
       this.coordinateWidth = null;
       this.coordinateHeight = null;
+      this.keystrokes = [];
+      this.pendingKeys = {};
+      this.lastKeyDownAt = null;
       this.startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
     }
 
@@ -1048,6 +1087,56 @@
       if (e && e.isTrusted !== false && e.pointerType === 'mouse') this.pointerStats.rawUpdates++;
     }
 
+    handlePointerDown(e) {
+      if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
+      // Pointer Events: a mouse with a button down MUST report pressure 0.5.
+      this.pointerStats.mouseDowns++;
+      if (e.buttons > 0 && e.pressure === 0) this.pointerStats.zeroPressureDowns++;
+    }
+
+    static isSecretField(target) {
+      return !!target && typeof target.type === 'string' && target.type.toLowerCase() === 'password';
+    }
+
+    keyNow() {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      return now - this.startTime;
+    }
+
+    handleKeyDown(e) {
+      if (!e || e.isTrusted === false || e.repeat || MouseRecorder.isSecretField(e.target)) return;
+      const at = this.keyNow();
+      this.lastKeyDownAt = at;
+      // 'u': virtual keyboards report Unidentified/229 and have no real press duration.
+      const kind = e.key === 'Unidentified' || e.keyCode === 229
+        ? 'u' : (typeof e.key === 'string' && e.key.length === 1 ? 'c' : 'o');
+      const stroke = { t: Math.round(at * 10) / 10, h: null, k: kind };
+      this.keystrokes.push(stroke);
+      if (this.keystrokes.length > 80) this.keystrokes = this.keystrokes.slice(-60);
+      this.pendingKeys[e.code || e.key || '?'] = { stroke, at };
+    }
+
+    handleKeyUp(e) {
+      if (!e || e.isTrusted === false) return;
+      const id = e.code || e.key || '?';
+      const pending = this.pendingKeys[id];
+      if (!pending) return;
+      delete this.pendingKeys[id];
+      const hold = this.keyNow() - pending.at;
+      if (hold >= 0 && hold < 5000) pending.stroke.h = Math.round(hold * 10) / 10;
+    }
+
+    handleInput(e) {
+      if (!e || e.isTrusted === false || e.inputType !== 'insertText' || MouseRecorder.isSecretField(e.target)) return;
+      const length = typeof e.data === 'string' ? e.data.length : 0;
+      // Text that arrives in one piece with no key pressed (research signal only:
+      // browser autofill and dictation can look the same).
+      if (length >= 2 && (this.lastKeyDownAt === null || this.keyNow() - this.lastKeyDownAt > 1000)) {
+        this.bulkInserts++;
+        if (length > this.bulkMaxLength) this.bulkMaxLength = length;
+      }
+    }
+
     handleWheel(e) {
       if (e.isTrusted === false) return;
       this.counters.wheel++;
@@ -1186,6 +1275,13 @@
           ...this.pointerStats,
           secureContext: typeof window !== 'undefined' && window.isSecureContext === true,
         },
+        keyboard: {
+          keystrokes: this.keystrokes.slice(-60).map(({ t, h, k }) => ({ t, h, k })),
+          bulkInserts: this.bulkInserts,
+          bulkMaxLength: this.bulkMaxLength,
+          coarsePointer: typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+            && window.matchMedia('(pointer: coarse)').matches,
+        },
         coordinateFrame: {
           id: this.recordingId,
           width: this.coordinateWidth,
@@ -1212,7 +1308,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.3.0';
+  const COLLECTOR_VERSION = '1.4.0';
 
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);
@@ -1395,7 +1491,10 @@
       const mouse = payload && payload.mouse ? payload.mouse : {};
       const records = Array.isArray(mouse.records) ? mouse.records : [];
       const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
-      return JSON.stringify([payload.pageUrl || '', records, scrollEvents]);
+      // Typing and clicks are activity too, even when the pointer does not move.
+      const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
+      const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
+      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks]);
     }
 
     /**
