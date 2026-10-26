@@ -437,6 +437,20 @@ def test_save_reports_unavailable_database_as_retryable(monkeypatch):
         )
 
 
+def _match(doc, condition):
+    """Evaluate the small Mongo subset used by the sticky-verdict filter."""
+    for key, expected in condition.items():
+        if key == "$or":
+            if not any(_match(doc, option) for option in expected):
+                return False
+        elif isinstance(expected, dict) and "$ne" in expected:
+            if doc.get(key) == expected["$ne"]:
+                return False
+        elif doc.get(key) != expected:
+            return False
+    return True
+
+
 class MemoryCollection:
     def __init__(self):
         self.docs = {}
@@ -454,10 +468,12 @@ class MemoryCollection:
             order_matches = stored_order <= incoming_order
         else:
             order_matches = bool(doc and doc.get("event_order", -1) <= incoming["event_order"])
+        sticky = query.get("$and", [None, None, {}])[2] if len(query.get("$and", [])) > 2 else {}
         matches = bool(
             doc
             and order_matches
             and doc.get("visitorId", incoming.get("visitorId")) == incoming.get("visitorId")
+            and _match(doc, sticky)
         )
         if matches:
             doc.update(incoming)
@@ -780,3 +796,48 @@ def test_save_uses_same_rolling_window_as_collector(monkeypatch):
     stored = detections.docs["rolling"]
     assert stored["mouse_points_captured"] == 100
     assert len(stored["mouse_trajectory"]) == 100
+
+
+def _memory_db(monkeypatch):
+    detections, empty = MemoryCollection(), MemoryCollection()
+    monkeypatch.setattr("api_service.database.get_db", lambda: {
+        "detection_results": detections, "deleted_sessions": empty, "service_control": empty,
+    })
+    return detections
+
+
+def _page(ts, verdict, state="FINAL"):
+    return ({"sessionId": "tab", "visitorId": "v1", "timestamp": ts, "sequence": 0},
+            {"verdict": verdict, "decision_state": state, "bot_probability": 0.5})
+
+
+def test_short_page_does_not_erase_an_earlier_firm_verdict(monkeypatch):
+    detections = _memory_db(monkeypatch)
+    assert save_detection_result(*_page(1_000, "HUMAN"))
+    # Next page of the same tab, left after one second with 12 mouse points.
+    assert save_detection_result(*_page(2_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) is None
+    assert detections.docs["tab"]["verdict"] == "HUMAN"
+    assert detections.docs["tab"]["decision_state"] == "FINAL"
+
+
+def test_deferred_page_then_firm_page_upgrades_the_session(monkeypatch):
+    detections = _memory_db(monkeypatch)
+    assert save_detection_result(*_page(1_000, "SUSPECT", "INSUFFICIENT_EVIDENCE"))
+    assert save_detection_result(*_page(2_000, "HUMAN"))
+    assert detections.docs["tab"]["verdict"] == "HUMAN"
+
+
+def test_firm_bot_verdict_is_never_washed_out_by_a_later_page(monkeypatch):
+    detections = _memory_db(monkeypatch)
+    assert save_detection_result(*_page(1_000, "BOT"))
+    assert save_detection_result(*_page(2_000, "HUMAN")) is None
+    assert save_detection_result(*_page(3_000, "SUSPECT", "INSUFFICIENT_EVIDENCE")) is None
+    assert save_detection_result(*_page(4_000, "BOT"))
+    assert detections.docs["tab"]["verdict"] == "BOT"
+
+
+def test_firm_human_can_still_become_bot(monkeypatch):
+    detections = _memory_db(monkeypatch)
+    assert save_detection_result(*_page(1_000, "HUMAN"))
+    assert save_detection_result(*_page(2_000, "BOT"))
+    assert detections.docs["tab"]["verdict"] == "BOT"

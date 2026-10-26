@@ -84,3 +84,19 @@ python -m core_ml.train --dataset-root "../Tuần 3/repos/web_bot_detection_data
 python -m pytest -q
 cd collector; npm test
 ```
+
+## Bổ sung: collector 1.5.0 — phiên theo tab (2026-10-26)
+
+Một phiên thử nghiệm thật (tải trang rồi chuyển trang ngay sau 1 giây) tạo ra **hai phiên**:
+phiên đầu kẹt ở 12 điểm chuột, mãi là SUSPECT, và hai phiên còn khác `visitorId`.
+
+| Nguyên nhân | Sửa |
+|---|---|
+| Mỗi lần tải trang sinh `sessionId` mới | Một phiên cho mỗi tab (`sessionStorage`), hết hạn sau 30 phút không hoạt động; tải lại hoặc sang trang khác giữ nguyên phiên |
+| Dò font trong trang đếm cả web font của site: Roboto (Google Fonts) không có ở lần tải đầu, có ở lần sau (11 → 12 font) nên `visitorId` đổi | Dò font trong một iframe trống, không thấy `@font-face` của trang |
+| Trang sau ghi đè kết luận trang trước | Kết luận "dính": trang thiếu dữ liệu không ghi đè kết luận FINAL; BOT FINAL không bị trang sau đổi thành HUMAN (khớp tiêu chí "ever BOT" của release gate) |
+| Dashboard gộp "chưa đủ dữ liệu" vào "Nghi vấn" | Nhãn xám "CHƯA ĐỦ DỮ LIỆU"; KPI Nghi vấn ghi rõ số phiên chưa đủ dữ liệu |
+
+Kiểm chứng bằng Chrome thật (Patchright) trên trang có Roboto: collector 1.4.0 cho 3 phiên
+và 2 `visitorId` qua 3 lần tải; 1.5.0 cho 1 phiên, 1 `visitorId`. Lưu ý: `visitorId` của mọi
+khách đổi một lần khi chuyển sang 1.5.0 nếu trước đó web font bị đếm.

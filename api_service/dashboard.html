@@ -1822,6 +1822,8 @@ body.read-only .delete-btn, body.read-only .delete-all-btn, body.read-only .labe
 @media (max-width: 540px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .kpi-value { font-size: 26px; } .kpi-icon { display: none; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
+.verdict-pending { color: var(--text-muted); background: color-mix(in srgb, var(--text-muted) 10%, transparent); border-color: color-mix(in srgb, var(--text-muted) 24%, transparent); }
+
 /* ═══════════════════════════════════════════════════
    THEME POLISH — focus, interaction, typography (design-system/datacat)
    ═══════════════════════════════════════════════════ */
@@ -2720,6 +2722,7 @@ async function fetchClassificationSummary() {
   if (![total, humans, bots, suspects].every(Number.isFinite)) return;
 
   classificationSummary = {
+    insufficient: Math.max(0, Number(data.insufficient) || 0),
     total: Math.max(0, total),
     humans: Math.max(0, humans),
     bots: Math.max(0, bots),
@@ -2774,7 +2777,9 @@ function updateClassificationKPIs() {
   animateValue(document.getElementById('kpiBotCount'), bots);
   document.getElementById('kpiBotRate').textContent = (bots / denominator * 100).toFixed(1) + '% tỷ lệ';
   animateValue(document.getElementById('kpiSuspectCount'), suspects);
-  document.getElementById('kpiSuspectRate').textContent = (suspects / denominator * 100).toFixed(1) + '% tỷ lệ';
+  const insufficient = classificationSummary ? classificationSummary.insufficient || 0 : 0;
+  document.getElementById('kpiSuspectRate').textContent = (suspects / denominator * 100).toFixed(1) + '% tỷ lệ'
+    + (insufficient > 0 ? ` · ${insufficient} chưa đủ dữ liệu` : '');
 }
 
 // ──── Traffic Table (flicker-free) ────
@@ -2846,6 +2851,8 @@ function renderTrafficTable() {
     const bd = s.breakdown || {};
     const deferred = bd.decision_deferred === true || s.decision_state === 'INSUFFICIENT_EVIDENCE';
     const v = deferred ? 'SUSPECT' : (s.verdict || 'UNKNOWN').toUpperCase();
+    // Too little input to score is not suspicion: show it apart (e.g. a page left after 1 s).
+    const verdictLabel = deferred ? 'CHƯA ĐỦ DỮ LIỆU' : v;
     const riskAvailable = hasApplicableRiskScore(s);
     const probPct = riskAvailable ? (prob * 100).toFixed(1) : '--';
     const lstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
@@ -2860,6 +2867,7 @@ function renderTrafficTable() {
     let rowClass = '';
     if (v === 'HUMAN') verdictClass = 'verdict-human';
     else if (v === 'BOT') { verdictClass = 'verdict-bot'; rowClass = 'row-bot'; }
+    else if (deferred) verdictClass = 'verdict-pending';
     else rowClass = 'row-suspect';
 
     let barColor = 'var(--accent-green)';
@@ -2876,7 +2884,7 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span></td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
-      <td><span class="verdict-badge ${verdictClass}">${v}</span></td>
+      <td><span class="verdict-badge ${verdictClass}" title="${deferred ? 'Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)' : ''}">${verdictLabel}</span></td>
       <td>
         <div class="risk-bar-container">
            <div class="risk-bar-fill" style="width:${riskAvailable ? probPct : 0}%;background:${barColor}"></div>

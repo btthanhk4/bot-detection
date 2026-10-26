@@ -128,12 +128,32 @@
     }
   }
 
-  // Installed font detection (heuristic probe)
+  // Installed font detection (heuristic probe). Measured inside an empty iframe:
+  // its document has no access to the page's @font-face web fonts, which would
+  // otherwise count as "installed" once cached (Roboto on SilkMoon: 11 fonts on a
+  // first visit, 12 on the next, splitting one visitor into two visitorIds).
   function getFontList() {
     if (typeof document === 'undefined') return [];
-    const container = document.body || document.documentElement;
-    if (!container) return [];
+    const host = document.body || document.documentElement;
+    if (!host) return [];
+    let frame = null;
+    try {
+      frame = document.createElement('iframe');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+      frame.style.cssText = 'position:absolute;left:-9999px;top:0;width:10px;height:10px;border:0;visibility:hidden';
+      host.appendChild(frame);
+      const doc = frame.contentDocument;
+      if (doc && doc.body) return measureFonts(doc, doc.body);
+    } catch (e) {
+      // Fall through to the page document.
+    } finally {
+      if (frame && frame.parentNode === host) host.removeChild(frame);
+    }
+    return measureFonts(document, host);
+  }
 
+  function measureFonts(doc, container) {
     const baseFonts = ['monospace', 'sans-serif', 'serif'];
     const testFonts = [
       'Arial', 'Verdana', 'Times New Roman', 'Courier New',
@@ -141,9 +161,9 @@
       'Segoe UI', 'Roboto', 'Helvetica', 'Ubuntu', 'Consolas'
     ];
 
-    const span = document.createElement('span');
+    const span = doc.createElement('span');
     span.style.fontSize = '72px';
-    span.innerHTML = 'mmmmmmmmmmlli';
+    span.textContent = 'mmmmmmmmmmlli';
     span.style.position = 'absolute';
     span.style.left = '-9999px';
 
@@ -1308,7 +1328,9 @@
 
 
 
-  const COLLECTOR_VERSION = '1.4.0';
+  const COLLECTOR_VERSION = '1.5.0';
+
+  const SESSION_STORAGE_KEY = 'datacat_session';
 
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);
@@ -1318,7 +1340,13 @@
     constructor(options = {}) {
       this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
       this.detectUrl = options.detectUrl || '/api/v1/detect';
-      this.sessionId = options.sessionId || this.generateSessionId();
+      // One session per browser tab, renewed by activity and ended after 30 idle
+      // minutes (the usual web-analytics definition), so a reload or a link to
+      // another page of the site continues the same session.
+      this.persistSession = !options.sessionId && options.persistSession !== false;
+      this.sessionIdleMs = Math.max(60000, Number(options.sessionIdleMs ?? 1800000) || 1800000);
+      this.sessionId = options.sessionId || this.restoreSessionId() || this.generateSessionId();
+      this.touchSession();
       this.pageInstanceId = this.generateSessionId();
       this.studyId = String(options.studyId || '').slice(0, 64);
       this.siteId = String(options.siteId || '').slice(0, 64);
@@ -1348,6 +1376,25 @@
       this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
       this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
       this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
+    }
+
+    restoreSessionId() {
+      if (!this.persistSession) return null;
+      try {
+        const saved = JSON.parse(window.sessionStorage.getItem(SESSION_STORAGE_KEY) || 'null');
+        if (saved && typeof saved.id === 'string' && /^sess_[A-Za-z0-9-]{8,64}$/.test(saved.id)
+            && Number.isFinite(saved.seen) && Date.now() - saved.seen < this.sessionIdleMs) {
+          return saved.id;
+        }
+      } catch (e) { /* storage blocked: fall back to one session per page */ }
+      return null;
+    }
+
+    touchSession() {
+      if (!this.persistSession) return;
+      try {
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ id: this.sessionId, seen: Date.now() }));
+      } catch (e) { /* optional */ }
     }
 
     generateSessionId() {
@@ -1692,6 +1739,7 @@
           return false;
         }
 
+        this.touchSession();
         const sent = await this.transmitTelemetry(body, action);
         if (sent && action !== 'pagehide') {
           this.lastSentActivitySignature = activitySignature;

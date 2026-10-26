@@ -38,6 +38,71 @@ async function waitFor(predicate) {
   throw new Error('Timed out waiting for asynchronous collector state');
 }
 
+async function testSessionContinuesAcrossPagesOfOneTab() {
+  const previousWindow = global.window;
+  const originalUUID = global.crypto.randomUUID;
+  let counter = 0;
+  global.crypto.randomUUID = () => `00000000-0000-4000-8000-${String(++counter).padStart(12, '0')}`;
+  const store = {};
+  global.window = { sessionStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } } };
+  try {
+    const first = new BotCollector({ autoSendInterval: 0 });
+    const reloaded = new BotCollector({ autoSendInterval: 0 });
+    assert.strictEqual(reloaded.sessionId, first.sessionId, 'a reload or link in the same tab keeps the session');
+    assert.notStrictEqual(reloaded.pageInstanceId, first.pageInstanceId, 'each page still has its own instance id');
+
+    const saved = JSON.parse(store.datacat_session);
+    store.datacat_session = JSON.stringify({ ...saved, seen: Date.now() - 31 * 60 * 1000 });
+    const afterIdle = new BotCollector({ autoSendInterval: 0 });
+    assert.notStrictEqual(afterIdle.sessionId, first.sessionId, '30 idle minutes start a new session');
+
+    const explicit = new BotCollector({ autoSendInterval: 0, sessionId: 'sess_explicit-session-1' });
+    assert.strictEqual(explicit.sessionId, 'sess_explicit-session-1');
+    assert.strictEqual(JSON.parse(store.datacat_session).id, afterIdle.sessionId, 'an explicit id is not persisted');
+
+    store.datacat_session = '{"id":"javascript:alert(1)","seen":' + Date.now() + '}';
+    assert.ok(/^sess_0{8}-/.test(new BotCollector({ autoSendInterval: 0 }).sessionId), 'malformed stored ids are ignored');
+
+    global.window = { sessionStorage: { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } } };
+    const blockedA = new BotCollector({ autoSendInterval: 0 });
+    const blockedB = new BotCollector({ autoSendInterval: 0 });
+    assert.notStrictEqual(blockedA.sessionId, blockedB.sessionId, 'blocked storage falls back to one session per page');
+  } finally {
+    global.window = previousWindow;
+    global.crypto.randomUUID = originalUUID;
+  }
+}
+
+async function testKeyboardTimingAndPressPressure() {
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  const recorder = collector.mouseRecorder;
+  const key = (type, extra) => ({ isTrusted: true, repeat: false, target: { type: 'text' }, ...extra, type });
+  recorder.handleKeyDown(key('keydown', { key: 'a', code: 'KeyA' }));
+  recorder.handleKeyUp(key('keyup', { key: 'a', code: 'KeyA' }));
+  recorder.handleKeyDown(key('keydown', { key: 'Shift', code: 'ShiftLeft' }));
+  recorder.handleKeyDown(key('keydown', { key: 'Unidentified', code: '', keyCode: 229 }));
+  recorder.handleKeyDown(key('keydown', { key: 'x', code: 'KeyX', repeat: true }));
+  recorder.handleKeyDown(key('keydown', { key: 'p', code: 'KeyP', target: { type: 'password' } }));
+  recorder.handleKeyDown({ isTrusted: false, key: 'b', code: 'KeyB', target: { type: 'text' } });
+  const strokes = recorder.exportData().keyboard.keystrokes;
+  assert.deepStrictEqual(strokes.map((s) => s.k), ['c', 'o', 'u'], 'kinds only; repeats, password fields and untrusted events skipped');
+  assert.ok(strokes[0].h !== null && strokes[0].h >= 0, 'the released key has a hold time');
+  assert.ok(strokes.every((s) => !('key' in s) && !('code' in s)), 'no key values leave the page');
+
+  recorder.handleInput({ isTrusted: true, inputType: 'insertText', data: 'filled text', target: { type: 'text' } });
+  assert.strictEqual(recorder.exportData().keyboard.bulkInserts, 0, 'text right after a keydown is ordinary typing');
+  recorder.lastKeyDownAt = recorder.keyNow() - 5000;
+  recorder.handleInput({ isTrusted: true, inputType: 'insertText', data: 'filled text', target: { type: 'text' } });
+  assert.strictEqual(recorder.exportData().keyboard.bulkMaxLength, 11);
+
+  recorder.handlePointerDown({ isTrusted: true, pointerType: 'mouse', buttons: 1, pressure: 0 });
+  recorder.handlePointerDown({ isTrusted: true, pointerType: 'mouse', buttons: 1, pressure: 0.5 });
+  recorder.handlePointerDown({ isTrusted: true, pointerType: 'pen', buttons: 1, pressure: 0 });
+  const stats = recorder.exportData().pointerStats;
+  assert.strictEqual(stats.mouseDowns, 2);
+  assert.strictEqual(stats.zeroPressureDowns, 1);
+}
+
 async function testRestartDuringFingerprinting() {
   const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 1000 });
   const firstStart = collector.start();
@@ -736,6 +801,8 @@ testRestartDuringFingerprinting()
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
+  .then(testSessionContinuesAcrossPagesOfOneTab)
+  .then(testKeyboardTimingAndPressPressure)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

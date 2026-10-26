@@ -9,7 +9,9 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.4.0';
+export const COLLECTOR_VERSION = '1.5.0';
+
+const SESSION_STORAGE_KEY = 'datacat_session';
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);
@@ -19,7 +21,13 @@ export class BotCollector {
   constructor(options = {}) {
     this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
     this.detectUrl = options.detectUrl || '/api/v1/detect';
-    this.sessionId = options.sessionId || this.generateSessionId();
+    // One session per browser tab, renewed by activity and ended after 30 idle
+    // minutes (the usual web-analytics definition), so a reload or a link to
+    // another page of the site continues the same session.
+    this.persistSession = !options.sessionId && options.persistSession !== false;
+    this.sessionIdleMs = Math.max(60000, Number(options.sessionIdleMs ?? 1800000) || 1800000);
+    this.sessionId = options.sessionId || this.restoreSessionId() || this.generateSessionId();
+    this.touchSession();
     this.pageInstanceId = this.generateSessionId();
     this.studyId = String(options.studyId || '').slice(0, 64);
     this.siteId = String(options.siteId || '').slice(0, 64);
@@ -49,6 +57,25 @@ export class BotCollector {
     this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
     this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
+  }
+
+  restoreSessionId() {
+    if (!this.persistSession) return null;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(SESSION_STORAGE_KEY) || 'null');
+      if (saved && typeof saved.id === 'string' && /^sess_[A-Za-z0-9-]{8,64}$/.test(saved.id)
+          && Number.isFinite(saved.seen) && Date.now() - saved.seen < this.sessionIdleMs) {
+        return saved.id;
+      }
+    } catch (e) { /* storage blocked: fall back to one session per page */ }
+    return null;
+  }
+
+  touchSession() {
+    if (!this.persistSession) return;
+    try {
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ id: this.sessionId, seen: Date.now() }));
+    } catch (e) { /* optional */ }
   }
 
   generateSessionId() {
@@ -393,6 +420,7 @@ export class BotCollector {
         return false;
       }
 
+      this.touchSession();
       const sent = await this.transmitTelemetry(body, action);
       if (sent && action !== 'pagehide') {
         this.lastSentActivitySignature = activitySignature;

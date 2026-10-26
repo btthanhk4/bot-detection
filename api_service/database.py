@@ -441,11 +441,22 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                     },
                 ]
             }
+        # A session spans every page of a tab. A later page may not erase a firm
+        # decision: a short page without enough evidence keeps the earlier FINAL
+        # verdict, and a FINAL BOT stays BOT (release gates count "ever BOT").
+        sticky_filter = (
+            {"decision_state": {"$ne": "FINAL"}}
+            if doc["decision_state"] != "FINAL"
+            else {"$or": [{"is_bot": {"$ne": True}}, {"decision_state": {"$ne": "FINAL"}}]}
+            if verdict != "BOT"
+            else {}
+        )
         update_filter = {
             "sessionId": session_id,
             "$and": [
                 event_order_filter,
                 {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
+                sticky_filter,
             ],
         }
         collection = db["detection_results"]
@@ -712,15 +723,20 @@ def get_summary_stats() -> Optional[dict]:
                     "_id": "$verdict",
                     "count": {"$sum": 1},
                     "avg_probability": {"$avg": "$bot_probability"},
+                    # Deferred sessions (too little input to score) are shown apart
+                    # from real suspicion; they stay inside the SUSPECT count.
+                    "insufficient": {"$sum": {"$cond": [
+                        {"$eq": ["$decision_state", "INSUFFICIENT_EVIDENCE"]}, 1, 0]}},
                 }
             }
         ]
         results = list(db["detection_results"].aggregate(pipeline))
-        stats = {"total": 0, "humans": 0, "bots": 0, "suspects": 0, "by_verdict": {}}
+        stats = {"total": 0, "humans": 0, "bots": 0, "suspects": 0, "insufficient": 0, "by_verdict": {}}
         for r in results:
             verdict = (r["_id"] or "UNKNOWN").upper()
             count = r["count"]
             stats["total"] += count
+            stats["insufficient"] += int(r.get("insufficient") or 0)
             stats["by_verdict"][verdict] = {
                 "count": count,
                 "avg_probability": _safe_probability(r.get("avg_probability")),

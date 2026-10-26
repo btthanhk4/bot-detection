@@ -121,12 +121,32 @@ async function getAudioFingerprint() {
   }
 }
 
-// Installed font detection (heuristic probe)
+// Installed font detection (heuristic probe). Measured inside an empty iframe:
+// its document has no access to the page's @font-face web fonts, which would
+// otherwise count as "installed" once cached (Roboto on SilkMoon: 11 fonts on a
+// first visit, 12 on the next, splitting one visitor into two visitorIds).
 function getFontList() {
   if (typeof document === 'undefined') return [];
-  const container = document.body || document.documentElement;
-  if (!container) return [];
+  const host = document.body || document.documentElement;
+  if (!host) return [];
+  let frame = null;
+  try {
+    frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.tabIndex = -1;
+    frame.style.cssText = 'position:absolute;left:-9999px;top:0;width:10px;height:10px;border:0;visibility:hidden';
+    host.appendChild(frame);
+    const doc = frame.contentDocument;
+    if (doc && doc.body) return measureFonts(doc, doc.body);
+  } catch (e) {
+    // Fall through to the page document.
+  } finally {
+    if (frame && frame.parentNode === host) host.removeChild(frame);
+  }
+  return measureFonts(document, host);
+}
 
+function measureFonts(doc, container) {
   const baseFonts = ['monospace', 'sans-serif', 'serif'];
   const testFonts = [
     'Arial', 'Verdana', 'Times New Roman', 'Courier New',
@@ -134,9 +154,9 @@ function getFontList() {
     'Segoe UI', 'Roboto', 'Helvetica', 'Ubuntu', 'Consolas'
   ];
 
-  const span = document.createElement('span');
+  const span = doc.createElement('span');
   span.style.fontSize = '72px';
-  span.innerHTML = 'mmmmmmmmmmlli';
+  span.textContent = 'mmmmmmmmmmlli';
   span.style.position = 'absolute';
   span.style.left = '-9999px';
 
