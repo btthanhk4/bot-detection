@@ -101,7 +101,16 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v12 (current)
+### Policy v13 (current)
+
+Policy v13 hiệu chỉnh luật môi trường của v12 theo traffic người thật đầu tiên (23 phiên,
+4 IP, Chrome/Edge/Firefox trên Windows/macOS/Linux): nhóm PERMISSION chỉ áp dụng cho
+trình duyệt tự nhận là Chromium (Firefox luôn lệch giữa `Notification.permission` và
+Permissions API), và thêm tín hiệu GPU `legacy_angle_renderer` cho chuỗi WebGL định dạng
+ANGLE cũ trên Chrome ≥ 100. Mô hình và ngưỡng không đổi. Xem
+[Model release v13](docs/MODEL_RELEASE_V13.md).
+
+### Policy v12
 
 Policy v12 giữ nguyên mô hình và ngưỡng, thêm lớp BotD v2 (collector 1.3.0) với hai luật:
 `automation_marker_v1` (webdriver, ChromeDriver `cdc_`, biến Selenium, binding Playwright)

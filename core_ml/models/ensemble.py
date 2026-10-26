@@ -31,7 +31,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "12"
+DECISION_POLICY_VERSION = "13"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 
 

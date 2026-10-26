@@ -31,7 +31,7 @@ def predict(payload):
 def test_release_fixtures(expected, basis, payload):
     result = predict(payload)
     assert result["verdict"] == expected
-    assert result["policy_version"] == DECISION_POLICY_VERSION == "12"
+    assert result["policy_version"] == DECISION_POLICY_VERSION
     if basis:
         assert result["breakdown"]["decision_basis"] == basis
         assert result["breakdown"]["risk_score_in_domain"] is False
@@ -118,3 +118,36 @@ def test_https_fetch_metadata_and_client_hint_headers():
     hinted = _automation()
     hinted["_server_headers"]["sec_ch_ua"] = '"HeadlessChrome";v="155", "Chromium";v="155"'
     assert analyze_automation_evidence(hinted)["families"] == {"HEADLESS_ENV": ["server.headless_client_hints_header"]}
+
+
+def test_permission_family_only_applies_to_chromium():
+    firefox = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0"
+    payload = _automation(browser_ua=firefox, http_ua=firefox, permission=True)
+    assert analyze_automation_evidence(payload)["families"] == {}
+    assert "PERMISSION" in analyze_automation_evidence(_automation(permission=True))["families"]
+
+
+@pytest.mark.parametrize("renderer, flagged", [
+    ("ANGLE (Intel(R) HD Graphics Direct3D11 vs_5_0 ps_5_0)", True),
+    ("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)", False),
+    ("ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)", False),
+    ("Mesa Intel(R) UHD Graphics 620 (KBL GT2)", False),
+])
+def test_legacy_angle_renderer_is_gpu_evidence(renderer, flagged):
+    families = analyze_automation_evidence(_automation(renderer=renderer))["families"]
+    assert (families == {"GPU": ["server.legacy_angle_renderer"]}) == flagged
+
+
+def test_legacy_angle_needs_a_modern_chrome_claim():
+    old = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/90.0.0.0"
+    payload = _automation(browser_ua=old, http_ua=old, renderer="ANGLE (Intel(R) HD Graphics Direct3D11 vs_5_0 ps_5_0)")
+    assert analyze_automation_evidence(payload)["families"] == {}
+
+
+def test_evidence_families_survive_bson_sanitising():
+    from api_service.database import _sanitize_bson_value
+
+    result = predict(AUTOMATION_EVIDENCE_CASES[3][2])
+    stored = _sanitize_bson_value({"result": result})
+    families = stored["result"]["breakdown"]["automation_evidence"]["families"]
+    assert families and all(isinstance(v, str) for values in families.values() for v in values)

@@ -56,12 +56,12 @@ SYNTHETIC_INPUT_RULE_GATE = {
 
 
 def _automation(signals=None, worker=None, permission=None, detectors=None, http_ua=None, browser_ua=None,
-                accept_language=True):
+                accept_language=True, renderer=None):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     return {
         "_server_user_agent": http_ua or ua,
         "_server_headers": {"observed": True, "accept_language": accept_language, "sec_ch_ua": ""},
-        "fingerprint": {"userAgent": browser_ua or ua},
+        "fingerprint": {"userAgent": browser_ua or ua, **({"webglRenderer": renderer} if renderer else {})},
         "botd": {
             "detectors": detectors or {},
             "automation": {"schema": "automation-v1", "signals": signals or {}, "worker": worker,
@@ -89,7 +89,25 @@ AUTOMATION_EVIDENCE_CASES = (
     ("SUSPECT", None, _automation(signals={"gpuOsMismatch": True}, permission=True)),
     ("SUSPECT", None, _automation(signals={"webdriverDeleted": "true", "headlessScreen": 1},
                                   detectors={"webdriver": "false"}, permission="yes")),
+    # Policy 13 additions from the first real traffic (2026-10-26): a Linux host
+    # posing as Windows Chrome, and genuine Firefox on plain HTTP.
+    ("BOT", "environment_tampering", _automation(
+        renderer="ANGLE (Intel(R) HD Graphics Direct3D11 vs_5_0 ps_5_0)",
+        worker={"cpuMismatch": True, "platformMismatch": True, "rendererMismatch": True}, permission=True)),
+    ("SUSPECT", None, _automation(
+        browser_ua="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0",
+        http_ua="Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0",
+        permission=True, worker={"cpuMismatch": False})),
+    ("SUSPECT", None, _automation(
+        renderer="ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)")),
 )
+
+# Frozen gate of policy 12 so its bundles stay verifiable after the fixtures grew.
+AUTOMATION_EVIDENCE_RULE_GATE_V12 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1"],
+    "positive_cases": 4, "negative_cases": 4, "passed": 8,
+    "fixture_fingerprint": "56d36a577f32a6d9788c66cd1cc5d08db7a137bc5d9e0ce2b94c9b08cd504d46",
+}
 
 AUTOMATION_EVIDENCE_RULE_GATE = {
     "rules": ["automation_marker_v1", "environment_tampering_v1"],

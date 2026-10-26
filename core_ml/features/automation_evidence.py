@@ -18,6 +18,8 @@ raised no signal; Puppeteer+stealth raised four families; headed patchright
 raised none (it is a genuine browser, caught only by behaviour).
 """
 
+import re
+
 AUTOMATION_MARKER_RULE = "automation_marker_v1"
 ENVIRONMENT_TAMPERING_RULE = "environment_tampering_v1"
 AUTOMATION_EVIDENCE_VERSION = "automation_evidence_v1"
@@ -36,7 +38,7 @@ _FAMILIES = {
                     "pluginsPrototypeMismatch", "mimeTypesPrototypeMismatch", "sequentum"),
         "server": ("headless_client_hints_header",),
     },
-    "GPU": {"signals": ("gpuOsMismatch",), "worker": ("rendererMismatch",)},
+    "GPU": {"signals": ("gpuOsMismatch",), "worker": ("rendererMismatch",), "server": ("legacy_angle_renderer",)},
     "PERMISSION": {"top": ("notificationPermissionMismatch",)},
     "CONTEXT": {"worker": ("cpuMismatch", "uaMismatch", "platformMismatch")},
     "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched")},
@@ -59,6 +61,12 @@ def _sources(payload):
     browser_ua = str(fingerprint.get("userAgent") or "")
     http_ua = str(payload.get("_server_user_agent") or "")
     chromium = "Chrome/" in browser_ua or "Chrome/" in http_ua
+    # Firefox on plain HTTP legitimately reports Notification.permission "denied"
+    # while the Permissions API says "prompt" (2 of 2 real Firefox sessions,
+    # 2026-10-26); only a browser that claims Chromium is held to the check.
+    claims_chromium = "Chrome/" in browser_ua and "Firefox/" not in browser_ua
+    major = re.search(r"Chrome/(\d+)", browser_ua)
+    renderer = str(fingerprint.get("webglRenderer") or "")
     server = {
         # Only meaningful when the browser reported a UA and the header was observed.
         "http_ua_mismatch": bool(browser_ua and http_ua and browser_ua != "mobile"
@@ -71,12 +79,18 @@ def _sources(payload):
                                        and headers.get("forwarded_proto") == "https"
                                        and not headers.get("sec_fetch_site")),
         "headless_client_hints_header": "headlesschrome" in str(headers.get("sec_ch_ua") or "").lower(),
+        # Chromium >= 94 reports "ANGLE (Vendor, Device, Backend)". The comma-less
+        # pre-2021 form is what spoofing kits paste in (seen on a Linux host
+        # claiming Windows Chrome 155; 9 of 9 real Windows sessions use the new form).
+        "legacy_angle_renderer": bool(major and int(major.group(1)) >= 100
+                                      and renderer.startswith("ANGLE (") and ", " not in renderer),
     }
+    permission = automation.get("notificationPermissionMismatch") if claims_chromium else None
     return {
         "detectors": _mapping(botd.get("detectors")),
         "signals": _mapping(automation.get("signals")),
         "worker": _mapping(automation.get("worker")),
-        "top": {"notificationPermissionMismatch": automation.get("notificationPermissionMismatch")},
+        "top": {"notificationPermissionMismatch": permission},
         "server": server,
     }, bool(automation)
 

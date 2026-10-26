@@ -60,7 +60,8 @@ class DatabaseIngestionPaused(RuntimeError):
 
 def _sanitize_bson_value(value, depth: int = 0):
     """Bound untrusted nested values to a BSON-safe, dashboard-safe subset."""
-    if depth > 4:
+    # Six levels keep breakdown.automation_evidence.families[<family>][i] intact.
+    if depth > 6:
         return None
     if value is None or isinstance(value, bool):
         return value
