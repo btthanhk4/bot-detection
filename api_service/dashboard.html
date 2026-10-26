@@ -3069,8 +3069,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const markerDecision = bd.decision_basis === 'automation_marker';
   const tamperDecision = bd.decision_basis === 'environment_tampering';
   const automationEvidence = bd.automation_evidence || {};
-  const FAMILY_LABELS = { HEADLESS_ENV: 'môi trường headless', GPU: 'GPU không khớp hệ điều hành', PERMISSION: 'quyền trình duyệt mâu thuẫn',
-    CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường' };
+  const FAMILY_LABELS = { HEADLESS_ENV: 'môi trường headless', GPU: 'GPU giả lập hoặc không khớp hệ điều hành', PERMISSION: 'quyền trình duyệt mâu thuẫn',
+    CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường',
+    NETWORK: 'IP thuộc trung tâm dữ liệu cloud' };
   const provenance = bd.input_provenance || {};
 
   // 2. Verdict Hero

@@ -151,3 +151,27 @@ def test_evidence_families_survive_bson_sanitising():
     stored = _sanitize_bson_value({"result": result})
     families = stored["result"]["breakdown"]["automation_evidence"]["families"]
     assert families and all(isinstance(v, str) for values in families.values() for v in values)
+
+
+@pytest.mark.parametrize("renderer, software", [
+    ("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)", True),
+    ("llvmpipe (LLVM 15.0.7, 256 bits)", True),
+    ("Microsoft Basic Render Driver", True),
+    ("VirtualBox Graphics Adapter", False),
+    ("ANGLE (VMware, Inc., SVGA3D, D3D11)", False),
+    ("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)", False),
+])
+def test_software_renderer_is_gpu_evidence_but_hypervisors_are_not(renderer, software):
+    families = analyze_automation_evidence(_automation(renderer=renderer))["families"]
+    assert ("server.software_renderer" in families.get("GPU", [])) == software
+
+
+def test_datacenter_address_corroborates_but_never_anchors():
+    alone = analyze_automation_evidence(_automation(datacenter="aws"))
+    assert alone["families"] == {"NETWORK": ["server.datacenter_ip"]} and alone["rule"] is None
+    no_anchor = _automation(signals={"uaHintsMismatch": True, "toStringPatched": True}, datacenter="gcp")
+    assert analyze_automation_evidence(no_anchor)["rule"] is None
+    crawler = _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp")
+    report = analyze_automation_evidence(crawler)
+    assert set(report["families"]) == {"GPU", "HEADLESS_ENV", "NETWORK"}
+    assert report["rule"] == ENVIRONMENT_TAMPERING_RULE

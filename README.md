@@ -101,7 +101,15 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v13 (current)
+### Policy v14 (current)
+
+Policy v14 thêm nhóm bằng chứng NETWORK (địa chỉ client nằm trong dải IP công bố của Google
+Cloud, AWS, Oracle, DigitalOcean, Linode, Vultr) và tín hiệu GPU phần mềm (SwiftShader,
+llvmpipe…). NETWORK chỉ củng cố, không phải nhóm neo. Thay đổi bắt nguồn từ một crawler không
+di chuột chạy trên Google Cloud mà v13 chỉ gán SUSPECT. Xem
+[Model release v14](docs/MODEL_RELEASE_V14.md).
+
+### Policy v13
 
 Policy v13 hiệu chỉnh luật môi trường của v12 theo traffic người thật đầu tiên (23 phiên,
 4 IP, Chrome/Edge/Firefox trên Windows/macOS/Linux): nhóm PERMISSION chỉ áp dụng cho

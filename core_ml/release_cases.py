@@ -56,11 +56,12 @@ SYNTHETIC_INPUT_RULE_GATE = {
 
 
 def _automation(signals=None, worker=None, permission=None, detectors=None, http_ua=None, browser_ua=None,
-                accept_language=True, renderer=None):
+                accept_language=True, renderer=None, datacenter=None):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     return {
         "_server_user_agent": http_ua or ua,
-        "_server_headers": {"observed": True, "accept_language": accept_language, "sec_ch_ua": ""},
+        "_server_headers": {"observed": True, "accept_language": accept_language, "sec_ch_ua": "",
+                            **({"datacenter": datacenter} if datacenter else {})},
         "fingerprint": {"userAgent": browser_ua or ua, **({"webglRenderer": renderer} if renderer else {})},
         "botd": {
             "detectors": detectors or {},
@@ -100,6 +101,16 @@ AUTOMATION_EVIDENCE_CASES = (
         permission=True, worker={"cpuMismatch": False})),
     ("SUSPECT", None, _automation(
         renderer="ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)")),
+    # Policy 14: the zero-mouse crawler seen from Google Cloud on 2026-10-26
+    # (SwiftShader WebGL, rtt 0, europe-west4 address). Cloud addresses alone are
+    # VPN-compatible and hypervisor GPUs are ordinary VM use, so neither may decide.
+    ("BOT", "environment_tampering", _automation(
+        renderer="ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+        signals={"rttZero": True}, datacenter="gcp")),
+    ("SUSPECT", None, _automation(datacenter="aws")),
+    ("SUSPECT", None, _automation(renderer="VirtualBox Graphics Adapter", signals={"rttZero": True},
+                                  datacenter="digitalocean")),
+    ("SUSPECT", None, _automation(renderer="llvmpipe (LLVM 15.0.7, 256 bits)", datacenter="aws")),
 )
 
 # Frozen gate of policy 12 so its bundles stay verifiable after the fixtures grew.
@@ -107,6 +118,13 @@ AUTOMATION_EVIDENCE_RULE_GATE_V12 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1"],
     "positive_cases": 4, "negative_cases": 4, "passed": 8,
     "fixture_fingerprint": "56d36a577f32a6d9788c66cd1cc5d08db7a137bc5d9e0ce2b94c9b08cd504d46",
+}
+
+# Frozen gate of policy 13.
+AUTOMATION_EVIDENCE_RULE_GATE_V13 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1"],
+    "positive_cases": 5, "negative_cases": 6, "passed": 11,
+    "fixture_fingerprint": "2543f760aaf58a22773b2b5c79cae5718be6b31888256c37d399a80d386bc7ac",
 }
 
 AUTOMATION_EVIDENCE_RULE_GATE = {

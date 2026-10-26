@@ -36,6 +36,7 @@ from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.model_bundle import ModelBundleError, release_evidence_valid, verify_model_bundle
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
+from core_ml.features.network import cloud_provider
 
 
 logger = logging.getLogger("bot_detection.api")
@@ -600,6 +601,8 @@ def _observed_headers(request: Request) -> dict:
         "sec_fetch_site": (request.headers.get("sec-fetch-site") or "")[:32],
         "sec_fetch_mode": (request.headers.get("sec-fetch-mode") or "")[:32],
         "forwarded_proto": (request.headers.get("x-forwarded-proto") or request.url.scheme or "")[:8],
+        # Published cloud range of the client address (None for residential/mobile).
+        "datacenter": cloud_provider(get_client_ip(request)),
     }
 
 

@@ -38,13 +38,17 @@ _FAMILIES = {
                     "pluginsPrototypeMismatch", "mimeTypesPrototypeMismatch", "sequentum"),
         "server": ("headless_client_hints_header",),
     },
-    "GPU": {"signals": ("gpuOsMismatch",), "worker": ("rendererMismatch",), "server": ("legacy_angle_renderer",)},
+    "GPU": {"signals": ("gpuOsMismatch",), "worker": ("rendererMismatch",),
+            "server": ("legacy_angle_renderer", "software_renderer")},
     "PERMISSION": {"top": ("notificationPermissionMismatch",)},
     "CONTEXT": {"worker": ("cpuMismatch", "uaMismatch", "platformMismatch")},
     "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched")},
     "CLIENT_HINTS": {"signals": ("uaHintsMismatch", "malformedBrands"), "server": ("http_ua_mismatch",)},
     "HTTP": {"server": ("missing_accept_language", "missing_fetch_metadata")},
+    # Corroboration only: VPN exits share these ranges, so NETWORK is never an anchor.
+    "NETWORK": {"server": ("datacenter_ip",)},
 }
+_SOFTWARE_RENDERER = re.compile(r"swiftshader|llvmpipe|softpipe|mesa offscreen|microsoft basic render", re.I)
 
 
 def _mapping(value):
@@ -84,6 +88,10 @@ def _sources(payload):
         # claiming Windows Chrome 155; 9 of 9 real Windows sessions use the new form).
         "legacy_angle_renderer": bool(major and int(major.group(1)) >= 100
                                       and renderer.startswith("ANGLE (") and ", " not in renderer),
+        # CPU rasterisers used when no GPU exists (cloud VMs, containers). Hypervisor
+        # adapters (VirtualBox, VMware) are excluded: people do browse from VMs.
+        "software_renderer": bool(_SOFTWARE_RENDERER.search(renderer)),
+        "datacenter_ip": bool(headers.get("datacenter")),
     }
     permission = automation.get("notificationPermissionMismatch") if claims_chromium else None
     return {
