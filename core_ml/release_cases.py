@@ -56,13 +56,15 @@ SYNTHETIC_INPUT_RULE_GATE = {
 
 
 def _automation(signals=None, worker=None, permission=None, detectors=None, http_ua=None, browser_ua=None,
-                accept_language=True, renderer=None, datacenter=None, page_ms=None, active=False):
+                accept_language=True, renderer=None, datacenter=None, page_ms=None, active=False,
+                fingerprint=None, headers=None):
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
     return {
         "_server_user_agent": http_ua or ua,
         "_server_headers": {"observed": True, "accept_language": accept_language, "sec_ch_ua": "",
-                            **({"datacenter": datacenter} if datacenter else {})},
-        "fingerprint": {"userAgent": browser_ua or ua, **({"webglRenderer": renderer} if renderer else {})},
+                            **({"datacenter": datacenter} if datacenter else {}), **(headers or {})},
+        "fingerprint": {"userAgent": browser_ua or ua, **({"webglRenderer": renderer} if renderer else {}),
+                        **(fingerprint or {})},
         "botd": {
             "detectors": detectors or {},
             "automation": {"schema": "automation-v1", "signals": signals or {}, "worker": worker,
@@ -73,6 +75,16 @@ def _automation(signals=None, worker=None, permission=None, detectors=None, http
             "counters": {"mousemove": 40 if active else 0, "mousedown": 0, "click": 0, "wheel": 0},
         } if page_ms is not None else {})},
     }
+
+
+_IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 "
+           "(KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1")
+_PIXEL = ("Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) "
+          "Chrome/153.0.8010.12 Mobile Safari/537.36")
+_CUBOT = "Mozilla/5.0 (Linux; Android 10; Cubot X30) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+_GOOGLEBOT = ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; "
+              "+http://www.google.com/bot.html) Chrome/155.0.0.0 Safari/537.36")
+_D3D = "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)"
 
 
 # Zero-mouse fixtures for policy 12. Positives: framework artefacts and the
@@ -118,6 +130,28 @@ AUTOMATION_EVIDENCE_CASES = (
         renderer="ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11 vs_5_0 ps_5_0, D3D11)",
         signals={"rttZero": True}, datacenter="aws", page_ms=3000)),
     ("SUSPECT", None, _automation(renderer="SwiftShader", signals={"rttZero": True}, datacenter="gcp")),
+    # Policy 17: phone emulation by Playwright/Puppeteer (measured 2026-10-26) and
+    # self-declared automation. Negatives: real iPhone/Android values, DevTools
+    # device mode (sets the platform), an Android Studio emulator, a phone brand
+    # whose name contains "bot".
+    ("BOT", "mobile_emulation", _automation(
+        browser_ua=_IPHONE, http_ua=_IPHONE, renderer=_D3D,
+        fingerprint={"platform": "Win32", "deviceMemory": 16, "maxTouchPoints": 1})),
+    ("BOT", "mobile_emulation", _automation(
+        browser_ua=_PIXEL, http_ua=_PIXEL, renderer=_D3D,
+        fingerprint={"platform": "Win32", "deviceMemory": 16, "maxTouchPoints": 1})),
+    ("BOT", "automation_marker", _automation(browser_ua=_GOOGLEBOT, http_ua=_GOOGLEBOT)),
+    ("BOT", "automation_marker", _automation(headers={"signature_agent": True})),
+    ("SUSPECT", None, _automation(browser_ua=_IPHONE, http_ua=_IPHONE, renderer="Apple GPU",
+                                  fingerprint={"platform": "iPhone", "deviceMemory": 0, "maxTouchPoints": 5})),
+    ("SUSPECT", None, _automation(browser_ua=_PIXEL, http_ua=_PIXEL, renderer="Mali-G710",
+                                  fingerprint={"platform": "Linux aarch64", "deviceMemory": 8, "maxTouchPoints": 5})),
+    ("SUSPECT", None, _automation(browser_ua=_IPHONE, http_ua=_IPHONE, renderer=_D3D,
+                                  fingerprint={"platform": "iPhone", "deviceMemory": 16, "maxTouchPoints": 1})),
+    ("SUSPECT", None, _automation(
+        browser_ua=_PIXEL, http_ua=_PIXEL, renderer="Android Emulator OpenGL ES Translator (Google SwiftShader)",
+        fingerprint={"platform": "Linux x86_64", "deviceMemory": 2, "maxTouchPoints": 10})),
+    ("SUSPECT", None, _automation(browser_ua=_CUBOT, http_ua=_CUBOT)),
     ("SUSPECT", None, _automation(datacenter="aws")),
     ("SUSPECT", None, _automation(renderer="VirtualBox Graphics Adapter", signals={"rttZero": True},
                                   datacenter="digitalocean")),
@@ -145,8 +179,15 @@ AUTOMATION_EVIDENCE_RULE_GATE_V14 = {
     "fixture_fingerprint": "27b8fa2ec1a09e7037b050a1203931ea97a35ea4f55ca16eadaa91a8b19773a2",
 }
 
-AUTOMATION_EVIDENCE_RULE_GATE = {
+# Frozen gate of policy 16.
+AUTOMATION_EVIDENCE_RULE_GATE_V16 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1"],
+    "positive_cases": 6, "negative_cases": 12, "passed": 18,
+    "fixture_fingerprint": "d8a9be4f1e11f12e582f799fb567fc962bb608eb56f3fa44a7b544a2ff56c225",
+}
+
+AUTOMATION_EVIDENCE_RULE_GATE = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
     "positive_cases": sum(expected == "BOT" for expected, _, _ in AUTOMATION_EVIDENCE_CASES),
     "negative_cases": sum(expected != "BOT" for expected, _, _ in AUTOMATION_EVIDENCE_CASES),
     "passed": len(AUTOMATION_EVIDENCE_CASES),

@@ -30,6 +30,18 @@ import re
 AUTOMATION_MARKER_RULE = "automation_marker_v1"
 ENVIRONMENT_TAMPERING_RULE = "environment_tampering_v1"
 IDLE_CLOUD_BROWSER_RULE = "idle_cloud_browser_v1"
+MOBILE_EMULATION_RULE = "mobile_emulation_v1"
+# Self-declared automation (policy 17): Web Bot Auth signatures (IETF draft,
+# sent by ChatGPT Agent and verified by Cloudflare/AWS) and published crawler
+# user agents. People never send either; the bot may be welcome, but it is a bot.
+_DECLARED_BOT_UA = re.compile(
+    r"\b(googlebot|google-inspectiontool|googleother|google-extended|storebot-google|bingbot|"
+    r"gptbot|chatgpt-user|oai-searchbot|claudebot|claude-user|claude-searchbot|anthropic-ai|"
+    r"perplexitybot|perplexity-user|bytespider|amazonbot|applebot|ccbot|meta-externalagent|"
+    r"facebookexternalhit|duckduckbot|yandexbot|baiduspider|petalbot|semrushbot|ahrefsbot|"
+    r"mj12bot|dotbot|chrome-lighthouse)\b",
+    re.I,
+)
 IDLE_CLOUD_MIN_PAGE_MS = 10_000
 # Evidence that a cloud virtual machine explains on its own.
 _CLOUD_EXPLAINED = {"GPU": "server.software_renderer", "HEADLESS_ENV": "signals.rttZero"}
@@ -41,6 +53,7 @@ _MARKER_SIGNALS = {
     "detectors": ("webdriver", "chromeDriverGlobal", "distinctiveProperties", "documentKeys"),
     "signals": ("playwrightGlobals", "seleniumGlobals"),
     "worker": ("webdriver",),
+    "server": ("signature_agent", "declared_bot_ua"),
 }
 _FAMILIES = {
     "HEADLESS_ENV": {
@@ -103,6 +116,8 @@ def _sources(payload):
         # adapters (VirtualBox, VMware) are excluded: people do browse from VMs.
         "software_renderer": bool(_SOFTWARE_RENDERER.search(renderer)),
         "datacenter_ip": bool(headers.get("datacenter")),
+        "signature_agent": headers.get("signature_agent") is True,
+        "declared_bot_ua": bool(_DECLARED_BOT_UA.search(http_ua) or _DECLARED_BOT_UA.search(browser_ua)),
     }
     permission = automation.get("notificationPermissionMismatch") if claims_chromium else None
     return {
@@ -132,6 +147,37 @@ def _number(value):
     except (TypeError, ValueError, OverflowError):
         return None
     return number if number == number and abs(number) != float("inf") else None
+
+
+def _mobile_emulation(fingerprint):
+    """Contradictions of a desktop browser dressed up as a phone (policy 17).
+
+    Measured 2026-10-26: Playwright (iPhone 13, Pixel 7, Galaxy S9+) and Puppeteer
+    (iPhone 13) device emulation keep navigator.platform "Win32", a Direct3D
+    (Windows-only) WebGL renderer and, on iOS profiles, navigator.deviceMemory,
+    which WebKit (every iOS browser) does not implement. Real iPhones report
+    platform "iPhone" and "Apple GPU"; Android phones "Linux arm*/aarch64".
+    """
+    ua = str(fingerprint.get("userAgent") or "")
+    platform = str(fingerprint.get("platform") or "")
+    renderer = str(fingerprint.get("webglRenderer") or "")
+    ios = bool(re.search(r"\((iPhone|iPod|iPad);", ua))
+    android = "Android" in ua and not ios
+    if not (ios or android) or not platform:
+        return []
+    found = []
+    if (ios and platform not in ("iPhone", "iPod", "iPad")) or (
+            android and platform in ("Win32", "Win64", "MacIntel", "Macintosh")):
+        found.append("platform_mismatch")
+    if re.search(r"Direct3D|D3D11|D3D9", renderer) or (ios and renderer and "Apple" not in renderer):
+        found.append("desktop_gpu")
+    memory = fingerprint.get("deviceMemory")
+    if ios and isinstance(memory, (int, float)) and not isinstance(memory, bool) and memory > 0:
+        found.append("chromium_api_on_ios")
+    touch = fingerprint.get("maxTouchPoints")
+    if isinstance(touch, (int, float)) and not isinstance(touch, bool) and touch == 0:
+        found.append("no_touch")
+    return found
 
 
 def _idle_page_ms(payload):
@@ -169,6 +215,10 @@ def analyze_automation_evidence(payload: dict) -> dict:
         and any(anchor in families for anchor in TAMPERING_ANCHOR_FAMILIES)
     )
     idle_ms = _idle_page_ms(payload)
+    # DevTools device mode sets the platform, so a platform contradiction is
+    # required; automation emulation also leaves a GPU, API or touch one.
+    emulation = _mobile_emulation(_mapping(payload.get("fingerprint")))
+    mobile_emulation = "platform_mismatch" in emulation and len(emulation) >= 2
     idle_cloud = (
         cloud and "server.software_renderer" in families["NETWORK"]
         and idle_ms is not None and idle_ms >= IDLE_CLOUD_MIN_PAGE_MS
@@ -176,6 +226,7 @@ def analyze_automation_evidence(payload: dict) -> dict:
     rule = (
         AUTOMATION_MARKER_RULE if markers
         else ENVIRONMENT_TAMPERING_RULE if tampering
+        else MOBILE_EMULATION_RULE if mobile_emulation
         else IDLE_CLOUD_BROWSER_RULE if idle_cloud
         else None
     )
@@ -187,5 +238,6 @@ def analyze_automation_evidence(payload: dict) -> dict:
         "family_count": len(families),
         "cloud_vm": cloud and len(families["NETWORK"]) > 1,
         "idle_page_ms": idle_ms,
+        "mobile_emulation": emulation,
         "rule": rule,
     }

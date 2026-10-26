@@ -603,6 +603,8 @@ def _observed_headers(request: Request) -> dict:
         "forwarded_proto": (request.headers.get("x-forwarded-proto") or request.url.scheme or "")[:8],
         # Published cloud range of the client address (None for residential/mobile).
         "datacenter": cloud_provider(get_client_ip(request)),
+        # Web Bot Auth (RFC 9421 message signatures for bots): the agent names itself.
+        "signature_agent": bool(request.headers.get("signature-agent") or request.headers.get("signature-input")),
     }
 
 

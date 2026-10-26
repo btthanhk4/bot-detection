@@ -101,7 +101,15 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v16 (current)
+### Policy v17 (current)
+
+Policy v17 thêm `mobile_emulation_v1` (trình duyệt máy tính giả làm iPhone/Android: platform
+Win32, GPU Direct3D, API Chromium trên iOS — đo trên Playwright và Puppeteer; thiết bị thật,
+DevTools và emulator Android Studio không bị gán) và đánh dấu bot tự khai báo (Web Bot Auth
+`Signature-Agent`, UA của Googlebot/GPTBot/ClaudeBot/PerplexityBot…). Các hướng đã thử nhưng
+bỏ vì không chứng minh được hiệu quả được ghi trong [Model release v17](docs/MODEL_RELEASE_V17.md).
+
+### Policy v16
 
 Policy v16 (collector 1.6.0) sửa các tình huống biên tìm được khi rà soát: người Việt gõ
 Telex qua Unikey/EVKey không còn bị nhầm là gõ máy (mô phỏng 3.000 lượt: 93 % → 0 %), người

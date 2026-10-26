@@ -13,6 +13,7 @@ from core_ml.features.automation_evidence import (
     AUTOMATION_MARKER_RULE,
     ENVIRONMENT_TAMPERING_RULE,
     IDLE_CLOUD_BROWSER_RULE,
+    MOBILE_EMULATION_RULE,
     analyze_automation_evidence,
 )
 from core_ml.features.input_provenance import (
@@ -34,7 +35,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "16"
+DECISION_POLICY_VERSION = "17"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -295,6 +296,11 @@ class EnsembleBotDetector:
                     f"{automation_evidence['family_count']} independent checks: "
                     + ", ".join(sorted(automation_evidence["families"]))
                 )
+            elif automation_rule == MOBILE_EMULATION_RULE:
+                reasons.append(
+                    "Desktop browser emulating a phone: "
+                    + ", ".join(automation_evidence["mobile_emulation"]).replace("_", " ")
+                )
             elif automation_rule == IDLE_CLOUD_BROWSER_RULE:
                 reasons.append(
                     "Unattended cloud browser: cloud-provider address, software (CPU) WebGL renderer and "
@@ -394,6 +400,7 @@ class EnsembleBotDetector:
                     "automation_marker" if automation_rule == AUTOMATION_MARKER_RULE
                     else "environment_tampering" if automation_rule == ENVIRONMENT_TAMPERING_RULE
                     else "idle_cloud_browser" if automation_rule == IDLE_CLOUD_BROWSER_RULE
+                    else "mobile_emulation" if automation_rule == MOBILE_EMULATION_RULE
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"

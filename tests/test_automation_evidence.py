@@ -182,3 +182,32 @@ def test_datacenter_address_corroborates_but_never_anchors():
     # Away from the cloud the same signals keep counting on their own.
     home = analyze_automation_evidence(_automation(renderer="SwiftShader", signals={"rttZero": True}))
     assert set(home["families"]) == {"GPU", "HEADLESS_ENV"}
+
+
+@pytest.mark.parametrize("ua, declared", [
+    ("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", True),
+    ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)", True),
+    ("Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/155.0 Safari/537.36 Chrome-Lighthouse", True),
+    ("Mozilla/5.0 (Linux; Android 10; Cubot X30) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36", False),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0 Safari/537.36", False),
+])
+def test_declared_bot_user_agents(ua, declared):
+    report = analyze_automation_evidence(_automation(browser_ua=ua, http_ua=ua))
+    assert ("server.declared_bot_ua" in report["markers"]) == declared
+
+
+def test_web_bot_auth_signature_is_a_marker():
+    assert analyze_automation_evidence(_automation(headers={"signature_agent": True}))["markers"] == ["server.signature_agent"]
+    assert analyze_automation_evidence(_automation(headers={"signature_agent": False}))["markers"] == []
+
+
+def test_phone_emulation_needs_a_platform_contradiction():
+    iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
+    d3d = "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    devtools = _automation(browser_ua=iphone, http_ua=iphone, renderer=d3d,
+                           fingerprint={"platform": "iPhone", "deviceMemory": 8, "maxTouchPoints": 1})
+    report = analyze_automation_evidence(devtools)
+    assert report["mobile_emulation"] == ["desktop_gpu", "chromium_api_on_ios"] and report["rule"] is None
+    only_platform = _automation(browser_ua=iphone, http_ua=iphone, renderer="Apple GPU",
+                                fingerprint={"platform": "Win32", "maxTouchPoints": 5})
+    assert analyze_automation_evidence(only_platform)["rule"] is None

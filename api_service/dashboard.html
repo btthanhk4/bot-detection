@@ -3077,6 +3077,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const markerDecision = bd.decision_basis === 'automation_marker';
   const tamperDecision = bd.decision_basis === 'environment_tampering';
   const idleCloudDecision = bd.decision_basis === 'idle_cloud_browser';
+  const mobileEmulationDecision = bd.decision_basis === 'mobile_emulation';
   const automationEvidence = bd.automation_evidence || {};
   const FAMILY_LABELS = { HEADLESS_ENV: 'môi trường headless', GPU: 'GPU giả lập hoặc không khớp hệ điều hành', PERMISSION: 'quyền trình duyệt mâu thuẫn',
     CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường',
@@ -3097,6 +3098,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   if (v === 'BOT') {
     explainText = markerDecision
       ? `<strong>Hệ thống kết luận là BOT vì có dấu vết công cụ tự động hóa:</strong> ${escapeHtml((automationEvidence.markers || []).join(', '))}. Trình duyệt người dùng bình thường không có các dấu vết này. `
+      : mobileEmulationDecision
+      ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt máy tính giả làm điện thoại:</strong> ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => ({platform_mismatch: 'hệ điều hành báo về không khớp với điện thoại tự nhận', desktop_gpu: 'card đồ họa của máy tính (Direct3D) thay vì GPU điện thoại', chromium_api_on_ios: 'có API chỉ Chrome máy tính mới có trong khi tự nhận là iPhone', no_touch: 'không có màn hình cảm ứng'})[x] || x).join('; '))}. Đây là kiểu giả lập thiết bị của Playwright/Puppeteer. `
       : idleCloudDecision
       ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt chạy trên máy chủ cloud không có người dùng:</strong> địa chỉ IP thuộc nhà cung cấp cloud, đồ họa WebGL do CPU giả lập, và không có bất kỳ thao tác chuột, cuộn hay bàn phím nào trong ${Math.round((automationEvidence.idle_page_ms || 0) / 1000)} giây. Nếu người dùng thật bắt đầu thao tác, kết luận này sẽ được xét lại. `
       : tamperDecision

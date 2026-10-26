@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "673dc8ddd0224da5beb02132a18b3a7e",
-  "created_at": "2026-10-26T13:41:44.399525+00:00",
+  "bundle_id": "90da81c9569f420db2d6e2b7b8c9160a",
+  "created_at": "2026-10-26T16:35:30.449295+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,14 +62,15 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "d8a9be4f1e11f12e582f799fb567fc962bb608eb56f3fa44a7b544a2ff56c225",
-      "negative_cases": 12,
-      "passed": 18,
-      "positive_cases": 6,
+      "fixture_fingerprint": "738487d2e00bbe4a8df1900db1f9443910b3ecbac8bd13b6170180784f190f74",
+      "negative_cases": 17,
+      "passed": 27,
+      "positive_cases": 10,
       "rules": [
         "automation_marker_v1",
         "environment_tampering_v1",
-        "idle_cloud_browser_v1"
+        "idle_cloud_browser_v1",
+        "mobile_emulation_v1"
       ]
     },
     "capture_holdout_families": [],
@@ -853,7 +854,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "16",
+    "decision_policy_version": "17",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
