@@ -9,6 +9,11 @@ explicit-automation rule can make a BOT decision without mouse evidence.
 
 import numpy as np
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
+from core_ml.features.automation_evidence import (
+    AUTOMATION_MARKER_RULE,
+    ENVIRONMENT_TAMPERING_RULE,
+    analyze_automation_evidence,
+)
 from core_ml.features.input_provenance import SYNTHETIC_CLICK_RULE, analyze_input_provenance
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
@@ -26,7 +31,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
-DECISION_POLICY_VERSION = "11"
+DECISION_POLICY_VERSION = "12"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 
 
@@ -170,8 +175,11 @@ class EnsembleBotDetector:
         # Press timing and click geometry come from trusted browser events; the
         # rule needs both signals repeated, so one fast tap or lucky centre is not enough.
         input_provenance = analyze_input_provenance(mouse)
+        automation_evidence = analyze_automation_evidence(payload)
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
+        elif automation_evidence["rule"]:
+            automation_rule = automation_evidence["rule"]
         elif input_provenance["synthetic_click_rule"]:
             automation_rule = SYNTHETIC_CLICK_RULE
         elif candidate_evidence:
@@ -273,6 +281,16 @@ class EnsembleBotDetector:
             verdict = "BOT"
             if automation_rule == EXPLICIT_AUTOMATION_RULE:
                 reasons.append("Server-observed HeadlessChrome UA corroborates browser automation markers")
+            elif automation_rule == AUTOMATION_MARKER_RULE:
+                reasons.append(
+                    "Browser automation framework artefacts: " + ", ".join(automation_evidence["markers"][:6])
+                )
+            elif automation_rule == ENVIRONMENT_TAMPERING_RULE:
+                reasons.append(
+                    "Contradictory browser environment across "
+                    f"{automation_evidence['family_count']} independent checks: "
+                    + ", ".join(sorted(automation_evidence["families"]))
+                )
             elif automation_rule == SYNTHETIC_CLICK_RULE:
                 reasons.append(
                     f"Synthetic clicks: {input_provenance['clicks_centred']} clicks at the exact control "
@@ -340,13 +358,16 @@ class EnsembleBotDetector:
                 }} if profile_candidate else {}),
                 "interaction_shadow": extract_interaction_features(mouse),
                 "input_provenance": input_provenance,
+                "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
                 "tabular_score": None if explicit_automation else round(tabular_score, 4),
                 "tabular_score_in_domain": tabular_score_in_domain,
                 "risk_score_in_domain": not mouse_evidence_deferred and not explicit_automation,
                 "decision_basis": (
-                    "synthetic_input" if automation_rule == SYNTHETIC_CLICK_RULE
+                    "automation_marker" if automation_rule == AUTOMATION_MARKER_RULE
+                    else "environment_tampering" if automation_rule == ENVIRONMENT_TAMPERING_RULE
+                    else "synthetic_input" if automation_rule == SYNTHETIC_CLICK_RULE
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),

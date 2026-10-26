@@ -7,7 +7,7 @@ import uuid
 
 def build_capture(payload: dict, *, received_at: int, client_ip: str,
                   user_agent: str, bundle_id: str, policy_version: str,
-                  retention_days: int) -> dict:
+                  retention_days: int, server_headers: dict = None) -> dict:
     # Store JSON verbatim after API validation, not the truncated dashboard
     # projection. This preserves scroll, touch and nested profile evidence.
     payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"),
@@ -31,6 +31,7 @@ def build_capture(payload: dict, *, received_at: int, client_ip: str,
         "expires_at_ms": received_at + retention_days * 86_400_000,
         "client_ip": client_ip,
         "server_user_agent": user_agent,
+        "server_headers": dict(server_headers) if isinstance(server_headers, dict) else None,
         # Capture-time provenance is not a claim that inference succeeded.
         "capture_bundle_id": bundle_id,
         "capture_policy_version": policy_version,

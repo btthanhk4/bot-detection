@@ -6,9 +6,10 @@
 import { getFingerprintComponents } from './fingerprint.js';
 import { runBotDetectors } from './botd.js';
 import { collectBrowserProfile } from './profile.js';
+import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.2.0';
+export const COLLECTOR_VERSION = '1.3.0';
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);
@@ -89,6 +90,9 @@ export class BotCollector {
     const profile = await this.collectProfile();
     if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
     this.cachedBotd.profile = profile;
+    const automation = await this.collectAutomation();
+    if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return this;
+    this.cachedBotd.automation = automation;
 
     await this.sendTelemetry('init');
 
@@ -127,6 +131,23 @@ export class BotCollector {
     } finally {
       if (controller) this.abortControllers.delete(controller);
     }
+  }
+
+  async collectAutomation() {
+    const nav = typeof navigator !== 'undefined' ? navigator : {};
+    const win = typeof window !== 'undefined' ? window : {};
+    const doc = typeof document !== 'undefined' ? document : null;
+    let signals = {};
+    try { signals = collectAutomationSignals(nav, win, doc); } catch (e) { signals = { unavailable: ['all'] }; }
+    let notificationPermissionMismatch = null;
+    let worker = null;
+    try {
+      [notificationPermissionMismatch, worker] = await Promise.all([
+        probeNotificationPermission(nav, win),
+        doc ? probeWorkerConsistency(nav, win, doc) : Promise.resolve(null),
+      ]);
+    } catch (e) { /* optional evidence */ }
+    return { schema: 'automation-v1', signals, notificationPermissionMismatch, worker };
   }
 
   async getPayload(action = 'heartbeat') {

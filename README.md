@@ -6,7 +6,7 @@
 
 ## Bàn giao thu traffic nghiên cứu
 
-Bản SDK 1.2.0 hỗ trợ nhúng một tag có `data-datacat`, mã đợt thu và mã website.
+Bản SDK 1.3.0 hỗ trợ nhúng một tag có `data-datacat`, mã đợt thu và mã website.
 Xem [hướng dẫn giáo viên](pilot/README.md),
 [triển khai và export dataset](docs/PILOT_OPERATOR_GUIDE.md),
 [kiểm chứng bản bàn giao](docs/PILOT_HANDOFF_REVIEW_2026-10-19.md).
@@ -101,7 +101,16 @@ bot-detection-core/
 
 ## Kết quả chính
 
-### Policy v11 (current)
+### Policy v12 (current)
+
+Policy v12 giữ nguyên mô hình và ngưỡng, thêm lớp BotD v2 (collector 1.3.0) với hai luật:
+`automation_marker_v1` (webdriver, ChromeDriver `cdc_`, biến Selenium, binding Playwright)
+và `environment_tampering_v1` (mâu thuẫn môi trường ở ít nhất 3 nhóm độc lập). Trên ma
+trận thử, Chrome/Edge thật không bị gán BOT, còn Playwright có giao diện, Puppeteer stealth
+và Selenium chuyển từ SUSPECT sang BOT. Patchright có giao diện vẫn không bị phát hiện qua
+môi trường. Xem [Model release v12](docs/MODEL_RELEASE_V12.md).
+
+### Policy v11
 
 Policy v11 giữ nguyên hai model và ngưỡng của v10, thêm luật `synthetic_click_v1`:
 ít nhất 3 click trúng tâm control (lệch ≤ 1 px) và ít nhất 2 lần nhả chuột dưới 5 ms

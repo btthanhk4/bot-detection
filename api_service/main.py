@@ -549,6 +549,15 @@ def _bearer(request: Request, header: str) -> str:
     return supplied
 
 
+def _observed_headers(request: Request) -> dict:
+    """Header facts that a script cannot change from inside the page."""
+    return {
+        "observed": True,
+        "accept_language": bool((request.headers.get("accept-language") or "").strip()),
+        "sec_ch_ua": (request.headers.get("sec-ch-ua") or "")[:256],
+    }
+
+
 def require_admin(request: Request):
     supplied = _bearer(request, "X-Admin-Token")
     if supplied and settings.ADMIN_TOKEN and secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
@@ -670,6 +679,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     _require_inference_models()
     data = payload.model_dump()
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
+    data["_server_headers"] = _observed_headers(request)
 
     start_t = time.perf_counter()
     try:
@@ -733,6 +743,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     data["client_ip"] = client_ip
     data["received_at"] = int(time.time() * 1000)
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
+    data["_server_headers"] = _observed_headers(request)
 
     capture = None
     capture_status = None
@@ -740,9 +751,10 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         try:
             capture = build_capture(
                 {key: value for key, value in data.items()
-                 if key not in {"client_ip", "received_at", "_server_user_agent"}},
+                 if key not in {"client_ip", "received_at", "_server_user_agent", "_server_headers"}},
                 received_at=data["received_at"], client_ip=client_ip,
                 user_agent=data["_server_user_agent"], bundle_id=model_bundle_id,
+                server_headers=data["_server_headers"],
                 policy_version=str(DECISION_POLICY_VERSION),
                 retention_days=settings.CAPTURE_RETENTION_DAYS,
             )

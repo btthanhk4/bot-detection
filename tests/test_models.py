@@ -190,9 +190,9 @@ class TestEnsembleDetector:
         cases = (
             (headless, headless, {"webdriver": True}, "BOT"),
             (headless, headless, {"chromeDriverGlobal": True}, "BOT"),
-            (regular, headless, {"webdriver": True}, "SUSPECT"),
-            ("", headless, {"webdriver": True}, "SUSPECT"),
-            (headless, regular, {"webdriver": True}, "SUSPECT"),
+            (regular, headless, {"headlessUa": True}, "SUSPECT"),
+            ("", headless, {"headlessUa": True}, "SUSPECT"),
+            (headless, regular, {"headlessUa": True}, "SUSPECT"),
             (headless, headless, {"headlessUa": True}, "SUSPECT"),
             (regular, regular, {}, "SUSPECT"),
         )
@@ -336,8 +336,8 @@ class TestEnsembleDetector:
             "fingerprint": {"hardwareConcurrency": 1, "deviceMemory": 2},
             "botd": {
                 "heuristicScore": 0.999,
-                "detectors": {"webdriver": True, "headlessUa": True},
-                "reasons": ["navigator.webdriver is true"],
+                "detectors": {"headlessUa": True, "pluginsInconsistency": True},
+                "reasons": ["User-Agent explicitly declares HeadlessChrome"],
             },
             "mouse": {"records": []},
         }
@@ -567,7 +567,7 @@ class TestEnsembleDetector:
 
     def test_browser_flag_cannot_bypass_short_session_evidence_gate(self):
         detector = EnsembleBotDetector(lstm_available=False, tabular_available=False)
-        result = detector.predict({"botd": {"detectors": {"webdriver": True}}})
+        result = detector.predict({"botd": {"detectors": {"headlessUa": True}}})
 
         assert result["verdict"] == "SUSPECT"
         assert result["is_bot"] is False
@@ -590,7 +590,7 @@ class TestEnsembleDetector:
             lstm_model=BenignModel(), tabular_model=BenignModel()
         )
         result = detector.predict({
-            "botd": {"detectors": {"webdriver": True}},
+            "botd": {"detectors": {"headlessUa": True}},
             "mouse": {"records": records},
         })
 
@@ -750,7 +750,7 @@ def test_suspect_reason_codes_do_not_change_verdicts():
         ]}}, "SUSPECT", {"DEGENERATE_TRAJECTORY"}),
         ({"fingerprint": {"userAgent": "iPhone"}, "mouse": {"records": records}},
          "SUSPECT", {"UNSUPPORTED_INPUT"}),
-        ({"botd": {"detectors": {"webdriver": True}}, "mouse": {"records": records}},
+        ({"botd": {"detectors": {"headlessUa": True}}, "mouse": {"records": records}},
          "SUSPECT", {"CLIENT_AUTOMATION_SIGNAL", "HIGH_CLIENT_HEURISTIC_SCORE"}),
         ({"mouse": {"records": records}}, "HUMAN", set()),
     ]

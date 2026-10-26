@@ -2983,6 +2983,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const riskAvailable = hasApplicableRiskScore({ breakdown: bd, decision_state: dataObj.decision_state });
   const ruleDecision = bd.decision_basis === 'explicit_automation';
   const syntheticDecision = bd.decision_basis === 'synthetic_input';
+  const markerDecision = bd.decision_basis === 'automation_marker';
+  const tamperDecision = bd.decision_basis === 'environment_tampering';
+  const automationEvidence = bd.automation_evidence || {};
+  const FAMILY_LABELS = { HEADLESS_ENV: 'môi trường headless', GPU: 'GPU không khớp hệ điều hành', PERMISSION: 'quyền trình duyệt mâu thuẫn',
+    CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường' };
   const provenance = bd.input_provenance || {};
 
   // 2. Verdict Hero
@@ -2997,7 +3002,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // Verdict Explain in Vietnamese
   let explainText = '';
   if (v === 'BOT') {
-    explainText = syntheticDecision
+    explainText = markerDecision
+      ? `<strong>Hệ thống kết luận là BOT vì có dấu vết công cụ tự động hóa:</strong> ${escapeHtml((automationEvidence.markers || []).join(', '))}. Trình duyệt người dùng bình thường không có các dấu vết này. `
+      : tamperDecision
+      ? `<strong>Hệ thống kết luận là BOT vì môi trường trình duyệt mâu thuẫn ở ${automationEvidence.family_count} nhóm kiểm tra độc lập:</strong> ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}. Đây là dấu hiệu của công cụ giả mạo môi trường (stealth). `
+      : syntheticDecision
       ? `<strong>Hệ thống kết luận là BOT theo quy tắc click giả lập:</strong> ${provenance.clicks_centred} lần click trúng chính giữa nút (lệch tối đa 1 px), trong đó ${provenance.instant_releases} lần nhả chuột dưới 5 ms. Tay người không bấm và nhả nhanh như vậy, và hiếm khi trúng tâm nhiều lần liên tiếp. `
       : ruleDecision
       ? '<strong>Hệ thống kết luận là BOT theo quy tắc tự động hóa rõ ràng:</strong> User-Agent của request và trình duyệt đều tự nhận HeadlessChrome, đồng thời có dấu hiệu công cụ tự động hóa. Không có điểm rủi ro từ mô hình chuột cho phiên này. '

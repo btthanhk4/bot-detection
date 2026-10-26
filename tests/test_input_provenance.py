@@ -66,7 +66,7 @@ def test_rule_decides_even_when_mouse_models_say_human():
     assert baseline["verdict"] == "HUMAN"
     result = predict(clicks, records=human_moves())
     assert result["verdict"] == "BOT" and result["decision_state"] == "FINAL"
-    assert result["policy_version"] == DECISION_POLICY_VERSION == "11"
+    assert result["policy_version"] == DECISION_POLICY_VERSION
     breakdown = result["breakdown"]
     assert breakdown["decision_basis"] == "synthetic_input"
     assert breakdown["automation_rule"] == SYNTHETIC_CLICK_RULE

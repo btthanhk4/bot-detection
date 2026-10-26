@@ -50,6 +50,8 @@ from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_
 from core_ml.release_cases import (
     KNOWN_FAILURE_WINDOWS,
     REGRESSION_CASE_FINGERPRINT,
+    AUTOMATION_EVIDENCE_CASES,
+    AUTOMATION_EVIDENCE_RULE_GATE,
     SYNTHETIC_INPUT_CASES,
     SYNTHETIC_INPUT_RULE_GATE,
 )
@@ -696,9 +698,9 @@ def validate_explicit_automation_rule(detector) -> dict:
     cases = (
         (headless, headless, {"webdriver": True}, "BOT"),
         (headless, headless, {"chromeDriverGlobal": True}, "BOT"),
-        (regular, headless, {"webdriver": True}, "SUSPECT"),
-        ("", headless, {"webdriver": True}, "SUSPECT"),
-        (headless, regular, {"webdriver": True}, "SUSPECT"),
+        (regular, headless, {"headlessUa": True}, "SUSPECT"),
+        ("", headless, {"headlessUa": True}, "SUSPECT"),
+        (headless, regular, {"headlessUa": True}, "SUSPECT"),
         (headless, headless, {"headlessUa": True}, "SUSPECT"),
         (regular, regular, {}, "SUSPECT"),
     )
@@ -745,6 +747,21 @@ def validate_synthetic_input_rule(detector) -> dict:
         ):
             raise RuntimeError("Synthetic input rule metadata release gate failed")
     return dict(SYNTHETIC_INPUT_RULE_GATE)
+
+
+def validate_automation_evidence_rules(detector) -> dict:
+    """Check framework-marker and tampering fixtures before publishing policy 12."""
+    for expected, basis, payload in AUTOMATION_EVIDENCE_CASES:
+        result = detector.predict(payload)
+        if result["verdict"] != expected or result["decision_state"] != (
+            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+        ):
+            raise RuntimeError("Automation evidence rule release gate failed")
+        if expected == "BOT" and (
+            result["breakdown"]["decision_basis"] != basis or result["breakdown"]["risk_score_in_domain"]
+        ):
+            raise RuntimeError("Automation evidence rule metadata release gate failed")
+    return dict(AUTOMATION_EVIDENCE_RULE_GATE)
 
 
 def validate_known_release_cases(detector, telemetries: list, indices, labels,
@@ -1342,6 +1359,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     }
     explicit_automation_rule_gate = validate_explicit_automation_rule(production_detector)
     synthetic_input_rule_gate = validate_synthetic_input_rule(production_detector)
+    automation_evidence_rule_gate = validate_automation_evidence_rules(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1370,6 +1388,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
             "explicit_automation_rule_gate": explicit_automation_rule_gate,
             "synthetic_input_rule_gate": synthetic_input_rule_gate,
+            "automation_evidence_rule_gate": automation_evidence_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

@@ -523,8 +523,8 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
         "visitorId": "dev_test_bot",
         "botd": {
             "heuristicScore": 0.95,
-            "detectors": {"webdriver": True, "distinctiveProperties": True},
-            "reasons": ["navigator.webdriver is true"],
+            "detectors": {"headlessUa": True, "pluginsInconsistency": True},
+            "reasons": ["User-Agent explicitly declares HeadlessChrome"],
         },
     }
     res = client.post("/api/v1/detect", json=payload)
@@ -535,6 +535,12 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
     assert data["score_calibrated"] is False
     assert data["policy_version"] == DECISION_POLICY_VERSION
+
+    # Policy 12: a framework artefact decides on its own, even without mouse input.
+    payload["botd"]["detectors"] = {"webdriver": True}
+    marker = client.post("/api/v1/detect", json=payload).json()
+    assert marker["verdict"] == "BOT" and marker["decision_state"] == "FINAL"
+    assert marker["breakdown"]["decision_basis"] == "automation_marker"
 
 
 def test_explicit_automation_rule_uses_http_user_agent_not_json_override(client):
@@ -548,7 +554,9 @@ def test_explicit_automation_rule_uses_http_user_agent_not_json_override(client)
     }
     uncorroborated = client.post("/api/v1/detect", json=payload)
     assert uncorroborated.status_code == 200
-    assert uncorroborated.json()["verdict"] == "SUSPECT"
+    # The JSON UA override cannot trigger the headless rule; webdriver is still a
+    # framework marker under policy 12, so the basis shows which rule decided.
+    assert uncorroborated.json()["breakdown"]["decision_basis"] == "automation_marker"
 
     corroborated = client.post(
         "/api/v1/detect", json=payload, headers={"User-Agent": headless},
