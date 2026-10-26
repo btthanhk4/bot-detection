@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Đăng nhập · DATACAT</title>
+<title>Sign in · DATACAT</title>
 <link rel="icon" type="image/png" href="/assets/datacat-logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -46,39 +46,43 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 15px; }
 body {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;
+  min-height: 100vh; min-height: 100dvh;
   font-family: var(--font-sans); color: var(--text-primary); background: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Card: violet welcome panel with a curved edge, form on the right */
+/* Full-screen split: violet welcome panel with a curved edge, form on the right */
 .card {
-  position: relative; width: min(980px, 100%); min-height: 580px; display: grid; grid-template-columns: 1fr 1.08fr;
-  background: var(--bg-card); border-radius: 24px; overflow: hidden; box-shadow: var(--shadow);
+  position: relative; width: 100%; min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+  background: var(--bg-card); overflow: hidden;
 }
 .card::after { /* soft violet arc in the top-right corner, echoing the hero curve */
-  content: ''; position: absolute; top: -120px; right: -120px; width: 260px; height: 260px; border-radius: 50%;
-  border: 36px solid var(--decor); pointer-events: none;
+  content: ''; position: absolute; top: -190px; right: -190px; width: 420px; height: 420px; border-radius: 50%;
+  border: 56px solid var(--decor); pointer-events: none;
+}
+.card::before { /* a smaller echo in the bottom-right corner */
+  content: ''; position: absolute; bottom: -90px; right: 18%; width: 180px; height: 180px; border-radius: 50%;
+  background: var(--decor); pointer-events: none;
 }
 .hero {
   position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 18px; padding: 48px 56px 48px 40px; text-align: center; color: var(--hero-text);
+  gap: 20px; padding: 64px 96px 64px 48px; text-align: center; color: var(--hero-text);
   background: linear-gradient(160deg, var(--brand-light) 0%, #6c28de 45%, var(--brand-deep) 100%);
-  border-top-right-radius: 140px 50%; border-bottom-right-radius: 140px 50%;
+  border-top-right-radius: 220px 50%; border-bottom-right-radius: 220px 50%;
 }
 .hero::before { /* faint concentric rings behind the logo */
-  content: ''; position: absolute; left: 50%; top: 22%; width: 340px; height: 340px; margin-left: -170px; border-radius: 50%;
+  content: ''; position: absolute; left: 50%; top: 50%; width: 460px; height: 460px; margin: -300px 0 0 -230px; border-radius: 50%;
   background: radial-gradient(circle, transparent 54%, rgba(255, 255, 255, .06) 55%, transparent 56%, transparent 72%, rgba(255, 255, 255, .05) 73%, transparent 74%);
   pointer-events: none;
 }
-.logo { position: relative; width: 96px; height: 96px; padding: 5px; border-radius: 50%; background: #fff; box-shadow: 0 12px 30px rgba(30, 10, 80, .35); }
+.logo { position: relative; width: 120px; height: 120px; padding: 5px; border-radius: 50%; background: #fff; box-shadow: 0 12px 30px rgba(30, 10, 80, .35); }
 .logo img { display: block; width: 100%; height: 100%; border-radius: 50%; }
-.brand-name { position: relative; font-size: 15px; font-weight: 700; letter-spacing: .2em; }
-.hero h2 { position: relative; margin-top: 14px; font-size: 32px; font-weight: 700; line-height: 1.15; }
+.brand-name { position: relative; font-size: 17px; font-weight: 700; letter-spacing: .2em; }
+.hero h2 { position: relative; margin-top: 12px; font-size: clamp(32px, 3.2vw, 44px); font-weight: 700; line-height: 1.15; }
 
-.panel { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 56px 48px; }
-.panel-inner { width: 100%; max-width: 340px; text-align: center; }
-.panel h1 { font-size: 34px; font-weight: 700; color: var(--brand); line-height: 1.1; }
+.panel { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 64px 48px; }
+.panel-inner { width: 100%; max-width: 380px; text-align: center; }
+.panel h1 { font-size: clamp(32px, 3vw, 42px); font-weight: 700; color: var(--brand); line-height: 1.1; }
 .panel .sub { margin-top: 8px; font-size: 14px; color: var(--text-muted); }
 form { margin-top: 30px; display: flex; flex-direction: column; gap: 16px; text-align: left; }
 .field label { display: block; margin: 0 0 6px 18px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
@@ -111,16 +115,15 @@ button.submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 3p
 
 /* Tablet and phone: violet header with a curved bottom, form below */
 @media (max-width: 860px) {
-  body { padding: 0; align-items: stretch; }
-  .card { grid-template-columns: 1fr; border-radius: 0; min-height: 100vh; box-shadow: none; align-content: start; }
-  .card::after { display: none; }
+  .card { grid-template-columns: 1fr; align-content: start; }
+  .card::after, .card::before { display: none; }
   .hero {
     padding: 40px 24px 56px; gap: 12px;
     border-radius: 0 0 50% 50% / 0 0 48px 48px;
   }
-  .hero::before { top: -10%; }
-  .logo { width: 76px; height: 76px; }
-  .hero h2 { margin-top: 6px; font-size: 24px; }
+  .hero::before { top: 40%; width: 340px; height: 340px; margin: -200px 0 0 -170px; }
+  .logo { width: 84px; height: 84px; }
+  .hero h2 { margin-top: 4px; font-size: 26px; }
   .panel { padding: 32px 24px 44px; }
   .panel h1 { font-size: 28px; }
   input[type=text], input[type=password] { font-size: 16px; }
@@ -133,35 +136,35 @@ button.submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 3p
   <section class="hero">
     <div class="logo"><img src="/assets/datacat-logo.png" alt="" width="86" height="86"></div>
     <div class="brand-name">DATACAT</div>
-    <h2>Chào mừng trở lại!</h2>
+    <h2>Welcome back!</h2>
   </section>
 
   <section class="panel">
     <div class="panel-inner">
-    <h1>Đăng nhập</h1>
-    <p class="sub">Dành cho quản trị viên hệ thống</p>
+    <h1>Sign in</h1>
+    <p class="sub">Sign in to your administrator account to continue</p>
     <form id="loginForm" novalidate>
       <div class="field">
-        <label for="username">Tên đăng nhập</label>
+        <label for="username">Username</label>
         <div class="input-wrap">
           <svg class="lead" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
           <input type="text" id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
         </div>
       </div>
       <div class="field">
-        <label for="password">Mật khẩu</label>
+        <label for="password">Password</label>
         <div class="input-wrap">
           <svg class="lead" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <input type="password" id="password" name="password" autocomplete="current-password" required>
-          <button type="button" class="toggle" id="toggle" aria-label="Hiện mật khẩu" aria-pressed="false">
+          <button type="button" class="toggle" id="toggle" aria-label="Show password" aria-pressed="false">
             <svg viewBox="0 0 24 24" id="eye" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>
       </div>
       <p class="error" id="error" role="alert" hidden></p>
-      <button class="submit" type="submit" id="submit">Đăng nhập</button>
+      <button class="submit" type="submit" id="submit">Sign in</button>
     </form>
-    <p class="note">Phiên đăng nhập tự hết hạn. Nếu quên mật khẩu, hãy nhờ quản trị hệ thống đặt lại.</p>
+    <p class="note">Sessions expire automatically. Forgot your password? Ask a system administrator to reset it.</p>
     </div>
   </section>
 </main>
@@ -189,7 +192,7 @@ button.submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 3p
     const reveal = passInput.type === 'password';
     passInput.type = reveal ? 'text' : 'password';
     toggle.setAttribute('aria-pressed', String(reveal));
-    toggle.setAttribute('aria-label', reveal ? 'Ẩn mật khẩu' : 'Hiện mật khẩu');
+    toggle.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
   });
 
   // Only a same-site dashboard fragment is honoured, never a full URL.
@@ -200,12 +203,12 @@ button.submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 3p
     event.preventDefault();
     const username = userInput.value.trim();
     if (!username || !passInput.value) {
-      showError('Hãy nhập tên đăng nhập và mật khẩu');
+      showError('Enter your username and password.');
       (username ? passInput : userInput).focus();
       return;
     }
     submit.disabled = true;
-    submit.textContent = 'Đang đăng nhập…';
+    submit.textContent = 'Signing in…';
     try {
       const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
@@ -216,15 +219,20 @@ button.submit:focus-visible { outline: 2px solid var(--ring); outline-offset: 3p
         window.location.replace('/dashboard' + hash);
         return;
       }
-      const body = await res.json().catch(() => ({}));
-      showError(typeof body.detail === 'string' ? body.detail : 'Không thể đăng nhập, hãy thử lại');
+      // The API answers in Vietnamese; this page shows its own English message per status.
+      const messages = {
+        401: 'Incorrect username or password.',
+        429: 'Too many sign-in attempts. Please wait a few minutes and try again.',
+        503: 'Sign-in is temporarily unavailable. Please try again shortly.',
+      };
+      showError(messages[res.status] || 'Unable to sign in. Please try again.');
       passInput.value = '';
       passInput.focus();
     } catch (e) {
-      showError('Không kết nối được máy chủ');
+      showError('Cannot reach the server. Check your connection and try again.');
     } finally {
       submit.disabled = false;
-      submit.textContent = 'Đăng nhập';
+      submit.textContent = 'Sign in';
     }
   });
 })();

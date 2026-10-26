@@ -1997,7 +1997,7 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-gauge"></use></svg></div>
       <div class="kpi-label">Độ trễ trung bình</div>
       <div class="kpi-value" id="kpiAvgLatency">--</div>
-      <div class="kpi-extra">ms / inference</div>
+      <div class="kpi-extra" id="kpiLatencyExtra">ms mỗi lần suy luận</div>
     </div>
   </div>
 
@@ -2726,6 +2726,19 @@ async function fetchClassificationSummary() {
     suspects: Math.max(0, suspects),
   };
   updateClassificationKPIs();
+  updateLatencyKPI(data.inference_latency);
+}
+
+// Average model inference time over the API's recent live sessions (since start-up).
+function updateLatencyKPI(latency) {
+  const avg = Number(latency && latency.avg_ms);
+  if (!Number.isFinite(avg)) {
+    setText('kpiAvgLatency', '--');
+    setText('kpiLatencyExtra', 'Chưa có phiên nào từ lần khởi động');
+    return;
+  }
+  setText('kpiAvgLatency', avg < 100 ? avg.toFixed(1) : Math.round(avg).toLocaleString('vi-VN'));
+  setText('kpiLatencyExtra', `ms · p95 ${Number(latency.p95_ms).toFixed(0)} ms · ${latency.samples} phiên gần nhất`);
 }
 
 function updateClassificationKPIs() {

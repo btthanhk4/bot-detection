@@ -186,6 +186,28 @@ _health_cache_lock = threading.Lock()
 _health_cache = {"checked_at": 0.0, "database": False, "inference_ready": False}
 
 # Sliding-window rate limiter per client IP
+# Recent live inference durations (telemetry + /detect) for the dashboard KPI.
+# In-memory on purpose: it describes this process since start-up.
+_latency_lock = threading.Lock()
+_inference_latency_ms = collections.deque(maxlen=500)
+
+
+def _record_inference_latency(started_at: float) -> float:
+    elapsed = round((time.perf_counter() - started_at) * 1000, 2)
+    with _latency_lock:
+        _inference_latency_ms.append(elapsed)
+    return elapsed
+
+
+def _inference_latency_summary() -> Optional[Dict[str, Any]]:
+    with _latency_lock:
+        samples = sorted(_inference_latency_ms)
+    if not samples:
+        return None
+    p95 = samples[min(len(samples) - 1, math.ceil(0.95 * len(samples)) - 1)]
+    return {"avg_ms": round(sum(samples) / len(samples), 2), "p95_ms": p95, "samples": len(samples)}
+
+
 _rate_limit_lock = threading.Lock()
 _rate_limit_records = collections.defaultdict(list)
 
@@ -712,7 +734,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
         logger.exception("Detection inference failed")
         raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
 
-    latency_ms = round((time.perf_counter() - start_t) * 1000, 2)
+    latency_ms = _record_inference_latency(start_t)
 
     _attach_model_metadata(result)
     result["latency_ms"] = latency_ms
@@ -793,7 +815,9 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     try:
         _require_inference_models()
+        started_at = time.perf_counter()
         analysis = await run_in_threadpool(ensemble_detector.predict, data)
+        _record_inference_latency(started_at)
         _attach_model_metadata(analysis)
     except Exception as exc:
         logger.exception("Telemetry inference failed")
@@ -1159,7 +1183,7 @@ def get_stats_summary(_read=Depends(require_read_access)):
     stats = get_summary_stats()
     if stats is None:
         raise HTTPException(status_code=503, detail="Database query failed")
-    return stats
+    return {**stats, "inference_latency": _inference_latency_summary()}
 
 
 @app.get("/api/v1/sessions/{session_id}/detail")

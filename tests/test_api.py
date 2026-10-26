@@ -999,6 +999,22 @@ def test_summary_reports_database_query_failure(client, monkeypatch):
     assert response.json()["detail"] == "Database query failed"
 
 
+def test_summary_reports_recent_inference_latency(client, monkeypatch):
+    from api_service import main
+
+    monkeypatch.setattr("api_service.database.get_db", lambda: object())
+    monkeypatch.setattr("api_service.database.get_summary_stats",
+                        lambda: {"total": 3, "humans": 2, "bots": 1, "suspects": 0})
+    monkeypatch.setattr(main, "_inference_latency_ms", main.collections.deque(maxlen=500))
+
+    empty = client.get("/api/v1/stats/summary", headers=READ_HEADERS).json()
+    assert empty["inference_latency"] is None and empty["bots"] == 1
+
+    main._inference_latency_ms.extend([10.0, 20.0, 30.0, 40.0])
+    latency = client.get("/api/v1/stats/summary", headers=READ_HEADERS).json()["inference_latency"]
+    assert latency == {"avg_ms": 25.0, "p95_ms": 40.0, "samples": 4}
+
+
 def test_invalid_telemetry_is_rejected(client):
     res = client.post("/api/v1/telemetry", content=b"not-json", headers={"Content-Type": "text/plain"})
     assert res.status_code == 400
