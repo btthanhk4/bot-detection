@@ -1,0 +1,106 @@
+{
+  "model_id": "e2a209bdbdf78199",
+  "features": [
+    "duration_ms",
+    "displacement_px",
+    "path_px",
+    "straightness",
+    "mean_speed",
+    "step_length_cv",
+    "peak_step_position",
+    "max_deviation_ratio",
+    "rms_deviation_ratio",
+    "direction_changes"
+  ],
+  "generators": [
+    "linear",
+    "linear_noise",
+    "bezier_ease",
+    "lognormal"
+  ],
+  "human_sources": {
+    "brainrun": 40000,
+    "live_human_candidate": 0
+  },
+  "devices": 2072,
+  "evaluation": {
+    "held_out_generator": {
+      "linear": {
+        "swipe": {
+          "auc": 0.8084,
+          "tpr_at_fpr_1pct": 0.0025,
+          "tpr_at_fpr_5pct": 0.0976
+        },
+        "five_swipes": {
+          "auc": 0.8535,
+          "tpr_at_fpr_1pct": 0.0918,
+          "tpr_at_fpr_5pct": 0.2953
+        }
+      },
+      "linear_noise": {
+        "swipe": {
+          "auc": 0.6723,
+          "tpr_at_fpr_1pct": 0.058,
+          "tpr_at_fpr_5pct": 0.218
+        },
+        "five_swipes": {
+          "auc": 0.8372,
+          "tpr_at_fpr_1pct": 0.196,
+          "tpr_at_fpr_5pct": 0.4715
+        }
+      },
+      "bezier_ease": {
+        "swipe": {
+          "auc": 0.6878,
+          "tpr_at_fpr_1pct": 0.0243,
+          "tpr_at_fpr_5pct": 0.0902
+        },
+        "five_swipes": {
+          "auc": 0.6622,
+          "tpr_at_fpr_1pct": 0.0347,
+          "tpr_at_fpr_5pct": 0.1266
+        }
+      },
+      "lognormal": {
+        "swipe": {
+          "auc": 0.5045,
+          "tpr_at_fpr_1pct": 0.0297,
+          "tpr_at_fpr_5pct": 0.0704
+        },
+        "five_swipes": {
+          "auc": 0.5453,
+          "tpr_at_fpr_1pct": 0.0223,
+          "tpr_at_fpr_5pct": 0.062
+        }
+      }
+    },
+    "all_generators": {
+      "linear": {
+        "auc": 0.9995,
+        "tpr_at_fpr_1pct": 0.9936,
+        "tpr_at_fpr_5pct": 0.997
+      },
+      "linear_noise": {
+        "auc": 0.9775,
+        "tpr_at_fpr_1pct": 0.6625,
+        "tpr_at_fpr_5pct": 0.8593
+      },
+      "bezier_ease": {
+        "auc": 0.9704,
+        "tpr_at_fpr_1pct": 0.4693,
+        "tpr_at_fpr_5pct": 0.832
+      },
+      "lognormal": {
+        "auc": 0.9923,
+        "tpr_at_fpr_1pct": 0.8776,
+        "tpr_at_fpr_5pct": 0.9554
+      }
+    },
+    "human_test_score_p50_p95_p99": [
+      0.01,
+      0.6124,
+      0.877
+    ]
+  },
+  "verdict_effect": "none (shadow only)"
+}

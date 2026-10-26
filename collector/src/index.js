@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.6.0';
+export const COLLECTOR_VERSION = '1.7.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -222,7 +222,8 @@ export class BotCollector {
     // Typing and clicks are activity too, even when the pointer does not move.
     const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
     const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
-    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks]);
+    const gestures = mouse.touch && Number.isFinite(mouse.touch.total) ? mouse.touch.total : 0;
+    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures]);
   }
 
   /**
@@ -400,6 +401,9 @@ export class BotCollector {
           .map(({ record }) => record);
         delete payload.mouse.chunks;
         payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
+        if (payload.mouse.touch && Array.isArray(payload.mouse.touch.gestures)) {
+          payload.mouse.touch.gestures = payload.mouse.touch.gestures.slice(-6);
+        }
         body = JSON.stringify(payload);
       }
       // Preserve model input-domain signals even when optional fingerprint data is oversized.

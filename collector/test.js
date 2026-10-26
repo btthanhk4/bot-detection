@@ -73,6 +73,46 @@ async function testSessionContinuesAcrossPagesOfOneTab() {
   }
 }
 
+async function testTouchGesturesAreCaptured() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  const point = (x, y, extra = {}) => ({ clientX: x, clientY: y, radiusX: 11.04, radiusY: 9.5, force: 0.4321, ...extra });
+  recorder.handleTouchStart({ isTrusted: true, touches: [point(100, 600)] });
+  for (let i = 1; i <= 5; i++) recorder.handleTouchMove({ isTrusted: true, touches: [point(100 + i, 600 - i * 40)] });
+  recorder.handleTouchEnd({ isTrusted: true, touches: [], changedTouches: [point(106, 380)] });
+
+  // A pinch (two fingers) is not a single-finger stroke and is dropped.
+  recorder.handleTouchStart({ isTrusted: true, touches: [point(50, 50)] });
+  recorder.handleTouchStart({ isTrusted: true, touches: [point(50, 50), point(90, 90)] });
+  recorder.handleTouchEnd({ isTrusted: true, touches: [point(90, 90)], changedTouches: [point(50, 50)] });
+  // Script-dispatched touches are not trusted and never become gestures.
+  recorder.handleTouchStart({ isTrusted: false, touches: [point(10, 10)] });
+  recorder.handleTouchEnd({ isTrusted: false, touches: [], changedTouches: [point(10, 10)] });
+  // A gesture the browser cancels (it started scrolling) is still kept.
+  recorder.handleTouchStart({ isTrusted: true, touches: [point(200, 300)] });
+  recorder.handleTouchCancel({ isTrusted: true, touches: [], changedTouches: [point(200, 250)] });
+
+  const touch = recorder.exportData().touch;
+  assert.strictEqual(touch.total, 2);
+  assert.strictEqual(touch.gestures.length, 2);
+  const swipe = touch.gestures[0].points;
+  assert.strictEqual(swipe.length, 7, 'start, five moves and the release point');
+  assert.deepStrictEqual(swipe[0].slice(1), [100, 600, 11, 9.5, 0.43], 'geometry rounded, force to 2 decimals');
+  assert.ok(swipe.every((p) => p.length === 6 && p[0] >= 0));
+  assert.ok(Number.isFinite(touch.gestures[0].t0));
+
+  for (let i = 0; i < 40; i++) {
+    recorder.handleTouchStart({ isTrusted: true, touches: [point(i, i)] });
+    for (let j = 0; j < 80; j++) recorder.handleTouchMove({ isTrusted: true, touches: [point(i, j)] });
+    recorder.handleTouchEnd({ isTrusted: true, touches: [], changedTouches: [point(i, 80)] });
+  }
+  const bounded = recorder.exportData().touch;
+  assert.strictEqual(bounded.total, 42);
+  assert.strictEqual(bounded.gestures.length, 20);
+  assert.ok(bounded.gestures.every((g) => g.points.length <= 48));
+  collector.destroy();
+}
+
 async function testKeyboardTimingAndPressPressure() {
   const collector = new BotCollector({ autoSendInterval: 0 });
   const recorder = collector.mouseRecorder;
@@ -808,6 +848,7 @@ testRestartDuringFingerprinting()
   .then(testOlderRetryCannotDiscardNewerFailedSnapshot)
   .then(testSessionContinuesAcrossPagesOfOneTab)
   .then(testKeyboardTimingAndPressPressure)
+  .then(testTouchGesturesAreCaptured)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

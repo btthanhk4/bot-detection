@@ -3147,6 +3147,14 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `<strong>Hệ thống xếp loại NGHI VẤN (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới. Chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.`;
     }
   }
+  const touch = bd.touch || {};
+  if (Number(touch.gestures) > 0) {
+    const TOUCH_FLAGS = { SYNTHETIC_CONTACT: 'mọi lần chạm có bán kính 1 và lực 1 (mặc định của công cụ tự động hóa)',
+      ZERO_TIME_TAPS: 'chạm và nhả cùng lúc', RULER_SWIPES: 'vuốt thẳng tắp với các bước đều nhau' };
+    const flags = (touch.research_flags || []).map(f => TOUCH_FLAGS[f] || f);
+    const shadow = touch.shadow && touch.shadow.score != null ? `; điểm mô hình vuốt thử nghiệm ${(touch.shadow.score * 100).toFixed(0)}%` : '';
+    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (chỉ thu để huấn luyện, không ảnh hưởng kết luận): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
+  }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
 
   // 3. Model Breakdown & Fusion

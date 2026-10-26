@@ -101,6 +101,13 @@ bot-detection-core/
 
 ## Kết quả chính
 
+### Dữ liệu cảm ứng (collector 1.7.0)
+
+Collector 1.7.0 thu cử chỉ chạm/vuốt trên điện thoại; API lưu thành dữ liệu huấn luyện có
+nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) và hiển thị cờ nghiên
+cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun). Kết luận không đổi (policy
+17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
+
 ### Policy v17 (current)
 
 Policy v17 thêm `mobile_emulation_v1` (trình duyệt máy tính giả làm iPhone/Android: platform

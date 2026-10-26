@@ -96,6 +96,9 @@ class Settings:
     DATA_RETENTION_DAYS: int = _env_int("BOT_DATA_RETENTION_DAYS", 30, 1, 3650)
     CAPTURE_ENABLED: bool = os.getenv("BOT_CAPTURE_ENABLED", "false").lower() in ("1", "true", "yes")
     CAPTURE_RETENTION_DAYS: int = _env_int("BOT_CAPTURE_RETENTION_DAYS", 7, 1, 365)
+    # Phone/tablet gestures kept as weakly labelled training data (geometry and timing only).
+    TOUCH_CAPTURE_ENABLED: bool = os.getenv("BOT_TOUCH_CAPTURE", "false").lower() in ("1", "true", "yes")
+    TOUCH_RETENTION_DAYS: int = _env_int("BOT_TOUCH_RETENTION_DAYS", 180, 1, 730)
 
 
 settings = Settings()

@@ -187,7 +187,10 @@ def test_admin_delete_removes_raw_data_even_when_capture_is_disabled(collection,
         def delete_one(self, *args):
             return SimpleNamespace(deleted_count=0)
 
-    db = {"telemetry_captures": collection, "deleted_sessions": Empty(), "detection_results": Empty()}
+        delete_many = delete_one
+
+    db = {"telemetry_captures": collection, "deleted_sessions": Empty(), "detection_results": Empty(),
+          "touch_samples": Empty()}
     monkeypatch.setattr(database, "get_db", lambda: db)
     monkeypatch.setattr(database.settings, "CAPTURE_ENABLED", False)
     assert database.delete_session(event["sessionId"]) is True

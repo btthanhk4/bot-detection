@@ -872,6 +872,11 @@
       this.lastKeyDownAt = null;
       this.bulkInserts = 0;
       this.bulkMaxLength = 0;
+      // Touch gestures (phones/tablets): per point [ms since touch start, x, y, radiusX,
+      // radiusY, force] in CSS px. Geometry and timing only; multi-finger gestures dropped.
+      this.touchGestures = [];
+      this.activeGesture = null;
+      this.touchGestureTotal = 0;
       this.handlePointerDown = this.handlePointerDown.bind(this);
       this.handleKeyDown = this.handleKeyDown.bind(this);
       this.handleKeyUp = this.handleKeyUp.bind(this);
@@ -886,6 +891,7 @@
       this.handleTouchStart = this.handleTouchStart.bind(this);
       this.handleTouchMove = this.handleTouchMove.bind(this);
       this.handleTouchEnd = this.handleTouchEnd.bind(this);
+      this.handleTouchCancel = this.handleTouchCancel.bind(this);
     }
 
     start() {
@@ -899,6 +905,7 @@
       window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
       window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
       window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
+      window.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
       // Coalesced samples and raw updates are only exposed in secure contexts.
       window.addEventListener('pointermove', this.handlePointerMove, { passive: true });
       if (window.isSecureContext && 'onpointerrawupdate' in window) {
@@ -921,6 +928,7 @@
       window.removeEventListener('touchstart', this.handleTouchStart);
       window.removeEventListener('touchmove', this.handleTouchMove);
       window.removeEventListener('touchend', this.handleTouchEnd);
+      window.removeEventListener('touchcancel', this.handleTouchCancel);
       window.removeEventListener('pointermove', this.handlePointerMove);
       window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate);
       window.removeEventListener('pointerdown', this.handlePointerDown);
@@ -1181,15 +1189,58 @@
       if (e.touches && e.touches[0]) {
         this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY, 'touch');
       }
+      if (!e || e.isTrusted === false) return;
+      if (e.touches && e.touches.length === 1) {
+        const touch = e.touches[0];
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        this.activeGesture = { start: now, t0: Math.round(now), points: [], multi: false };
+        this.addGesturePoint(touch, now);
+      } else if (this.activeGesture) {
+        this.activeGesture.multi = true;
+      }
     }
 
     handleTouchMove(e) {
       if (e.touches && e.touches[0]) {
         this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY, 'touch');
       }
+      if (!e || e.isTrusted === false || !this.activeGesture) return;
+      if (e.touches && e.touches.length > 1) { this.activeGesture.multi = true; return; }
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (e.touches && e.touches[0]) this.addGesturePoint(e.touches[0], now);
+    }
+
+    addGesturePoint(touch, now) {
+      const gesture = this.activeGesture;
+      if (!gesture || gesture.points.length >= 48) return;
+      const r1 = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value * 10) / 10 : null);
+      gesture.points.push([
+        r1(now - gesture.start), r1(touch.clientX), r1(touch.clientY),
+        r1(touch.radiusX), r1(touch.radiusY),
+        typeof touch.force === 'number' && Number.isFinite(touch.force) ? Math.round(touch.force * 100) / 100 : null,
+      ]);
+    }
+
+    finishGesture(e) {
+      const gesture = this.activeGesture;
+      if (!gesture) return;
+      const touch = e && e.changedTouches && e.changedTouches[0];
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (touch) this.addGesturePoint(touch, now);
+      this.activeGesture = null;
+      if (gesture.multi || !gesture.points.length) return;
+      this.touchGestureTotal++;
+      this.touchGestures.push({ t0: gesture.t0, points: gesture.points });
+      if (this.touchGestures.length > 30) this.touchGestures = this.touchGestures.slice(-20);
+    }
+
+    handleTouchCancel(e) {
+      // The browser took the gesture over (scroll, zoom); what was seen is still a real stroke.
+      if (e && e.isTrusted !== false) this.finishGesture(e);
     }
 
     handleTouchEnd(e) {
+      if (e && e.isTrusted !== false) this.finishGesture(e);
       const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
       if (touch) {
         this.recordPoint('up', touch.clientX, touch.clientY, 'touch');
@@ -1302,6 +1353,12 @@
           ...this.pointerStats,
           secureContext: typeof window !== 'undefined' && window.isSecureContext === true,
         },
+        touch: {
+          gestures: this.touchGestures.slice(-20),
+          total: this.touchGestureTotal,
+          viewport: typeof window !== 'undefined' ? [window.innerWidth || 0, window.innerHeight || 0] : null,
+          dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+        },
         keyboard: {
           keystrokes: this.keystrokes.slice(-60).map(({ t, h, k }) => ({ t, h, k })),
           bulkInserts: this.bulkInserts,
@@ -1335,7 +1392,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.6.0';
+  const COLLECTOR_VERSION = '1.7.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -1548,7 +1605,8 @@
       // Typing and clicks are activity too, even when the pointer does not move.
       const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
       const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
-      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks]);
+      const gestures = mouse.touch && Number.isFinite(mouse.touch.total) ? mouse.touch.total : 0;
+      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures]);
     }
 
     /**
@@ -1726,6 +1784,9 @@
             .map(({ record }) => record);
           delete payload.mouse.chunks;
           payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
+          if (payload.mouse.touch && Array.isArray(payload.mouse.touch.gestures)) {
+            payload.mouse.touch.gestures = payload.mouse.touch.gestures.slice(-6);
+          }
           body = JSON.stringify(payload);
         }
         // Preserve model input-domain signals even when optional fingerprint data is oversized.

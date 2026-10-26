@@ -7,6 +7,7 @@ JSON file buffer. Uses pymongo with connection pooling and automatic reconnectio
 Collections:
   - detection_results: All analyzed sessions with AI verdicts
   - telemetry_captures: Opt-in immutable snapshots with first model observation
+  - touch_samples: Opt-in phone/tablet gestures with weak labels, for training
 """
 
 import os
@@ -16,6 +17,7 @@ import math
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from pymongo.errors import DuplicateKeyError
@@ -334,6 +336,124 @@ def save_telemetry_capture(snapshot: dict, analysis: Optional[dict] = None) -> O
     except Exception as exc:
         logger.exception("[DB] Research capture write failed")
         raise DatabasePersistenceError("Failed to persist research capture") from exc
+
+
+# Heartbeats resend the same gestures; skip a write when its label is unchanged.
+_touch_written = OrderedDict()
+_touch_written_lock = threading.Lock()
+_TOUCH_WRITTEN_MAX = 20_000
+_touch_indexes_ready = False
+
+
+def _ensure_touch_indexes(db) -> bool:
+    """Separate from the detection indexes: training data must not gate detection."""
+    global _touch_indexes_ready
+    if _touch_indexes_ready:
+        return True
+    try:
+        collection = db["touch_samples"]
+        collection.create_index([("expires_at", 1)], name="expires_at_1", expireAfterSeconds=0)
+        collection.create_index([("sessionId", 1)], name="sessionId_1")
+        collection.create_index([("label_hint", 1), ("device", 1)], name="label_hint_1_device_1")
+        _touch_indexes_ready = True
+    except Exception as e:
+        logger.warning(f"[DB] Touch sample indexes unavailable: {e}")
+    return _touch_indexes_ready
+
+
+def save_touch_samples(samples: List[dict]) -> int:
+    """Upsert gesture samples: raw geometry once, the latest weak label each time it changes."""
+    db = get_db()
+    # Without the TTL index samples would never expire: store nothing.
+    if db is None or not samples or not _ensure_touch_indexes(db):
+        return 0
+    session_id = samples[0]["sessionId"]
+    if _writes_are_blocked(db, session_id):
+        return 0
+    now = datetime.now(timezone.utc)
+    collection = db["touch_samples"]
+    written = 0
+    for sample in samples:
+        label_key = (sample["label_hint"], sample["verdict"])
+        with _touch_written_lock:
+            if _touch_written.get(sample["_id"]) == label_key:
+                continue
+        raw = {key: value for key, value in sample.items()
+               if key not in {"label_hint", "verdict", "automation_rule", "touch_flags", "policy_version"}}
+        collection.update_one(
+            {"_id": sample["_id"]},
+            {
+                "$setOnInsert": {
+                    **raw, "created_at": now,
+                    "expires_at": now + timedelta(days=settings.TOUCH_RETENTION_DAYS),
+                },
+                "$set": {
+                    "label_hint": sample["label_hint"], "verdict": sample["verdict"],
+                    "automation_rule": sample["automation_rule"], "touch_flags": sample["touch_flags"],
+                    "policy_version": sample["policy_version"], "updated_at": now,
+                },
+            },
+            upsert=True,
+        )
+        written += 1
+        with _touch_written_lock:
+            _touch_written[sample["_id"]] = label_key
+            _touch_written.move_to_end(sample["_id"])
+            while len(_touch_written) > _TOUCH_WRITTEN_MAX:
+                _touch_written.popitem(last=False)
+    return written
+
+
+def get_touch_sample_stats() -> Optional[dict]:
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        rows = db["touch_samples"].aggregate([
+            {"$group": {"_id": {"label": "$label_hint", "device": "$device", "kind": "$features.kind"},
+                        "count": {"$sum": 1}, "sessions": {"$addToSet": "$sessionId"}}},
+        ])
+        return {"groups": [
+            {**row["_id"], "count": row["count"], "sessions": len(row["sessions"])} for row in rows
+        ]}
+    except Exception as e:
+        logger.error(f"[DB] Touch sample stats failed: {e}")
+        return None
+
+
+def export_touch_samples(after: Optional[str] = None, label: Optional[str] = None, limit: int = 500) -> Optional[dict]:
+    """A page of samples ordered by id; pass the returned ``next`` as ``after``."""
+    db = get_db()
+    if db is None:
+        return None
+    query = {}
+    if after:
+        query["_id"] = {"$gt": after}
+    if label:
+        query["label_hint"] = label
+    try:
+        docs = list(db["touch_samples"].find(query).sort("_id", 1).limit(limit))
+        for doc in docs:
+            for key in ("created_at", "updated_at", "expires_at"):
+                if isinstance(doc.get(key), datetime):
+                    doc[key] = doc[key].isoformat()
+        return {"samples": docs, "next": docs[-1]["_id"] if len(docs) == limit else None}
+    except Exception as e:
+        logger.error(f"[DB] Touch sample export failed: {e}")
+        return None
+
+
+def delete_touch_samples() -> Optional[int]:
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        with _touch_written_lock:
+            _touch_written.clear()
+        return db["touch_samples"].delete_many({}).deleted_count
+    except Exception as e:
+        logger.error(f"[DB] Touch sample delete failed: {e}")
+        return None
 
 
 def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
@@ -700,7 +820,10 @@ def delete_session(session_id: str) -> Optional[bool]:
         )
         result = db["detection_results"].delete_one({"sessionId": session_id})
         captures = db["telemetry_captures"].delete_many({"sessionId": session_id})
-        return result.deleted_count > 0 or captures.deleted_count > 0
+        touches = db["touch_samples"].delete_many({"sessionId": session_id})
+        with _touch_written_lock:
+            _touch_written.clear()
+        return result.deleted_count > 0 or captures.deleted_count > 0 or touches.deleted_count > 0
     except Exception as e:
         logger.error(f"[DB] Delete failed: {e}")
         return None

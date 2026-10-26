@@ -334,6 +334,16 @@ def _persist_capture(snapshot: dict, analysis: Optional[dict] = None) -> dict:
     return {"capture_id": snapshot["event_id"], "persisted": True, "buffered": False}
 
 
+def _persist_touch_samples(data: dict, analysis: dict) -> None:
+    """Best effort: training data must never fail or slow a telemetry request."""
+    try:
+        from api_service.database import save_touch_samples
+        from api_service.touch_samples import build_touch_samples
+        save_touch_samples(build_touch_samples(data, analysis))
+    except Exception:
+        logger.exception("Touch sample persistence failed")
+
+
 def _flush_telemetry_buffer(max_events: Optional[int] = None):
     """Persist a bounded batch after MongoDB recovers without duplicate flushers."""
     global _telemetry_replay_inflight
@@ -882,6 +892,8 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     if persisted:
         background_tasks.add_task(_flush_telemetry_buffer)
+        if settings.TOUCH_CAPTURE_ENABLED:
+            background_tasks.add_task(_persist_touch_samples, data, analysis)
 
     # An admin deleted this session while the tab stayed open: tell the collector
     # to continue under a new id instead of being refused until the tombstone expires.
@@ -1185,6 +1197,41 @@ def delete_all_sessions(_admin=Depends(require_admin)):
         raise HTTPException(status_code=503, detail="Dataset deletion incomplete; retry") from exc
     _clear_in_memory_sessions()
     return {"status": "deleted", "count": max(count, research_deleted or 0)}
+
+
+@app.get("/api/v1/touch-samples/stats")
+def get_touch_sample_stats(_read=Depends(require_read_access)):
+    """Counts of stored phone/tablet gestures by weak label, device and kind."""
+    from api_service.database import get_touch_sample_stats as db_stats
+    stats = db_stats()
+    if stats is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"capture_enabled": settings.TOUCH_CAPTURE_ENABLED,
+            "retention_days": settings.TOUCH_RETENTION_DAYS, **stats}
+
+
+@app.get("/api/v1/touch-samples/export")
+def export_touch_samples(
+    after: Optional[str] = Query(default=None, pattern=r"^[0-9a-f]{32}$"),
+    label: Optional[str] = Query(default=None, pattern=r"^(human_candidate|automation|unlabeled)$"),
+    limit: int = Query(default=500, ge=1, le=2000),
+    _admin=Depends(require_admin),
+):
+    """Page through gesture samples for training (python -m core_ml.train_touch --live)."""
+    from api_service.database import export_touch_samples as db_export
+    page = db_export(after=after, label=label, limit=limit)
+    if page is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return page
+
+
+@app.delete("/api/v1/touch-samples")
+def delete_touch_samples(_admin=Depends(require_admin)):
+    from api_service.database import delete_touch_samples as db_delete
+    count = db_delete()
+    if count is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"status": "deleted", "count": count}
 
 
 @app.get("/api/v1/stats/summary")

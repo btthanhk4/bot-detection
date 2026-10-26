@@ -22,6 +22,7 @@ from core_ml.features.input_provenance import (
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
+from core_ml.features.touch import analyze_touch
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
     compute_statistical_features,
@@ -33,6 +34,7 @@ from core_ml.features.mouse_features import (
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.models.touch_shadow import score_touch
 
 
 DECISION_POLICY_VERSION = "17"
@@ -390,6 +392,8 @@ class EnsembleBotDetector:
                 }} if profile_candidate else {}),
                 "interaction_shadow": extract_interaction_features(mouse),
                 "input_provenance": input_provenance,
+                # Research only: phone gestures never change the verdict.
+                "touch": {**analyze_touch(mouse.get("touch")), "shadow": score_touch(mouse.get("touch"))},
                 "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
