@@ -26,6 +26,8 @@ logger = logging.getLogger("bot_detection.geoip")
 
 DATABASES = {"city": "dbip-city-lite.mmdb", "asn": "dbip-asn-lite.mmdb"}
 _URL = "https://download.db-ip.com/free/dbip-{kind}-lite-{month}.mmdb.gz"
+# download.db-ip.com answers 403 to the default "Python-urllib" agent.
+_USER_AGENT = "DATACAT-GeoIP/1.0 (+https://datacat.io.vn)"
 ATTRIBUTION = {"text": "IP Geolocation by DB-IP", "url": "https://db-ip.com"}
 MAX_AGE_DAYS = 35
 
@@ -140,7 +142,9 @@ def refresh(kinds=tuple(DATABASES), timeout=300):
         for month in _months():
             tmp = f"{target}.{os.getpid()}.download"
             try:
-                with urllib.request.urlopen(_URL.format(kind=kind, month=month), timeout=timeout) as response, \
+                request = urllib.request.Request(_URL.format(kind=kind, month=month),
+                                                 headers={"User-Agent": _USER_AGENT})
+                with urllib.request.urlopen(request, timeout=timeout) as response, \
                         gzip.GzipFile(fileobj=response) as unpacked, open(tmp, "wb") as out:
                     shutil.copyfileobj(unpacked, out, length=1 << 20)
                 check = _open(tmp)

@@ -69,8 +69,10 @@ def test_refresh_falls_back_to_last_month_and_replaces_atomically(monkeypatch, t
     monkeypatch.setattr(geoip, "_months", lambda now=None: ["2026-11", "2026-10"])
     requested = []
 
-    def fake_urlopen(url, timeout):
+    def fake_urlopen(request, timeout):
+        url = request.full_url
         requested.append(url)
+        assert not request.get_header("User-agent", "").startswith("Python-urllib"), "DB-IP refuses it (403)"
         if "2026-11" in url:
             raise OSError("404 not published yet")
         return io.BytesIO(gzip.compress(b"mmdb-bytes"))
@@ -90,7 +92,7 @@ def test_refresh_falls_back_to_last_month_and_replaces_atomically(monkeypatch, t
 def test_refresh_rejects_a_wrong_database(monkeypatch, tmp_path):
     monkeypatch.setattr(geoip.settings, "GEOIP_DIR", str(tmp_path))
     monkeypatch.setattr(geoip, "_months", lambda now=None: ["2026-10"])
-    monkeypatch.setattr(geoip.urllib.request, "urlopen", lambda url, timeout: io.BytesIO(gzip.compress(b"x")))
+    monkeypatch.setattr(geoip.urllib.request, "urlopen", lambda request, timeout: io.BytesIO(gzip.compress(b"x")))
     monkeypatch.setattr(geoip, "_open", lambda path: FakeReader({}, "Something-Else"))
     assert geoip.refresh(("city",)) == []
     assert not list(tmp_path.iterdir())
