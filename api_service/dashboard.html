@@ -2251,15 +2251,13 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
     </div>
     <div class="panel animate-in">
       <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-spline"></use></svg>Lưu lượng phiên</div>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-spline"></use></svg>Lưu lượng truy cập</div>
         <select id="timelineRange" class="timeline-range-select" aria-label="Khoảng thời gian biểu đồ" onchange="changeTimelineRange(this.value)">
-          <option value="30">30 phút</option>
-          <option value="60" selected>1 giờ</option>
-          <option value="120">2 giờ</option>
-          <option value="240">4 giờ</option>
+          <option value="60">1 giờ</option>
           <option value="360">6 giờ</option>
-          <option value="720">12 giờ</option>
-          <option value="1440">24 giờ</option>
+          <option value="1440" selected>24 giờ</option>
+          <option value="10080">7 ngày</option>
+          <option value="43200">30 ngày</option>
         </select>
       </div>
       <div style="padding:1rem 1.35rem;height:220px;">
@@ -2711,8 +2709,8 @@ let allSessions = [];
 let trafficTimeline = null;
 let classificationSummary = null;
 let registeredTrafficTotal = null;
-const TIMELINE_RANGES = new Set([30, 60, 120, 240, 360, 720, 1440]);
-let selectedTimelineMinutes = 60;
+const TIMELINE_RANGES = new Set([60, 360, 1440, 10080, 43200]);
+let selectedTimelineMinutes = 1440;
 let timelineRequestVersion = 0;
 let selectedSession = null;
 let readTokenPrompted = false;
@@ -3052,7 +3050,7 @@ async function fetchTrafficTimeline() {
   const requestedRange = selectedTimelineMinutes;
   const requestVersion = ++timelineRequestVersion;
   const data = await fetchJSON(
-    API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}`
+    API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}&utc_offset_minutes=${-new Date().getTimezoneOffset()}`
   );
   if (
     requestVersion === timelineRequestVersion &&
@@ -3667,8 +3665,8 @@ function updateReasons(s) {
 }
 
 // ──── Theme colours for canvas and Chart.js (read from CSS tokens) ────
-const UI_FONT = "'Fira Sans', -apple-system, sans-serif";
-const MONO_FONT = "'Fira Code', ui-monospace, monospace";
+const UI_FONT = "'Inter', -apple-system, 'Segoe UI', sans-serif";
+const MONO_FONT = "ui-monospace, SFMono-Regular, Consolas, monospace";
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function tokenAlpha(name, alpha) {
   const hex = cssVar(name).replace('#', '');
@@ -3875,14 +3873,10 @@ function formatTimelineTime(epochMs) {
 }
 
 function formatTimelineLabel(epochMs) {
-  if (selectedTimelineMinutes < 720) return formatTimelineTime(epochMs);
-  return new Date(epochMs).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).replace(',', '');
+  if (selectedTimelineMinutes <= 1440) return formatTimelineTime(epochMs);
+  const d = new Date(epochMs);
+  const date = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return selectedTimelineMinutes <= 10080 ? `${date} ${formatTimelineTime(epochMs)}` : date;
 }
 
 function formatTimelineDateTime(epochMs) {
@@ -3905,54 +3899,25 @@ function formatTrafficAxis(value) {
 
 function initTimelineChart() {
   const ctx = document.getElementById('timelineChart').getContext('2d');
+  const line = (label, colorVar) => ({
+    label, baseLabel: label, data: [],
+    borderColor: cssVar(colorVar), backgroundColor: cssVar(colorVar),
+    borderWidth: 2, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 8, fill: false,
+  });
   timelineChart = new Chart(ctx, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels: [],
-      datasets: [
-        {
-          label: 'Người thật',
-          data: [],
-          backgroundColor: cssVar('--fill-human'),
-          borderRadius: { topLeft: 3, topRight: 3 },
-          borderSkipped: false,
-          barPercentage: 0.9,
-          categoryPercentage: 0.95,
-          maxBarThickness: 28,
-          stack: 'traffic',
-        },
-        {
-          label: 'Nghi vấn',
-          data: [],
-          backgroundColor: cssVar('--fill-suspect'),
-          borderRadius: 0,
-          borderSkipped: false,
-          barPercentage: 0.9,
-          categoryPercentage: 0.95,
-          maxBarThickness: 28,
-          stack: 'traffic',
-        },
-        {
-          label: 'Bot',
-          data: [],
-          backgroundColor: cssVar('--fill-bot'),
-          borderRadius: { topLeft: 3, topRight: 3 },
-          borderSkipped: false,
-          barPercentage: 0.9,
-          categoryPercentage: 0.95,
-          maxBarThickness: 28,
-          stack: 'traffic',
-        },
-      ]
+      // Order matters: updateCharts and the theme code read [human, suspect, bot].
+      datasets: [line('Người thật', '--fill-human'), line('Nghi vấn', '--fill-suspect'), line('Bot', '--fill-bot')],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
         x: {
-          stacked: true,
           display: true,
-          grid: { color: cssVar('--chart-grid') },
+          grid: { display: false },
           ticks: {
             color: cssVar('--chart-tick'),
             font: { family: MONO_FONT, size: 10 },
@@ -3962,7 +3927,6 @@ function initTimelineChart() {
           },
         },
         y: {
-          stacked: true,
           beginAtZero: true,
           suggestedMax: 1,
           grace: '8%',
@@ -4007,12 +3971,13 @@ function initTimelineChart() {
               const bucket = trafficTimeline.buckets[items[0].dataIndex];
               if (!bucket) return items[0].label || '';
               const bucketMs = (trafficTimeline.bucket_minutes || 1) * 60_000;
-              return `${formatTimelineDateTime(bucket.start)}–${formatTimelineDateTime(bucket.start + bucketMs)}`;
+              if (bucketMs >= 86_400_000) return new Date(bucket.start).toLocaleDateString('vi-VN');
+              return `${formatTimelineDateTime(bucket.start)}–${formatTimelineTime(bucket.start + bucketMs)}`;
             },
-            label: item => `${item.dataset.label}: ${Number(item.parsed.y || 0).toLocaleString('vi-VN')}`,
+            label: item => `${item.dataset.baseLabel}: ${Number(item.parsed.y || 0).toLocaleString('vi-VN')}`,
             footer: items => {
               const total = items.reduce((sum, i) => sum + i.parsed.y, 0);
-              return `Tổng: ${Number(total).toLocaleString('vi-VN')} phiên`;
+              return `Tổng: ${Number(total).toLocaleString('vi-VN')}`;
             }
           }
         }
@@ -4047,9 +4012,12 @@ function updateCharts() {
     : [];
 
   timelineChart.data.labels = buckets.map(bucket => formatTimelineLabel(bucket.start));
-  timelineChart.data.datasets[0].data = buckets.map(bucket => Math.max(0, Number(bucket.human) || 0));
-  timelineChart.data.datasets[1].data = buckets.map(bucket => Math.max(0, Number(bucket.suspect) || 0));
-  timelineChart.data.datasets[2].data = buckets.map(bucket => Math.max(0, Number(bucket.bot) || 0));
+  ['human', 'suspect', 'bot'].forEach((key, i) => {
+    const dataset = timelineChart.data.datasets[i];
+    dataset.data = buckets.map(bucket => Math.max(0, Number(bucket[key]) || 0));
+    // Legend shows the range total for each class.
+    dataset.label = `${dataset.baseLabel} ${dataset.data.reduce((sum, n) => sum + n, 0).toLocaleString('vi-VN')}`;
+  });
   timelineChart.update('none');
 }
 
@@ -4267,7 +4235,8 @@ function pollAll() {
   const requests = [fetchHealth(), fetchRecentTelemetry()];
   if (now >= nextTimelinePollAt) {
     requests.push(fetchTrafficTimeline());
-    nextTimelinePollAt = now + 10000;
+    // Day-scale ranges change slowly; a minute is fresh enough.
+    nextTimelinePollAt = now + (selectedTimelineMinutes > 1440 ? 60000 : 10000);
   }
   if (now >= nextSummaryPollAt) {
     requests.push(fetchClassificationSummary());
@@ -4842,13 +4811,11 @@ function applyChartTheme() {
   }
   if (timelineChart) {
     const [human, suspect, bot] = timelineChart.data.datasets;
-    human.backgroundColor = cssVar('--fill-human');
-    suspect.backgroundColor = cssVar('--fill-suspect');
-    bot.backgroundColor = cssVar('--fill-bot');
-    for (const axis of Object.values(timelineChart.options.scales)) {
-      axis.grid.color = cssVar('--chart-grid');
-      axis.ticks.color = cssVar('--chart-tick');
-    }
+    human.backgroundColor = human.borderColor = cssVar('--fill-human');
+    suspect.backgroundColor = suspect.borderColor = cssVar('--fill-suspect');
+    bot.backgroundColor = bot.borderColor = cssVar('--fill-bot');
+    timelineChart.options.scales.y.grid.color = cssVar('--chart-grid');
+    for (const axis of Object.values(timelineChart.options.scales)) axis.ticks.color = cssVar('--chart-tick');
     timelineChart.options.plugins.legend.labels.color = cssVar('--chart-tick');
     tooltip(timelineChart.options.plugins.tooltip);
     timelineChart.update('none');

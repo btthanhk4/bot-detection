@@ -970,10 +970,12 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
 
 @app.get("/api/v1/traffic/timeline")
 def get_traffic_timeline(
-    window_minutes: int = Query(default=60, ge=30, le=1440),
+    window_minutes: int = Query(default=60, ge=30, le=43200),
+    utc_offset_minutes: int = Query(default=0, ge=-720, le=840),
     _read=Depends(require_read_access),
 ):
-    """Return session counts using buckets sized for the requested window."""
+    """Return session counts using buckets sized for the requested window (up to 30 days,
+    the data retention). Hour and day buckets start at the viewer's local midnight."""
     from api_service.database import get_traffic_timeline as query_traffic_timeline
 
     if window_minutes <= 60:
@@ -984,12 +986,17 @@ def get_traffic_timeline(
         bucket_minutes = 5
     elif window_minutes <= 720:
         bucket_minutes = 10
-    else:
+    elif window_minutes <= 1440:
         bucket_minutes = 15
+    elif window_minutes <= 10080:
+        bucket_minutes = 60
+    else:
+        bucket_minutes = 1440
 
     timeline = query_traffic_timeline(
         window_minutes=window_minutes,
         bucket_minutes=bucket_minutes,
+        utc_offset_minutes=utc_offset_minutes,
     )
     if timeline is None:
         raise HTTPException(status_code=503, detail="Traffic timeline query failed")

@@ -692,23 +692,29 @@ def get_traffic_timeline(
     window_minutes: int = 60,
     bucket_minutes: int = 1,
     now: Optional[datetime] = None,
+    utc_offset_minutes: int = 0,
 ) -> Optional[dict]:
-    """Aggregate newly-created sessions into fixed UTC time buckets."""
+    """Aggregate newly-created sessions into fixed time buckets.
+
+    Buckets are aligned to the viewer's UTC offset, so a day bucket runs from
+    local midnight to midnight.
+    """
     db = get_db()
     if db is None:
         return None
 
     try:
-        window_minutes = max(1, min(int(window_minutes), 1440))
-        bucket_minutes = max(1, min(int(bucket_minutes), 60))
+        window_minutes = max(1, min(int(window_minutes), 43200))
+        bucket_minutes = max(1, min(int(bucket_minutes), 1440))
         bucket_count = max(1, math.ceil(window_minutes / bucket_minutes))
         bucket_ms = bucket_minutes * 60_000
+        offset_ms = max(-720, min(int(utc_offset_minutes), 840)) * 60_000
 
         current_time = now or datetime.now(timezone.utc)
         if current_time.tzinfo is None:
             current_time = current_time.replace(tzinfo=timezone.utc)
         now_ms = int(current_time.timestamp() * 1000)
-        window_end_ms = ((now_ms // bucket_ms) + 1) * bucket_ms
+        window_end_ms = (((now_ms + offset_ms) // bucket_ms) + 1) * bucket_ms - offset_ms
         window_start_ms = window_end_ms - bucket_count * bucket_ms
         window_start = datetime.fromtimestamp(window_start_ms / 1000, timezone.utc)
         window_end = datetime.fromtimestamp(window_end_ms / 1000, timezone.utc)
@@ -739,7 +745,7 @@ def get_traffic_timeline(
                     "bucket_start": {
                         "$subtract": [
                             {"$toLong": "$event_time"},
-                            {"$mod": [{"$toLong": "$event_time"}, bucket_ms]},
+                            {"$mod": [{"$add": [{"$toLong": "$event_time"}, offset_ms]}, bucket_ms]},
                         ]
                     },
                     "verdict": 1,
@@ -790,6 +796,7 @@ def get_traffic_timeline(
             "window_end": window_end_ms,
             "window_minutes": window_minutes,
             "bucket_minutes": bucket_minutes,
+            "utc_offset_minutes": offset_ms // 60_000,
             "buckets": buckets,
         }
     except Exception as e:

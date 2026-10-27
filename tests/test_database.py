@@ -855,3 +855,24 @@ def test_last_action_is_stored_and_refreshed(monkeypatch):
     assert detections.docs["s1"]["last_action"] == "init"
     assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 2, "action": "pagehide"}, analysis)
     assert detections.docs["s1"]["last_action"] == "pagehide", "leaving the page takes the visitor offline"
+
+
+def test_day_buckets_start_at_local_midnight(monkeypatch):
+    from datetime import datetime, timezone
+
+    class TimelineCollection:
+        def aggregate(self, pipeline, allowDiskUse=False):
+            self.pipeline = pipeline
+            return []
+
+    collection = TimelineCollection()
+    monkeypatch.setattr("api_service.database.get_db", lambda: {"detection_results": collection})
+    # 2026-10-27 10:30 in Vietnam (UTC+7) is 03:30 UTC.
+    now = datetime(2026, 10, 27, 3, 30, tzinfo=timezone.utc)
+    timeline = get_traffic_timeline(window_minutes=43200, bucket_minutes=1440, now=now, utc_offset_minutes=420)
+    assert len(timeline["buckets"]) == 30 and timeline["utc_offset_minutes"] == 420
+    last = datetime.fromtimestamp(timeline["buckets"][-1]["start"] / 1000, timezone.utc)
+    assert last == datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc), "00:00 on 27/10 in Vietnam"
+    assert timeline["window_end"] - timeline["buckets"][-1]["start"] == 86_400_000
+    bucket_expr = collection.pipeline[2]["$project"]["bucket_start"]["$subtract"][1]["$mod"]
+    assert bucket_expr[0]["$add"][1] == 420 * 60_000 and bucket_expr[1] == 86_400_000

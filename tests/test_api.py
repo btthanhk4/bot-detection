@@ -850,7 +850,8 @@ def test_dashboard_uses_only_real_mouse_trajectory(client, monkeypatch):
     assert "CHỜ DỮ LIỆU" not in res.text
     assert "/api/v1/traffic/timeline" in res.text
     assert 'id="timelineRange"' in res.text
-    assert '<option value="1440">24 giờ</option>' in res.text
+    assert '<option value="1440" selected>24 giờ</option>' in res.text
+    assert '<option value="43200">30 ngày</option>' in res.text
     assert "?window_minutes=${requestedRange}" in res.text
     assert "/api/v1/stats/summary" in res.text
     assert "table-layout: fixed" in res.text
@@ -921,7 +922,7 @@ def test_traffic_timeline_defaults_to_one_hour_window(client, monkeypatch):
     }
     query_args = {}
 
-    def fake_timeline(window_minutes, bucket_minutes):
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
         query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
         return timeline
 
@@ -936,7 +937,7 @@ def test_traffic_timeline_defaults_to_one_hour_window(client, monkeypatch):
 
 @pytest.mark.parametrize(
     ("window_minutes", "expected_bucket_minutes"),
-    [(30, 1), (120, 2), (240, 5), (360, 5), (720, 10), (1440, 15)],
+    [(30, 1), (120, 2), (240, 5), (360, 5), (720, 10), (1440, 15), (10080, 60), (43200, 1440)],
 )
 def test_traffic_timeline_uses_adaptive_buckets(
     client,
@@ -946,7 +947,7 @@ def test_traffic_timeline_uses_adaptive_buckets(
 ):
     query_args = {}
 
-    def fake_timeline(window_minutes, bucket_minutes):
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
         query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
         return {
             "window_minutes": window_minutes,
@@ -973,14 +974,17 @@ def test_traffic_timeline_rejects_out_of_range_windows(client):
         "/api/v1/traffic/timeline?window_minutes=29", headers=READ_HEADERS
     ).status_code == 422
     assert client.get(
-        "/api/v1/traffic/timeline?window_minutes=1441", headers=READ_HEADERS
+        "/api/v1/traffic/timeline?window_minutes=43201", headers=READ_HEADERS
+    ).status_code == 422
+    assert client.get(
+        "/api/v1/traffic/timeline?utc_offset_minutes=900", headers=READ_HEADERS
     ).status_code == 422
 
 
 def test_traffic_timeline_reports_database_query_failure(client, monkeypatch):
     monkeypatch.setattr(
         "api_service.database.get_traffic_timeline",
-        lambda window_minutes, bucket_minutes: None,
+        lambda window_minutes, bucket_minutes, utc_offset_minutes=0: None,
     )
 
     response = client.get("/api/v1/traffic/timeline", headers=READ_HEADERS)
@@ -1707,3 +1711,16 @@ def test_minimal_detect_response_hides_evidence_from_anonymous_callers(client, m
                               "sessionId", "visitorId"}
     authorised = client.post("/api/v1/detect", json=body, headers=READ_HEADERS).json()
     assert "breakdown" in authorised and "bot_probability" in authorised
+
+
+def test_traffic_timeline_passes_the_viewer_utc_offset(client, monkeypatch):
+    seen = {}
+
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
+        seen.update(window=window_minutes, bucket=bucket_minutes, offset=utc_offset_minutes)
+        return {"window_minutes": window_minutes, "bucket_minutes": bucket_minutes, "buckets": []}
+
+    monkeypatch.setattr("api_service.database.get_traffic_timeline", fake_timeline)
+    response = client.get("/api/v1/traffic/timeline?window_minutes=43200&utc_offset_minutes=420", headers=READ_HEADERS)
+    assert response.status_code == 200
+    assert seen == {"window": 43200, "bucket": 1440, "offset": 420}
