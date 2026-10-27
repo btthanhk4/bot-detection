@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from api_service import auth
 from api_service.config import settings
 from api_service.capture import build_capture
+from api_service import geoip
 from api_service.spool import TelemetrySpool
 from api_service.research_labels import (
     delete_research_data, enrich_sessions, register_traffic, set_manual_label, traffic_page,
@@ -99,12 +100,17 @@ async def app_lifespan(_app):
     except Exception:
         logger.warning("Dashboard user index setup deferred", exc_info=True)
     maintenance_task = asyncio.create_task(_maintenance_loop())
+    geoip_task = asyncio.create_task(_geoip_update_loop()) if settings.GEOIP_AUTO_UPDATE else None
     try:
         yield
     finally:
         maintenance_task.cancel()
         with suppress(asyncio.CancelledError):
             await maintenance_task
+        if geoip_task is not None:
+            geoip_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await geoip_task
         try:
             # Persist anything that arrived during a transient outage before a
             # rolling deployment removes this process.
@@ -211,6 +217,22 @@ def _inference_latency_summary() -> Optional[Dict[str, Any]]:
 
 _rate_limit_lock = threading.Lock()
 _rate_limit_records = collections.defaultdict(list)
+
+
+async def _geoip_update_loop():
+    """Keep the offline GeoIP databases at most a month old (checked daily)."""
+    from api_service import geoip
+
+    while True:
+        try:
+            updated = await run_in_threadpool(geoip.refresh_if_stale)
+            if updated:
+                logger.info("GeoIP databases updated: %s", ", ".join(updated))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("GeoIP update failed")
+        await asyncio.sleep(86400)
 
 
 async def _maintenance_loop():
@@ -708,6 +730,7 @@ def health_check():
             "enabled": settings.CAPTURE_ENABLED,
             "retention_days": settings.CAPTURE_RETENTION_DAYS,
         },
+        "geoip": geoip.status(),
     }
     with _telemetry_buffer_lock:
         content["telemetry_buffer"] = {
@@ -933,6 +956,7 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
         results = enrich_sessions(results)
     except Exception:
         logger.warning("Research session metadata unavailable", exc_info=True)
+    geoip.attach(results)
 
     return {
         "total": total,
@@ -1278,6 +1302,7 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
         doc = enrich_sessions([doc])[0]
     except Exception:
         logger.warning("Research session metadata unavailable", exc_info=True)
+    geoip.attach([doc])
     return _sanitize_bson_value(doc)
 
 
@@ -1288,10 +1313,13 @@ def research_traffic(
     _read=Depends(require_read_access),
 ):
     try:
-        return traffic_page(limit, before_number)
+        page = traffic_page(limit, before_number)
     except Exception as exc:
         logger.exception("Traffic registry query failed")
         raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc
+    geoip.attach(page.get("sessions"))
+    page["geoip_attribution"] = geoip.ATTRIBUTION
+    return page
 
 
 class ManualLabelPayload(BaseModel):

@@ -22,6 +22,9 @@ services:
       # Phone/tablet gestures (geometry and timing only) kept as training data.
       - BOT_TOUCH_CAPTURE=${BOT_TOUCH_CAPTURE:-true}
       - BOT_TOUCH_RETENTION_DAYS=${BOT_TOUCH_RETENTION_DAYS:-180}
+      # Offline IP geolocation (DB-IP Lite, CC BY 4.0), refreshed monthly into the volume.
+      - BOT_GEOIP_DIR=/app/var/geoip
+      - BOT_GEOIP_AUTO_UPDATE=${BOT_GEOIP_AUTO_UPDATE:-true}
       - BOT_TRUST_PROXY_HEADERS=true
       - BOT_TRUSTED_PROXIES=172.16.0.0/12
       - BOT_ADMIN_TOKEN=${BOT_ADMIN_TOKEN:-}

@@ -99,6 +99,9 @@ class Settings:
     # Phone/tablet gestures kept as weakly labelled training data (geometry and timing only).
     TOUCH_CAPTURE_ENABLED: bool = os.getenv("BOT_TOUCH_CAPTURE", "false").lower() in ("1", "true", "yes")
     TOUCH_RETENTION_DAYS: int = _env_int("BOT_TOUCH_RETENTION_DAYS", 180, 1, 730)
+    # Offline IP geolocation (DB-IP Lite). Auto-update downloads the monthly files.
+    GEOIP_DIR: str = os.getenv("BOT_GEOIP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "var", "geoip"))
+    GEOIP_AUTO_UPDATE: bool = os.getenv("BOT_GEOIP_AUTO_UPDATE", "false").lower() in ("1", "true", "yes")
 
 
 settings = Settings()

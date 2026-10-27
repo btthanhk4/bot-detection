@@ -1250,6 +1250,9 @@ body::before { display: none; }
 .time-text,
 .ip-text,
 .page-text { color: var(--text-secondary); font-size: 11px; }
+.geo-text { display: block; max-width: 200px; margin-top: 2px; overflow: hidden; color: var(--text-muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.geo-credit { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+.geo-credit a { color: inherit; }
 
 .verdict-badge {
   position: relative;
@@ -2251,6 +2254,14 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
             <div class="drawer-field-value mono" id="dClientIP">--</div>
           </div>
           <div class="drawer-field">
+            <div class="drawer-field-label">Vị trí (theo IP)</div>
+            <div class="drawer-field-value" id="dGeo">--</div>
+          </div>
+          <div class="drawer-field">
+            <div class="drawer-field-label">Nhà mạng (ISP)</div>
+            <div class="drawer-field-value" id="dIsp">--</div>
+          </div>
+          <div class="drawer-field">
             <div class="drawer-field-label">Trang truy cập</div>
             <div class="drawer-field-value" id="dPageUrl">--</div>
           </div>
@@ -2810,6 +2821,43 @@ async function changeTimelineRange(value) {
 }
 
 let _lastTableHTML = '';
+// Location of the visitor IP from the server's offline DB-IP Lite lookup.
+function formatGeo(geo, detailed) {
+  if (!geo) return '';
+  if (geo.scope === 'private') return 'Mạng nội bộ';
+  // "Ho Chi Minh City (HCMC)" -> "HCMC" for the table row.
+  const fullRegion = String(geo.region || geo.city || '');
+  const region = (fullRegion.match(/\(([^)]+)\)$/) || [null, fullRegion])[1];
+  const parts = detailed ? [geo.city, geo.region, geo.country] : [region, geo.country_code || geo.country];
+  return parts.filter((part, i, all) => part && all.indexOf(part) === i).join(', ');
+}
+
+// "FPT Telecom Company" -> "FPT", "Viettel Group" -> "Viettel": enough for a table row.
+function shortIsp(isp) {
+  const name = String(isp || '').replace(/[\s,]+(Telecom(munications?)?|Company|Corp(oration)?|Group|LLC|Inc\.?|JSC|Joint Stock|Co\.?|Ltd\.?|Limited)\b.*$/i, '').trim();
+  return name || String(isp || '');
+}
+
+function renderGeo(geo) {
+  const place = document.getElementById('dGeo');
+  const isp = document.getElementById('dIsp');
+  const text = formatGeo(geo, true);
+  place.textContent = text || 'Chưa tra cứu được';
+  if (geo && Number.isFinite(geo.latitude) && Number.isFinite(geo.longitude)) {
+    const link = document.createElement('a');
+    link.href = `https://www.openstreetmap.org/?mlat=${geo.latitude}&mlon=${geo.longitude}#map=11/${geo.latitude}/${geo.longitude}`;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'bản đồ';
+    place.append(' (', link, ')');
+  }
+  const credit = document.createElement('div');
+  credit.className = 'geo-credit';
+  credit.innerHTML = 'Vị trí gần đúng theo IP · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a>';
+  if (text) place.appendChild(credit);
+  isp.textContent = geo && geo.isp ? `${geo.isp}${geo.asn ? ' (AS' + geo.asn + ')' : ''}` : '--';
+}
+
 function formatPageLabel(pageUrl) {
   if (!pageUrl) return '--';
   try {
@@ -2876,13 +2924,15 @@ function renderTrafficTable() {
 
     const timeStr = s.received_at ? new Date(s.received_at).toLocaleTimeString('vi-VN', {hour12: false}) : '--';
     const ip = s.client_ip || '--';
+    const geoShort = [formatGeo(s.geo, false), s.geo && s.geo.isp ? shortIsp(s.geo.isp) : ''].filter(Boolean).join(' · ');
+    const geoTitle = [formatGeo(s.geo, true), s.geo && s.geo.isp].filter(Boolean).join(' · ');
     const page = formatPageLabel(s.pageUrl);
     const isSelected = s.sessionId === selectedId;
 
     return `<tr class="${rowClass}" data-idx="${idx}" onclick="selectSession(${idx}, false)" style="cursor:pointer;${isSelected ? 'outline:1px solid var(--accent-green)' : ''}" title="Bấm để xem quỹ đạo chuột">
       <td><span class="time-text">${escapeHtml(s.traffic_number ?? '--')}</span></td>
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
-      <td><span class="ip-text">${escapeHtml(ip)}</span></td>
+      <td><span class="ip-text">${escapeHtml(ip)}</span>${geoShort ? `<span class="geo-text" title="${escapeHtml(geoTitle)}">${escapeHtml(geoShort)}</span>` : ''}</td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
       <td><span class="verdict-badge ${verdictClass}" title="${deferred ? 'Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)' : ''}">${verdictLabel}</span></td>
       <td>
@@ -3042,6 +3092,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dSessionId').textContent = s.sessionId || '--';
   document.getElementById('dVisitorId').textContent = s.visitorId || 'Chưa khởi tạo';
   document.getElementById('dClientIP').textContent = s.client_ip || '--';
+  renderGeo(s.geo);
   document.getElementById('dPageUrl').textContent = s.pageUrl || '--';
 
   const timeVal = s.received_at || s.created_at || s.updated_at;

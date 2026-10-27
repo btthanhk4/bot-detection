@@ -342,6 +342,15 @@ giữ dữ liệu khi model lỗi và dùng SQLite khi MongoDB mất kết nối
 TTL mặc định 7 ngày. Không thay đổi model hoặc verdict. Hướng dẫn bật, response,
 giới hạn dung lượng và các bước kiểm chứng: [RESEARCH_CAPTURE.md](docs/RESEARCH_CAPTURE.md).
 
+## Vị trí theo IP
+
+Dashboard hiển thị vị trí gần đúng (thành phố, tỉnh/vùng, quốc gia) và nhà mạng (ISP/ASN)
+của IP mỗi lượt truy cập, tra từ cơ sở dữ liệu offline DB-IP Lite (CC BY 4.0) đặt trên
+server: không gửi IP khách cho dịch vụ bên ngoài, không giới hạn lượt tra. Với
+`BOT_GEOIP_AUTO_UPDATE=true` (mặc định trong `docker-compose.yml`) API tự tải bản mới mỗi
+tháng vào `BOT_GEOIP_DIR`; tải tay: `python -m api_service.geoip --refresh`. Vị trí chỉ để
+hiển thị, không dùng trong kết luận; mạng di động thường định vị về cổng của nhà mạng.
+
 ## API Endpoints
 
 | Method | Endpoint | Mô tả |
