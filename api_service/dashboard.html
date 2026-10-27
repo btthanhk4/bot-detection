@@ -2363,7 +2363,7 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 
       <!-- SECTION 5: Mouse Stats -->
       <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg>Thống kê hành vi chuột</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg><span id="dMouseStatsTitle">Thống kê hành vi chuột</span></div>
         <div class="drawer-grid-3" id="dMouseStats">
           <div class="drawer-stat-card">
             <div class="drawer-stat-value" id="dMouseCount">0</div>
@@ -3221,20 +3221,44 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     }).join('');
   }
 
-  // 5. Mouse Stats (handle both camelCase from JS collector and snake_case)
+  // 5. Mouse Stats (handle both camelCase from JS collector and snake_case).
+  // Phones and tablets have no mouse: show their touch input instead.
+  const statsGrid = document.getElementById('dMouseStats');
+  if (statsGrid.dataset.mouseHtml === undefined) statsGrid.dataset.mouseHtml = statsGrid.innerHTML;
+  const touchInfo = bd.touch || {};
+  const touchSession = Boolean(bd.unsupported_mobile || (bd.mobile_human && bd.mobile_human.device)
+    || (Number(touchInfo.gestures) > 0 && !(Number(bd.mouse_points) > 0)));
+  document.getElementById('dMouseStatsTitle').textContent = touchSession ? 'Thống kê thao tác cảm ứng' : 'Thống kê hành vi chuột';
+  if (touchSession) {
+    const shadowScore = touchInfo.shadow && touchInfo.shadow.score != null ? (touchInfo.shadow.score * 100).toFixed(0) + '%' : '--';
+    const cards = [
+      [Number(touchInfo.gestures_total) || Number(touchInfo.gestures) || 0, 'Cử chỉ (tổng)'],
+      [touchInfo.taps ?? '--', 'Chạm (20 gần nhất)'],
+      [touchInfo.swipes ?? '--', 'Vuốt (20 gần nhất)'],
+      [(touchInfo.research_flags || []).length, 'Dấu hiệu bất thường'],
+      [shadowScore, 'Điểm mô hình vuốt'],
+      [`${(bd.mobile_human || {}).minimum_gestures || 3}`, 'Cử chỉ tối thiểu'],
+    ];
+    statsGrid.innerHTML = cards.map(([value, label]) => `<div class="drawer-stat-card"><div class="drawer-stat-value">${escapeHtml(String(value))}</div><div class="drawer-stat-label">${escapeHtml(label)}</div></div>`).join('');
+  } else {
+    statsGrid.innerHTML = statsGrid.dataset.mouseHtml;
+  }
   const mousePts = Number.isFinite(Number(bd.mouse_points))
     ? Number(bd.mouse_points)
     : (dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.move_point_count || 0);
-  document.getElementById('dMouseCount').textContent = mousePts;
-  const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
-  const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
-  const avgAcc = mouseStats.mean_accel || mouseStats.avg_accel || mouseStats.avgAccel || null;
-  const straight = mouseStats.straightness;
-  document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(3) + ' norm/s') : '--';
-  document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(3) + ' norm/s') : '--';
-  document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(3) + ' norm/s²') : '--';
-  document.getElementById('dMouseStraight').textContent = (straight !== undefined && straight !== null) ? Number(straight).toFixed(2) : '--';
-  document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || 0;
+  if (!touchSession) {
+    document.getElementById('dMouseCount').textContent = mousePts;
+    const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
+    const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
+    const avgAcc = mouseStats.mean_accel || mouseStats.avg_accel || mouseStats.avgAccel || null;
+    const straight = mouseStats.straightness;
+    document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(3) + ' norm/s') : '--';
+    document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(3) + ' norm/s') : '--';
+    document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(3) + ' norm/s²') : '--';
+    // Straightness of fewer than two moves is a placeholder, not a measurement.
+    document.getElementById('dMouseStraight').textContent = (straight !== undefined && straight !== null && mousePts >= 2) ? Number(straight).toFixed(2) : '--';
+    document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || 0;
+  }
 
   // 6. Fingerprint Grid
   const fpGrid = document.getElementById('dFingerprintGrid');

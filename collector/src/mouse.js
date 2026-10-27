@@ -5,6 +5,10 @@
  * and prepares sequential chunks (24 points) for LSTM behavioral classification.
  */
 
+// Compatibility mouse events follow a touchend within one frame to ~350 ms
+// (legacy tap delay); a real mouse used after the finger arrives later.
+const TOUCH_COMPAT_WINDOW_MS = 800;
+
 export class MouseRecorder {
   constructor(options = {}) {
     this.maxRecords = options.maxRecords || 500;
@@ -24,6 +28,7 @@ export class MouseRecorder {
     this.clickEvents = [];
     this.lastPressStamp = null;
     this.lastReleaseStamp = null;
+    this.lastTouchStamp = null;
     this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
     this.pointerStats = {
       pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
@@ -195,8 +200,21 @@ export class MouseRecorder {
     }
   }
 
+  // After a tap, phones fire compatibility mouse events (mousemove, mousedown,
+  // mouseup, click) at the tap position, back to back. They are the finger, not a
+  // mouse: counting them gave phone sessions a few "mouse points" whenever the user
+  // tapped and none when they only swiped.
+  isTouchCompatibility(e) {
+    if (e && e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents === true) return true;
+    return this.lastTouchStamp !== null && Math.abs(this.eventStamp(e) - this.lastTouchStamp) < TOUCH_COMPAT_WINDOW_MS;
+  }
+
+  noteTouch(e) {
+    this.lastTouchStamp = this.eventStamp(e);
+  }
+
   handleMouseMove(e) {
-    if (e.isTrusted === false) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
     this.counters.mousemove++;
     this.recordPoint('move', e.clientX, e.clientY);
   }
@@ -207,7 +225,7 @@ export class MouseRecorder {
   }
 
   handleMouseDown(e) {
-    if (e.isTrusted === false) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
     this.counters.mousedown++;
     this.lastPressStamp = this.eventStamp(e);
     this.lastReleaseStamp = null;
@@ -215,7 +233,7 @@ export class MouseRecorder {
   }
 
   handleMouseUp(e) {
-    if (e.isTrusted === false) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
     this.lastReleaseStamp = this.eventStamp(e);
     this.recordPoint('up', e.clientX, e.clientY);
   }
@@ -223,6 +241,11 @@ export class MouseRecorder {
   handleClick(e) {
     if (e.isTrusted === false) return;
     this.counters.click++;
+    if (this.isTouchCompatibility(e)) {
+      // A tap: keep it as touch activity; its press timing is not a mouse button's.
+      this.recordPoint('click', e.clientX, e.clientY, 'touch');
+      return;
+    }
     this.recordPoint('click', e.clientX, e.clientY);
     this.recordClickGeometry(e);
   }
@@ -349,6 +372,7 @@ export class MouseRecorder {
   }
 
   handleTouchStart(e) {
+    this.noteTouch(e);
     if (e.touches && e.touches[0]) {
       this.recordPoint('down', e.touches[0].clientX, e.touches[0].clientY, 'touch');
     }
@@ -364,6 +388,7 @@ export class MouseRecorder {
   }
 
   handleTouchMove(e) {
+    this.noteTouch(e);
     if (e.touches && e.touches[0]) {
       this.recordPoint('move', e.touches[0].clientX, e.touches[0].clientY, 'touch');
     }
@@ -403,6 +428,7 @@ export class MouseRecorder {
   }
 
   handleTouchEnd(e) {
+    this.noteTouch(e);
     if (e && e.isTrusted !== false) this.finishGesture(e);
     const touch = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
     if (touch) {

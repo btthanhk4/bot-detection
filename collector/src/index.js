@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.7.0';
+export const COLLECTOR_VERSION = '1.7.1';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 

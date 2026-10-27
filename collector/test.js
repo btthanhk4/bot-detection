@@ -315,9 +315,36 @@ async function testTouchIsTaggedAndExcludedFromMouseChunks() {
   assert.strictEqual(recorder.getChunks().length, 0);
   assert.strictEqual(recorder.getStats().movePointCount, 0);
 
-  recorder.handleMouseMove({ clientX: 10, clientY: 20 });
+  // A mouse used well after the finger (touch laptop) is recorded as a mouse.
+  recorder.handleMouseMove({ clientX: 10, clientY: 20, timeStamp: performance.now() + 2000 });
   assert.strictEqual(recorder.records[30].source, 'mouse');
   assert.strictEqual(recorder.records[30].speed, 0);
+  collector.destroy();
+}
+
+async function testTapCompatibilityMouseEventsAreNotMouseInput() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  const tapAt = performance.now();
+  const point = { clientX: 180, clientY: 324 };
+  recorder.handleTouchStart({ isTrusted: true, timeStamp: tapAt, touches: [point] });
+  recorder.handleTouchEnd({ isTrusted: true, timeStamp: tapAt + 90, touches: [], changedTouches: [point] });
+  // What the browser fires after the tap, at the tap position.
+  const compat = { isTrusted: true, timeStamp: tapAt + 95, detail: 1, ...point };
+  recorder.handleMouseMove(compat);
+  recorder.handleMouseDown(compat);
+  recorder.handleMouseUp(compat);
+  recorder.handleClick(compat);
+  // Chrome also marks them through sourceCapabilities, whatever the timing.
+  recorder.handleMouseMove({ ...compat, timeStamp: tapAt + 5000, sourceCapabilities: { firesTouchEvents: true } });
+
+  assert.ok(recorder.records.every((record) => record.source === 'touch'), 'no mouse records from a tap');
+  assert.strictEqual(recorder.getStats().movePointCount, 0);
+  assert.strictEqual(recorder.counters.mousemove, 0);
+  assert.strictEqual(recorder.counters.mousedown, 0);
+  assert.strictEqual(recorder.counters.click, 1, 'the tap still counts as activity');
+  assert.strictEqual(recorder.clickEvents.length, 0, 'tap timing never feeds the synthetic-click rule');
+  assert.ok(recorder.records.some((record) => record.type === 'click' && record.source === 'touch'));
   collector.destroy();
 }
 
@@ -838,6 +865,7 @@ testRestartDuringFingerprinting()
   .then(testExhaustedRetryStillRespectsServerCooldown)
   .then(testFailedDetectionDoesNotPromoteClientFlag)
   .then(testTouchIsTaggedAndExcludedFromMouseChunks)
+  .then(testTapCompatibilityMouseEventsAreNotMouseInput)
   .then(testDispatchedMouseEventsCannotSupplyBehavioralEvidence)
   .then(testResizeDoesNotCreateMouseMovement)
   .then(testClickGeometryAndPressTimingAreRecorded)
