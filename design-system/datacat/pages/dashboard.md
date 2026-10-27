@@ -6,6 +6,20 @@
 
 > Rules in this file **override** `../MASTER.md`. Only deviations are listed.
 
+## 2026-10-27: Shopify Polaris direction (supersedes the palette and type below)
+
+Requested by the owner: look like Shopify admin. Implemented as the final CSS layer
+"SHOPIFY POLARIS LAYER" in `api_service/dashboard.html`; earlier token values below are history.
+
+| Area | Rule |
+|---|---|
+| Type | Inter only (ui-ux-pro-max typography "Minimal Swiss": dashboards/admin), 13–14 px UI text, 650 for titles, system monospace for IDs/IPs |
+| Canvas and cards | `#F1F1F1` canvas, white cards, radius 12 px, Polaris bevel shadow instead of borders; dark: `#1A1A1A` / `#303030` |
+| Shell | Full-width dark top bar (logo, search `Ctrl K` / `/`, clock, theme, user); light sidebar `#EBEBEB` with a white active item; page title in the content area |
+| Primary button | `#303030` on white text (dark theme: `#E3E3E3` on `#1A1A1A`); focus ring `#005BD3` |
+| Badges | Polaris tones: success `#CDFEE1`/`#0C5132`, critical `#FEDAD9`/`#8E0B21`, caution `#FFEB78`/`#4F4700`, neutral `#E3E3E3`/`#303030` |
+| Live View | Dotted orthographic globe on canvas (Natural Earth land via world-atlas, loaded only on this view), visitor bubbles by verdict with a ring for online sessions; drag and arrow keys rotate, +/- zoom, pause button, auto-rotation off under reduced motion; the top-locations list is the accessible alternative (ui-ux-pro-max chart: geographic data → bubble map, with a table fallback) |
+
 ---
 
 ## Why the overrides

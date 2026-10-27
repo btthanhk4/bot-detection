@@ -858,6 +858,21 @@ def delete_all_sessions() -> Optional[int]:
         return None
 
 
+def get_live_sessions(since: datetime, limit: int = 20000) -> Optional[List[dict]]:
+    """Sessions active since a time, newest first, with what the Live View needs."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        return list(db["detection_results"].find(
+            {"updated_at": {"$gte": since}},
+            {"_id": 0, "sessionId": 1, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1},
+        ).sort("updated_at", -1).limit(limit))
+    except Exception as e:
+        logger.error(f"[DB] Live session query failed: {e}")
+        return None
+
+
 def get_summary_stats() -> Optional[dict]:
     """Get aggregated statistics from the database."""
     db = get_db()

@@ -351,6 +351,11 @@ server: không gửi IP khách cho dịch vụ bên ngoài, không giới hạn 
 tháng vào `BOT_GEOIP_DIR`; tải tay: `python -m api_service.geoip --refresh`. Vị trí chỉ để
 hiển thị, không dùng trong kết luận; mạng di động thường định vị về cổng của nhà mạng.
 
+Trang **Live View** (giao diện kiểu Shopify) vẽ các vị trí đó trên quả địa cầu chấm bi: mỗi
+vùng là một chấm theo số phiên, màu theo kết luận, vòng sáng cho phiên đang online; bên cạnh
+là số khách online (5 phút), số phiên 24 giờ, tỉ lệ phân loại, top vị trí và nhà mạng
+(`GET /api/v1/live`).
+
 ## API Endpoints
 
 | Method | Endpoint | Mô tả |

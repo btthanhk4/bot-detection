@@ -1258,6 +1258,21 @@ def delete_touch_samples(_admin=Depends(require_admin)):
     return {"status": "deleted", "count": count}
 
 
+@app.get("/api/v1/live")
+def get_live_view(window_minutes: int = Query(default=1440, ge=5, le=10080), _read=Depends(require_read_access)):
+    """Recent traffic by location for the Live View globe (offline GeoIP, no external calls)."""
+    from datetime import datetime, timedelta, timezone
+
+    from api_service.database import get_live_sessions
+    from api_service.live import build_live_view
+
+    now = datetime.now(timezone.utc)
+    rows = get_live_sessions(now - timedelta(minutes=window_minutes))
+    if rows is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return build_live_view(rows, now=now, window_minutes=window_minutes)
+
+
 @app.get("/api/v1/stats/summary")
 def get_stats_summary(_read=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""
