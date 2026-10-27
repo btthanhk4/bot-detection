@@ -1252,8 +1252,9 @@ body::before { display: none; }
 .ip-text,
 .page-text { color: var(--text-secondary); font-size: 11px; }
 .geo-text { display: block; max-width: 200px; margin-top: 2px; overflow: hidden; color: var(--text-muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
-.geo-credit { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
-.geo-credit a { color: inherit; }
+.detector-none { font-size: 13px; color: var(--text-muted); }
+.verdict-explain:empty { display: none; }
+.geo-credit { color: var(--text-muted); font-size: 11px; }
 
 .verdict-badge {
   position: relative;
@@ -2208,33 +2209,33 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
   <div class="kpi-grid">
     <div class="kpi-card cyan animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-radio-tower"></use></svg></div>
-      <div class="kpi-label">Tổng phiên thu thập</div>
+      <div class="kpi-label">Tổng phiên</div>
       <div class="kpi-value" id="kpiTotalSessions">0</div>
-      <div class="kpi-extra" id="kpiTotalExtra">Buffered events</div>
+      <div class="kpi-extra" id="kpiTotalExtra"></div>
     </div>
     <div class="kpi-card green animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-user-check"></use></svg></div>
-      <div class="kpi-label">Người thật (Human)</div>
+      <div class="kpi-label">Người thật</div>
       <div class="kpi-value" id="kpiHumanCount">0</div>
       <div class="kpi-extra" id="kpiHumanRate">--</div>
     </div>
     <div class="kpi-card red animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-bot"></use></svg></div>
-      <div class="kpi-label">Bot phát hiện</div>
+      <div class="kpi-label">Bot</div>
       <div class="kpi-value" id="kpiBotCount">0</div>
       <div class="kpi-extra" id="kpiBotRate">--</div>
     </div>
     <div class="kpi-card orange animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-alert"></use></svg></div>
-      <div class="kpi-label">Nghi vấn (Suspect)</div>
+      <div class="kpi-label">Nghi vấn</div>
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
     </div>
     <div class="kpi-card blue animate-in">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-gauge"></use></svg></div>
-      <div class="kpi-label">Độ trễ trung bình</div>
+      <div class="kpi-label">Độ trễ suy luận</div>
       <div class="kpi-value" id="kpiAvgLatency">--</div>
-      <div class="kpi-extra" id="kpiLatencyExtra">ms mỗi lần suy luận</div>
+      <div class="kpi-extra" id="kpiLatencyExtra"></div>
     </div>
   </div>
 
@@ -2275,7 +2276,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
       <div class="panel-header">
         <div class="panel-title">
           <span class="dot-live"></span>
-          Luồng truy cập thời gian thực
+          Lượt truy cập
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="delete-all-btn" onclick="deleteAllSessions()" title="Xóa tất cả sessions"><svg class="ui-icon"><use href="#icon-trash"></use></svg>Xóa tất cả</button>
@@ -2304,7 +2305,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
             </tr>
           </thead>
           <tbody id="trafficBody">
-            <tr><td colspan="12" class="empty-state">Đang chờ dữ liệu telemetry...</td></tr>
+            <tr><td colspan="12" class="empty-state">Chưa có lượt truy cập</td></tr>
           </tbody>
         </table>
       </div>
@@ -2316,13 +2317,13 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
       <!-- MOUSE TRAJECTORY -->
       <div class="panel animate-in">
         <div class="panel-header">
-          <div class="panel-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg>Quỹ đạo chuột (Mouse Trajectory)</div>
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg>Quỹ đạo chuột</div>
         </div>
         <div class="trajectory-canvas-wrapper">
           <canvas id="trajectoryCanvas"></canvas>
         </div>
         <div class="trajectory-info">
-          <span id="trajSession">Bấm vào 1 phiên bên trái để xem</span>
+          <span id="trajSession">Chọn một phiên</span>
           <span id="trajPoints">0 điểm</span>
         </div>
       </div>
@@ -2389,10 +2390,10 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
       <!-- DETECTION REASONS -->
       <div class="panel animate-in">
         <div class="panel-header">
-          <div class="panel-title"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg>Lý do phát hiện (Detection Reasons)</div>
+          <div class="panel-title"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg>Lý do phát hiện</div>
         </div>
         <div class="reasons-list" id="reasonsList">
-          <div class="empty-state">Bấm vào phiên Bot để xem lý do phát hiện</div>
+          <div class="empty-state">Chọn một phiên</div>
         </div>
       </div>
       </div>
@@ -2409,12 +2410,10 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
           <div class="live-card">
             <div class="live-label">Khách đang online</div>
             <div class="live-value"><span class="live-online-dot" aria-hidden="true"></span><span id="liveOnline">--</span></div>
-            <div class="live-sub" id="liveOnlineSub">đang mở trang · cập nhật mỗi 5 giây</div>
           </div>
           <div class="live-card">
-            <div class="live-label">Phiên 24 giờ qua</div>
+            <div class="live-label">Phiên (24 giờ)</div>
             <div class="live-value" id="liveSessions">--</div>
-            <div class="live-sub" id="liveUnlocated">&nbsp;</div>
           </div>
         </div>
         <div class="live-card">
@@ -2449,7 +2448,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
         <div class="globe-tooltip" id="globeTooltip" hidden></div>
         <div class="live-map-foot">
           <span id="globeLegend"></span>
-          <span>Kéo để xoay, phím mũi tên khi đang chọn bản đồ · Vị trí gần đúng theo IP · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a></span>
+          <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer" title="IP Geolocation by DB-IP">DB-IP</a>
         </div>
       </div>
     </div>
@@ -2464,18 +2463,18 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
       <div class="sys-card"><span class="sys-label">Thu thập nghiên cứu</span><strong id="sysCapture">--</strong><small id="sysCaptureNote">--</small></div>
     </div>
     <div class="panel"><div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-fingerprint"></use></svg>Model bundle</div></div>
-      <div class="sys-detail"><code id="sysBundle">--</code><span class="sys-hint">Mọi kết luận đều ghi kèm mã bundle này để truy vết phiên bản mô hình.</span></div></div>
+      <div class="sys-detail"><code id="sysBundle">--</code></div></div>
     <div class="panel"><div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-flag"></use></svg>Đối chiếu độc lập</div></div>
       <div class="sys-detail"><div class="reference-strip" aria-label="Đối chiếu Castle">
-    <strong>Castle · Đối chiếu độc lập</strong>
+    <strong>Castle</strong>
     <span id="referenceConnection" class="reference-status" role="status">Chưa cấu hình</span>
-    <span id="referenceCoverage">0 / 0 phiên có tham chiếu xác thực trên trang</span>
+    <span id="referenceCoverage">0 / 0 phiên có tham chiếu</span>
   </div>
 
   </div></div>
     <details class="panel test-tools">
       <summary><svg class="ui-icon"><use href="#icon-flask"></use></svg>Công cụ kiểm thử</summary>
-      <p>Tạo phiên giả lập để thử giao diện. Các phiên này được ghi vào cơ sở dữ liệu thật, hãy xóa sau khi thử và không dùng cho dữ liệu nghiên cứu.</p>
+      <p>Phiên giả lập được ghi vào cơ sở dữ liệu thật; xóa sau khi thử.</p>
       <div class="tool-row">
         <button class="simulate-btn human-btn" onclick="simulateHuman(event)">Giả lập Human</button>
         <button class="simulate-btn" onclick="simulateBot(event)">Giả lập Bot</button>
@@ -2514,7 +2513,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
   <div class="drawer-content">
     <div class="drawer-header">
       <div>
-        <div class="drawer-title"><svg class="ui-icon"><use href="#icon-search"></use></svg>Phân tích chi tiết phiên</div>
+        <div class="drawer-title"><svg class="ui-icon"><use href="#icon-search"></use></svg>Chi tiết phiên</div>
         <div class="drawer-subtitle" id="drawerSessionId">--</div>
       </div>
       <button class="drawer-close" onclick="closeDrawer()" title="Đóng"><svg class="ui-icon"><use href="#icon-x"></use></svg></button>
@@ -2530,7 +2529,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
             <div class="drawer-field-value mono" id="dSessionId">--</div>
           </div>
           <div class="drawer-field">
-            <div class="drawer-field-label">Visitor ID (Fingerprint)</div>
+            <div class="drawer-field-label">Visitor ID</div>
             <div class="drawer-field-value mono" id="dVisitorId">--</div>
           </div>
           <div class="drawer-field">
@@ -2538,7 +2537,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
             <div class="drawer-field-value mono" id="dClientIP">--</div>
           </div>
           <div class="drawer-field">
-            <div class="drawer-field-label">Vị trí (theo IP)</div>
+            <div class="drawer-field-label">Vị trí</div>
             <div class="drawer-field-value" id="dGeo">--</div>
           </div>
           <div class="drawer-field">
@@ -2554,20 +2553,19 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
             <div class="drawer-field-value" id="dTime">--</div>
           </div>
           <div class="drawer-field">
-            <div class="drawer-field-label">Điểm chuột thu được</div>
+            <div class="drawer-field-label">Thao tác</div>
             <div class="drawer-field-value mono" id="dMousePoints">--</div>
           </div>
         </div>
       </div>
 
-      <section class="drawer-section" aria-label="Tham chiếu Castle">
+      <section class="drawer-section" id="dReferenceSection" aria-label="Tham chiếu Castle" hidden>
         <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg>Tham chiếu Castle</div>
         <span id="dReferenceStatus" class="reference-status">Chưa có kết quả</span>
         <dl class="reference-detail">
           <div><dt>Phân loại tham chiếu</dt><dd id="dReferenceVerdict">--</dd></div>
           <div><dt>Bot score (0–100)</dt><dd id="dReferenceScore">--</dd></div>
           <div><dt>Đối chiếu DATACAT</dt><dd id="dReferenceComparison">Chưa thể đối chiếu</dd></div>
-          <div><dt>Nguồn nhãn</dt><dd>Tham chiếu bên ngoài, chưa phải nhãn xác nhận</dd></div>
           <div><dt>Event ID</dt><dd id="dReferenceEvent">--</dd></div>
           <div><dt>Thời điểm đánh giá</dt><dd id="dReferenceTime">--</dd></div>
         </dl>
@@ -2575,36 +2573,26 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 
       <!-- SECTION 2: AI Verdict -->
       <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-bot"></use></svg>Kết luận AI</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-bot"></use></svg>Kết luận</div>
         <div class="verdict-hero" id="dVerdictHero">
           <div class="verdict-hero-badge" id="dVerdictBadge">--</div>
           <div class="verdict-hero-prob">
             <span class="verdict-prob-label">Điểm rủi ro:</span>
             <span class="verdict-prob-value" id="dBotProb">--%</span>
           </div>
-          <div class="verdict-hero-conf">
-            <span>Độ phân cực điểm:</span>
-            <div class="conf-bar"><div class="conf-bar-fill" id="dConfBar"></div></div>
-            <span id="dConfValue">--%</span>
-          </div>
         </div>
         <div class="verdict-explain" id="dVerdictExplain"></div>
       </div>
 
       <!-- SECTION 3: Model Breakdown -->
-      <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Phân tích đa mô hình (Ensemble Fusion)</div>
-        <div class="drawer-explain">
-          Hệ thống kết hợp <strong>3 thành phần phân tích</strong>: BiLSTM, XGBoost và BotD heuristic.
-          BiLSTM và XGBoost dùng trọng số cố định; BotD chỉ cộng bằng chứng dương.
-        </div>
+      <div class="drawer-section" id="dModelSection">
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-brain-circuit"></use></svg>Điểm mô hình</div>
 
         <div class="model-detail-card" id="dModelLSTM">
           <div class="model-detail-header">
             <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-dna"></use></svg></div>
             <div>
-              <div class="model-detail-name">BiLSTM — Hành vi chuột</div>
-              <div class="model-detail-desc">Phân tích quỹ đạo, tốc độ, gia tốc di chuột. Bot có quỹ đạo thẳng và đều, người có quỹ đạo cong tự nhiên.</div>
+              <div class="model-detail-name">BiLSTM · hành vi chuột</div>
             </div>
           </div>
           <div class="model-detail-bar">
@@ -2618,8 +2606,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
           <div class="model-detail-header">
             <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-fingerprint"></use></svg></div>
             <div>
-              <div class="model-detail-name">XGBoost — Thống kê chuyển động chuột</div>
-              <div class="model-detail-desc">Phân tích tốc độ, gia tốc, độ cong và thay đổi hướng di chuyển.</div>
+              <div class="model-detail-name">XGBoost · thống kê chuột</div>
             </div>
           </div>
           <div class="model-detail-bar">
@@ -2633,8 +2620,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
           <div class="model-detail-header">
             <div class="model-detail-icon"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg></div>
             <div>
-              <div class="model-detail-name">BotD Heuristic — Kiểm tra tự động</div>
-              <div class="model-detail-desc">Kiểm tra WebDriver, Selenium, PhantomJS, Puppeteer, distinctive properties, plugins inconsistency.</div>
+              <div class="model-detail-name">Heuristic trình duyệt</div>
             </div>
           </div>
           <div class="model-detail-bar">
@@ -2644,58 +2630,42 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
           <div class="model-detail-weight">Trọng số: <span id="dWeightHeur">--</span></div>
         </div>
 
-        <div class="fusion-formula">
-          <code>final_score = (w<sub>lstm</sub> × lstm + w<sub>tab</sub> × tabular + w<sub>heur</sub> × heuristic) / Σw</code>
-          <div class="fusion-result" id="dFusionResult"></div>
-        </div>
       </div>
 
       <!-- SECTION 4: Detection Reasons -->
-      <div class="drawer-section">
+      <div class="drawer-section" id="dReasonsSection">
         <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-flag"></use></svg>Lý do phát hiện</div>
         <div id="dReasonsList" class="drawer-reasons"></div>
       </div>
 
       <!-- SECTION 5: Mouse Stats -->
       <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg><span id="dMouseStatsTitle">Thống kê hành vi chuột</span></div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-mouse"></use></svg><span id="dMouseStatsTitle">Chuột</span></div>
         <div class="drawer-grid-3" id="dMouseStats">
           <div class="drawer-stat-card">
             <div class="drawer-stat-value" id="dMouseCount">0</div>
-            <div class="drawer-stat-label">Điểm thu được</div>
+            <div class="drawer-stat-label">Điểm chuột</div>
           </div>
           <div class="drawer-stat-card">
             <div class="drawer-stat-value" id="dMouseSpeed">--</div>
             <div class="drawer-stat-label">Tốc độ TB</div>
           </div>
           <div class="drawer-stat-card">
-            <div class="drawer-stat-value" id="dMouseMaxSpeed">--</div>
-            <div class="drawer-stat-label">Tốc độ max</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-value" id="dMouseAccel">--</div>
-            <div class="drawer-stat-label">Gia tốc TB</div>
-          </div>
-          <div class="drawer-stat-card">
             <div class="drawer-stat-value" id="dMouseStraight">--</div>
-            <div class="drawer-stat-label">Straightness</div>
-          </div>
-          <div class="drawer-stat-card">
-            <div class="drawer-stat-value" id="dMouseChunks">0</div>
-            <div class="drawer-stat-label">Chunks LSTM</div>
+            <div class="drawer-stat-label">Độ thẳng</div>
           </div>
         </div>
       </div>
 
       <!-- SECTION 6: Device Fingerprint -->
       <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-monitor"></use></svg>Dấu vân tay thiết bị (Fingerprint)</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-monitor"></use></svg>Thiết bị</div>
         <div class="drawer-grid-2" id="dFingerprintGrid"></div>
       </div>
 
       <!-- SECTION 7: BotD Detectors -->
       <div class="drawer-section">
-        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg>BotD Heuristic Detectors</div>
+        <div class="drawer-section-title"><svg class="ui-icon"><use href="#icon-shield-check"></use></svg>Dấu hiệu tự động hóa</div>
         <div class="drawer-detectors" id="dDetectorsList"></div>
       </div>
 
@@ -2860,7 +2830,7 @@ function renderSystem(data) {
   const models = (data && data.models_loaded) || {};
   setText('sysModels', data ? (models.lstm && models.tabular ? '2/2 đã nạp' : 'Thiếu mô hình') : '--');
   setText('sysPolicy', data ? 'v' + (data.decision_policy_version || '?') : '--');
-  setText('sysGate', data ? (data.release_gate_evidence_present ? 'Có bằng chứng release gate' : 'Thiếu bằng chứng release gate') : '--');
+  setText('sysGate', data ? (data.release_gate_evidence_present ? 'Đã kiểm định' : 'Thiếu kiểm định') : '--');
   const buffer = (data && data.telemetry_buffer) || null;
   setText('sysQueue', buffer ? buffer.queued + ' / ' + buffer.capacity : '--');
   setText('sysQueueNote', buffer ? 'Đã bỏ: ' + buffer.dropped_total : '--');
@@ -2927,6 +2897,8 @@ function renderReferenceCell(session) {
 
 function renderReferenceDetail(session) {
   const ref = referenceView(session);
+  // Only shown for sessions that actually carry a Castle reference.
+  document.getElementById('dReferenceSection').hidden = !session.reference;
   const status = document.getElementById('dReferenceStatus');
   status.className = 'reference-status ' + ref.tone;
   status.textContent = ref.label;
@@ -2948,7 +2920,7 @@ function renderReferenceConnection(integration, failed = false) {
   el.textContent = state[0];
   el.className = 'reference-status ' + state[1];
   document.getElementById('referenceCoverage').textContent = failed ? 'Chưa cập nhật dữ liệu tham chiếu'
-    : allSessions.filter(s => referenceView(s).trusted).length + ' / ' + allSessions.length + ' phiên có tham chiếu xác thực trên trang';
+    : allSessions.filter(s => referenceView(s).trusted).length + ' / ' + allSessions.length + ' phiên có tham chiếu';
 }
 
 async function fetchRecentTelemetry() {
@@ -3032,11 +3004,11 @@ function updateLatencyKPI(latency) {
   const avg = Number(latency && latency.avg_ms);
   if (!Number.isFinite(avg)) {
     setText('kpiAvgLatency', '--');
-    setText('kpiLatencyExtra', 'Chưa có phiên nào từ lần khởi động');
+    setText('kpiLatencyExtra', '');
     return;
   }
   setText('kpiAvgLatency', avg < 100 ? avg.toFixed(1) : Math.round(avg).toLocaleString('vi-VN'));
-  setText('kpiLatencyExtra', `ms · p95 ${Number(latency.p95_ms).toFixed(0)} ms · ${latency.samples} phiên gần nhất`);
+  setText('kpiLatencyExtra', `ms · p95 ${Number(latency.p95_ms).toFixed(0)} ms`);
 }
 
 function updateClassificationKPIs() {
@@ -3064,16 +3036,14 @@ function updateClassificationKPIs() {
   }
   const denominator = total || 1;
   animateValue(document.getElementById('kpiTotalSessions'), total);
-  document.getElementById('kpiTotalExtra').textContent = classificationSummary
-    ? 'toàn bộ dữ liệu'
-    : `${allSessions.length} phiên gần nhất`;
+  document.getElementById('kpiTotalExtra').textContent = '';
   animateValue(document.getElementById('kpiHumanCount'), humans);
-  document.getElementById('kpiHumanRate').textContent = (humans / denominator * 100).toFixed(1) + '% tỷ lệ';
+  document.getElementById('kpiHumanRate').textContent = (humans / denominator * 100).toFixed(1) + '%';
   animateValue(document.getElementById('kpiBotCount'), bots);
-  document.getElementById('kpiBotRate').textContent = (bots / denominator * 100).toFixed(1) + '% tỷ lệ';
+  document.getElementById('kpiBotRate').textContent = (bots / denominator * 100).toFixed(1) + '%';
   animateValue(document.getElementById('kpiSuspectCount'), suspects);
   const insufficient = classificationSummary ? classificationSummary.insufficient || 0 : 0;
-  document.getElementById('kpiSuspectRate').textContent = (suspects / denominator * 100).toFixed(1) + '% tỷ lệ'
+  document.getElementById('kpiSuspectRate').textContent = (suspects / denominator * 100).toFixed(1) + '%'
     + (insufficient > 0 ? ` · ${insufficient} chưa đủ dữ liệu` : '');
 }
 
@@ -3135,10 +3105,16 @@ function renderGeo(geo) {
     link.textContent = 'bản đồ';
     place.append(' (', link, ')');
   }
-  const credit = document.createElement('div');
-  credit.className = 'geo-credit';
-  credit.innerHTML = 'Vị trí gần đúng theo IP · <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">IP Geolocation by DB-IP</a>';
-  if (text) place.appendChild(credit);
+  if (text) {
+    const credit = document.createElement('a');
+    credit.href = 'https://db-ip.com';
+    credit.target = '_blank';
+    credit.rel = 'noopener noreferrer';
+    credit.title = 'IP Geolocation by DB-IP';
+    credit.className = 'geo-credit';
+    credit.textContent = 'DB-IP';
+    place.append(' · ', credit);
+  }
   isp.textContent = geo && geo.isp ? `${geo.isp}${geo.asn ? ' (AS' + geo.asn + ')' : ''}` : '--';
 }
 
@@ -3171,7 +3147,7 @@ function hasApplicableRiskScore(session) {
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-state">Đang chờ dữ liệu telemetry — hãy mở ${escapeHtml(API_BASE)} trên tab khác và di chuột, hoặc bấm "Giả lập Bot"</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty-state">Chưa có lượt truy cập</td></tr>`;
     _lastTableHTML = '';
     return;
   }
@@ -3179,7 +3155,7 @@ function renderTrafficTable() {
   const selectedId = selectedSession ? selectedSession.sessionId : null;
   const visible = allSessions.map((s, idx) => [s, idx]).filter(([s]) => sessionMatches(s, trafficQuery));
   if (visible.length === 0) {
-    const empty = `<tr><td colspan="12" class="empty-state">Không có phiên nào khớp “${escapeHtml(trafficQuery)}” trong ${allSessions.length} phiên đang hiển thị</td></tr>`;
+    const empty = `<tr><td colspan="12" class="empty-state">Không có kết quả cho “${escapeHtml(trafficQuery)}”</td></tr>`;
     if (empty !== _lastTableHTML) { tbody.innerHTML = empty; _lastTableHTML = empty; }
     return;
   }
@@ -3391,7 +3367,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const snapshotMousePoints = Number.isFinite(Number(snapshotBreakdown.mouse_points))
     ? Number(snapshotBreakdown.mouse_points)
     : (s.mouse_points_captured || 0);
-  document.getElementById('dMousePoints').textContent = snapshotMousePoints + ' điểm';
+  const snapshotGestures = Number((snapshotBreakdown.touch || {}).gestures_total) || 0;
+  document.getElementById('dMousePoints').textContent = snapshotGestures && !snapshotMousePoints
+    ? snapshotGestures + ' cử chỉ chạm' : snapshotMousePoints + ' điểm chuột';
 
   // Fetch full detail document from MongoDB if needed
   let detail = null;
@@ -3402,7 +3380,6 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 
   const dataObj = detail || s;
   const prob = (dataObj.bot_probability !== undefined) ? dataObj.bot_probability : (s.bot_probability || 0);
-  const conf = (dataObj.confidence !== undefined) ? dataObj.confidence : (s.confidence || 0);
   const bd = dataObj.breakdown || s.breakdown || {};
   const reasons = dataObj.reasons || s.reasons || [];
   const fp = dataObj.fingerprint || s.fingerprint || {};
@@ -3444,80 +3421,65 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   hero.className = 'verdict-hero ' + (v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect');
   document.getElementById('dVerdictBadge').textContent = v;
   document.getElementById('dBotProb').textContent = riskAvailable ? (prob * 100).toFixed(1) + '%' : '--';
+  // Phones and rule verdicts have no fused risk score: show the verdict only.
+  document.querySelector('#dVerdictHero .verdict-hero-prob').style.display = riskAvailable ? '' : 'none';
   document.getElementById('dBotProb').style.color = v === 'HUMAN' ? 'var(--accent-green)' : v === 'BOT' ? 'var(--accent-red)' : 'var(--accent-orange)';
-  document.getElementById('dConfBar').style.width = riskAvailable ? (conf * 100).toFixed(0) + '%' : '0%';
-  document.getElementById('dConfValue').textContent = riskAvailable ? (conf * 100).toFixed(0) + '%' : '--';
 
-  // Verdict Explain in Vietnamese
+  // Verdict reason: one line of facts.
+  const pct = (x) => (x * 100).toFixed(1) + '%';
   let explainText = '';
   if (v === 'BOT') {
-    explainText = markerDecision
-      ? `<strong>Hệ thống kết luận là BOT vì có dấu vết công cụ tự động hóa:</strong> ${escapeHtml((automationEvidence.markers || []).join(', '))}. Trình duyệt người dùng bình thường không có các dấu vết này. `
-      : mobileEmulationDecision
-      ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt máy tính giả làm điện thoại:</strong> ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '))}. Đây là kiểu giả lập thiết bị của Playwright/Puppeteer và các script stealth. `
-      : idleCloudDecision
-      ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt chạy trên máy chủ cloud không có người dùng:</strong> địa chỉ IP thuộc nhà cung cấp cloud, đồ họa WebGL do CPU giả lập, và không có bất kỳ thao tác chuột, cuộn hay bàn phím nào trong ${Math.round((automationEvidence.idle_page_ms || 0) / 1000)} giây. Nếu người dùng thật bắt đầu thao tác, kết luận này sẽ được xét lại. `
-      : tamperDecision
-      ? `<strong>Hệ thống kết luận là BOT vì môi trường trình duyệt mâu thuẫn ở ${automationEvidence.family_count} nhóm kiểm tra độc lập:</strong> ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}. Đây là dấu hiệu của công cụ giả mạo môi trường (stealth). `
-      : bd.decision_basis === 'touch_automation'
-      ? `<strong>Hệ thống kết luận là BOT vì có autoclick:</strong> ${Number(touchInfoForText.autoclick_taps) || 0} lần chạm trúng đúng một điểm (lệch dưới 0,5 px) theo nhịp đều (hệ số biến thiên dưới 0,10). Ngón tay người không chạm lặp lại chính xác như vậy; trong 2.070 thiết bị người thật của BrainRun không có trường hợp nào. `
-      : syntheticDecision && bd.automation_rule === 'synthetic_typing_v1'
-      ? `<strong>Hệ thống kết luận là BOT theo quy tắc gõ phím giả lập:</strong> ${(provenance.typing || {}).fastest_median_hold_ms != null && ((provenance.typing || {}).codes || []).includes('TYPING_INSTANT_HOLD') ? `mỗi phím chỉ được giữ khoảng ${provenance.typing.fastest_median_hold_ms} ms (người thật thấp nhất khoảng 30 ms)` : `khoảng cách giữa các lần nhấn phím đều tăm tắp (hệ số biến thiên ${(provenance.typing || {}).lowest_interval_cv}, người thật thấp nhất 0,14)`}. Ngưỡng được kiểm chứng trên 20.400 lượt gõ của 51 người (CMU keystroke benchmark). `
-      : syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1'
-      ? `<strong>Hệ thống kết luận là BOT theo quy tắc nhấn chuột giả lập:</strong> ${provenance.zero_pressure_presses} lần nhấn chuột báo áp lực 0. Theo chuẩn Pointer Events, chuột thật đang nhấn luôn báo 0,5; giá trị 0 đến từ sự kiện do công cụ tự động hóa bơm vào. `
-      : syntheticDecision
-      ? `<strong>Hệ thống kết luận là BOT theo quy tắc click giả lập:</strong> ${provenance.clicks_centred} lần click trúng chính giữa nút (lệch tối đa 1 px), trong đó ${provenance.instant_releases} lần nhả chuột dưới 5 ms. Tay người không bấm và nhả nhanh như vậy, và hiếm khi trúng tâm nhiều lần liên tiếp. `
-      : ruleDecision
-      ? '<strong>Hệ thống kết luận là BOT theo quy tắc tự động hóa rõ ràng:</strong> User-Agent của request và trình duyệt đều tự nhận HeadlessChrome, đồng thời có dấu hiệu công cụ tự động hóa. Không có điểm rủi ro từ mô hình chuột cho phiên này. '
-      : `<strong>Hệ thống kết luận là BOT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> `;
-    const flags = [];
-    if (asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver)) flags.push('cờ tự động hóa navigator.webdriver = true');
-    if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) flags.push('môi trường trình duyệt Headless');
-    if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) flags.push('thuộc tính trình duyệt liên quan đến tự động hóa');
-    if (bd.has_enough_mouse_data && bd.behavioral_lstm_score > 0.5) flags.push(`điểm rủi ro từ mô hình hành vi chuột: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%`);
-    if (hasApplicableTabularScore(bd) && bd.tabular_score > 0.5) flags.push(`điểm rủi ro từ mô hình thống kê chuột: ${(bd.tabular_score * 100).toFixed(1)}%`);
-    if (flags.length > 0) {
-      explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
-    } else if (!bd.decision_basis || bd.decision_basis === 'ensemble') {
-      // Rule verdicts already gave their reason; this sentence is about the score fusion only.
-      explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng kết luận BOT.';
+    if (markerDecision) {
+      explainText = `Dấu vết công cụ tự động hóa: ${escapeHtml((automationEvidence.markers || []).join(', '))}.`;
+    } else if (mobileEmulationDecision) {
+      explainText = `Trình duyệt máy tính giả làm điện thoại: ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '))}.`;
+    } else if (idleCloudDecision) {
+      explainText = `Trình duyệt trên máy chủ cloud, không có thao tác trong ${Math.round((automationEvidence.idle_page_ms || 0) / 1000)} giây.`;
+    } else if (tamperDecision) {
+      explainText = `Môi trường trình duyệt mâu thuẫn: ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}.`;
+    } else if (bd.decision_basis === 'touch_automation') {
+      explainText = `Autoclick: ${Number(touchInfoForText.autoclick_taps) || 0} lần chạm trùng một điểm theo nhịp đều.`;
+    } else if (syntheticDecision && bd.automation_rule === 'synthetic_typing_v1') {
+      const typing = provenance.typing || {};
+      explainText = (typing.codes || []).includes('TYPING_INSTANT_HOLD')
+        ? `Gõ phím giả lập: mỗi phím chỉ giữ ${typing.fastest_median_hold_ms} ms.`
+        : `Gõ phím giả lập: nhịp gõ đều bất thường (CV ${typing.lowest_interval_cv}).`;
+    } else if (syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1') {
+      explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
+    } else if (syntheticDecision) {
+      explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
+    } else if (ruleDecision) {
+      explainText = 'Trình duyệt HeadlessChrome có dấu hiệu tự động hóa.';
+    } else {
+      const signals = [];
+      if (asBoolean(botdDetectors.webdriver) || asBoolean(botd.webDriver)) signals.push('navigator.webdriver');
+      if (asBoolean(botdDetectors.headlessUa) || asBoolean(botdDetectors.headless) || asBoolean(botd.headless)) signals.push('trình duyệt headless');
+      if (asBoolean(botdDetectors.distinctiveProperties) || asBoolean(botd.automationTool)) signals.push('thuộc tính tự động hóa');
+      if (bd.has_enough_mouse_data && bd.behavioral_lstm_score > 0.5) signals.push(`BiLSTM ${pct(bd.behavioral_lstm_score)}`);
+      if (hasApplicableTabularScore(bd) && bd.tabular_score > 0.5) signals.push(`XGBoost ${pct(bd.tabular_score)}`);
+      explainText = signals.length ? `Dấu hiệu: ${escapeHtml(signals.join(', '))}.` : '';
     }
   } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_clean_environment') {
     const mh = bd.mobile_human || {};
-    const DEVICE_LABELS = { ios: 'iPhone', android: 'điện thoại Android', ipad_desktop_mode: 'iPad', other_mobile: 'thiết bị di động' };
-    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (${DEVICE_LABELS[mh.device] || 'thiết bị di động'}):</strong> có ${mh.gestures} thao tác chạm/vuốt thật từ màn hình cảm ứng, không có dấu vết công cụ tự động hóa, không phải trình giả lập, không dùng IP cloud và môi trường trình duyệt không mâu thuẫn. Kết luận dựa trên việc không có bằng chứng bot (cách các hệ thống thương mại chấm người dùng điện thoại), chưa chấm điểm hành vi vuốt, nên độ tin cậy thấp hơn kết luận từ chuột trên máy tính. Nếu sau đó xuất hiện dấu hiệu bất thường, kết luận sẽ được xét lại. `;
+    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
+    explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm thật, không có dấu hiệu bot.`;
   } else if (v === 'HUMAN') {
-    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Chưa thấy bằng chứng bot đủ mạnh trong dữ liệu thu thập. `;
-    if (bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
-        && Number.isFinite(Number(bd.behavioral_lstm_score))) {
-      explainText += `Điểm mô hình hành vi chuột: ${(bd.behavioral_lstm_score * 100).toFixed(1)}%.`;
-    }
-  } else {
-    if (deferred) {
-      if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
-        const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MOBILE_CODE_LABELS[c] || c);
-        explainText = '<strong>Phiên NGHI VẤN:</strong> Thiết bị di động chưa đủ điều kiện kết luận NGƯỜI THẬT' + (missing.length ? ': ' + escapeHtml(missing.join('; ')) + '.' : '.');
-      } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
-        explainText = '<strong>Phiên NGHI VẤN:</strong> Quỹ đạo chưa có đủ biến thiên về thời gian hoặc vị trí để đánh giá đáng tin cậy.';
-      } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
-        const received = Number(bd.mouse_points) || 0;
-        const required = Number(bd.minimum_mouse_points) || 25;
-        explainText = `<strong>Phiên NGHI VẤN:</strong> Đã nhận ${received}/${required} điểm di chuột hợp lệ. Hệ thống sẽ đánh giá lại khi có thêm dữ liệu.`;
-      } else {
-        explainText = '<strong>Phiên NGHI VẤN:</strong> Hiện chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.';
-      }
-    } else if (bd.decision_basis === 'mobile_risk') {
-      const risk = ((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c);
-      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (thiết bị di động, đã đủ ${(bd.mobile_human || {}).gestures || 0} thao tác để đánh giá):</strong> có bằng chứng bất thường nhưng chưa đủ mạnh để kết luận BOT: ${escapeHtml(risk.join('; '))}. Thường gặp ở trình giả lập, phone farm, VPN/proxy hoặc công cụ tạo thao tác.`;
+    explainText = 'Không có dấu hiệu bot.';
+  } else if (deferred) {
+    if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
+      const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MOBILE_CODE_LABELS[c] || c);
+      explainText = missing.length ? `Chưa đủ điều kiện: ${escapeHtml(missing.join('; '))}.` : 'Chưa đủ dữ liệu để kết luận.';
+    } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
+      explainText = 'Quỹ đạo chuột chưa đủ biến thiên để đánh giá.';
+    } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
+      explainText = `Mới có ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} điểm di chuột.`;
     } else {
-      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới. Chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.`;
+      explainText = 'Chưa đủ dữ liệu để kết luận.';
     }
-  }
-  const touch = bd.touch || {};
-  if (Number(touch.gestures) > 0) {
-    const flags = (touch.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f);
-    const shadow = touch.shadow && touch.shadow.score != null ? `; điểm mô hình vuốt thử nghiệm ${(touch.shadow.score * 100).toFixed(0)}%` : '';
-    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (điểm mô hình vuốt chỉ để nghiên cứu): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
+  } else if (bd.decision_basis === 'mobile_risk') {
+    explainText = `Bất thường: ${escapeHtml(((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c).join('; '))}.`;
+  } else {
+    explainText = 'Điểm rủi ro nằm trong vùng ranh giới.';
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
 
@@ -3548,21 +3510,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dScoreHeur').textContent = (heurScore * 100).toFixed(1) + '%';
   document.getElementById('dWeightHeur').textContent = riskAvailable ? ((weights.w_heuristic || 0) * 100).toFixed(0) + '%' : '--';
 
-  const fusionBase = Number.isFinite(Number(bd.fusion_baseline)) ? Number(bd.fusion_baseline) : prob;
-  const heuristicLift = Number.isFinite(Number(bd.heuristic_lift)) ? Number(bd.heuristic_lift) : 0;
-  const fusionResult = document.getElementById('dFusionResult');
-  if (ruleDecision) {
-    fusionResult.textContent = 'Quy tắc tự động hóa rõ ràng → BOT. Không áp dụng điểm Fusion.';
-  } else if (!riskAvailable) {
-    fusionResult.textContent = 'Chưa đủ dữ liệu chuột để tính điểm Fusion đáng tin cậy.';
-  } else {
-    fusionResult.innerHTML =
-      `<span style="color:var(--text-muted)">Tính toán Fusion:</span> ` +
-      `${fusionBase.toFixed(2)} + ${heuristicLift.toFixed(2)} (BotD) = ` +
-      `<span style="color:${v==='BOT'?'var(--accent-red)':v==='HUMAN'?'var(--accent-green)':'var(--accent-orange)'}">${(prob * 100).toFixed(1)}% → ${v}</span>`;
-  }
-
-  // 4. Detection Reasons
+  // 4. Detection Reasons (a human verdict needs none; the mouse models do not judge touch)
+  const touchOnlySession = Boolean(bd.unsupported_mobile || (bd.mobile_human && bd.mobile_human.device)
+    || (Number((bd.touch || {}).gestures) > 0 && !(Number(bd.mouse_points) > 0)));
+  document.getElementById('dModelSection').style.display = touchOnlySession ? 'none' : '';
+  document.getElementById('dReasonsSection').style.display = v === 'HUMAN' ? 'none' : '';
   const reasonsDiv = document.getElementById('dReasonsList');
   if (reasons.length === 0) {
     reasonsDiv.innerHTML = `<div class="reason-none">Không phát hiện bất thường nào.</div>`;
@@ -3584,16 +3536,12 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const touchInfo = bd.touch || {};
   const touchSession = Boolean(bd.unsupported_mobile || (bd.mobile_human && bd.mobile_human.device)
     || (Number(touchInfo.gestures) > 0 && !(Number(bd.mouse_points) > 0)));
-  document.getElementById('dMouseStatsTitle').textContent = touchSession ? 'Thống kê thao tác cảm ứng' : 'Thống kê hành vi chuột';
+  document.getElementById('dMouseStatsTitle').textContent = touchSession ? 'Cảm ứng' : 'Chuột';
   if (touchSession) {
-    const shadowScore = touchInfo.shadow && touchInfo.shadow.score != null ? (touchInfo.shadow.score * 100).toFixed(0) + '%' : '--';
     const cards = [
-      [Number(touchInfo.gestures_total) || Number(touchInfo.gestures) || 0, 'Cử chỉ (tổng)'],
-      [touchInfo.taps ?? '--', 'Chạm (20 gần nhất)'],
-      [touchInfo.swipes ?? '--', 'Vuốt (20 gần nhất)'],
-      [(touchInfo.research_flags || []).length, 'Dấu hiệu bất thường'],
-      [shadowScore, 'Điểm mô hình vuốt'],
-      [touchInfo.same_point_taps ?? '--', 'Chạm trùng một điểm'],
+      [Number(touchInfo.gestures_total) || Number(touchInfo.gestures) || 0, 'Cử chỉ'],
+      [`${touchInfo.taps ?? 0} / ${touchInfo.swipes ?? 0}`, 'Chạm / vuốt'],
+      [(touchInfo.research_flags || []).length, 'Bất thường'],
     ];
     statsGrid.innerHTML = cards.map(([value, label]) => `<div class="drawer-stat-card"><div class="drawer-stat-value">${escapeHtml(String(value))}</div><div class="drawer-stat-label">${escapeHtml(label)}</div></div>`).join('');
   } else {
@@ -3605,32 +3553,28 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   if (!touchSession) {
     document.getElementById('dMouseCount').textContent = mousePts;
     const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
-    const maxSpd = mouseStats.max_speed || mouseStats.maxSpeed || null;
-    const avgAcc = mouseStats.mean_accel || mouseStats.avg_accel || mouseStats.avgAccel || null;
     const straight = mouseStats.straightness;
     document.getElementById('dMouseSpeed').textContent = avgSpd ? (Number(avgSpd).toFixed(3) + ' norm/s') : '--';
-    document.getElementById('dMouseMaxSpeed').textContent = maxSpd ? (Number(maxSpd).toFixed(3) + ' norm/s') : '--';
-    document.getElementById('dMouseAccel').textContent = avgAcc ? (Number(avgAcc).toFixed(3) + ' norm/s²') : '--';
     // Straightness of fewer than two moves is a placeholder, not a measurement.
     document.getElementById('dMouseStraight').textContent = (straight !== undefined && straight !== null && mousePts >= 2) ? Number(straight).toFixed(2) : '--';
-    document.getElementById('dMouseChunks').textContent = mouseStats.chunks_count || 0;
   }
 
   // 6. Fingerprint Grid
   const fpGrid = document.getElementById('dFingerprintGrid');
   const fpFields = [
-    { label: 'Hệ điều hành / Platform', value: fp.platform || '--' },
-    { label: 'Độ phân giải màn hình', value: fp.screenResolution ? (Array.isArray(fp.screenResolution) ? `${fp.screenResolution[0]} × ${fp.screenResolution[1]}` : String(fp.screenResolution).replace('x', ' × ')) : '--' },
-    { label: 'Số lõi CPU (Concurrency)', value: fp.hardwareConcurrency || '--' },
-    { label: 'Bộ nhớ RAM (Device Memory)', value: (fp.deviceMemory ? fp.deviceMemory + ' GB' : '--') },
-    { label: 'Ngôn ngữ trình duyệt', value: (fp.languages ? (Array.isArray(fp.languages) ? fp.languages.join(', ') : String(fp.languages)) : '--') },
-    { label: 'Múi giờ (Timezone)', value: fp.timezone || '--' },
+    { label: 'Hệ điều hành', value: fp.platform || '--' },
+    { label: 'Màn hình', value: fp.screenResolution ? (Array.isArray(fp.screenResolution) ? `${fp.screenResolution[0]} × ${fp.screenResolution[1]}` : String(fp.screenResolution).replace('x', ' × ')) : '--' },
+    { label: 'CPU', value: fp.hardwareConcurrency || '--' },
+    { label: 'RAM', value: (fp.deviceMemory ? fp.deviceMemory + ' GB' : '--') },
+    { label: 'Ngôn ngữ', value: (fp.languages ? (Array.isArray(fp.languages) ? fp.languages.join(', ') : String(fp.languages)) : '--') },
+    { label: 'Múi giờ', value: fp.timezone || '--' },
     { label: 'Canvas Hash', value: fp.canvasHash ? String(fp.canvasHash).substring(0, 16) + '...' : '--' },
     { label: 'Audio Hash', value: fp.audioHash ? String(fp.audioHash).substring(0, 16) + '...' : '--' },
-    { label: 'WebGL Renderer', value: fp.webglRenderer || '--' },
-    { label: 'Touch Support', value: (fp.maxTouchPoints && fp.maxTouchPoints > 0) ? `Có (${fp.maxTouchPoints} điểm)` : 'Không (Chuột)' },
+    { label: 'GPU', value: fp.webglRenderer || '--' },
+    { label: 'Cảm ứng', value: (fp.maxTouchPoints && fp.maxTouchPoints > 0) ? `${fp.maxTouchPoints} điểm` : 'Không' },
   ];
-  fpGrid.innerHTML = fpFields.map(f => `
+  // Only what the browser reported.
+  fpGrid.innerHTML = fpFields.filter(f => f.value !== '--').map(f => `
     <div class="drawer-field">
       <div class="drawer-field-label">${escapeHtml(f.label)}</div>
       <div class="drawer-field-value mono">${escapeHtml(f.value)}</div>
@@ -3650,13 +3594,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     { name: 'Screen Inconsistency', flagged: Number.isFinite(screenWidth) && Number.isFinite(screenHeight) && (screenWidth === 0 || screenHeight === 0), desc: 'Độ phân giải 0x0' },
     { name: 'DevTools Opened', flagged: asBoolean(botd.devtools), desc: 'Công cụ gỡ lỗi DevTools' },
   ];
-  detList.innerHTML = detectors.map(d => `
-    <div class="detector-badge ${d.flagged ? 'flagged' : 'safe'}" title="${d.desc}">
-      <span class="detector-status-dot"></span>
-      <span>${d.name}</span>
-      <span style="opacity:0.6;font-size:0.62rem">(${d.flagged ? 'PHÁT HIỆN' : 'HỢP LỆ'})</span>
-    </div>
-  `).join('');
+  const fired = detectors.filter(d => d.flagged);
+  detList.innerHTML = fired.length
+    ? fired.map(d => `<div class="detector-badge flagged" title="${d.desc}"><span class="detector-status-dot"></span><span>${d.name}</span></div>`).join('')
+    : '<span class="detector-none">Không phát hiện</span>';
 }
 
 function updateModelBars(s) {
@@ -4698,7 +4639,7 @@ function renderLiveLists(data) {
   const maxPlace = Math.max(1, ...data.top_locations.map(p => p.sessions));
   document.getElementById('liveTopLocations').innerHTML = places.length
     ? places.map(p => `<li><button class="row" type="button" data-place="${escapeHtml(p.label)}" title="Xem trên bản đồ">
-        <span class="name">${escapeHtml(p.label)}</span><span class="count">${p.sessions}${p.online ? ' · ' + p.online + ' online' : ''}</span>
+        <span class="name">${escapeHtml(p.label)}</span><span class="count">${p.sessions}</span>
         <span class="bar"><i style="width:${Math.round(100 * p.sessions / maxPlace)}%"></i></span></button></li>`).join('')
     : `<li class="live-empty">${filter ? 'Không có vị trí khớp' : 'Chưa có lượt truy cập nào xác định được vị trí'}</li>`;
   const maxIsp = Math.max(1, ...data.top_isps.map(p => p.sessions));
@@ -4711,8 +4652,7 @@ function renderLiveLists(data) {
 function renderLiveSide(data) {
   setText('liveOnline', data.online_now.toLocaleString('vi-VN'));
   setText('liveSessions', data.sessions.toLocaleString('vi-VN'));
-  setText('liveUnlocated', data.unlocated ? `${data.unlocated} phiên không xác định được vị trí` : 'tất cả đều xác định được vị trí');
-  setText('pageSub', 'Cập nhật ' + new Date(data.generated_at).toLocaleTimeString('vi-VN', { hour12: false }));
+  setText('pageSub', '');
   const total = Math.max(1, data.sessions);
   document.getElementById('liveMix').innerHTML = LIVE_KINDS.map(kind =>
     `<span style="width:${(100 * data.verdicts[kind] / total).toFixed(2)}%;background:var(${LIVE_FILL[kind]})"></span>`).join('');
@@ -4721,8 +4661,7 @@ function renderLiveSide(data) {
   document.getElementById('liveLegend').innerHTML = LIVE_KINDS.map(kind =>
     `<div><span class="swatch" style="background:var(${LIVE_FILL[kind]})"></span>${LIVE_LABELS[kind]} <b>${data.verdicts[kind]}</b></div>`).join('');
   document.getElementById('globeLegend').innerHTML = LIVE_KINDS.map(kind =>
-    `<span class="legend-item"><span class="swatch" style="background:var(${LIVE_FILL[kind]});border-radius:50%"></span>${LIVE_LABELS[kind]}</span>`).join('') +
-    '<span class="legend-item">vòng sáng: đang online</span>';
+    `<span class="legend-item"><span class="swatch" style="background:var(${LIVE_FILL[kind]});border-radius:50%"></span>${LIVE_LABELS[kind]}</span>`).join('');
   renderLiveLists(data);
   const top = data.top_locations[0];
   globe.canvas && globe.canvas.setAttribute('aria-label', `Quả địa cầu lượt truy cập 24 giờ qua: ${data.points.length} vị trí` +
@@ -4733,7 +4672,6 @@ function applyOnline(online) {
   if (!liveData) return;
   liveData.online_now = online.online_now;
   setText('liveOnline', online.online_now.toLocaleString('vi-VN'));
-  setText('liveOnlineSub', `đang mở trang · cập nhật ${new Date(online.generated_at).toLocaleTimeString('vi-VN', { hour12: false })}`);
   let newPlace = false;
   const known = new Set(liveData.points.map(p => p.key));
   Object.keys(online.places).forEach(key => { if (!known.has(key)) newPlace = true; });
