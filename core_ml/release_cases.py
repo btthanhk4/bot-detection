@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 
 
 # Relative event times from the frozen policy-v8 full-trajectory test replay.
@@ -424,5 +425,68 @@ MOBILE_RULE_GATE = {
     "passed": len(MOBILE_RULE_CASES),
     "fixture_fingerprint": hashlib.sha256(
         json.dumps(MOBILE_RULE_CASES, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest(),
+}
+
+
+with open(os.path.join(os.path.dirname(__file__), "fixtures", "m4d_human_60hz.json"), encoding="utf-8") as _fixture:
+    _M4D_60HZ = json.load(_fixture)["points_t_x_y"]
+
+
+def _path(scale=1.0, burst=0):
+    """A human path (M4D, 60 Hz frames); ``scale`` stretches time, ``burst`` adds moves within 1 ms."""
+    records = []
+    for t, x, y in _M4D_60HZ:
+        records.append({"time": round(t * scale), "x": x, "y": y, "type": "move", "source": "mouse"})
+        records += [{"time": round(t * scale) + k % 2, "x": round(x + 0.4 * (k + 1), 1), "y": y, "type": "move",
+                     "source": "mouse"} for k in range(burst)]
+    return records[-100:]
+
+
+def _desktop(coalesced=1.9, multi=0.8, secure=True, frame_ms=16.7, path=None, ua=None, renderer=_D3D, **kwargs):
+    payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, **kwargs)
+    payload["mouse"]["records"] = path or _path()
+    payload["mouse"]["pointerStats"] = {
+        "pointermove": 600, "coalescedTotal": round(600 * coalesced), "coalescedMax": 4,
+        "coalescedMulti": round(600 * multi), "rawUpdates": round(600 * coalesced), "secureContext": secure,
+        "frameMs": frame_ms, "frames": 60}
+    return payload
+
+
+_LINUX_CHROME = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                 "Chrome/155.0.0.0 Safari/537.36")
+_WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
+_APPLE_M2 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
+_MESA = "ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2), OpenGL 4.6)"
+
+# Policy 21 fixtures: (verdict, risk codes, payload). One human path throughout, so the
+# mouse models call every case human and only the input or environment differs.
+# Measured 2026-10-27: Windows people on the live site 1.88-2.29 coalesced samples per
+# move; a Linux person 1.02; patchright/Puppeteer CDP moves 1.000-1.002; CDP moves fired
+# without waiting 4 ms apart (1.07); fired in parallel, 0.3 ms apart.
+DESKTOP_RISK_CASES = (
+    ("HUMAN", [], _desktop()),
+    ("HUMAN", [], _desktop(coalesced=1.02, multi=0.007, ua=_LINUX_CHROME, renderer=_MESA)),
+    ("HUMAN", [], _desktop(coalesced=1.0, multi=0.0, ua=_MAC_CHROME, renderer=_APPLE_M2)),
+    ("HUMAN", [], _desktop(coalesced=1.0, multi=0.0, frame_ms=6.9)),
+    ("HUMAN", [], _desktop(coalesced=0.0, multi=0.0, secure=False)),
+    ("HUMAN", [], _desktop(coalesced=1.0, multi=0.0, ua=_WINDOWS_FIREFOX)),
+    ("HUMAN", [], _desktop(datacenter="aws")),
+    ("HUMAN", [], _desktop(signals={"uaHintsMismatch": True})),
+    ("SUSPECT", ["FRAME_LOCKED_POINTER"], _desktop(coalesced=1.0, multi=0.002)),
+    ("SUSPECT", ["FRAME_LOCKED_POINTER"], _desktop(coalesced=1.0, multi=0.0, ua=_MAC_CHROME)),
+    ("SUSPECT", ["UNALIGNED_POINTER"], _desktop(coalesced=1.07, multi=0.07, path=_path(scale=0.24))),
+    ("SUSPECT", ["SUBFRAME_POINTER_BURST"], _desktop(coalesced=3.4, multi=0.8, path=_path(burst=3))),
+    ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_SWIFTSHADER, datacenter="gcp")),
+    ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(signals={"headlessScreen": True})),
+)
+
+DESKTOP_RISK_RULE_GATE = {
+    "rules": ["desktop_risk_v1"],
+    "human_cases": sum(verdict == "HUMAN" for verdict, _, _ in DESKTOP_RISK_CASES),
+    "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _ in DESKTOP_RISK_CASES),
+    "passed": len(DESKTOP_RISK_CASES),
+    "fixture_fingerprint": hashlib.sha256(
+        json.dumps(DESKTOP_RISK_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }

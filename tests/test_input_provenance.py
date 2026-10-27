@@ -122,15 +122,15 @@ def test_click_history_is_bounded():
     assert len(sanitize_click_events(many)) == 30
 
 
-def test_pointer_stats_are_reported_without_affecting_the_verdict():
+def test_pointer_stats_are_reported():
     mouse = {"records": human_moves(), "clickEvents": [],
-             "pointerStats": {"pointermove": 50, "coalescedTotal": 50, "coalescedMax": 1,
-                              "coalescedMulti": 0, "secureContext": True}}
+             "pointerStats": {"pointermove": 50, "coalescedTotal": 95, "coalescedMax": 3,
+                              "coalescedMulti": 40, "secureContext": True, "frameMs": 16.7, "frames": 60}}
     result = detector().predict({"_server_user_agent": REGULAR_UA, "fingerprint": {"userAgent": REGULAR_UA},
                                  "botd": {"detectors": {}}, "mouse": mouse})
     stats = result["breakdown"]["input_provenance"]["pointer_stats"]
-    assert stats == {"pointer_moves": 50, "coalesced_mean": 1.0, "coalesced_max": 1,
-                     "coalesced_multi_share": 0.0, "secure_context": True}
+    assert stats == {"pointer_moves": 50, "coalesced_mean": 1.9, "coalesced_max": 3,
+                     "coalesced_multi_share": 0.8, "secure_context": True, "frame_ms": 16.7, "frames": 60}
     assert result["verdict"] == "HUMAN"
 
 

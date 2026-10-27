@@ -52,6 +52,8 @@ from core_ml.release_cases import (
     REGRESSION_CASE_FINGERPRINT,
     AUTOMATION_EVIDENCE_CASES,
     AUTOMATION_EVIDENCE_RULE_GATE,
+    DESKTOP_RISK_CASES,
+    DESKTOP_RISK_RULE_GATE,
     SYNTHETIC_DEVICE_CASES,
     SYNTHETIC_DEVICE_RULE_GATE,
     MOBILE_RULE_CASES,
@@ -779,6 +781,18 @@ def validate_mobile_rules(detector) -> dict:
     return dict(MOBILE_RULE_GATE)
 
 
+def validate_desktop_risk_rules(detector) -> dict:
+    """Check the policy 21 fixtures: one human path, so people stay HUMAN and each kind
+    of input or environment evidence alone keeps the session from a HUMAN verdict."""
+    for verdict, codes, payload in DESKTOP_RISK_CASES:
+        result = detector.predict(payload)
+        if result["breakdown"]["desktop_risk"]["codes"] != codes or result["decision_state"] != "FINAL":
+            raise RuntimeError("Desktop risk rule release gate failed")
+        if (result["verdict"] == "HUMAN") != (verdict == "HUMAN"):
+            raise RuntimeError("Desktop risk rule verdict release gate failed")
+    return dict(DESKTOP_RISK_RULE_GATE)
+
+
 def validate_automation_evidence_rules(detector) -> dict:
     """Check framework-marker and tampering fixtures before publishing policy 12."""
     for expected, basis, payload in AUTOMATION_EVIDENCE_CASES:
@@ -1392,6 +1406,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     automation_evidence_rule_gate = validate_automation_evidence_rules(production_detector)
     synthetic_device_rule_gate = validate_synthetic_device_rules(production_detector)
     mobile_rule_gate = validate_mobile_rules(production_detector)
+    desktop_risk_rule_gate = validate_desktop_risk_rules(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1423,6 +1438,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "automation_evidence_rule_gate": automation_evidence_rule_gate,
             "synthetic_device_rule_gate": synthetic_device_rule_gate,
             "mobile_rule_gate": mobile_rule_gate,
+            "desktop_risk_rule_gate": desktop_risk_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

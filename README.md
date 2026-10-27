@@ -108,7 +108,16 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v20 (current)
+### Policy v21 (current)
+
+Policy v21 chặn bot điều khiển Chrome thật qua CDP với thao tác giống người (patchright,
+phát lại quỹ đạo người thật), loại mà mô hình chuột chấm là người. Phiên máy tính có input
+không giống phần cứng (chuột chỉ 1 mẫu mỗi khung hình trên Windows, sự kiện dày hơn khung
+hình, dồn dưới 1 ms) hoặc môi trường bất thường (IP cloud + GPU giả lập, nhóm bằng chứng
+mạnh) → NGHI VẤN có kết luận thay vì HUMAN. Collector 1.8.0 đo khoảng cách khung hình. Xem
+[Model release v21](docs/MODEL_RELEASE_V21.md).
+
+### Policy v20
 
 Policy v20 kết luận BOT khi cả request và trình duyệt đều tự khai `HeadlessChrome/` (bản
 stealth che `webdriver` trước đây chỉ bị xếp "chưa đủ dữ liệu"). Xem

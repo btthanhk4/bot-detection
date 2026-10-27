@@ -22,6 +22,7 @@ from core_ml.features.input_provenance import (
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
+from core_ml.features.desktop_risk import analyze_desktop_risk
 from core_ml.features.mobile_human import analyze_mobile_human
 from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
 from core_ml.features.mouse_features import (
@@ -38,7 +39,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "20"
+DECISION_POLICY_VERSION = "21"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -185,6 +186,12 @@ class EnsembleBotDetector:
         input_provenance = analyze_input_provenance(mouse, user_agent=str(fingerprint.get("userAgent") or ""))
         automation_evidence = analyze_automation_evidence(payload)
         touch_report = analyze_touch(mouse.get("touch"))
+        # Policy 21: input provenance and environment evidence that a humanised
+        # CDP-driven browser cannot hide; it only withholds a HUMAN verdict.
+        desktop_risk = analyze_desktop_risk(
+            payload, automation_evidence, valid_moves, input_provenance["pointer_stats"],
+            judged=not unsupported_mobile and not legacy_touch_ambiguous,
+        )
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
@@ -313,6 +320,7 @@ class EnsembleBotDetector:
                 )
 
         # Thresholds are deployment settings and must match the reported decision policy.
+        desktop_risk_decision = False
         if explicit_automation:
             verdict = "BOT"
             if automation_rule == EXPLICIT_AUTOMATION_RULE:
@@ -380,6 +388,13 @@ class EnsembleBotDetector:
         elif (max(final_proba, suspicion_score) >= self.suspect_threshold
               or behavioral_disagreement or critical_flags):
             verdict = "SUSPECT"
+        elif desktop_risk["codes"]:
+            verdict = "SUSPECT"
+            desktop_risk_decision = True
+            reasons.append(
+                "Mouse behaviour looks human, but the input or environment does not: "
+                + ", ".join(desktop_risk["codes"]).lower().replace("_", " ")
+            )
         else:
             verdict = "HUMAN"
 
@@ -397,6 +412,8 @@ class EnsembleBotDetector:
                     suspect_reason_codes.append("INSUFFICIENT_MOUSE")
             if mobile_risk_decision:
                 suspect_reason_codes.append("MOBILE_RISK")
+            if desktop_risk["codes"] and not decision_deferred:
+                suspect_reason_codes.append("DESKTOP_RISK")
             if critical_flags:
                 suspect_reason_codes.append("CLIENT_AUTOMATION_SIGNAL")
             if heuristic_score >= 0.8:
@@ -435,6 +452,7 @@ class EnsembleBotDetector:
                 # Touch flags can only withhold the phone HUMAN verdict; the shadow score is research only.
                 "touch": {**touch_report, "shadow": score_touch(mouse.get("touch"))},
                 "mobile_human": mobile_human,
+                "desktop_risk": desktop_risk,
                 "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
@@ -450,6 +468,7 @@ class EnsembleBotDetector:
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "mobile_clean_environment" if mobile_human_decision
                     else "mobile_risk" if mobile_risk_decision
+                    else "desktop_risk" if desktop_risk_decision
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),

@@ -99,12 +99,17 @@ def _pointer_stats(raw):
     multi = _number(raw.get("coalescedMulti"), 0, 10**9)
     if moves is None or moves == 0 or total is None:
         return None
+    # Display frame interval measured by collector >= 1.8 over requestAnimationFrame.
+    frame_ms = _number(raw.get("frameMs"), 1, 1000)
+    frames = _number(raw.get("frames"), 0, 10**6)
     return {
         "pointer_moves": int(moves),
         "coalesced_mean": round(total / moves, 3),
         "coalesced_max": int(maximum or 0),
         "coalesced_multi_share": round((multi or 0) / moves, 3),
         "secure_context": raw.get("secureContext") is True,
+        "frame_ms": frame_ms,
+        "frames": int(frames or 0),
     }
 
 

@@ -419,6 +419,38 @@ async function testPointerStatsCountCoalescedMouseSamples() {
   collector.destroy();
 }
 
+async function testFrameIntervalIsMeasuredOnce() {
+  const frames = [];
+  global.requestAnimationFrame = (callback) => { frames.push(callback); return frames.length; };
+  global.cancelAnimationFrame = () => {};
+  const previousWindow = global.window;
+  global.window = { addEventListener: () => {}, removeEventListener: () => {}, isSecureContext: true };
+  try {
+    const collector = new BotCollector({ autoSendInterval: 0 });
+    const recorder = collector.mouseRecorder;
+    recorder.start();
+    let now = 1000;
+    // 60 Hz frames with one 2 s pause (hidden tab) and some jank.
+    for (let i = 0; i < 70; i++) {
+      now += i === 20 ? 2000 : i % 9 === 0 ? 33.4 : 16.7;
+      frames.shift()(now);
+      if (!frames.length) break;
+    }
+    const stats = recorder.exportData().pointerStats;
+    assert.strictEqual(stats.frameMs, 16.7);
+    assert.strictEqual(stats.frames, 60);
+    assert.strictEqual(frames.length, 0, 'the probe stops once measured');
+    recorder.stop();
+    recorder.start();
+    assert.strictEqual(frames.length, 0, 'a restart does not measure again');
+    collector.destroy();
+  } finally {
+    global.window = previousWindow;
+    delete global.requestAnimationFrame;
+    delete global.cancelAnimationFrame;
+  }
+}
+
 async function testResizeDoesNotCreateMouseMovement() {
   const previousWindow = global.window;
   global.window = {
@@ -870,6 +902,7 @@ testRestartDuringFingerprinting()
   .then(testResizeDoesNotCreateMouseMovement)
   .then(testClickGeometryAndPressTimingAreRecorded)
   .then(testPointerStatsCountCoalescedMouseSamples)
+  .then(testFrameIntervalIsMeasuredOnce)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)

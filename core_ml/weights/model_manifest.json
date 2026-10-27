@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "5516a2e5ab324d838a66669aa9a5ff60",
-  "created_at": "2026-10-27T12:10:21.613248+00:00",
+  "bundle_id": "d7a3abe3b73d4b60a7259174add85288",
+  "created_at": "2026-10-27T15:38:48.791858+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -854,7 +854,16 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "20",
+    "decision_policy_version": "21",
+    "desktop_risk_rule_gate": {
+      "fixture_fingerprint": "b58fc60f607a53115701225fd70f8b607b11e5722d69081d7f72bef530782a9a",
+      "human_cases": 8,
+      "passed": 14,
+      "rules": [
+        "desktop_risk_v1"
+      ],
+      "suspect_cases": 6
+    },
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,

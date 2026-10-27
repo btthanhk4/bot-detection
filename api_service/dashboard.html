@@ -3413,6 +3413,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     EMULATOR: 'chạy trên trình giả lập Android hoặc phần cứng máy tính', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
     HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
     ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
+  const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
+    UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
+    CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
 
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
@@ -3482,6 +3485,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     }
   } else if (bd.decision_basis === 'mobile_risk') {
     explainText = `Bất thường: ${escapeHtml(((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c).join('; '))}.`;
+  } else if (bd.decision_basis === 'desktop_risk') {
+    explainText = `Di chuột giống người, nhưng: ${escapeHtml(((bd.desktop_risk || {}).codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
   } else {
     explainText = 'Điểm rủi ro nằm trong vùng ranh giới.';
   }

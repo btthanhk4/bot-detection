@@ -845,6 +845,9 @@
   // Compatibility mouse events follow a touchend within one frame to ~350 ms
   // (legacy tap delay); a real mouse used after the finger arrives later.
   const TOUCH_COMPAT_WINDOW_MS = 800;
+  // Real input reaches the page aligned to display frames; the API compares the
+  // spacing of pointermoves with the frame interval measured over this many frames.
+  const FRAME_PROBE_FRAMES = 60;
 
   class MouseRecorder {
     constructor(options = {}) {
@@ -869,8 +872,9 @@
       this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
       this.pointerStats = {
         pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
-        mouseDowns: 0, zeroPressureDowns: 0,
+        mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0,
       };
+      this.frameProbe = null;
       // Keystroke timing only: no key values, field names or text; password fields are skipped.
       this.keystrokes = [];
       this.pendingKeys = {};
@@ -920,6 +924,28 @@
       window.addEventListener('keydown', this.handleKeyDown, { capture: true, passive: true });
       window.addEventListener('keyup', this.handleKeyUp, { capture: true, passive: true });
       window.addEventListener('input', this.handleInput, { capture: true, passive: true });
+      this.startFrameProbe();
+    }
+
+    startFrameProbe() {
+      if (this.frameProbe !== null || this.pointerStats.frames || typeof requestAnimationFrame !== 'function') return;
+      const deltas = [];
+      let last = null;
+      const step = (now) => {
+        this.frameProbe = null;
+        if (!this.isListening) return;
+        // Frames stop while the tab is hidden; the gap after it is not a frame interval.
+        if (last !== null && now - last > 0 && now - last < 100) deltas.push(now - last);
+        last = now;
+        if (deltas.length < FRAME_PROBE_FRAMES) {
+          this.frameProbe = requestAnimationFrame(step);
+          return;
+        }
+        const sorted = deltas.sort((a, b) => a - b);
+        this.pointerStats.frameMs = Math.round(sorted[sorted.length >> 1] * 10) / 10;
+        this.pointerStats.frames = sorted.length;
+      };
+      this.frameProbe = requestAnimationFrame(step);
     }
 
     stop() {
@@ -940,6 +966,8 @@
       window.removeEventListener('keydown', this.handleKeyDown, true);
       window.removeEventListener('keyup', this.handleKeyUp, true);
       window.removeEventListener('input', this.handleInput, true);
+      if (this.frameProbe !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this.frameProbe);
+      this.frameProbe = null;
     }
 
     clear() {
@@ -1418,7 +1446,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.7.1';
+  const COLLECTOR_VERSION = '1.8.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
 
