@@ -17,7 +17,22 @@ ellipse of several pixels that changes during the stroke.
 import math
 import statistics
 
-TOUCH_ANALYSIS_VERSION = "touch_v1"
+TOUCH_ANALYSIS_VERSION = "touch_v2"
+# Policy 19. Autoclickers tap one point at a fixed rate; macro recorders replay a
+# swipe exactly. Measured on BrainRun (2,070 human devices, 283,742 windows of
+# 20 gestures; 3 scripted devices in the set removed): no human window has 5 taps
+# within 0.5 px of one point with an interval CV under 0.10 (the scripted devices:
+# 529 windows); 3 replayed swipes (>= 5 points, >= 30 px, same ends within 0.5 px,
+# duration within 3 ms) occur on one human device (6 windows), so replay is a
+# risk signal only. Touchalytics (37 people, 377 taps): never 2 taps at one point.
+AUTOCLICK_RULE = "autoclick_taps_v1"
+AUTOCLICK_MIN_TAPS = 5
+AUTOCLICK_MAX_INTERVAL_CV = 0.10
+SAME_POINT_PX = 0.5
+REPLAY_MIN_SWIPES = 3
+REPLAY_MIN_POINTS = 5
+REPLAY_MIN_DISPLACEMENT_PX = 30.0
+REPLAY_DURATION_MS = 3.0
 MAX_GESTURES = 20
 MAX_POINTS = 48
 TAP_MAX_DISPLACEMENT_PX = 10.0
@@ -159,8 +174,38 @@ def _synthetic_contact(points) -> bool:
     return all(p[3] == 1 and p[4] == 1 and p[5] == 1 for p in points)
 
 
+def _autoclick_group(gestures, features) -> tuple:
+    """Largest group of taps at one point, and whether it is metronomic."""
+    taps = [(g["t0"], g["points"][0][1], g["points"][0][2])
+            for g, f in zip(gestures, features) if f["kind"] == "tap" and g["t0"] is not None]
+    largest, metronomic = 0, 0
+    for _, x, y in taps:
+        times = sorted(t for t, bx, by in taps if abs(bx - x) <= SAME_POINT_PX and abs(by - y) <= SAME_POINT_PX)
+        largest = max(largest, len(times))
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        if len(times) >= AUTOCLICK_MIN_TAPS and min(gaps) > 0:
+            mean = statistics.fmean(gaps)
+            if statistics.pstdev(gaps) / mean < AUTOCLICK_MAX_INTERVAL_CV:
+                metronomic = max(metronomic, len(times))
+    return largest, metronomic
+
+
+def _replayed_swipes(gestures, features) -> int:
+    """Largest group of swipes with the same ends and duration."""
+    swipes = [g["points"] for g, f in zip(gestures, features)
+              if f["kind"] == "swipe" and f["points"] >= REPLAY_MIN_POINTS
+              and f["displacement_px"] >= REPLAY_MIN_DISPLACEMENT_PX]
+    largest = 0
+    for a in swipes:
+        same = [b for b in swipes
+                if all(abs(b[i][k] - a[i][k]) <= SAME_POINT_PX for i in (0, -1) for k in (1, 2))
+                and abs((b[-1][0] - b[0][0]) - (a[-1][0] - a[0][0])) <= REPLAY_DURATION_MS]
+        largest = max(largest, len(same))
+    return largest
+
+
 def analyze_touch(touch) -> dict:
-    """Research-only summary of a session's touch gestures (never a verdict)."""
+    """Summary of a session's touch gestures; flags feed the phone rules of policy 18+."""
     gestures = sanitize_gestures(touch)
     features = [gesture_features(g["points"]) for g in gestures]
     taps = [f for f in features if f["kind"] == "tap"]
@@ -173,6 +218,8 @@ def analyze_touch(touch) -> dict:
         and f["step_length_cv"] is not None and f["step_length_cv"] <= EVEN_STEP_MAX_CV
     ]
     synthetic_contact = [g for g in gestures if _synthetic_contact(g["points"])]
+    same_point_taps, autoclick_taps = _autoclick_group(gestures, features)
+    replayed = _replayed_swipes(gestures, features)
     flags = []
     if gestures and len(synthetic_contact) == len(gestures):
         flags.append("SYNTHETIC_CONTACT")
@@ -180,6 +227,10 @@ def analyze_touch(touch) -> dict:
         flags.append("ZERO_TIME_TAPS")
     if len(linear) >= 2:
         flags.append("RULER_SWIPES")
+    if autoclick_taps >= AUTOCLICK_MIN_TAPS:
+        flags.append("AUTOCLICK_TAPS")
+    if replayed >= REPLAY_MIN_SWIPES:
+        flags.append("REPLAYED_SWIPES")
     total = touch.get("total") if isinstance(touch, dict) else None
     return {
         "analysis_version": TOUCH_ANALYSIS_VERSION,
@@ -190,5 +241,8 @@ def analyze_touch(touch) -> dict:
         "zero_time_taps": len(zero_time_taps),
         "ruler_swipes": len(linear),
         "synthetic_contact_gestures": len(synthetic_contact),
+        "same_point_taps": same_point_taps,
+        "autoclick_taps": autoclick_taps,
+        "replayed_swipes": replayed,
         "research_flags": flags,
     }

@@ -23,7 +23,7 @@ from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
 from core_ml.features.mobile_human import analyze_mobile_human
-from core_ml.features.touch import analyze_touch
+from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
     compute_statistical_features,
@@ -38,7 +38,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "18"
+DECISION_POLICY_VERSION = "19"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -184,12 +184,16 @@ class EnsembleBotDetector:
         # trusted browser events; each rule needs its signal repeated.
         input_provenance = analyze_input_provenance(mouse, user_agent=str(fingerprint.get("userAgent") or ""))
         automation_evidence = analyze_automation_evidence(payload)
+        touch_report = analyze_touch(mouse.get("touch"))
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
             automation_rule = automation_evidence["rule"]
         elif input_provenance["synthetic_input_rule"]:
             automation_rule = input_provenance["synthetic_input_rule"]
+        elif "AUTOCLICK_TAPS" in touch_report["research_flags"]:
+            # Policy 19: one point, metronomic taps; no human device in BrainRun does this.
+            automation_rule = AUTOCLICK_RULE
         elif candidate_evidence:
             automation_rule = PROFILE_CANDIDATE_RULE
         else:
@@ -261,14 +265,21 @@ class EnsembleBotDetector:
             or not self.lstm_available or not self.tabular_available
             or unsupported_mobile or legacy_touch_ambiguous
         )
-        touch_report = analyze_touch(mouse.get("touch"))
         # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
         mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags)
         mobile_human_decision = (
             mouse_evidence_deferred and not explicit_automation and mobile_human["eligible"]
             and self.lstm_available and self.tabular_available
         )
-        decision_deferred = mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+        # Policy 19: a phone judged on enough gestures with evidence against it is a final SUSPECT.
+        mobile_risk_decision = (
+            mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+            and bool(mobile_human["risk"]) and self.lstm_available and self.tabular_available
+        )
+        decision_deferred = (
+            mouse_evidence_deferred and not explicit_automation
+            and not mobile_human_decision and not mobile_risk_decision
+        )
         tabular_score_in_domain = bool(
             self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
             and move_point_count >= self.min_mouse_points_for_bot
@@ -278,6 +289,11 @@ class EnsembleBotDetector:
             reasons.append(
                 f"Phone/tablet ({mobile_human['device']}) with {mobile_human['gestures']} trusted touch gestures "
                 "and no automation, emulator, cloud or environment evidence; touch behaviour itself is not scored"
+            )
+        elif mobile_risk_decision:
+            reasons.append(
+                f"Phone/tablet ({mobile_human['device']}) judged on {mobile_human['gestures']} touch gestures; "
+                "evidence against it: " + ", ".join(mobile_human["risk"]).lower().replace("_", " ")
             )
         elif mouse_evidence_deferred and not explicit_automation:
             if not self.lstm_available or not self.tabular_available:
@@ -338,6 +354,11 @@ class EnsembleBotDetector:
                     )))
                     + " (no human typing in the CMU benchmark comes close)"
                 )
+            elif automation_rule == AUTOCLICK_RULE:
+                reasons.append(
+                    f"Autoclicker: {touch_report['autoclick_taps']} taps on the same point (within 0.5 px) "
+                    "at a fixed rate (interval CV under 0.10); no human device in BrainRun taps like this"
+                )
             elif automation_rule == SYNTHETIC_POINTER_RULE:
                 reasons.append(
                     f"Synthetic mouse presses: {input_provenance['zero_pressure_presses']} presses reported "
@@ -350,6 +371,8 @@ class EnsembleBotDetector:
                 )
         elif mobile_human_decision:
             verdict = "HUMAN"
+        elif mobile_risk_decision:
+            verdict = "SUSPECT"
         elif decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
@@ -372,6 +395,8 @@ class EnsembleBotDetector:
                     suspect_reason_codes.append("DEGENERATE_TRAJECTORY")
                 else:
                     suspect_reason_codes.append("INSUFFICIENT_MOUSE")
+            if mobile_risk_decision:
+                suspect_reason_codes.append("MOBILE_RISK")
             if critical_flags:
                 suspect_reason_codes.append("CLIENT_AUTOMATION_SIGNAL")
             if heuristic_score >= 0.8:
@@ -422,7 +447,9 @@ class EnsembleBotDetector:
                     else "idle_cloud_browser" if automation_rule == IDLE_CLOUD_BROWSER_RULE
                     else "mobile_emulation" if automation_rule == MOBILE_EMULATION_RULE
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
+                    else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "mobile_clean_environment" if mobile_human_decision
+                    else "mobile_risk" if mobile_risk_decision
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),

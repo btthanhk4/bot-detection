@@ -27,6 +27,8 @@ is not locked; later human input may overturn it.
 
 import re
 
+from core_ml.features.touch import sanitize_gestures
+
 AUTOMATION_MARKER_RULE = "automation_marker_v1"
 ENVIRONMENT_TAMPERING_RULE = "environment_tampering_v1"
 IDLE_CLOUD_BROWSER_RULE = "idle_cloud_browser_v1"
@@ -72,6 +74,12 @@ _FAMILIES = {
     # Corroboration only: VPN exits share these ranges, so NETWORK is never an anchor.
     "NETWORK": {"server": ("datacenter_ip",)},
 }
+# Desktop graphics that no phone has (policy 19: Android emulators such as
+# LDPlayer/BlueStacks expose the host GPU; Playwright/Puppeteer on Windows show
+# Direct3D). Samsung's AMD-based phone GPU reports "Xclipse", not Radeon.
+_DESKTOP_GPU = re.compile(r"Direct3D|D3D11|D3D9|GeForce|Quadro|Radeon|Intel\(R\)|Intel HD|UHD Graphics|Iris|PCIe|SSE2", re.I)
+# Phones and tablets have at most 10 cores; a server or desktop shows through.
+MOBILE_MAX_CORES = 16
 _SOFTWARE_RENDERER = re.compile(r"swiftshader|llvmpipe|softpipe|mesa offscreen|microsoft basic render", re.I)
 
 
@@ -149,7 +157,7 @@ def _number(value):
     return number if number == number and abs(number) != float("inf") else None
 
 
-def _mobile_emulation(fingerprint):
+def _mobile_emulation(fingerprint, worker=None, touch_data=None):
     """Contradictions of a desktop browser dressed up as a phone (policy 17).
 
     Measured 2026-10-26: Playwright (iPhone 13, Pixel 7, Galaxy S9+) and Puppeteer
@@ -157,6 +165,13 @@ def _mobile_emulation(fingerprint):
     (Windows-only) WebGL renderer and, on iOS profiles, navigator.deviceMemory,
     which WebKit (every iOS browser) does not implement. Real iPhones report
     platform "iPhone" and "Apple GPU"; Android phones "Linux arm*/aarch64".
+
+    Policy 19 (measured 2026-10-27 with stealth scripts that patch
+    navigator.platform, webdriver and maxTouchPoints): a dedicated worker keeps
+    the real platform ("spoofed_platform"); desktop GPU vendors on Android; more
+    cores than any phone has; and on iOS 18+ touches without a contact radius
+    (Playwright WebKit reports none; real iPhones on the live site report
+    24.3/36.4/48.6 px).
     """
     ua = str(fingerprint.get("userAgent") or "")
     platform = str(fingerprint.get("platform") or "")
@@ -169,15 +184,34 @@ def _mobile_emulation(fingerprint):
     if (ios and platform not in ("iPhone", "iPod", "iPad")) or (
             android and platform in ("Win32", "Win64", "MacIntel", "Macintosh")):
         found.append("platform_mismatch")
-    if re.search(r"Direct3D|D3D11|D3D9", renderer) or (ios and renderer and "Apple" not in renderer):
+    # JS spoofing patches the page's navigator, not a dedicated worker's.
+    if _mapping(worker).get("platformMismatch") is True:
+        found.append("spoofed_platform")
+    if _DESKTOP_GPU.search(renderer) or (ios and renderer and "Apple" not in renderer):
         found.append("desktop_gpu")
     memory = fingerprint.get("deviceMemory")
     if ios and isinstance(memory, (int, float)) and not isinstance(memory, bool) and memory > 0:
         found.append("chromium_api_on_ios")
-    touch = fingerprint.get("maxTouchPoints")
-    if isinstance(touch, (int, float)) and not isinstance(touch, bool) and touch == 0:
+    touch_points = fingerprint.get("maxTouchPoints")
+    if isinstance(touch_points, (int, float)) and not isinstance(touch_points, bool) and touch_points == 0:
         found.append("no_touch")
+    cores = _number(fingerprint.get("hardwareConcurrency"))
+    if cores is not None and cores > MOBILE_MAX_CORES:
+        found.append("server_cpu")
+    # WebKit reports a contact radius on current iOS (seen on iOS 18 and Safari 26,
+    # whose UA freezes the OS at 18_6). Older versions are not judged.
+    versions = [int(v) for v in re.findall(r"(?:OS |Version/)(\d+)", ua)]
+    gestures = sanitize_gestures(touch_data)
+    if (ios and versions and max(versions) >= 18 and len(gestures) >= 3
+            and all(p[3] is None and p[4] is None for g in gestures for p in g["points"])):
+        found.append("ios_touch_without_contact")
     return found
+
+
+def mobile_emulation_fires(found) -> bool:
+    """A platform contradiction plus at least one hardware contradiction."""
+    platform = {"platform_mismatch", "spoofed_platform"}
+    return bool(platform & set(found)) and bool(set(found) - platform)
 
 
 def _idle_page_ms(payload):
@@ -217,8 +251,9 @@ def analyze_automation_evidence(payload: dict) -> dict:
     idle_ms = _idle_page_ms(payload)
     # DevTools device mode sets the platform, so a platform contradiction is
     # required; automation emulation also leaves a GPU, API or touch one.
-    emulation = _mobile_emulation(_mapping(payload.get("fingerprint")))
-    mobile_emulation = "platform_mismatch" in emulation and len(emulation) >= 2
+    emulation = _mobile_emulation(_mapping(payload.get("fingerprint")), sources.get("worker"),
+                                  _mapping(payload.get("mouse")).get("touch"))
+    mobile_emulation = mobile_emulation_fires(emulation)
     idle_cloud = (
         cloud and "server.software_renderer" in families["NETWORK"]
         and idle_ms is not None and idle_ms >= IDLE_CLOUD_MIN_PAGE_MS

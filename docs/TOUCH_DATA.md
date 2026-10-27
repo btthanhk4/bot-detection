@@ -45,8 +45,10 @@ số cử chỉ thật và các cờ cảm ứng là điều kiện của luật
 | `SYNTHETIC_CONTACT` | mọi cử chỉ: bán kính đúng bằng 1 và force = 1 ở mọi điểm, kể cả điểm nhả | chữ ký mặc định của CDP/Playwright. Bản đầu (bán kính ≤ 1, force 1, điểm nhả 0) bắt cả thao tác bơm vào Android (HID, script phát lại của Gesture Fingerprint) nhưng gắn nhầm một điện thoại Android giá rẻ thật trên site (2026-10-27, Adreno 610: không có cảm biến lực/diện tích nên bán kính 0,3, force 1, nhả ở 0): trong trình duyệt hai trường hợp này giống hệt nhau, nên đã thu hẹp lại |
 | `ZERO_TIME_TAPS` | ≥ 2 lần chạm có thời gian chạm < 1 ms | chưa kiểm chứng được trên người: BrainRun ghi thời gian chạm thô (4 % lần chạm bằng 0 ms do cách ứng dụng ghi) |
 | `RULER_SWIPES` | ≥ 2 lần vuốt ≥ 5 điểm, lệch khỏi đường thẳng ≤ 0,5 px, độ dài bước CV ≤ 0,05 | BrainRun: 22/147.601 lần vuốt người (0,015 %), 5/8.306 phiên 20 cử chỉ (0,06 %); bắt 91 % lần vuốt CDP thẳng |
+| `AUTOCLICK_TAPS` | ≥ 5 lần chạm trong 0,5 px quanh một điểm, khoảng cách thời gian CV < 0,10 | policy 19: luật BOT `autoclick_taps_v1`; 0 cửa sổ trên 2.070 thiết bị người của BrainRun |
+| `REPLAYED_SWIPES` | ≥ 3 lần vuốt (≥ 5 điểm, ≥ 30 px) cùng điểm đầu/cuối (0,5 px) và thời lượng (±3 ms) | macro phát lại; 1 thiết bị người BrainRun khớp nên chỉ là bằng chứng NGHI VẤN |
 
-Không cờ nào đủ sạch để kết luận BOT; chúng chỉ góp vào nhãn yếu.
+Từ policy 19, `AUTOCLICK_TAPS` là luật BOT; các cờ còn lại làm điện thoại đủ thao tác thành NGHI VẤN ([Model release v19](MODEL_RELEASE_V19.md)) và góp vào nhãn yếu.
 
 ## Mô hình vuốt thử nghiệm (shadow)
 

@@ -54,8 +54,8 @@ from core_ml.release_cases import (
     AUTOMATION_EVIDENCE_RULE_GATE,
     SYNTHETIC_DEVICE_CASES,
     SYNTHETIC_DEVICE_RULE_GATE,
-    MOBILE_HUMAN_CASES,
-    MOBILE_HUMAN_RULE_GATE,
+    MOBILE_RULE_CASES,
+    MOBILE_RULE_GATE,
     SYNTHETIC_INPUT_CASES,
     SYNTHETIC_INPUT_RULE_GATE,
 )
@@ -770,16 +770,16 @@ def validate_synthetic_device_rules(detector) -> dict:
     return dict(SYNTHETIC_DEVICE_RULE_GATE)
 
 
-def validate_mobile_human_rules(detector) -> dict:
-    """Check the policy 18 phone-human fixtures: clean phones HUMAN, everything else not."""
-    for expected, basis, payload in MOBILE_HUMAN_CASES:
+def validate_mobile_rules(detector) -> dict:
+    """Check the policy 19 phone fixtures: clean phones HUMAN, phones with evidence
+    against them a final SUSPECT, too little input insufficient, bots BOT."""
+    for verdict, state, basis, payload in MOBILE_RULE_CASES:
         result = detector.predict(payload)
-        state = "FINAL" if expected in ("BOT", "HUMAN") else "INSUFFICIENT_EVIDENCE"
-        if result["verdict"] != expected or result["decision_state"] != state:
-            raise RuntimeError("Mobile human rule release gate failed")
+        if result["verdict"] != verdict or result["decision_state"] != state:
+            raise RuntimeError("Mobile rule release gate failed")
         if basis and (result["breakdown"]["decision_basis"] != basis or result["breakdown"]["risk_score_in_domain"]):
-            raise RuntimeError("Mobile human rule metadata release gate failed")
-    return dict(MOBILE_HUMAN_RULE_GATE)
+            raise RuntimeError("Mobile rule metadata release gate failed")
+    return dict(MOBILE_RULE_GATE)
 
 
 def validate_automation_evidence_rules(detector) -> dict:
@@ -1394,7 +1394,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     synthetic_input_rule_gate = validate_synthetic_input_rule(production_detector)
     automation_evidence_rule_gate = validate_automation_evidence_rules(production_detector)
     synthetic_device_rule_gate = validate_synthetic_device_rules(production_detector)
-    mobile_human_rule_gate = validate_mobile_human_rules(production_detector)
+    mobile_rule_gate = validate_mobile_rules(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1425,7 +1425,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "synthetic_input_rule_gate": synthetic_input_rule_gate,
             "automation_evidence_rule_gate": automation_evidence_rule_gate,
             "synthetic_device_rule_gate": synthetic_device_rule_gate,
-            "mobile_human_rule_gate": mobile_human_rule_gate,
+            "mobile_rule_gate": mobile_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

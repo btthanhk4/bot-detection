@@ -103,9 +103,9 @@ def test_low_end_android_phone_is_human():
     import copy
 
     from api_service.main import ensemble_detector
-    from core_ml.release_cases import MOBILE_HUMAN_CASES
+    from core_ml.release_cases import MOBILE_RULE_CASES
 
-    payload = copy.deepcopy(MOBILE_HUMAN_CASES[1][2])
+    payload = copy.deepcopy(MOBILE_RULE_CASES[2][3])
     payload["fingerprint"].update({
         "userAgent": ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/156.0.0.0 Mobile Safari/537.36"),
@@ -331,3 +331,30 @@ def test_telemetry_stores_touch_samples_only_when_enabled(client, monkeypatch):
     assert len(stored) == 1 and stored[0]["label_hint"] == "human_candidate"
     monkeypatch.setattr(database, "save_touch_samples", lambda samples: 1 / 0)
     assert client.post("/api/v1/telemetry", json=body).status_code == 200, "touch storage is best effort"
+
+
+def _taps_at(times, x=180.0, y=324.0, dx=0.0):
+    return {"gestures": [{"t0": t, "points": [[0, x + dx * i, y, 10, 10, 0.3], [60, x + dx * i, y, 10, 10, 0.3]]}
+                         for i, t in enumerate(times)]}
+
+
+def test_autoclick_needs_five_metronomic_taps_on_one_point():
+    steady = [1000 + 500 * i for i in range(6)]
+    assert "AUTOCLICK_TAPS" in analyze_touch(_taps_at(steady))["research_flags"]
+    assert "AUTOCLICK_TAPS" not in analyze_touch(_taps_at(steady[:4]))["research_flags"], "four taps are not enough"
+    assert "AUTOCLICK_TAPS" not in analyze_touch(_taps_at(steady, dx=0.6))["research_flags"], "a finger drifts"
+    uneven = [1000, 1400, 2300, 2500, 3600, 3900]
+    report = analyze_touch(_taps_at(uneven))
+    assert "AUTOCLICK_TAPS" not in report["research_flags"] and report["same_point_taps"] == 6
+
+
+def test_replayed_swipes_need_three_identical_long_swipes():
+    swipe = [[i * 16.0, 200.0, 700.0 - i * i * 5, 10, 10, 0.3] for i in range(8)]
+    gestures = lambda n, s=swipe: {"gestures": [{"t0": 1000 * i, "points": s} for i in range(n)]}  # noqa: E731
+    assert analyze_touch(gestures(3))["replayed_swipes"] == 3
+    assert "REPLAYED_SWIPES" not in analyze_touch(gestures(2))["research_flags"]
+    short = [[i * 16.0, 200.0, 700.0 - i * 3, 10, 10, 0.3] for i in range(8)]
+    assert "REPLAYED_SWIPES" not in analyze_touch(gestures(3, short))["research_flags"], "under 30 px"
+    slower = [[p[0] * 1.1] + p[1:] for p in swipe]
+    mixed = {"gestures": [{"t0": 0, "points": swipe}, {"t0": 1, "points": swipe}, {"t0": 2, "points": slower}]}
+    assert "REPLAYED_SWIPES" not in analyze_touch(mixed)["research_flags"], "durations differ"

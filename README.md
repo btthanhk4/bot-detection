@@ -108,7 +108,16 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v18 (current)
+### Policy v19 (current)
+
+Policy v19 tối ưu điện thoại trên cả iPhone và Android: bot stealth sửa `navigator` bị lộ
+qua Worker và phần cứng (GPU máy tính, CPU máy chủ, iOS không có bán kính chạm) → BOT;
+autoclick (≥ 5 chạm cùng điểm, nhịp đều; 0/2.070 thiết bị người trong BrainRun) → BOT;
+điện thoại đủ thao tác nhưng có bằng chứng bất lợi (trình giả lập, vuốt phát lại, IP
+cloud…) → NGHI VẤN có kết luận. Collector 1.7.1 bỏ sự kiện chuột giả sau mỗi lần chạm.
+Xem [Model release v19](docs/MODEL_RELEASE_V19.md).
+
+### Policy v18
 
 Policy v18 thêm `mobile_clean_environment_v1`: phiên điện thoại/máy tính bảng có ít nhất 3
 thao tác chạm thật, không có cờ cảm ứng, không phải trình giả lập, không dùng IP cloud và

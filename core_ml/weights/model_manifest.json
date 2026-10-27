@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "d05a4253a0984b14998aaf9d1a327676",
-  "created_at": "2026-10-27T03:34:51.589678+00:00",
+  "bundle_id": "28430e3fc35b4218903b61073c36e55f",
+  "created_at": "2026-10-27T05:21:07.100335+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -854,7 +854,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "18",
+    "decision_policy_version": "19",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
@@ -1028,14 +1028,18 @@
       }
     },
     "minimum_mouse_points_for_bot": 25,
-    "mobile_human_rule_gate": {
-      "fixture_fingerprint": "d08211f325c91c775f97278a7135a6d2c4d5c8ad0399efeb7cde6a843ae22c17",
-      "negative_cases": 9,
-      "passed": 12,
-      "positive_cases": 3,
+    "mobile_rule_gate": {
+      "bot_cases": 5,
+      "fixture_fingerprint": "ab08fe3f334ac3dfa9b1f68431917fee4347a810d1932f4dd7fc1353ff4a8027",
+      "human_cases": 7,
+      "passed": 22,
       "rules": [
-        "mobile_clean_environment_v1"
-      ]
+        "mobile_clean_environment_v1",
+        "mobile_risk_v1",
+        "autoclick_taps_v1",
+        "mobile_emulation_v1"
+      ],
+      "suspect_cases": 10
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,

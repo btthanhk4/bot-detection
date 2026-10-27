@@ -10,11 +10,22 @@ page loaded by a script that never touches the screen is not called human.
 It is a conclusion from the absence of bot evidence, not from a validated
 touch-behaviour model: the confidence is lower than for a desktop mouse
 verdict and the reason says so. Any automation rule still wins first.
+
+Policy 19 (``mobile_risk_v1``): once a phone has enough gestures to be judged,
+concrete evidence against it (emulator, desktop hardware, injected or replayed
+touches, contradictory environment, cloud address) makes it SUSPECT as a final
+verdict instead of "insufficient evidence". Too few gestures stay insufficient.
 """
 
 import re
 
 MOBILE_HUMAN_RULE = "mobile_clean_environment_v1"
+MOBILE_RISK_RULE = "mobile_risk_v1"
+# Missing conditions that are evidence against the session, not just absence of data.
+RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
+              "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL")
+_PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
+                   "ios_touch_without_contact"}
 MOBILE_HUMAN_MIN_GESTURES = 3
 # Families an ordinary phone can trip on its own (header quirks of in-app
 # browsers, Client Hints gaps). One is tolerated; anchors never are.
@@ -59,10 +70,14 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         missing.append("FEW_GESTURES")
     if touch_report.get("research_flags"):
         missing.append("TOUCH_FLAGS")
-    if _EMULATOR_RENDERER.search(renderer) or (kind == "android" and _X86_PLATFORM.search(platform)):
+    emulation = set(automation_evidence.get("mobile_emulation") or ())
+    if (_EMULATOR_RENDERER.search(renderer) or (kind == "android" and _X86_PLATFORM.search(platform))
+            or "desktop_gpu" in emulation):
         missing.append("EMULATOR")
-    if automation_evidence.get("mobile_emulation"):
+    if emulation & _PLATFORM_CODES:
         missing.append("PLATFORM_CONTRADICTION")
+    if "server_cpu" in emulation:
+        missing.append("HARDWARE")
     if "NETWORK" in families:
         missing.append("CLOUD_IP")
     if automation_evidence.get("markers") or len(families) > 1 or set(families) - _TOLERATED_FAMILIES:
@@ -76,4 +91,6 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         "minimum_gestures": MOBILE_HUMAN_MIN_GESTURES,
         "eligible": not missing,
         "missing": missing,
+        # Judged (enough gestures on a phone) and something speaks against it.
+        "risk": [code for code in missing if code in RISK_CODES] if kind and "FEW_GESTURES" not in missing else [],
     }

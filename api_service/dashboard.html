@@ -3083,6 +3083,20 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường',
     NETWORK: 'IP thuộc trung tâm dữ liệu cloud' };
   const provenance = bd.input_provenance || {};
+  const EMULATION_LABELS = { platform_mismatch: 'hệ điều hành báo về không khớp với điện thoại tự nhận',
+    spoofed_platform: 'hệ điều hành bị sửa bằng mã JavaScript (Worker vẫn báo hệ điều hành thật)',
+    desktop_gpu: 'card đồ họa của máy tính thay vì GPU điện thoại', chromium_api_on_ios: 'có API chỉ Chrome máy tính mới có trong khi tự nhận là iPhone',
+    no_touch: 'không có màn hình cảm ứng', server_cpu: 'số lõi CPU của máy chủ/máy tính, điện thoại không có',
+    ios_touch_without_contact: 'chạm không có bán kính tiếp xúc (iPhone thật luôn báo)' };
+  const TOUCH_FLAG_LABELS = { SYNTHETIC_CONTACT: 'mọi lần chạm có bán kính 1 và lực 1 (mặc định của công cụ tự động hóa)',
+    ZERO_TIME_TAPS: 'chạm và nhả cùng lúc', RULER_SWIPES: 'vuốt thẳng tắp với các bước đều nhau',
+    AUTOCLICK_TAPS: 'chạm lặp lại đúng một điểm theo nhịp đều', REPLAYED_SWIPES: 'các lần vuốt giống hệt nhau (macro phát lại)' };
+  const touchInfoForText = bd.touch || {};
+  const MOBILE_CODE_LABELS = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
+    TOUCH_FLAGS: 'thao tác cảm ứng bất thường: ' + ((touchInfoForText.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f).join(', ') || '--'),
+    EMULATOR: 'chạy trên trình giả lập Android hoặc phần cứng máy tính', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
+    HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
+    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
 
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
@@ -3099,11 +3113,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     explainText = markerDecision
       ? `<strong>Hệ thống kết luận là BOT vì có dấu vết công cụ tự động hóa:</strong> ${escapeHtml((automationEvidence.markers || []).join(', '))}. Trình duyệt người dùng bình thường không có các dấu vết này. `
       : mobileEmulationDecision
-      ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt máy tính giả làm điện thoại:</strong> ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => ({platform_mismatch: 'hệ điều hành báo về không khớp với điện thoại tự nhận', desktop_gpu: 'card đồ họa của máy tính (Direct3D) thay vì GPU điện thoại', chromium_api_on_ios: 'có API chỉ Chrome máy tính mới có trong khi tự nhận là iPhone', no_touch: 'không có màn hình cảm ứng'})[x] || x).join('; '))}. Đây là kiểu giả lập thiết bị của Playwright/Puppeteer. `
+      ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt máy tính giả làm điện thoại:</strong> ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '))}. Đây là kiểu giả lập thiết bị của Playwright/Puppeteer và các script stealth. `
       : idleCloudDecision
       ? `<strong>Hệ thống kết luận là BOT vì đây là trình duyệt chạy trên máy chủ cloud không có người dùng:</strong> địa chỉ IP thuộc nhà cung cấp cloud, đồ họa WebGL do CPU giả lập, và không có bất kỳ thao tác chuột, cuộn hay bàn phím nào trong ${Math.round((automationEvidence.idle_page_ms || 0) / 1000)} giây. Nếu người dùng thật bắt đầu thao tác, kết luận này sẽ được xét lại. `
       : tamperDecision
       ? `<strong>Hệ thống kết luận là BOT vì môi trường trình duyệt mâu thuẫn ở ${automationEvidence.family_count} nhóm kiểm tra độc lập:</strong> ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}. Đây là dấu hiệu của công cụ giả mạo môi trường (stealth). `
+      : bd.decision_basis === 'touch_automation'
+      ? `<strong>Hệ thống kết luận là BOT vì có autoclick:</strong> ${Number(touchInfoForText.autoclick_taps) || 0} lần chạm trúng đúng một điểm (lệch dưới 0,5 px) theo nhịp đều (hệ số biến thiên dưới 0,10). Ngón tay người không chạm lặp lại chính xác như vậy; trong 2.070 thiết bị người thật của BrainRun không có trường hợp nào. `
       : syntheticDecision && bd.automation_rule === 'synthetic_typing_v1'
       ? `<strong>Hệ thống kết luận là BOT theo quy tắc gõ phím giả lập:</strong> ${(provenance.typing || {}).fastest_median_hold_ms != null && ((provenance.typing || {}).codes || []).includes('TYPING_INSTANT_HOLD') ? `mỗi phím chỉ được giữ khoảng ${provenance.typing.fastest_median_hold_ms} ms (người thật thấp nhất khoảng 30 ms)` : `khoảng cách giữa các lần nhấn phím đều tăm tắp (hệ số biến thiên ${(provenance.typing || {}).lowest_interval_cv}, người thật thấp nhất 0,14)`}. Ngưỡng được kiểm chứng trên 20.400 lượt gõ của 51 người (CMU keystroke benchmark). `
       : syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1'
@@ -3121,7 +3137,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     if (hasApplicableTabularScore(bd) && bd.tabular_score > 0.5) flags.push(`điểm rủi ro từ mô hình thống kê chuột: ${(bd.tabular_score * 100).toFixed(1)}%`);
     if (flags.length > 0) {
       explainText += 'Phát hiện các dấu hiệu: ' + flags.join(', ') + '.';
-    } else {
+    } else if (!bd.decision_basis || bd.decision_basis === 'ensemble') {
+      // Rule verdicts already gave their reason; this sentence is about the score fusion only.
       explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng kết luận BOT.';
     }
   } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_clean_environment') {
@@ -3137,10 +3154,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   } else {
     if (deferred) {
       if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
-        const MISSING = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
-          TOUCH_FLAGS: 'thao tác cảm ứng có dấu hiệu giả lập', EMULATOR: 'chạy trên trình giả lập Android', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
-          CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
-        const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MISSING[c] || c);
+        const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MOBILE_CODE_LABELS[c] || c);
         explainText = '<strong>Phiên NGHI VẤN:</strong> Thiết bị di động chưa đủ điều kiện kết luận NGƯỜI THẬT' + (missing.length ? ': ' + escapeHtml(missing.join('; ')) + '.' : '.');
       } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
         explainText = '<strong>Phiên NGHI VẤN:</strong> Quỹ đạo chưa có đủ biến thiên về thời gian hoặc vị trí để đánh giá đáng tin cậy.';
@@ -3151,17 +3165,18 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       } else {
         explainText = '<strong>Phiên NGHI VẤN:</strong> Hiện chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.';
       }
+    } else if (bd.decision_basis === 'mobile_risk') {
+      const risk = ((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c);
+      explainText = `<strong>Hệ thống xếp loại NGHI VẤN (thiết bị di động, đã đủ ${(bd.mobile_human || {}).gestures || 0} thao tác để đánh giá):</strong> có bằng chứng bất thường nhưng chưa đủ mạnh để kết luận BOT: ${escapeHtml(risk.join('; '))}. Thường gặp ở trình giả lập, phone farm, VPN/proxy hoặc công cụ tạo thao tác.`;
     } else {
       explainText = `<strong>Hệ thống xếp loại NGHI VẤN (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Điểm số nằm trong vùng ranh giới. Chưa đủ bằng chứng để kết luận BOT hay NGƯỜI THẬT.`;
     }
   }
   const touch = bd.touch || {};
   if (Number(touch.gestures) > 0) {
-    const TOUCH_FLAGS = { SYNTHETIC_CONTACT: 'mọi lần chạm có bán kính 1 và lực 1 (mặc định của công cụ tự động hóa)',
-      ZERO_TIME_TAPS: 'chạm và nhả cùng lúc', RULER_SWIPES: 'vuốt thẳng tắp với các bước đều nhau' };
-    const flags = (touch.research_flags || []).map(f => TOUCH_FLAGS[f] || f);
+    const flags = (touch.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f);
     const shadow = touch.shadow && touch.shadow.score != null ? `; điểm mô hình vuốt thử nghiệm ${(touch.shadow.score * 100).toFixed(0)}%` : '';
-    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (dấu hiệu bất thường giữ phiên ở trạng thái chưa đủ dữ liệu; điểm mô hình vuốt chỉ để nghiên cứu): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
+    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (điểm mô hình vuốt chỉ để nghiên cứu): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
 
@@ -3237,7 +3252,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       [touchInfo.swipes ?? '--', 'Vuốt (20 gần nhất)'],
       [(touchInfo.research_flags || []).length, 'Dấu hiệu bất thường'],
       [shadowScore, 'Điểm mô hình vuốt'],
-      [`${(bd.mobile_human || {}).minimum_gestures || 3}`, 'Cử chỉ tối thiểu'],
+      [touchInfo.same_point_taps ?? '--', 'Chạm trùng một điểm'],
     ];
     statsGrid.innerHTML = cards.map(([value, label]) => `<div class="drawer-stat-card"><div class="drawer-stat-value">${escapeHtml(String(value))}</div><div class="drawer-stat-label">${escapeHtml(label)}</div></div>`).join('');
   } else {

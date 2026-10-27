@@ -287,11 +287,13 @@ def _tap(x, y, ms=84.0, radius=(36.4, 36.4), force=0.0):
     return [[0.0, x, y, radius[0], radius[1], force], [ms, x + 0.5, y, radius[0], radius[1], force]]
 
 
-def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, **kwargs):
+def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, cores=None, times=None, **kwargs):
     fingerprint = {"platform": platform, "maxTouchPoints": touch_points,
-                   **({"deviceMemory": memory} if memory is not None else {})}
+                   **({"deviceMemory": memory} if memory is not None else {}),
+                   **({"hardwareConcurrency": cores} if cores is not None else {})}
     payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, fingerprint=fingerprint, **kwargs)
-    payload["mouse"]["touch"] = {"gestures": [{"t0": 1000 * i, "points": g} for i, g in enumerate(gestures)],
+    times = times or [1000 * i for i in range(len(gestures))]
+    payload["mouse"]["touch"] = {"gestures": [{"t0": t, "points": g} for t, g in zip(times, gestures)],
                                  "total": len(gestures), "viewport": [390, 763], "dpr": 3}
     return payload
 
@@ -307,34 +309,95 @@ _ANDROID_HAND = [_finger(140 + 7 * i, 640, radius=(11.5, 10.0), force=0.42, spre
 _CDP_SWIPE = [[i * 2.0, 200.0 + i, 700.0 - i * 50.0, 1, 1, 1] for i in range(11)]
 _RULER_SWIPE = [[i * 16.0, 200.0, 700.0 - i * 40.0, 11.5, 10.0, 0.4] for i in range(9)]
 
-# Policy 18 fixtures. Contact values of a real iPhone measured on the live site
-# (2026-10-27: force always 0, radius 24.3/36.4/48.6). Positives: real iPhone,
-# Android phone, iPad asking for desktop sites. Negatives: too few gestures,
-# CDP touches, ruler-straight swipes, an Android emulator, a cloud IP, desktop
-# emulation of a phone, a webdriver flag, a Windows touch laptop, Chrome on a Mac
-# with emulated touch points.
-MOBILE_HUMAN_CASES = (
-    ("HUMAN", "mobile_clean_environment", _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND)),
-    ("HUMAN", "mobile_clean_environment", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8)),
-    ("HUMAN", "mobile_clean_environment", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", _IOS_HAND)),
-    ("SUSPECT", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND[:2])),
-    ("SUSPECT", None, _phone(_PIXEL, "Linux aarch64", "Mali-G710", [_CDP_SWIPE] * 4, memory=8)),
-    ("SUSPECT", None, _phone(_PIXEL, "Linux aarch64", "Mali-G710", [_RULER_SWIPE] * 3 + _ANDROID_HAND, memory=8)),
-    ("SUSPECT", None, _phone(_PIXEL, "Linux x86_64", _EMULATOR_GPU, _ANDROID_HAND, touch_points=10, memory=2)),
-    ("SUSPECT", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND, datacenter="gcp")),
-    ("BOT", "mobile_emulation", _phone(_IPHONE, "Win32", _D3D, _IOS_HAND, touch_points=1, memory=16)),
-    ("BOT", "automation_marker", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8,
-                                        detectors={"webdriver": True})),
-    ("SUSPECT", None, _phone(None, "Win32", _D3D, _ANDROID_HAND, touch_points=10)),
-    ("SUSPECT", None, _phone(_MAC_CHROME, "MacIntel", "Apple GPU", _IOS_HAND)),
+# Frozen gate of policy 18 (its fixtures expected every non-HUMAN, non-BOT phone
+# to stay insufficient; policy 19 makes phones with evidence against them final).
+MOBILE_HUMAN_RULE_GATE_V18 = {
+    "rules": ["mobile_clean_environment_v1"],
+    "positive_cases": 3, "negative_cases": 9, "passed": 12,
+    "fixture_fingerprint": "d08211f325c91c775f97278a7135a6d2c4d5c8ad0399efeb7cde6a843ae22c17",
+}
+
+_IOS18 = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+          "GSA/443.5.99 Mobile/15E148 Safari/604.1")
+_IOS16 = ("Mozilla/5.0 (iPhone; CPU iPhone OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+          "Version/16.6 Mobile/15E148 Safari/604.1")
+_ANDROID10 = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/156.0.0.0 Mobile Safari/537.36")
+_ADRENO = "ANGLE (Qualcomm, Adreno (TM) 610, OpenGL ES 3.2)"
+_HOST_GPU = "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)"
+# A low-end Android phone on the live site (2026-10-27): no pressure or size sensor.
+_LOW_END_HAND = [
+    [[0.0, 114.5, 413.0, 0.3, 0.3, 1.0], [47.0, 113.5, 422.0, 0.3, 0.3, 1.0], [60.0, 115.5, 446.5, 0.3, 0.3, 1.0],
+     [165.0, 111.5, 575.0, 0.3, 0.3, 1.0], [165.3, 111.5, 575.0, 0.3, 0.3, 0.0]],
+    [[0.0, 110.5, 372.5, 0.3, 0.3, 1.0], [40.7, 111.5, 381.0, 0.3, 0.3, 1.0], [58.3, 113.5, 397.0, 0.3, 0.3, 1.0],
+     [163.8, 121.0, 497.0, 0.3, 0.3, 1.0], [164.0, 121.0, 497.0, 0.3, 0.3, 0.0]],
+    [[0.0, 96.5, 297.5, 0.3, 0.3, 1.0], [27.1, 99.5, 308.5, 0.3, 0.3, 1.0], [43.0, 106.0, 328.0, 0.3, 0.3, 1.0],
+     [147.0, 130.0, 469.5, 0.3, 0.3, 1.0], [147.4, 130.0, 469.5, 0.3, 0.3, 0.0]],
+]
+_NO_CONTACT_HAND = [[[p[0], p[1], p[2], None, None, None] for p in g] for g in _IOS_HAND]
+_SAME_BUTTON = [_tap(180 + dx, 324 + dy, ms) for dx, dy, ms in
+                ((0, 0, 84), (2, -1, 61), (-1, 2, 95), (1, 1, 72), (-2, 0, 88), (0, -2, 66))]
+_SAME_BUTTON_TIMES = [1000, 1650, 2480, 3010, 3920, 4410]
+_AUTOCLICK = [_tap(180, 324, 40, radius=(0.3, 0.3), force=1.0) for _ in range(6)] + _ANDROID_HAND[:3]
+_REPLAY = [_finger(150, 640, radius=(11.5, 10.0), force=0.42, spread=0.3)] * 3 + _ANDROID_HAND[4:]
+_SPOOFED = {"platformMismatch": True}
+_PATCHED = {"navigatorGetterPatched": True}
+
+# Policy 19 fixtures: (verdict, decision state, decision basis, payload).
+# Contact values of real phones measured on the live site (2026-10-27): iPhone
+# force 0 with radius 24.3/36.4/48.6; a low-end Android radius 0.3, force 1,
+# release 0. Stealth bots measured the same day: Playwright WebKit (iPhone, iPad)
+# and Chromium (Pixel 7) with navigator.platform/webdriver/maxTouchPoints patched
+# and CDP touches with finger-like contact.
+MOBILE_RULE_CASES = (
+    # People: iPhone (old and current UA), Android flagship and low-end, iPad in
+    # desktop mode, iOS 16 without contact radius (not judged), and someone tapping
+    # one button six times (the finger never lands twice on the same point).
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_ANDROID10, "Linux armv81", _ADRENO, _LOW_END_HAND,
+                                                          memory=4, cores=8)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", _IOS_HAND)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS16, "iPhone", "Apple GPU", _NO_CONTACT_HAND)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS18, "iPhone", "Apple GPU", _SAME_BUTTON,
+                                                          times=_SAME_BUTTON_TIMES)),
+    # Not enough to judge.
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND[:2])),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(None, "Win32", _D3D, _ANDROID_HAND, touch_points=10)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_MAC_CHROME, "MacIntel", "Apple GPU", _IOS_HAND)),
+    # Judged, with evidence against: CDP contact, ruler swipes, replayed swipes,
+    # emulators (Android Studio, a host GPU as in LDPlayer/BlueStacks), a cloud
+    # address, a server CPU.
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_PIXEL, "Linux aarch64", "Mali-G710", [_CDP_SWIPE] * 4, memory=8)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_PIXEL, "Linux aarch64", "Mali-G710",
+                                               [_RULER_SWIPE] * 3 + _ANDROID_HAND, memory=8)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _REPLAY, memory=8)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_PIXEL, "Linux x86_64", _EMULATOR_GPU, _ANDROID_HAND,
+                                               touch_points=10, memory=2)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _HOST_GPU, _ANDROID_HAND, memory=8)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND, datacenter="gcp")),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND, cores=49)),
+    # Bots: desktop emulation, stealth WebKit iPhone and Chromium Pixel (platform
+    # patched; the worker keeps the real one), an autoclicker, a webdriver flag.
+    ("BOT", "FINAL", "mobile_emulation", _phone(_IPHONE, "Win32", _D3D, _IOS_HAND, touch_points=1, memory=16)),
+    ("BOT", "FINAL", "mobile_emulation", _phone(_IOS18, "iPhone", "Apple GPU", _NO_CONTACT_HAND, cores=8,
+                                                worker=_SPOOFED, signals=_PATCHED)),
+    ("BOT", "FINAL", "mobile_emulation", _phone(_PIXEL, "Linux armv81", _D3D, _ANDROID_HAND, memory=8,
+                                                worker=_SPOOFED, signals=_PATCHED)),
+    ("BOT", "FINAL", "touch_automation", _phone(_ANDROID10, "Linux armv81", _ADRENO, _AUTOCLICK, memory=4,
+                                                times=[1000 + 500 * i for i in range(9)])),
+    ("BOT", "FINAL", "automation_marker", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8,
+                                                 detectors={"webdriver": True})),
 )
 
-MOBILE_HUMAN_RULE_GATE = {
-    "rules": ["mobile_clean_environment_v1"],
-    "positive_cases": sum(expected == "HUMAN" for expected, _, _ in MOBILE_HUMAN_CASES),
-    "negative_cases": sum(expected != "HUMAN" for expected, _, _ in MOBILE_HUMAN_CASES),
-    "passed": len(MOBILE_HUMAN_CASES),
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
+    "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
+    "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
+    "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),
+    "passed": len(MOBILE_RULE_CASES),
     "fixture_fingerprint": hashlib.sha256(
-        json.dumps(MOBILE_HUMAN_CASES, sort_keys=True, default=str).encode("utf-8")
+        json.dumps(MOBILE_RULE_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }

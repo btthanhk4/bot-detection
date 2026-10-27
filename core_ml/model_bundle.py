@@ -10,7 +10,7 @@ from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS
 from core_ml.release_cases import (
     AUTOMATION_EVIDENCE_RULE_GATE, AUTOMATION_EVIDENCE_RULE_GATE_V12, AUTOMATION_EVIDENCE_RULE_GATE_V13, AUTOMATION_EVIDENCE_RULE_GATE_V14, AUTOMATION_EVIDENCE_RULE_GATE_V16, KNOWN_FAILURE_WINDOWS,
     SYNTHETIC_DEVICE_RULE_GATE, SYNTHETIC_DEVICE_RULE_GATE_V15, REGRESSION_CASE_FINGERPRINT, SYNTHETIC_INPUT_RULE_GATE,
-    MOBILE_HUMAN_RULE_GATE,
+    MOBILE_HUMAN_RULE_GATE_V18, MOBILE_RULE_GATE,
 )
 
 
@@ -76,8 +76,8 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
             return False
         if not math.isfinite(coverage) or not 0.0 < coverage <= 1.0:
             return False
-    if policy_version in ("7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18"):
-        checkpoints = 1000 if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18") else 100 if policy_version == "8" else 25
+    if policy_version in ("7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"):
+        checkpoints = 1000 if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") else 100 if policy_version == "8" else 25
         if (
             training.get("environment_features_trained") is not False
             or training.get("minimum_mouse_points_for_bot") != min_mouse_points_for_bot
@@ -91,7 +91,7 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
             or training.get("lstm_p75_min_weighted_mean") != 0.70
         ):
             return False
-        if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18"):
+        if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"):
             regression = metrics_by_split.get("known_regressions") or {}
             if (
                 training.get("rolling_full_replay") is not True
@@ -107,14 +107,14 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                 or regression["checked_windows"] < sum(len(times) for _, times in KNOWN_FAILURE_WINDOWS.values())
             ):
                 return False
-        if policy_version in ("10", "11", "12", "13", "14", "15", "16", "17", "18") and training.get("explicit_automation_rule_gate") != {
+        if policy_version in ("10", "11", "12", "13", "14", "15", "16", "17", "18", "19") and training.get("explicit_automation_rule_gate") != {
             "rule": "headless_ua_and_framework_v1",
             "positive_cases": 2,
             "negative_cases": 5,
             "passed": 7,
         }:
             return False
-        if policy_version in ("11", "12", "13", "14", "15", "16", "17", "18") and training.get("synthetic_input_rule_gate") != SYNTHETIC_INPUT_RULE_GATE:
+        if policy_version in ("11", "12", "13", "14", "15", "16", "17", "18", "19") and training.get("synthetic_input_rule_gate") != SYNTHETIC_INPUT_RULE_GATE:
             return False
         if policy_version == "12" and training.get("automation_evidence_rule_gate") != AUTOMATION_EVIDENCE_RULE_GATE_V12:
             return False
@@ -124,13 +124,15 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
             return False
         if policy_version == "16" and training.get("automation_evidence_rule_gate") != AUTOMATION_EVIDENCE_RULE_GATE_V16:
             return False
-        if policy_version in ("17", "18") and training.get("automation_evidence_rule_gate") != AUTOMATION_EVIDENCE_RULE_GATE:
+        if policy_version in ("17", "18", "19") and training.get("automation_evidence_rule_gate") != AUTOMATION_EVIDENCE_RULE_GATE:
             return False
-        if policy_version == "18" and training.get("mobile_human_rule_gate") != MOBILE_HUMAN_RULE_GATE:
+        if policy_version == "18" and training.get("mobile_human_rule_gate") != MOBILE_HUMAN_RULE_GATE_V18:
+            return False
+        if policy_version == "19" and training.get("mobile_rule_gate") != MOBILE_RULE_GATE:
             return False
         if policy_version == "15" and training.get("synthetic_device_rule_gate") != SYNTHETIC_DEVICE_RULE_GATE_V15:
             return False
-        if policy_version in ("16", "17", "18") and training.get("synthetic_device_rule_gate") != SYNTHETIC_DEVICE_RULE_GATE:
+        if policy_version in ("16", "17", "18", "19") and training.get("synthetic_device_rule_gate") != SYNTHETIC_DEVICE_RULE_GATE:
             return False
         for split, min_humans, min_bots in (
             ("rolling_val", 10, 20), ("rolling_test", 20, 30),
@@ -143,7 +145,7 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                 "human_sessions", "bot_sessions", "human_ever_bot",
                 "human_ever_suspect", "bot_ever_human", "human_windows", "bot_windows",
                 "human_bot_windows", "bot_human_windows",
-                *(("human_suspect_windows",) if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18") else ()),
+                *(("human_suspect_windows",) if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") else ()),
             ):
                 value = metrics.get(name)
                 try:
@@ -157,7 +159,7 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                     return False
                 counts[name] = int(value)
             max_human_suspect_fraction = metrics.get("max_human_suspect_fraction")
-            if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18") and (
+            if policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") and (
                 type(max_human_suspect_fraction) not in (int, float)
                 or not math.isfinite(max_human_suspect_fraction)
                 or not 0 <= max_human_suspect_fraction <= 0.25
@@ -173,13 +175,13 @@ def release_evidence_valid(manifest: dict, policy_version: str, threshold: float
                 or counts["human_ever_suspect"] > counts["human_sessions"]
                 or counts["bot_ever_human"] > counts["bot_sessions"]
                 or counts["bot_human_windows"] > counts["bot_windows"]
-                or (policy_version not in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18") and counts["human_ever_suspect"] / counts["human_sessions"] > 0.80)
-                or (policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18") and (
+                or (policy_version not in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") and counts["human_ever_suspect"] / counts["human_sessions"] > 0.80)
+                or (policy_version in ("9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") and (
                     counts["human_suspect_windows"] > 0.10 * counts["human_windows"]
                     or counts["human_suspect_windows"] > counts["human_windows"]
                 ))
                 or counts["bot_ever_human"] / counts["bot_sessions"] > 0.05
-                or (policy_version in ("8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18") and (counts["bot_ever_human"] or counts["bot_human_windows"]))
+                or (policy_version in ("8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19") and (counts["bot_ever_human"] or counts["bot_human_windows"]))
             ):
                 return False
     return True
