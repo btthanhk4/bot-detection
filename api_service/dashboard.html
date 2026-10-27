@@ -3124,6 +3124,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     } else {
       explainText += 'Tổng hợp trọng số đa mô hình vượt ngưỡng kết luận BOT.';
     }
+  } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_clean_environment') {
+    const mh = bd.mobile_human || {};
+    const DEVICE_LABELS = { ios: 'iPhone', android: 'điện thoại Android', ipad_desktop_mode: 'iPad', other_mobile: 'thiết bị di động' };
+    explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (${DEVICE_LABELS[mh.device] || 'thiết bị di động'}):</strong> có ${mh.gestures} thao tác chạm/vuốt thật từ màn hình cảm ứng, không có dấu vết công cụ tự động hóa, không phải trình giả lập, không dùng IP cloud và môi trường trình duyệt không mâu thuẫn. Kết luận dựa trên việc không có bằng chứng bot (cách các hệ thống thương mại chấm người dùng điện thoại), chưa chấm điểm hành vi vuốt, nên độ tin cậy thấp hơn kết luận từ chuột trên máy tính. Nếu sau đó xuất hiện dấu hiệu bất thường, kết luận sẽ được xét lại. `;
   } else if (v === 'HUMAN') {
     explainText = `<strong>Hệ thống kết luận là NGƯỜI THẬT (điểm rủi ro ${(prob * 100).toFixed(1)}%):</strong> Chưa thấy bằng chứng bot đủ mạnh trong dữ liệu thu thập. `;
     if (bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
@@ -3133,7 +3137,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   } else {
     if (deferred) {
       if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
-        explainText = '<strong>Phiên NGHI VẤN:</strong> Dữ liệu cảm ứng hoặc thiết bị di động chưa được mô hình chuột hỗ trợ. Chưa thể kết luận BOT hay NGƯỜI THẬT.';
+        const MISSING = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
+          TOUCH_FLAGS: 'thao tác cảm ứng có dấu hiệu giả lập', EMULATOR: 'chạy trên trình giả lập Android', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
+          CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
+        const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MISSING[c] || c);
+        explainText = '<strong>Phiên NGHI VẤN:</strong> Thiết bị di động chưa đủ điều kiện kết luận NGƯỜI THẬT' + (missing.length ? ': ' + escapeHtml(missing.join('; ')) + '.' : '.');
       } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
         explainText = '<strong>Phiên NGHI VẤN:</strong> Quỹ đạo chưa có đủ biến thiên về thời gian hoặc vị trí để đánh giá đáng tin cậy.';
       } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
@@ -3153,7 +3161,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       ZERO_TIME_TAPS: 'chạm và nhả cùng lúc', RULER_SWIPES: 'vuốt thẳng tắp với các bước đều nhau' };
     const flags = (touch.research_flags || []).map(f => TOUCH_FLAGS[f] || f);
     const shadow = touch.shadow && touch.shadow.score != null ? `; điểm mô hình vuốt thử nghiệm ${(touch.shadow.score * 100).toFixed(0)}%` : '';
-    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (chỉ thu để huấn luyện, không ảnh hưởng kết luận): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
+    explainText += `<br><span style="color:var(--text-muted)">Cảm ứng (dấu hiệu bất thường giữ phiên ở trạng thái chưa đủ dữ liệu; điểm mô hình vuốt chỉ để nghiên cứu): ${Number(touch.gestures_total) || touch.gestures} cử chỉ (${touch.taps} chạm, ${touch.swipes} vuốt)${flags.length ? '; dấu hiệu: ' + escapeHtml(flags.join(', ')) : ''}${shadow}.</span>`;
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
 

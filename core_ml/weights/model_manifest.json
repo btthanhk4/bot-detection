@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "90da81c9569f420db2d6e2b7b8c9160a",
-  "created_at": "2026-10-26T16:35:30.449295+00:00",
+  "bundle_id": "d05a4253a0984b14998aaf9d1a327676",
+  "created_at": "2026-10-27T03:34:51.589678+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -854,7 +854,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "17",
+    "decision_policy_version": "18",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
@@ -1028,6 +1028,15 @@
       }
     },
     "minimum_mouse_points_for_bot": 25,
+    "mobile_human_rule_gate": {
+      "fixture_fingerprint": "d08211f325c91c775f97278a7135a6d2c4d5c8ad0399efeb7cde6a843ae22c17",
+      "negative_cases": 9,
+      "passed": 12,
+      "positive_cases": 3,
+      "rules": [
+        "mobile_clean_environment_v1"
+      ]
+    },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,
     "regression_case_fingerprint": "eca5ceb23b7ff28b7c612c2f57a49e392cc234167ba55414746fdfeae45bc200",

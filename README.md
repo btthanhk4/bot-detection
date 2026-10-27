@@ -108,7 +108,15 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v17 (current)
+### Policy v18 (current)
+
+Policy v18 thêm `mobile_clean_environment_v1`: phiên điện thoại/máy tính bảng có ít nhất 3
+thao tác chạm thật, không có cờ cảm ứng, không phải trình giả lập, không dùng IP cloud và
+không có bằng chứng tự động hóa được kết luận NGƯỜI THẬT (trước đây luôn "chưa đủ dữ liệu"),
+giống cách Cloudflare/reCAPTCHA/DataDome chấm trình duyệt điện thoại. Xem
+[Model release v18](docs/MODEL_RELEASE_V18.md).
+
+### Policy v17
 
 Policy v17 thêm `mobile_emulation_v1` (trình duyệt máy tính giả làm iPhone/Android: platform
 Win32, GPU Direct3D, API Chromium trên iOS — đo trên Playwright và Puppeteer; thiết bị thật,

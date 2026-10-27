@@ -22,6 +22,7 @@ from core_ml.features.input_provenance import (
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import PROFILE_CANDIDATE_RULE, corroborated_profile_evidence
 from core_ml.features.interaction_features import extract_interaction_features
+from core_ml.features.mobile_human import analyze_mobile_human
 from core_ml.features.touch import analyze_touch
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
@@ -37,7 +38,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "17"
+DECISION_POLICY_VERSION = "18"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -260,13 +261,25 @@ class EnsembleBotDetector:
             or not self.lstm_available or not self.tabular_available
             or unsupported_mobile or legacy_touch_ambiguous
         )
-        decision_deferred = mouse_evidence_deferred and not explicit_automation
+        touch_report = analyze_touch(mouse.get("touch"))
+        # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
+        mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags)
+        mobile_human_decision = (
+            mouse_evidence_deferred and not explicit_automation and mobile_human["eligible"]
+            and self.lstm_available and self.tabular_available
+        )
+        decision_deferred = mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
         tabular_score_in_domain = bool(
             self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
             and move_point_count >= self.min_mouse_points_for_bot
             and not unsupported_mobile and not legacy_touch_ambiguous
         )
-        if mouse_evidence_deferred and not explicit_automation:
+        if mobile_human_decision:
+            reasons.append(
+                f"Phone/tablet ({mobile_human['device']}) with {mobile_human['gestures']} trusted touch gestures "
+                "and no automation, emulator, cloud or environment evidence; touch behaviour itself is not scored"
+            )
+        elif mouse_evidence_deferred and not explicit_automation:
             if not self.lstm_available or not self.tabular_available:
                 reasons.append("Decision deferred: required model unavailable")
             elif unsupported_mobile:
@@ -335,6 +348,8 @@ class EnsembleBotDetector:
                     "Experimental policy: client-reported HeadlessChrome is corroborated across "
                     "browser contexts or by an explicit automation marker"
                 )
+        elif mobile_human_decision:
+            verdict = "HUMAN"
         elif decision_deferred:
             verdict = "SUSPECT"
         elif final_proba >= self.threshold:
@@ -392,8 +407,9 @@ class EnsembleBotDetector:
                 }} if profile_candidate else {}),
                 "interaction_shadow": extract_interaction_features(mouse),
                 "input_provenance": input_provenance,
-                # Research only: phone gestures never change the verdict.
-                "touch": {**analyze_touch(mouse.get("touch")), "shadow": score_touch(mouse.get("touch"))},
+                # Touch flags can only withhold the phone HUMAN verdict; the shadow score is research only.
+                "touch": {**touch_report, "shadow": score_touch(mouse.get("touch"))},
+                "mobile_human": mobile_human,
                 "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
@@ -406,6 +422,7 @@ class EnsembleBotDetector:
                     else "idle_cloud_browser" if automation_rule == IDLE_CLOUD_BROWSER_RULE
                     else "mobile_emulation" if automation_rule == MOBILE_EMULATION_RULE
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
+                    else "mobile_clean_environment" if mobile_human_decision
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),

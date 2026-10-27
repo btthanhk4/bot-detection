@@ -1,8 +1,9 @@
 # Dữ liệu cảm ứng từ traffic thật (collector 1.7.0)
 
 Mục tiêu: điện thoại hiện luôn ở trạng thái "CHƯA ĐỦ DỮ LIỆU" vì mô hình chỉ học chuột.
-Bản này thu cử chỉ chạm/vuốt từ người dùng thật để huấn luyện mô hình cảm ứng. **Kết luận
-không đổi**: policy vẫn là 17; phân tích cảm ứng chỉ hiển thị và lưu lại.
+Bản này thu cử chỉ chạm/vuốt từ người dùng thật để huấn luyện mô hình cảm ứng. Từ policy 18,
+số cử chỉ thật và các cờ cảm ứng là điều kiện của luật NGƯỜI THẬT cho điện thoại
+([Model release v18](MODEL_RELEASE_V18.md)); điểm mô hình vuốt vẫn chỉ để nghiên cứu.
 
 ## Luồng dữ liệu
 

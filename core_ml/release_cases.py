@@ -269,3 +269,72 @@ SYNTHETIC_DEVICE_RULE_GATE = {
         json.dumps(SYNTHETIC_DEVICE_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }
+
+
+def _finger(x, y, radius=(36.4, 36.4), force=0.0, spread=0.0, steps=(6, 14, 26, 38, 40, 30, 18, 8, 3)):
+    """A thumb flick: accelerates, slows, drifts sideways; contact as the device reports it."""
+    points, t = [[0.0, x, y, radius[0], radius[1], force]], 0.0
+    for i, step in enumerate(steps):
+        t += 16.7
+        x += 0.4 * i - 0.6
+        y -= step
+        points.append([round(t, 1), round(x, 1), round(y, 1), round(radius[0] + spread * i, 1),
+                       round(radius[1] + spread * i, 1), round(max(0.0, force - spread * i / 100), 2)])
+    return points
+
+
+def _tap(x, y, ms=84.0, radius=(36.4, 36.4), force=0.0):
+    return [[0.0, x, y, radius[0], radius[1], force], [ms, x + 0.5, y, radius[0], radius[1], force]]
+
+
+def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, **kwargs):
+    fingerprint = {"platform": platform, "maxTouchPoints": touch_points,
+                   **({"deviceMemory": memory} if memory is not None else {})}
+    payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, fingerprint=fingerprint, **kwargs)
+    payload["mouse"]["touch"] = {"gestures": [{"t0": 1000 * i, "points": g} for i, g in enumerate(gestures)],
+                                 "total": len(gestures), "viewport": [390, 763], "dpr": 3}
+    return payload
+
+
+_IPAD_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                 "Version/26.6 Safari/605.1.15")
+_MAC_CHROME = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+               "Chrome/155.0.0.0 Safari/537.36")
+_EMULATOR_GPU = "Android Emulator OpenGL ES Translator (Google SwiftShader)"
+_IOS_HAND = [_finger(150 + 9 * i, 620) for i in range(4)] + [_tap(180, 324), _tap(210, 500, 97)]
+_ANDROID_HAND = [_finger(140 + 7 * i, 640, radius=(11.5, 10.0), force=0.42, spread=0.3) for i in range(4)] + [
+    _tap(180, 324, radius=(10.9, 9.8), force=0.38)]
+_CDP_SWIPE = [[i * 2.0, 200.0 + i, 700.0 - i * 50.0, 1, 1, 1] for i in range(11)]
+_RULER_SWIPE = [[i * 16.0, 200.0, 700.0 - i * 40.0, 11.5, 10.0, 0.4] for i in range(9)]
+
+# Policy 18 fixtures. Contact values of a real iPhone measured on the live site
+# (2026-10-27: force always 0, radius 24.3/36.4/48.6). Positives: real iPhone,
+# Android phone, iPad asking for desktop sites. Negatives: too few gestures,
+# CDP touches, ruler-straight swipes, an Android emulator, a cloud IP, desktop
+# emulation of a phone, a webdriver flag, a Windows touch laptop, Chrome on a Mac
+# with emulated touch points.
+MOBILE_HUMAN_CASES = (
+    ("HUMAN", "mobile_clean_environment", _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND)),
+    ("HUMAN", "mobile_clean_environment", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8)),
+    ("HUMAN", "mobile_clean_environment", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", _IOS_HAND)),
+    ("SUSPECT", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND[:2])),
+    ("SUSPECT", None, _phone(_PIXEL, "Linux aarch64", "Mali-G710", [_CDP_SWIPE] * 4, memory=8)),
+    ("SUSPECT", None, _phone(_PIXEL, "Linux aarch64", "Mali-G710", [_RULER_SWIPE] * 3 + _ANDROID_HAND, memory=8)),
+    ("SUSPECT", None, _phone(_PIXEL, "Linux x86_64", _EMULATOR_GPU, _ANDROID_HAND, touch_points=10, memory=2)),
+    ("SUSPECT", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND, datacenter="gcp")),
+    ("BOT", "mobile_emulation", _phone(_IPHONE, "Win32", _D3D, _IOS_HAND, touch_points=1, memory=16)),
+    ("BOT", "automation_marker", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8,
+                                        detectors={"webdriver": True})),
+    ("SUSPECT", None, _phone(None, "Win32", _D3D, _ANDROID_HAND, touch_points=10)),
+    ("SUSPECT", None, _phone(_MAC_CHROME, "MacIntel", "Apple GPU", _IOS_HAND)),
+)
+
+MOBILE_HUMAN_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1"],
+    "positive_cases": sum(expected == "HUMAN" for expected, _, _ in MOBILE_HUMAN_CASES),
+    "negative_cases": sum(expected != "HUMAN" for expected, _, _ in MOBILE_HUMAN_CASES),
+    "passed": len(MOBILE_HUMAN_CASES),
+    "fixture_fingerprint": hashlib.sha256(
+        json.dumps(MOBILE_HUMAN_CASES, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest(),
+}
