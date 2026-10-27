@@ -148,8 +148,15 @@ def feature_vector(features: dict) -> list:
 
 
 def _synthetic_contact(points) -> bool:
-    """CDP/Playwright default contact: radius 1 and force 1 on every point."""
-    return all(p[3] == 1 and p[4] == 1 and p[5] == 1 for p in points)
+    """Injected contact: force exactly 1 with no contact area on every point.
+
+    CDP/Playwright report radius 1; Android input injection (HID devices, replay
+    scripts; Gesture Fingerprint, 2026) reports pressure 1 and touch size 0, and
+    pressure 0 on the release point.
+    """
+    no_area = all(p[3] is not None and p[4] is not None and p[3] <= 1 and p[4] <= 1 for p in points)
+    pressed = points[:-1] if len(points) > 1 else points
+    return no_area and all(p[5] == 1 for p in pressed) and points[-1][5] in (0, 1)
 
 
 def analyze_touch(touch) -> dict:

@@ -105,7 +105,7 @@ bot-detection-core/
 
 Collector 1.7.0 thu cử chỉ chạm/vuốt trên điện thoại; API lưu thành dữ liệu huấn luyện có
 nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) và hiển thị cờ nghiên
-cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun). Kết luận không đổi (policy
+cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
 ### Policy v17 (current)

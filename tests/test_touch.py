@@ -76,6 +76,18 @@ def test_cdp_touches_raise_research_flags():
     assert "SYNTHETIC_CONTACT" not in mixed["research_flags"]
 
 
+def test_android_injected_contact_is_synthetic():
+    # HID clickers and replay scripts (Gesture Fingerprint): pressure 1, size 0, release at pressure 0.
+    injected = [[i * 16.0, 200.0, 700.0 - i * 30, 0, 0, 1] for i in range(8)] + [[130.0, 200.0, 460.0, 0, 0, 0]]
+    assert "SYNTHETIC_CONTACT" in analyze_touch({"gestures": [{"t0": 0, "points": injected}] * 3})["research_flags"]
+    # A device that reports no contact size but real pressure is not injected.
+    no_size = [[p[0], p[1], p[2], 0, 0, 0.35] for p in injected]
+    assert analyze_touch({"gestures": [{"t0": 0, "points": no_size}] * 3})["research_flags"] in ([], ["RULER_SWIPES"])
+    # Missing radius (browser without contact data) never counts as no area.
+    unknown = [[p[0], p[1], p[2], None, None, 1] for p in injected]
+    assert "SYNTHETIC_CONTACT" not in analyze_touch({"gestures": [{"t0": 0, "points": unknown}] * 3})["research_flags"]
+
+
 def test_device_family_and_label_hints():
     assert device_family("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)") == "ios"
     assert device_family(PIXEL) == "android"
@@ -202,6 +214,20 @@ def test_generators_copy_the_template_and_differ_in_shape():
     assert linear["max_deviation_px"] < 0.2 and linear["step_length_cv"] < 0.01
     with pytest.raises(ValueError):
         synthesize("teleport", template, rng)
+
+
+def test_touchalytics_strokes_become_css_pixel_swipes(tmp_path):
+    from core_ml.train_touch import load_touchalytics
+
+    rows = ["1,7,1,1000,0,1,300,600,0.2,0.04,0.0", "1,7,1,1016,2,1,302,540,0.3,0.05,0.0",
+            "1,7,1,1033,2,1,305,450,0.3,0.05,0.0", "1,7,1,1050,1,1,306,390,0.2,0.04,0.0",
+            "1,7,1,2000,0,1,100,100,0.2,0.04,0.0", "1,7,1,2080,1,1,100,100,0.2,0.04,0.0"]
+    path = tmp_path / "data.csv"
+    path.write_text("\n".join(rows) + "\n")
+    swipes, groups = load_touchalytics(str(path))
+    assert groups == ["touchalytics:7"], "the tap (no displacement) is not a swipe"
+    assert [p[:3] for p in swipes[0]] == [[0, 200.0, 400.0], [16, 302 / 1.5, 360.0], [33, 305 / 1.5, 300.0],
+                                          [50, 204.0, 260.0]]
 
 
 def test_brainrun_points_from_pan_responder_samples():

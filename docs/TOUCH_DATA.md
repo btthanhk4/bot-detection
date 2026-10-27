@@ -41,7 +41,7 @@ không đổi**: policy vẫn là 17; phân tích cảm ứng chỉ hiển thị
 
 | Cờ | Điều kiện | Ghi chú |
 |---|---|---|
-| `SYNTHETIC_CONTACT` | mọi cử chỉ: radiusX = radiusY = 1 và force = 1 | giá trị mặc định của CDP |
+| `SYNTHETIC_CONTACT` | mọi cử chỉ: bán kính ≤ 1 và force = 1 khi đang chạm (điểm nhả được phép 0) | CDP báo bán kính 1; thao tác bơm vào Android (thiết bị HID, script phát lại) báo pressure 1, kích thước 0. Bắt 3/3 phiên mouse clicker và script ghi màn hình của Gesture Fingerprint; 0 điểm người (912.133 điểm Touchalytics, 3 bộ người Gesture Fingerprint) có diện tích 0 kèm pressure ≥ 1. Cách trình duyệt Android chuyển đổi các giá trị này chưa được đo trên thiết bị thật |
 | `ZERO_TIME_TAPS` | ≥ 2 lần chạm có thời gian chạm < 1 ms | chưa kiểm chứng được trên người: BrainRun ghi thời gian chạm thô (4 % lần chạm bằng 0 ms do cách ứng dụng ghi) |
 | `RULER_SWIPES` | ≥ 2 lần vuốt ≥ 5 điểm, lệch khỏi đường thẳng ≤ 0,5 px, độ dài bước CV ≤ 0,05 | BrainRun: 22/147.601 lần vuốt người (0,015 %), 5/8.306 phiên 20 cử chỉ (0,06 %); bắt 91 % lần vuốt CDP thẳng |
 
@@ -49,10 +49,13 @@ Không cờ nào đủ sạch để kết luận BOT; chúng chỉ góp vào nh�
 
 ## Mô hình vuốt thử nghiệm (shadow)
 
-`python -m core_ml.train_touch --brainrun <gestures.bson> [--live trang_export.json ...]`
+`python -m core_ml.train_touch --brainrun <gestures.bson> --touchalytics <data.csv> [--live trang_export.json ...]`
 
-- Người: BrainRun (Papamichail et al., 2019, CC0, Zenodo 2598135), 40.000 lần vuốt từ
-  2.072 thiết bị (tối đa 150/thiết bị), cộng `human_candidate` từ traffic thật khi có.
+- Người (mô hình v2, `341d05cffba6031b`): BrainRun (Papamichail et al., 2019, CC0, Zenodo
+  2598135), 40.000 lần vuốt nhanh trong game từ 2.072 thiết bị (tối đa 150/thiết bị), và
+  Touchalytics (Frank et al., 2013), 15.021 lần vuốt khi đọc Wikipedia/so sánh ảnh của 41
+  người, có thời điểm từng điểm (gần với hành vi lướt shop nhất). Cộng `human_candidate`
+  từ traffic thật khi có. Mỗi cử chỉ cắt còn 48 điểm như collector.
 - Bot: 4 bộ sinh, mỗi lần vuốt giả chép điểm đầu, điểm cuối, thời lượng và số điểm của một
   lần vuốt người, nên mô hình chỉ học được cách đường vuốt được vẽ: `linear` (CDP),
   `linear_noise`, `bezier_ease` (kiểu ghost-cursor), `lognormal` (kiểu BeCAPTCHA).
@@ -63,15 +66,44 @@ Kết quả (người tách theo thiết bị):
 
 | Bộ sinh | AUC khi đã thấy khi huấn luyện | AUC khi bị giữ lại (chưa từng thấy) |
 |---|---|---|
-| linear | 0,9995 | 0,81 |
-| linear_noise | 0,978 | 0,67 |
-| bezier_ease | 0,970 | 0,69 |
-| lognormal | 0,992 | 0,50 |
+| linear | 0,9996 | 0,80 |
+| linear_noise | 0,979 | 0,71 |
+| bezier_ease | 0,976 | 0,68 |
+| lognormal | 0,990 | 0,57 |
+
+Người chưa từng thấy (huấn luyện không có nguồn đó, ngưỡng 0,5):
+
+| Nguồn bị giữ lại | Vuốt bị gắn bot | Nhóm 5 vuốt bị gắn bot |
+|---|---|---|
+| BrainRun | 21 % | 8,3 % |
+| Touchalytics | 26 % | 12,9 % |
+
+Kiểm tra ngoài (Gesture Fingerprint, chưa dùng để huấn luyện): người 0/104 lần vuốt bị gắn
+bot; mouse clicker 38 %, cánh tay robot 28 %, script phát lại thao tác người 0 % (hình dạng
+giống hệt người, chỉ `SYNTHETIC_CONTACT` bắt được). Mô hình v1 (chỉ BrainRun) gắn bot 31,5 %
+lần vuốt và 22 % phiên của Touchalytics; v2 còn 6 % lần vuốt và 0,09 % phiên.
 
 Giống kết luận của BeCAPTCHA-Mouse (~60 % với bộ sinh lạ khi chỉ dùng cảm ứng): mô hình
-nhận ra loại bot đã biết nhưng không tổng quát sang loại mới. Thử end-to-end với CDP thật,
-điểm chỉ 0,51 vì trình duyệt gộp các touchmove nên đường vuốt không còn "hoàn hảo". Vì vậy
-điểm `breakdown.touch.shadow.score` chỉ hiển thị, không bao giờ đổi kết luận.
+nhận ra loại bot đã biết nhưng không tổng quát sang loại mới, và hình dạng vuốt thay đổi
+mạnh giữa các nhóm người/ứng dụng. Thử end-to-end với CDP thật, điểm v1 chỉ 0,51 vì trình
+duyệt gộp các touchmove. Vì vậy điểm `breakdown.touch.shadow.score` chỉ hiển thị, không bao
+giờ đổi kết luận; dữ liệu người trên chính SilkMoon là thứ còn thiếu.
+
+## Đánh giá các bộ dữ liệu cảm ứng công khai (2026-10-27)
+
+| Bộ dữ liệu | Khả thi | Ghi chú |
+|---|---|---|
+| BrainRun | đã dùng | CC0; vuốt game ngắn, không có thời điểm từng điểm, bán kính, lực |
+| Touchalytics | đã dùng | 41 người Android, có thời gian/pressure/area; không ghi license, chỉ dùng nghiên cứu, không phân phối lại |
+| Gesture Fingerprint | dùng làm bộ kiểm tra | duy nhất có nhãn máy (HID, script phát lại, cánh tay robot); chỉ ~270 cử chỉ công bố, license dữ liệu không ghi (code Apache-2.0) |
+| H-MOG | được, cần đồng ý điều khoản | 100 người Android, chỉ nghiên cứu phi thương mại, không phân phối lại |
+| Oxford Touch (FETA) | nên thử | 470 người iPhone, 1,16 triệu lần vuốt; bổ sung iOS mà hiện còn thiếu; trang ORA chặn tải tự động, cần tải tay |
+| AITouch v2 | được | CC BY-NC; 45 người, máy tính bảng Samsung |
+| KidsOnThePhone | được | 50 người Nexus 6, có t/x/y/p/s; không ghi license |
+| BB-MAS | cần tài khoản IEEE DataPort | 117 người; license không ghi |
+| HuMIdb | cần giảng viên cơ hữu ký license | có cảm biến; dùng trong BeCAPTCHA |
+| AITW, AndroidControl, GUI-Odyssey, AMEX… | không dùng | ảnh màn hình + hành động của agent (tọa độ chạm/vuốt đầu-cuối), không có quỹ đạo ngón tay |
+| WISDM | không dùng | chỉ gia tốc/con quay, không có cảm ứng |
 
 ## Khi nào có thể cho cảm ứng tham gia kết luận
 

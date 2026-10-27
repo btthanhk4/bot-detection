@@ -1,5 +1,5 @@
 {
-  "model_id": "e2a209bdbdf78199",
+  "model_id": "341d05cffba6031b",
   "features": [
     "duration_ms",
     "displacement_px",
@@ -20,86 +20,98 @@
   ],
   "human_sources": {
     "brainrun": 40000,
-    "live_human_candidate": 0
+    "touchalytics": 15021
   },
-  "devices": 2072,
+  "devices": 2113,
   "evaluation": {
     "held_out_generator": {
       "linear": {
         "swipe": {
-          "auc": 0.8084,
-          "tpr_at_fpr_1pct": 0.0025,
-          "tpr_at_fpr_5pct": 0.0976
+          "auc": 0.8003,
+          "tpr_at_fpr_1pct": 0.0018,
+          "tpr_at_fpr_5pct": 0.1227
         },
         "five_swipes": {
-          "auc": 0.8535,
-          "tpr_at_fpr_1pct": 0.0918,
-          "tpr_at_fpr_5pct": 0.2953
+          "auc": 0.8733,
+          "tpr_at_fpr_1pct": 0.1007,
+          "tpr_at_fpr_5pct": 0.3608
         }
       },
       "linear_noise": {
         "swipe": {
-          "auc": 0.6723,
-          "tpr_at_fpr_1pct": 0.058,
-          "tpr_at_fpr_5pct": 0.218
+          "auc": 0.7072,
+          "tpr_at_fpr_1pct": 0.1523,
+          "tpr_at_fpr_5pct": 0.3197
         },
         "five_swipes": {
-          "auc": 0.8372,
-          "tpr_at_fpr_1pct": 0.196,
-          "tpr_at_fpr_5pct": 0.4715
+          "auc": 0.9091,
+          "tpr_at_fpr_1pct": 0.4048,
+          "tpr_at_fpr_5pct": 0.674
         }
       },
       "bezier_ease": {
         "swipe": {
-          "auc": 0.6878,
-          "tpr_at_fpr_1pct": 0.0243,
-          "tpr_at_fpr_5pct": 0.0902
+          "auc": 0.6778,
+          "tpr_at_fpr_1pct": 0.082,
+          "tpr_at_fpr_5pct": 0.1373
         },
         "five_swipes": {
-          "auc": 0.6622,
-          "tpr_at_fpr_1pct": 0.0347,
-          "tpr_at_fpr_5pct": 0.1266
+          "auc": 0.741,
+          "tpr_at_fpr_1pct": 0.1593,
+          "tpr_at_fpr_5pct": 0.3498
         }
       },
       "lognormal": {
         "swipe": {
-          "auc": 0.5045,
-          "tpr_at_fpr_1pct": 0.0297,
-          "tpr_at_fpr_5pct": 0.0704
+          "auc": 0.571,
+          "tpr_at_fpr_1pct": 0.074,
+          "tpr_at_fpr_5pct": 0.1238
         },
         "five_swipes": {
-          "auc": 0.5453,
-          "tpr_at_fpr_1pct": 0.0223,
-          "tpr_at_fpr_5pct": 0.062
+          "auc": 0.6773,
+          "tpr_at_fpr_1pct": 0.0659,
+          "tpr_at_fpr_5pct": 0.1832
         }
       }
     },
     "all_generators": {
       "linear": {
-        "auc": 0.9995,
-        "tpr_at_fpr_1pct": 0.9936,
-        "tpr_at_fpr_5pct": 0.997
+        "auc": 0.9996,
+        "tpr_at_fpr_1pct": 0.9919,
+        "tpr_at_fpr_5pct": 0.9989
       },
       "linear_noise": {
-        "auc": 0.9775,
-        "tpr_at_fpr_1pct": 0.6625,
-        "tpr_at_fpr_5pct": 0.8593
+        "auc": 0.9794,
+        "tpr_at_fpr_1pct": 0.7122,
+        "tpr_at_fpr_5pct": 0.8729
       },
       "bezier_ease": {
-        "auc": 0.9704,
-        "tpr_at_fpr_1pct": 0.4693,
-        "tpr_at_fpr_5pct": 0.832
+        "auc": 0.9755,
+        "tpr_at_fpr_1pct": 0.5086,
+        "tpr_at_fpr_5pct": 0.8678
       },
       "lognormal": {
-        "auc": 0.9923,
-        "tpr_at_fpr_1pct": 0.8776,
-        "tpr_at_fpr_5pct": 0.9554
+        "auc": 0.9895,
+        "tpr_at_fpr_1pct": 0.8231,
+        "tpr_at_fpr_5pct": 0.9374
+      }
+    },
+    "held_out_human_source": {
+      "brainrun": {
+        "swipes": 40000,
+        "swipe_flagged_at_0_5": 0.2109,
+        "five_swipe_flagged_at_0_5": 0.0827
+      },
+      "touchalytics": {
+        "swipes": 15021,
+        "swipe_flagged_at_0_5": 0.2622,
+        "five_swipe_flagged_at_0_5": 0.1294
       }
     },
     "human_test_score_p50_p95_p99": [
-      0.01,
-      0.6124,
-      0.877
+      0.0141,
+      0.593,
+      0.8719
     ]
   },
   "verdict_effect": "none (shadow only)"

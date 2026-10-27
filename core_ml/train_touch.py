@@ -1,9 +1,12 @@
 """Train the touch shadow model: human swipes against synthetic swipe generators.
 
 Humans: BrainRun (Papamichail et al., 2019, CC0, Zenodo 2598135): Android and
-iOS phones playing cognitive games; plus, with ``--live``, swipes stored by
-the live site (``label_hint == "human_candidate"``, exported from
-``/api/v1/touch-samples/export``).
+iOS phones playing cognitive games (short flicks, no per-point times);
+Touchalytics (Frank et al., 2013, 41 people reading Wikipedia and comparing
+images on Android, per-point times): the scrolling a shop visitor does; plus,
+with ``--live``, swipes stored by the live site (``label_hint ==
+"human_candidate"``, exported from ``/api/v1/touch-samples/export``). Each
+source is held out in turn to measure how often unseen humans are flagged.
 
 Bots: every synthetic swipe copies the start, end, duration and point count of
 a real human swipe, so the model can only learn how the path is drawn, not how
@@ -18,7 +21,7 @@ long or how far it goes. Four generators, from naive to humanised:
 Evaluation is generator-agnostic (each generator held out in turn; humans split
 by device) because a deployed model meets bots it was not trained on.
 
-    python -m core_ml.train_touch --brainrun <gestures.bson> [--live export.json ...]
+    python -m core_ml.train_touch --brainrun <gestures.bson> [--touchalytics data.csv] [--live export.json ...]
 """
 
 import argparse
@@ -35,6 +38,10 @@ from core_ml.features.touch import MODEL_FEATURES, feature_vector, gesture_featu
 
 GENERATORS = ("linear", "linear_noise", "bezier_ease", "lognormal")
 FRAME_MS = 1000.0 / 60.0
+# The collector keeps the first 48 points of a gesture; train on what it sends.
+MAX_POINTS = 48
+# Touchalytics phones (Nexus One/S, Galaxy S, Droid Incredible) are hdpi.
+TOUCHALYTICS_PX_PER_CSS = 1.5
 
 
 def brainrun_points(doc):
@@ -48,7 +55,7 @@ def brainrun_points(doc):
     if not 0 < duration < 5000 or not all(math.isfinite(v) for p in pts for v in p):
         return None
     step = duration / (len(pts) - 1) if len(pts) > 1 else 0.0
-    return [[round(i * step, 1), x, y, None, None, None] for i, (x, y) in enumerate(pts)]
+    return [[round(i * step, 1), x, y, None, None, None] for i, (x, y) in enumerate(pts)][:MAX_POINTS]
 
 
 def load_brainrun(path, *, max_per_device=150, max_swipes=40000, seed=7):
@@ -79,6 +86,37 @@ def load_brainrun(path, *, max_per_device=150, max_swipes=40000, seed=7):
     return [swipes[i] for i in order], [groups[i] for i in order]
 
 
+def load_touchalytics(path, *, max_per_user=400, seed=7):
+    """Strokes are touch-down .. touch-up rows; times are absolute ms."""
+    import csv
+
+    rng = random.Random(seed)
+    by_user, open_strokes = defaultdict(list), {}
+    with open(path, newline="") as handle:
+        for row in csv.reader(handle):
+            key = (row[0], row[1], row[2])
+            action = int(row[4])
+            point = [int(row[3]), float(row[6]) / TOUCHALYTICS_PX_PER_CSS, float(row[7]) / TOUCHALYTICS_PX_PER_CSS,
+                     None, None, None]
+            if action == 0:
+                open_strokes[key] = [point]
+            elif key in open_strokes:
+                open_strokes[key].append(point)
+                if action == 1:
+                    stroke = open_strokes.pop(key)
+                    start = stroke[0][0]
+                    points = [[p[0] - start] + p[1:] for p in stroke][:MAX_POINTS]
+                    ordered = all(points[i][0] >= points[i - 1][0] for i in range(1, len(points)))
+                    if ordered and len(points) >= 3 and gesture_features(points)["kind"] == "swipe":
+                        by_user[row[1]].append(points)
+    swipes, groups = [], []
+    for user, bucket in by_user.items():
+        rng.shuffle(bucket)
+        swipes += bucket[:max_per_user]
+        groups += [f"touchalytics:{user}"] * len(bucket[:max_per_user])
+    return swipes, groups
+
+
 def load_live(paths):
     swipes, groups = [], []
     for path in paths:
@@ -87,7 +125,7 @@ def load_live(paths):
         for sample in page.get("samples", page if isinstance(page, list) else []):
             if sample.get("label_hint") != "human_candidate":
                 continue
-            points = sample.get("points") or []
+            points = (sample.get("points") or [])[:MAX_POINTS]
             if len(points) >= 3 and gesture_features(points)["kind"] == "swipe":
                 swipes.append(points)
                 groups.append(f"live:{sample.get('visitorId') or sample.get('sessionId')}")
@@ -186,6 +224,13 @@ def _session_metrics(y_true, scores, groups, size=5, seed=3):
     return _metrics(labels, means) if len(set(labels)) == 2 else None
 
 
+def _five_swipe_means(scores, groups, size=5):
+    buckets = defaultdict(list)
+    for score, group in zip(scores, groups):
+        buckets[group].append(float(score))
+    return [float(np.mean(v[i:i + size])) for v in buckets.values() for i in range(0, len(v) - size + 1, size)]
+
+
 def _fit(x, y, seed):
     import xgboost as xgb
 
@@ -200,6 +245,7 @@ def _fit(x, y, seed):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--brainrun", required=True, help="gestures.bson from Zenodo record 2598135")
+    parser.add_argument("--touchalytics", help="data.csv from mariofrank.net/touchalytics")
     parser.add_argument("--live", nargs="*", default=[], help="JSON pages from /api/v1/touch-samples/export")
     parser.add_argument("--out-dir", default=os.path.join(os.path.dirname(__file__), "data"))
     parser.add_argument("--max-swipes", type=int, default=40000)
@@ -208,10 +254,17 @@ def main(argv=None):
     rng = random.Random(args.seed)
 
     humans, groups = load_brainrun(args.brainrun, max_swipes=args.max_swipes, seed=args.seed)
+    if args.touchalytics:
+        extra, extra_groups = load_touchalytics(args.touchalytics, seed=args.seed)
+        humans += extra
+        groups += extra_groups
     live, live_groups = load_live(args.live)
     humans += live
     groups += live_groups
-    print(f"human swipes: {len(humans)} ({len(live)} live) from {len(set(groups))} devices")
+    sources = defaultdict(int)
+    for group in groups:
+        sources[group.split(":", 1)[0]] += 1
+    print(f"human swipes: {dict(sources)} from {len(set(groups))} devices/people")
 
     devices = sorted(set(groups))
     rng.shuffle(devices)
@@ -228,7 +281,22 @@ def main(argv=None):
     x_b_train = {k: _matrix(v) for k, v in bots_train.items()}
     x_b_test = {k: _matrix(v) for k, v in bots_test.items()}
 
-    report = {"held_out_generator": {}, "all_generators": {}}
+    report = {"held_out_generator": {}, "all_generators": {}, "held_out_human_source": {}}
+    # A human population never seen in training: how many of its swipes look like bots?
+    for source in [s for s in sources if len(sources) > 1]:
+        keep = [i for i, g in enumerate(groups) if not g.startswith(source + ":")]
+        held = [i for i, g in enumerate(groups) if g.startswith(source + ":")]
+        train_h = _matrix([humans[i] for i in keep])
+        train_b = np.vstack([_matrix([synthesize(k, humans[rng.choice(keep)], rng)
+                                      for _ in range(len(keep) // len(GENERATORS))]) for k in GENERATORS])
+        model = _fit(np.vstack([train_h, train_b]), np.asarray([0] * len(train_h) + [1] * len(train_b)), args.seed)
+        held_scores = model.predict_proba(_matrix([humans[i] for i in held]))[:, 1]
+        five = _five_swipe_means(held_scores, [groups[i] for i in held])
+        report["held_out_human_source"][source] = {
+            "swipes": len(held), "swipe_flagged_at_0_5": round(float(np.mean(held_scores > 0.5)), 4),
+            "five_swipe_flagged_at_0_5": round(float(np.mean(np.asarray(five) > 0.5)), 4) if five else None,
+        }
+        print(f"held out humans {source:13s} {report['held_out_human_source'][source]}")
     for held in GENERATORS:
         seen = [k for k in GENERATORS if k != held]
         # Same bot/human balance as the full model.
@@ -269,7 +337,7 @@ def main(argv=None):
         "model_id": model_id,
         "features": list(MODEL_FEATURES),
         "generators": list(GENERATORS),
-        "human_sources": {"brainrun": len(humans) - len(live), "live_human_candidate": len(live)},
+        "human_sources": dict(sources),
         "devices": len(devices),
         "evaluation": report,
         "verdict_effect": "none (shadow only)",
