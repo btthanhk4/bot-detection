@@ -76,16 +76,45 @@ def test_cdp_touches_raise_research_flags():
     assert "SYNTHETIC_CONTACT" not in mixed["research_flags"]
 
 
-def test_android_injected_contact_is_synthetic():
-    # HID clickers and replay scripts (Gesture Fingerprint): pressure 1, size 0, release at pressure 0.
+# Real swipes of a low-end Android phone on the live site (2026-10-27, Adreno 610,
+# Android 10): no pressure or size sensor, so radius 0.3 and force 1, release at 0.
+LOW_END_ANDROID = [
+    [[0.0, 114.5, 413.0, 0.3, 0.3, 1.0], [47.0, 113.5, 422.0, 0.3, 0.3, 1.0], [60.0, 115.5, 446.5, 0.3, 0.3, 1.0],
+     [165.0, 111.5, 575.0, 0.3, 0.3, 1.0], [165.3, 111.5, 575.0, 0.3, 0.3, 0.0]],
+    [[0.0, 110.5, 372.5, 0.3, 0.3, 1.0], [40.7, 111.5, 381.0, 0.3, 0.3, 1.0], [58.3, 113.5, 397.0, 0.3, 0.3, 1.0],
+     [163.8, 121.0, 497.0, 0.3, 0.3, 1.0], [164.0, 121.0, 497.0, 0.3, 0.3, 0.0]],
+    [[0.0, 96.5, 297.5, 0.3, 0.3, 1.0], [27.1, 99.5, 308.5, 0.3, 0.3, 1.0], [43.0, 106.0, 328.0, 0.3, 0.3, 1.0],
+     [147.0, 130.0, 469.5, 0.3, 0.3, 1.0], [147.4, 130.0, 469.5, 0.3, 0.3, 0.0]],
+]
+
+
+def test_low_end_android_without_contact_sensors_is_not_synthetic():
+    report = analyze_touch({"gestures": [{"t0": i, "points": g} for i, g in enumerate(LOW_END_ANDROID)]})
+    assert report["research_flags"] == [] and report["synthetic_contact_gestures"] == 0
+    # Android input injection looks the same in a browser, so it is not flagged either.
     injected = [[i * 16.0, 200.0, 700.0 - i * 30, 0, 0, 1] for i in range(8)] + [[130.0, 200.0, 460.0, 0, 0, 0]]
-    assert "SYNTHETIC_CONTACT" in analyze_touch({"gestures": [{"t0": 0, "points": injected}] * 3})["research_flags"]
-    # A device that reports no contact size but real pressure is not injected.
-    no_size = [[p[0], p[1], p[2], 0, 0, 0.35] for p in injected]
-    assert analyze_touch({"gestures": [{"t0": 0, "points": no_size}] * 3})["research_flags"] in ([], ["RULER_SWIPES"])
-    # Missing radius (browser without contact data) never counts as no area.
-    unknown = [[p[0], p[1], p[2], None, None, 1] for p in injected]
-    assert "SYNTHETIC_CONTACT" not in analyze_touch({"gestures": [{"t0": 0, "points": unknown}] * 3})["research_flags"]
+    assert "SYNTHETIC_CONTACT" not in analyze_touch({"gestures": [{"t0": 0, "points": injected}] * 3})["research_flags"]
+    # Only the CDP default (radius 1, force 1 through the release) is.
+    cdp_release = [[p[0], p[1], p[2], 1, 1, 1] for p in injected]
+    assert "SYNTHETIC_CONTACT" in analyze_touch({"gestures": [{"t0": 0, "points": cdp_release}] * 3})["research_flags"]
+
+
+def test_low_end_android_phone_is_human():
+    import copy
+
+    from api_service.main import ensemble_detector
+    from core_ml.release_cases import MOBILE_HUMAN_CASES
+
+    payload = copy.deepcopy(MOBILE_HUMAN_CASES[1][2])
+    payload["fingerprint"].update({
+        "userAgent": ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/156.0.0.0 Mobile Safari/537.36"),
+        "platform": "Linux armv81", "webglRenderer": "ANGLE (Qualcomm, Adreno (TM) 610, OpenGL ES 3.2)",
+        "deviceMemory": 4})
+    payload["mouse"]["touch"] = {"gestures": [{"t0": i, "points": g} for i, g in enumerate(LOW_END_ANDROID)],
+                                 "total": 3}
+    result = ensemble_detector.predict(payload)
+    assert result["verdict"] == "HUMAN", result["breakdown"]["mobile_human"]
 
 
 def test_device_family_and_label_hints():

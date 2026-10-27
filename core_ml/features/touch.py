@@ -148,15 +148,15 @@ def feature_vector(features: dict) -> list:
 
 
 def _synthetic_contact(points) -> bool:
-    """Injected contact: force exactly 1 with no contact area on every point.
+    """CDP/Playwright default contact: radius exactly 1 and force 1 on every point, release included.
 
-    CDP/Playwright report radius 1; Android input injection (HID devices, replay
-    scripts; Gesture Fingerprint, 2026) reports pressure 1 and touch size 0, and
-    pressure 0 on the release point.
+    Android input injection (HID devices, replay scripts; Gesture Fingerprint)
+    reports pressure 1, no contact area and pressure 0 on release, but so does a
+    real low-end Android phone without pressure or size sensors (measured on the
+    live site 2026-10-27: Adreno 610, radius 0.3, force 1, release 0). In a
+    browser the two cannot be told apart, so only the CDP signature counts.
     """
-    no_area = all(p[3] is not None and p[4] is not None and p[3] <= 1 and p[4] <= 1 for p in points)
-    pressed = points[:-1] if len(points) > 1 else points
-    return no_area and all(p[5] == 1 for p in pressed) and points[-1][5] in (0, 1)
+    return all(p[3] == 1 and p[4] == 1 and p[5] == 1 for p in points)
 
 
 def analyze_touch(touch) -> dict:

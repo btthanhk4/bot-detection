@@ -42,7 +42,7 @@ số cử chỉ thật và các cờ cảm ứng là điều kiện của luật
 
 | Cờ | Điều kiện | Ghi chú |
 |---|---|---|
-| `SYNTHETIC_CONTACT` | mọi cử chỉ: bán kính ≤ 1 và force = 1 khi đang chạm (điểm nhả được phép 0) | CDP báo bán kính 1; thao tác bơm vào Android (thiết bị HID, script phát lại) báo pressure 1, kích thước 0. Bắt 3/3 phiên mouse clicker và script ghi màn hình của Gesture Fingerprint; 0 điểm người (912.133 điểm Touchalytics, 3 bộ người Gesture Fingerprint) có diện tích 0 kèm pressure ≥ 1. Cách trình duyệt Android chuyển đổi các giá trị này chưa được đo trên thiết bị thật |
+| `SYNTHETIC_CONTACT` | mọi cử chỉ: bán kính đúng bằng 1 và force = 1 ở mọi điểm, kể cả điểm nhả | chữ ký mặc định của CDP/Playwright. Bản đầu (bán kính ≤ 1, force 1, điểm nhả 0) bắt cả thao tác bơm vào Android (HID, script phát lại của Gesture Fingerprint) nhưng gắn nhầm một điện thoại Android giá rẻ thật trên site (2026-10-27, Adreno 610: không có cảm biến lực/diện tích nên bán kính 0,3, force 1, nhả ở 0): trong trình duyệt hai trường hợp này giống hệt nhau, nên đã thu hẹp lại |
 | `ZERO_TIME_TAPS` | ≥ 2 lần chạm có thời gian chạm < 1 ms | chưa kiểm chứng được trên người: BrainRun ghi thời gian chạm thô (4 % lần chạm bằng 0 ms do cách ứng dụng ghi) |
 | `RULER_SWIPES` | ≥ 2 lần vuốt ≥ 5 điểm, lệch khỏi đường thẳng ≤ 0,5 px, độ dài bước CV ≤ 0,05 | BrainRun: 22/147.601 lần vuốt người (0,015 %), 5/8.306 phiên 20 cử chỉ (0,06 %); bắt 91 % lần vuốt CDP thẳng |
 

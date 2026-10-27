@@ -41,6 +41,14 @@ với giá trị đo trên site — lực 0, bán kính 36,4; Android thật; iP
 (2 cử chỉ, chạm CDP, vuốt thẳng tắp, trình giả lập Android, IP cloud, Playwright giả lập
 iPhone → BOT, webdriver → BOT, laptop Windows cảm ứng, Chrome trên Mac giả lập cảm ứng).
 
+## Sửa lỗi sau khi deploy (2026-10-27)
+
+Thử trên thiết bị thật: iPhone → HUMAN đúng; một điện thoại Android giá rẻ (Adreno 610,
+Android 10) bị giữ ở NGHI VẤN vì `SYNTHETIC_CONTACT`. Máy không có cảm biến lực và diện tích
+chạm nên Chrome báo bán kính 0,3, lực 1, lực 0 khi nhả, giống hệt thao tác bơm vào Android.
+Cờ được thu hẹp về chữ ký CDP (bán kính đúng 1, lực 1 cả khi nhả). Fixture của gate không
+đổi nên bundle giữ nguyên; dữ liệu thật của máy này thành test hồi quy.
+
 ## Giới hạn
 
 - Đây là kết luận "không thấy bot", không phải mô hình hành vi đã kiểm chứng. Bot chạy
@@ -49,6 +57,7 @@ iPhone → BOT, webdriver → BOT, laptop Windows cảm ứng, Chrome trên Mac 
 - Tỉ lệ bot điện thoại bị cho qua chưa đo được: cần bộ bot có nhãn trên thiết bị thật
   (xem kế hoạch trong [Dữ liệu cảm ứng](TOUCH_DATA.md)).
 - iOS có ít tín hiệu cảm ứng hơn Android (lực luôn 0, bán kính 3 mức).
+- Thao tác bơm vào Android (adb, HID, autoclick) không phân biệt được với điện thoại giá rẻ thiếu cảm biến chỉ bằng giá trị tiếp xúc; cần tín hiệu khác (nhịp chạm lặp, cảm biến chuyển động).
 
 ## Tái hiện
 
