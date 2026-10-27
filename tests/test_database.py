@@ -843,3 +843,15 @@ def test_firm_human_can_still_become_bot(monkeypatch):
     assert save_detection_result(*_page(1_000, "HUMAN"))
     assert save_detection_result(*_page(2_000, "BOT"))
     assert detections.docs["tab"]["verdict"] == "BOT"
+
+
+def test_last_action_is_stored_and_refreshed(monkeypatch):
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr("api_service.database.get_db", lambda: {
+        "detection_results": detections, "deleted_sessions": empty, "service_control": empty})
+    analysis = {"verdict": "HUMAN", "decision_state": "FINAL", "policy_version": "19"}
+    assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 1, "action": "init"}, analysis)
+    assert detections.docs["s1"]["last_action"] == "init"
+    assert save_detection_result({"sessionId": "s1", "visitorId": "v1", "sequence": 2, "action": "pagehide"}, analysis)
+    assert detections.docs["s1"]["last_action"] == "pagehide", "leaving the page takes the visitor offline"

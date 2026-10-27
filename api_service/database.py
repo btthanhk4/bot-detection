@@ -266,7 +266,8 @@ def _ensure_indexes(db):
 
 
 # Fields refreshed when a later page may not replace the session's verdict.
-_ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at")
+_ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at",
+                    "last_action")
 
 
 def is_session_closed(session_id: str) -> bool:
@@ -532,6 +533,8 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "client_ip": telemetry.get("client_ip"),
             "pageUrl": telemetry.get("pageUrl"),
             "referrer": telemetry.get("referrer"),
+            # "pagehide" means the tab was closed or left: the visitor is no longer online.
+            "last_action": str(telemetry.get("action") or "telemetry")[:32],
             "verdict": verdict,
             "bot_probability": _safe_probability(analysis.get("bot_probability")),
             "decision_state": str(analysis.get("decision_state") or "FINAL")[:32],
@@ -866,10 +869,26 @@ def get_live_sessions(since: datetime, limit: int = 20000) -> Optional[List[dict
     try:
         return list(db["detection_results"].find(
             {"updated_at": {"$gte": since}},
-            {"_id": 0, "sessionId": 1, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1},
+            {"_id": 0, "sessionId": 1, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1,
+             "last_action": 1},
         ).sort("updated_at", -1).limit(limit))
     except Exception as e:
         logger.error(f"[DB] Live session query failed: {e}")
+        return None
+
+
+def get_online_sessions(since: datetime, limit: int = 5000) -> Optional[List[dict]]:
+    """Sessions that sent telemetry since a time and have not left the page."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        return list(db["detection_results"].find(
+            {"updated_at": {"$gte": since}, "last_action": {"$ne": "pagehide"}},
+            {"_id": 0, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1, "last_action": 1},
+        ).limit(limit))
+    except Exception as e:
+        logger.error(f"[DB] Online session query failed: {e}")
         return None
 
 

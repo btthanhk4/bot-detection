@@ -2409,7 +2409,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
           <div class="live-card">
             <div class="live-label">Khách đang online</div>
             <div class="live-value"><span class="live-online-dot" aria-hidden="true"></span><span id="liveOnline">--</span></div>
-            <div class="live-sub">gửi dữ liệu trong 5 phút qua</div>
+            <div class="live-sub" id="liveOnlineSub">đang mở trang · cập nhật mỗi 5 giây</div>
           </div>
           <div class="live-card">
             <div class="live-label">Phiên 24 giờ qua</div>
@@ -4375,7 +4375,9 @@ document.addEventListener('keydown', (event) => {
 
 // ──── Live View: where traffic comes from, on a dotted globe (Shopify style) ────
 // Land comes from Natural Earth via world-atlas (TopoJSON), loaded only when the view opens.
-const LIVE_POLL_MS = 15000;
+// The online count is one cheap query: poll it often. The 24-hour map is heavier.
+const LIVE_ONLINE_POLL_MS = 5000;
+const LIVE_POLL_MS = 30000;
 const LIVE_TOPOJSON = 'https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js';
 const LIVE_LAND_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json';
 const LIVE_KINDS = ['human', 'bot', 'suspect', 'pending'];
@@ -4385,6 +4387,7 @@ const DEG = Math.PI / 180;
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 let liveData = null;
 let liveTimer = null;
+let liveOnlineTimer = null;
 let liveActive = false;
 const globe = {
   canvas: null, ctx: null, dots: null, loading: false, failed: false, width: 0, height: 0,
@@ -4726,6 +4729,26 @@ function renderLiveSide(data) {
     (top ? `, nhiều nhất ${top.label} với ${top.sessions} phiên` : '') + '. Danh sách vị trí hàng đầu nằm bên cạnh.');
 }
 
+function applyOnline(online) {
+  if (!liveData) return;
+  liveData.online_now = online.online_now;
+  setText('liveOnline', online.online_now.toLocaleString('vi-VN'));
+  setText('liveOnlineSub', `đang mở trang · cập nhật ${new Date(online.generated_at).toLocaleTimeString('vi-VN', { hour12: false })}`);
+  let newPlace = false;
+  const known = new Set(liveData.points.map(p => p.key));
+  Object.keys(online.places).forEach(key => { if (!known.has(key)) newPlace = true; });
+  liveData.points.forEach(p => { p.online = online.places[p.key] || 0; });
+  liveData.top_locations.forEach(p => { p.online = online.places[p.key] || 0; });
+  renderLiveLists(liveData);
+  // A visitor from a place not on the map yet: fetch the full view now instead of in 30 s.
+  if (newPlace) refreshLive();
+}
+
+async function refreshOnline() {
+  const online = await fetchJSON(API_BASE + '/api/v1/live/online');
+  if (online) applyOnline(online);
+}
+
 async function refreshLive() {
   const data = await fetchJSON(API_BASE + '/api/v1/live');
   if (!data) { setText('pageSub', 'Không tải được dữ liệu Live View'); return; }
@@ -4739,14 +4762,18 @@ function startLive() {
   loadGlobeLand();
   refreshLive();
   clearInterval(liveTimer);
+  clearInterval(liveOnlineTimer);
   liveTimer = setInterval(() => { if (!document.hidden) refreshLive(); }, LIVE_POLL_MS);
+  liveOnlineTimer = setInterval(() => { if (!document.hidden) refreshOnline(); }, LIVE_ONLINE_POLL_MS);
   if (!globe.raf) globe.raf = requestAnimationFrame(globeLoop);
 }
 
 function stopLive() {
   liveActive = false;
   clearInterval(liveTimer);
+  clearInterval(liveOnlineTimer);
   liveTimer = null;
+  liveOnlineTimer = null;
   if (globe.canvas) showGlobeTooltip(null);
   setText('pageSub', '');
 }

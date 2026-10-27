@@ -1273,6 +1273,21 @@ def get_live_view(window_minutes: int = Query(default=1440, ge=5, le=10080), _re
     return build_live_view(rows, now=now, window_minutes=window_minutes)
 
 
+@app.get("/api/v1/live/online")
+def get_live_online(_read=Depends(require_read_access)):
+    """Visitors on the site now (polled every few seconds; one indexed query over two minutes)."""
+    from datetime import datetime, timedelta, timezone
+
+    from api_service.database import get_online_sessions
+    from api_service.live import ONLINE_SECONDS, build_online_view
+
+    now = datetime.now(timezone.utc)
+    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS))
+    if rows is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return build_online_view(rows, now=now)
+
+
 @app.get("/api/v1/stats/summary")
 def get_stats_summary(_read=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""

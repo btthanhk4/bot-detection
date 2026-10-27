@@ -74,3 +74,37 @@ def test_live_endpoint_requires_read_access_and_queries_the_window(monkeypatch):
     assert timedelta(minutes=59) < datetime.now(timezone.utc) - seen["since"] < timedelta(minutes=61)
     monkeypatch.setattr(database, "get_live_sessions", lambda since, limit=20000: None)
     assert client.get("/api/v1/live", headers={"X-Read-Token": "read-secret"}).status_code == 503
+
+
+def test_online_means_recent_and_not_left():
+    rows = [
+        _row("42.113.160.186", minutes_ago=0.5),
+        {**_row("27.72.100.1", minutes_ago=0.2), "last_action": "pagehide"},
+        _row("35.240.1.1", minutes_ago=3),
+        {**_row("42.113.160.186", minutes_ago=1.5), "last_action": "heartbeat"},
+    ]
+    view = live.build_online_view(rows, now=NOW)
+    assert view["online_now"] == 2, "closed tab and a session silent for 3 minutes are not online"
+    assert view["places"] == {"VN|Hanoi": 2}
+    assert live.build_live_view(rows, now=NOW)["points"][0]["key"] == "VN|Hanoi"
+
+
+def test_online_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from api_service import database, main
+
+    seen = {}
+
+    def fake_online(since, limit=5000):
+        seen["since"] = since
+        return [{**_row("42.113.160.186"), "updated_at": datetime.now(timezone.utc)}]
+
+    monkeypatch.setattr(database, "get_online_sessions", fake_online)
+    monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
+    client = TestClient(main.app)
+    assert client.get("/api/v1/live/online").status_code == 401
+    response = client.get("/api/v1/live/online", headers={"X-Read-Token": "read-secret"})
+    assert response.status_code == 200
+    assert response.json()["online_seconds"] == 120 and response.json()["places"] == {"VN|Hanoi": 1}
+    assert timedelta(seconds=110) < datetime.now(timezone.utc) - seen["since"] < timedelta(seconds=130)
