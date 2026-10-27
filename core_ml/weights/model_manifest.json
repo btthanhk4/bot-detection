@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "28430e3fc35b4218903b61073c36e55f",
-  "created_at": "2026-10-27T05:21:07.100335+00:00",
+  "bundle_id": "5516a2e5ab324d838a66669aa9a5ff60",
+  "created_at": "2026-10-27T12:10:21.613248+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,10 +62,10 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "738487d2e00bbe4a8df1900db1f9443910b3ecbac8bd13b6170180784f190f74",
-      "negative_cases": 17,
-      "passed": 27,
-      "positive_cases": 10,
+      "fixture_fingerprint": "148fa79976767a10794a32ba8a1ec267c9bf4eec0d683d72f58b63880a6622ee",
+      "negative_cases": 18,
+      "passed": 29,
+      "positive_cases": 11,
       "rules": [
         "automation_marker_v1",
         "environment_tampering_v1",
@@ -854,14 +854,14 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "19",
+    "decision_policy_version": "20",
     "diagnostic_only": false,
     "early_augmentation": true,
     "environment_features_trained": false,
     "explicit_automation_rule_gate": {
-      "negative_cases": 5,
+      "negative_cases": 4,
       "passed": 7,
-      "positive_cases": 2,
+      "positive_cases": 3,
       "rule": "headless_ua_and_framework_v1"
     },
     "frozen_lstm_bundle_id": null,

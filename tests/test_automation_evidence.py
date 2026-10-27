@@ -211,3 +211,14 @@ def test_phone_emulation_needs_a_platform_contradiction():
     only_platform = _automation(browser_ua=iphone, http_ua=iphone, renderer="Apple GPU",
                                 fingerprint={"platform": "Win32", "maxTouchPoints": 5})
     assert analyze_automation_evidence(only_platform)["rule"] is None
+
+
+def test_declared_headless_chrome_is_a_marker_only_when_both_uas_say_so():
+    headless = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
+    both = analyze_automation_evidence(_automation(http_ua=headless, browser_ua=headless))
+    assert "server.declared_headless_ua" in both["markers"] and both["rule"] == "automation_marker_v1"
+    for payload in (_automation(http_ua=headless), _automation(browser_ua=headless)):
+        assert "server.declared_headless_ua" not in analyze_automation_evidence(payload)["markers"], "one forged UA"
+    # Mentioning the word elsewhere is not the Chrome headless token.
+    plain = "Mozilla/5.0 Chrome/154.0.0.0 Safari/537.36 (HeadlessChromeless)"
+    assert "server.declared_headless_ua" not in analyze_automation_evidence(_automation(http_ua=plain, browser_ua=plain))["markers"]

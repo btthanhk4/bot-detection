@@ -56,6 +56,7 @@ from core_ml.release_cases import (
     SYNTHETIC_DEVICE_RULE_GATE,
     MOBILE_RULE_CASES,
     MOBILE_RULE_GATE,
+    EXPLICIT_AUTOMATION_RULE_GATE,
     SYNTHETIC_INPUT_CASES,
     SYNTHETIC_INPUT_RULE_GATE,
 )
@@ -76,7 +77,6 @@ from core_ml.model_bundle import (
 )
 from core_ml.models.ensemble import (
     DECISION_POLICY_VERSION,
-    EXPLICIT_AUTOMATION_RULE,
     EnsembleBotDetector,
 )
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -705,7 +705,8 @@ def validate_explicit_automation_rule(detector) -> dict:
         (regular, headless, {"headlessUa": True}, "SUSPECT"),
         ("", headless, {"headlessUa": True}, "SUSPECT"),
         (headless, regular, {"headlessUa": True}, "SUSPECT"),
-        (headless, headless, {"headlessUa": True}, "SUSPECT"),
+        # Policy 20: declared in both UAs is enough (automation marker), framework hidden or not.
+        (headless, headless, {"headlessUa": True}, "BOT"),
         (regular, regular, {}, "SUSPECT"),
     )
     for server_ua, browser_ua, flags, expected in cases:
@@ -719,17 +720,13 @@ def validate_explicit_automation_rule(detector) -> dict:
             "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
         ):
             raise RuntimeError("Explicit automation rule release gate failed")
+        basis = "explicit_automation" if flags.keys() & {"webdriver", "chromeDriverGlobal"} else "automation_marker"
         if expected == "BOT" and (
-            result["breakdown"]["decision_basis"] != "explicit_automation"
+            result["breakdown"]["decision_basis"] != basis
             or result["breakdown"]["risk_score_in_domain"]
         ):
             raise RuntimeError("Explicit automation rule metadata release gate failed")
-    return {
-        "rule": EXPLICIT_AUTOMATION_RULE,
-        "positive_cases": 2,
-        "negative_cases": 5,
-        "passed": len(cases),
-    }
+    return dict(EXPLICIT_AUTOMATION_RULE_GATE)
 
 
 def validate_synthetic_input_rule(detector) -> dict:

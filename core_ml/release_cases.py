@@ -85,6 +85,9 @@ _CUBOT = "Mozilla/5.0 (Linux; Android 10; Cubot X30) AppleWebKit/537.36 (KHTML, 
 _GOOGLEBOT = ("Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; Googlebot/2.1; "
               "+http://www.google.com/bot.html) Chrome/155.0.0.0 Safari/537.36")
 _D3D = "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+_HEADLESS_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                "HeadlessChrome/154.0.0.0 Safari/537.36")
+_SWIFTSHADER = "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
 
 
 # Zero-mouse fixtures for policy 12. Positives: framework artefacts and the
@@ -152,6 +155,12 @@ AUTOMATION_EVIDENCE_CASES = (
         browser_ua=_PIXEL, http_ua=_PIXEL, renderer="Android Emulator OpenGL ES Translator (Google SwiftShader)",
         fingerprint={"platform": "Linux x86_64", "deviceMemory": 2, "maxTouchPoints": 10})),
     ("SUSPECT", None, _automation(browser_ua=_CUBOT, http_ua=_CUBOT)),
+    # Policy 20: stealth headless Chrome seen on the live site (2026-10-27): HeadlessChrome UA,
+    # SwiftShader, headless screen, webdriver hidden; and a forged HeadlessChrome header only.
+    ("BOT", "automation_marker", _automation(
+        browser_ua=_HEADLESS_UA, http_ua=_HEADLESS_UA, renderer=_SWIFTSHADER,
+        detectors={"headlessUa": True}, signals={"headlessScreen": True, "appVersionAutomation": True})),
+    ("SUSPECT", None, _automation(http_ua=_HEADLESS_UA)),
     ("SUSPECT", None, _automation(datacenter="aws")),
     ("SUSPECT", None, _automation(renderer="VirtualBox Graphics Adapter", signals={"rttZero": True},
                                   datacenter="digitalocean")),
@@ -184,6 +193,22 @@ AUTOMATION_EVIDENCE_RULE_GATE_V16 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1"],
     "positive_cases": 6, "negative_cases": 12, "passed": 18,
     "fixture_fingerprint": "d8a9be4f1e11f12e582f799fb567fc962bb608eb56f3fa44a7b544a2ff56c225",
+}
+
+# Frozen gate of policies 17-19.
+AUTOMATION_EVIDENCE_RULE_GATE_V17 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
+    "positive_cases": 10, "negative_cases": 17, "passed": 27,
+    "fixture_fingerprint": "738487d2e00bbe4a8df1900db1f9443910b3ecbac8bd13b6170180784f190f74",
+}
+
+# The HeadlessChrome UA checks of train.validate_explicit_automation_rule: policy 10-19
+# convicted only with a framework artefact; policy 20 also when both UAs declare it.
+EXPLICIT_AUTOMATION_RULE_GATE_V10 = {
+    "rule": "headless_ua_and_framework_v1", "positive_cases": 2, "negative_cases": 5, "passed": 7,
+}
+EXPLICIT_AUTOMATION_RULE_GATE = {
+    "rule": "headless_ua_and_framework_v1", "positive_cases": 3, "negative_cases": 4, "passed": 7,
 }
 
 AUTOMATION_EVIDENCE_RULE_GATE = {

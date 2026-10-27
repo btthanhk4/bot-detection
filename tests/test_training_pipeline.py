@@ -260,8 +260,8 @@ def test_explicit_automation_rule_release_gate():
     report = validate_explicit_automation_rule(EnsembleBotDetector())
     assert report == {
         "rule": "headless_ua_and_framework_v1",
-        "positive_cases": 2,
-        "negative_cases": 5,
+        "positive_cases": 3,
+        "negative_cases": 4,
         "passed": 7,
     }
 

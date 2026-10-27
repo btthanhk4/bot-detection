@@ -108,7 +108,13 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v19 (current)
+### Policy v20 (current)
+
+Policy v20 kết luận BOT khi cả request và trình duyệt đều tự khai `HeadlessChrome/` (bản
+stealth che `webdriver` trước đây chỉ bị xếp "chưa đủ dữ liệu"). Xem
+[Model release v20](docs/MODEL_RELEASE_V20.md).
+
+### Policy v19
 
 Policy v19 tối ưu điện thoại trên cả iPhone và Android: bot stealth sửa `navigator` bị lộ
 qua Worker và phần cứng (GPU máy tính, CPU máy chủ, iOS không có bán kính chạm) → BOT;

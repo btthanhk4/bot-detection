@@ -193,7 +193,8 @@ class TestEnsembleDetector:
             (regular, headless, {"headlessUa": True}, "SUSPECT"),
             ("", headless, {"headlessUa": True}, "SUSPECT"),
             (headless, regular, {"headlessUa": True}, "SUSPECT"),
-            (headless, headless, {"headlessUa": True}, "SUSPECT"),
+            # Policy 20: both UAs declaring HeadlessChrome is an automation marker on its own.
+            (headless, headless, {"headlessUa": True}, "BOT"),
             (regular, regular, {}, "SUSPECT"),
         )
         for server_ua, browser_ua, flags, expected in cases:
@@ -205,8 +206,10 @@ class TestEnsembleDetector:
             })
             assert result["verdict"] == expected
             assert result["is_bot"] is (expected == "BOT")
+            framework = bool(flags.keys() & {"webdriver", "chromeDriverGlobal"})
             assert result["breakdown"]["decision_basis"] == (
-                "explicit_automation" if expected == "BOT" else "insufficient_evidence"
+                ("explicit_automation" if framework else "automation_marker") if expected == "BOT"
+                else "insufficient_evidence"
             )
             assert result["breakdown"]["risk_score_in_domain"] is False
             assert result["decision_state"] == (

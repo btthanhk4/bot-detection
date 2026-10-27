@@ -55,7 +55,7 @@ _MARKER_SIGNALS = {
     "detectors": ("webdriver", "chromeDriverGlobal", "distinctiveProperties", "documentKeys"),
     "signals": ("playwrightGlobals", "seleniumGlobals"),
     "worker": ("webdriver",),
-    "server": ("signature_agent", "declared_bot_ua"),
+    "server": ("signature_agent", "declared_bot_ua", "declared_headless_ua"),
 }
 _FAMILIES = {
     "HEADLESS_ENV": {
@@ -126,6 +126,10 @@ def _sources(payload):
         "datacenter_ip": bool(headers.get("datacenter")),
         "signature_agent": headers.get("signature_agent") is True,
         "declared_bot_ua": bool(_DECLARED_BOT_UA.search(http_ua) or _DECLARED_BOT_UA.search(browser_ua)),
+        # Policy 20: only headless Chrome puts "HeadlessChrome/" in its UA, and nobody shops
+        # with it. Both the request and the page must say so (a forged header alone is not
+        # enough); the v10 rule also wanted a framework artefact, which stealth patches hide.
+        "declared_headless_ua": "HeadlessChrome/" in http_ua and "HeadlessChrome/" in browser_ua,
     }
     permission = automation.get("notificationPermissionMismatch") if claims_chromium else None
     return {

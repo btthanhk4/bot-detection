@@ -3428,7 +3428,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   let explainText = '';
   if (v === 'BOT') {
     if (markerDecision) {
-      explainText = `Dấu vết công cụ tự động hóa: ${escapeHtml((automationEvidence.markers || []).join(', '))}.`;
+      const MARKER_LABELS = { 'server.declared_headless_ua': 'trình duyệt tự khai HeadlessChrome',
+        'server.declared_bot_ua': 'User-Agent của crawler', 'server.signature_agent': 'chữ ký Web Bot Auth',
+        'detectors.webdriver': 'navigator.webdriver', 'worker.webdriver': 'navigator.webdriver (Worker)',
+        'detectors.chromeDriverGlobal': 'biến ChromeDriver', 'signals.playwrightGlobals': 'biến Playwright',
+        'signals.seleniumGlobals': 'biến Selenium', 'detectors.distinctiveProperties': 'thuộc tính tự động hóa',
+        'detectors.documentKeys': 'thuộc tính tự động hóa trên document' };
+      explainText = `Dấu vết tự động hóa: ${escapeHtml([...new Set((automationEvidence.markers || []).map(m => MARKER_LABELS[m] || m))].join(', '))}.`;
     } else if (mobileEmulationDecision) {
       explainText = `Trình duyệt máy tính giả làm điện thoại: ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '))}.`;
     } else if (idleCloudDecision) {
