@@ -34,10 +34,13 @@ export class MouseRecorder {
     this.lastPressStamp = null;
     this.lastReleaseStamp = null;
     this.lastTouchStamp = null;
+    // Pen input (Surface Pen, Wacom) also fires compatibility mouse events; the mouse models
+    // were trained on mice and touchpads only, so pen strokes stay out of the trajectory (1.11).
+    this.lastPenStamp = null;
     this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
     this.pointerStats = {
       pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
-      mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0, coalescedSelf: 0, coalescedStale: 0,
+      mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0, coalescedSelf: 0, coalescedStale: 0, penEvents: 0,
     };
     this.lastSampleStamp = -1;
     this.lastRawStamp = -1;
@@ -261,8 +264,20 @@ export class MouseRecorder {
     this.lastTouchStamp = this.eventStamp(e);
   }
 
+  // Compatibility mouse events follow their pen pointer event in the same task.
+  isPenCompatibility(e) {
+    return this.lastPenStamp !== null && Math.abs(this.eventStamp(e) - this.lastPenStamp) < 100;
+  }
+
+  notePen(e) {
+    if (!e || e.isTrusted === false || e.pointerType !== 'pen') return false;
+    this.lastPenStamp = this.eventStamp(e);
+    this.pointerStats.penEvents++;
+    return true;
+  }
+
   handleMouseMove(e) {
-    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
     this.counters.mousemove++;
     this.recordPoint('move', e.clientX, e.clientY);
   }
@@ -273,7 +288,7 @@ export class MouseRecorder {
   }
 
   handleMouseDown(e) {
-    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
     this.counters.mousedown++;
     this.lastPressStamp = this.eventStamp(e);
     this.lastReleaseStamp = null;
@@ -281,7 +296,7 @@ export class MouseRecorder {
   }
 
   handleMouseUp(e) {
-    if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+    if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
     this.lastReleaseStamp = this.eventStamp(e);
     this.recordPoint('up', e.clientX, e.clientY);
   }
@@ -295,6 +310,8 @@ export class MouseRecorder {
       return;
     }
     this.recordPoint('click', e.clientX, e.clientY);
+    // A pen tap's press timing and aim are not a mouse button's.
+    if (this.isPenCompatibility(e)) return;
     this.recordClickGeometry(e);
   }
 
@@ -333,6 +350,7 @@ export class MouseRecorder {
   }
 
   handlePointerMove(e) {
+    if (this.notePen(e)) return;
     if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
     const stats = this.pointerStats;
     stats.pointermove++;
@@ -361,6 +379,7 @@ export class MouseRecorder {
   }
 
   handlePointerDown(e) {
+    if (this.notePen(e)) return;
     if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
     // Pointer Events: a mouse with a button down MUST report pressure 0.5.
     this.pointerStats.mouseDowns++;

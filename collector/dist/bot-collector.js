@@ -858,24 +858,58 @@
    * runs a fresh navigator and WebGL. Compares CPU count, UA, platform, webdriver
    * and the WebGL renderer between the two contexts.
    */
+  // A site whose Content-Security-Policy forbids blob: workers (or requires Trusted Types)
+  // reports a violation every time the probe tries. After one refusal the collector skips the
+  // probe on that site for a day (collector 1.11), so the site's CSP reports are not flooded.
+  const WORKER_BLOCKED_KEY = 'datacat_worker_blocked';
+  const WORKER_BLOCKED_MS = 24 * 3600 * 1000;
+
+  function workerBlocked(win) {
+    try {
+      const since = Number(win.localStorage.getItem(WORKER_BLOCKED_KEY));
+      return Number.isFinite(since) && since > 0 && Date.now() - since < WORKER_BLOCKED_MS;
+    } catch (e) { return false; }
+  }
+
+  function rememberWorkerBlocked(win) {
+    try { win.localStorage.setItem(WORKER_BLOCKED_KEY, String(Date.now())); } catch (e) { /* optional */ }
+  }
+
   function probeWorkerConsistency(nav, win, doc, timeoutMs = 800) {
     return new Promise((resolve) => {
       let worker = null;
       let url = null;
       let timer = null;
+      let onViolation = null;
       const finish = (value) => {
         if (timer) clearTimeout(timer);
+        try { if (onViolation) doc.removeEventListener('securitypolicyviolation', onViolation); } catch (e) {}
         try { if (worker) worker.terminate(); } catch (e) {}
         try { if (url) URL.revokeObjectURL(url); } catch (e) {}
         resolve(value);
       };
       try {
-        if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
+        if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined'
+            || workerBlocked(win)) {
           finish(null);
           return;
         }
         url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: 'text/javascript' }));
-        worker = new Worker(url);
+        onViolation = (event) => {
+          if (String((event && event.blockedURI) || '').indexOf('blob') === 0) {
+            rememberWorkerBlocked(win);
+            finish(null);
+          }
+        };
+        try { doc.addEventListener('securitypolicyviolation', onViolation); } catch (e) {}
+        try {
+          worker = new Worker(url);
+        } catch (e) {
+          // Trusted Types or a CSP that throws synchronously.
+          rememberWorkerBlocked(win);
+          finish(null);
+          return;
+        }
         timer = setTimeout(() => finish(null), timeoutMs);
         worker.onerror = (event) => { if (event && event.preventDefault) event.preventDefault(); finish(null); };
         worker.onmessage = (event) => {
@@ -936,10 +970,13 @@
       this.lastPressStamp = null;
       this.lastReleaseStamp = null;
       this.lastTouchStamp = null;
+      // Pen input (Surface Pen, Wacom) also fires compatibility mouse events; the mouse models
+      // were trained on mice and touchpads only, so pen strokes stay out of the trajectory (1.11).
+      this.lastPenStamp = null;
       this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
       this.pointerStats = {
         pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
-        mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0, coalescedSelf: 0, coalescedStale: 0,
+        mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0, coalescedSelf: 0, coalescedStale: 0, penEvents: 0,
       };
       this.lastSampleStamp = -1;
       this.lastRawStamp = -1;
@@ -1163,8 +1200,20 @@
       this.lastTouchStamp = this.eventStamp(e);
     }
 
+    // Compatibility mouse events follow their pen pointer event in the same task.
+    isPenCompatibility(e) {
+      return this.lastPenStamp !== null && Math.abs(this.eventStamp(e) - this.lastPenStamp) < 100;
+    }
+
+    notePen(e) {
+      if (!e || e.isTrusted === false || e.pointerType !== 'pen') return false;
+      this.lastPenStamp = this.eventStamp(e);
+      this.pointerStats.penEvents++;
+      return true;
+    }
+
     handleMouseMove(e) {
-      if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+      if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
       this.counters.mousemove++;
       this.recordPoint('move', e.clientX, e.clientY);
     }
@@ -1175,7 +1224,7 @@
     }
 
     handleMouseDown(e) {
-      if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+      if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
       this.counters.mousedown++;
       this.lastPressStamp = this.eventStamp(e);
       this.lastReleaseStamp = null;
@@ -1183,7 +1232,7 @@
     }
 
     handleMouseUp(e) {
-      if (e.isTrusted === false || this.isTouchCompatibility(e)) return;
+      if (e.isTrusted === false || this.isTouchCompatibility(e) || this.isPenCompatibility(e)) return;
       this.lastReleaseStamp = this.eventStamp(e);
       this.recordPoint('up', e.clientX, e.clientY);
     }
@@ -1197,6 +1246,8 @@
         return;
       }
       this.recordPoint('click', e.clientX, e.clientY);
+      // A pen tap's press timing and aim are not a mouse button's.
+      if (this.isPenCompatibility(e)) return;
       this.recordClickGeometry(e);
     }
 
@@ -1235,6 +1286,7 @@
     }
 
     handlePointerMove(e) {
+      if (this.notePen(e)) return;
       if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
       const stats = this.pointerStats;
       stats.pointermove++;
@@ -1263,6 +1315,7 @@
     }
 
     handlePointerDown(e) {
+      if (this.notePen(e)) return;
       if (!e || e.isTrusted === false || e.pointerType !== 'mouse') return;
       // Pointer Events: a mouse with a button down MUST report pressure 0.5.
       this.pointerStats.mouseDowns++;
@@ -1542,7 +1595,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.11.0';
+  const COLLECTOR_VERSION = '1.11.1';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many

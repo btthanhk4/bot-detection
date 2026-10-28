@@ -462,7 +462,9 @@ Các endpoint giám sát (`stats/summary`, `traffic/timeline`, `telemetry/recent
 chưa hiệu chuẩn, không phải xác suất bot thống kê. `confidence` là độ lệch
 của điểm so với 0.5. Khi thiếu 25 điểm `move`, thiếu model hoặc đầu vào touch/mobile,
 `decision_state` là `INSUFFICIENT_EVIDENCE`, `verdict` tạm là `SUSPECT` để tương thích; không
-nên dùng giá trị `bot_probability` để chặn người dùng trong trạng thái này.
+nên dùng giá trị `bot_probability` để chặn người dùng trong trạng thái này. Từ policy 25,
+`risk_score` là `null` khi kết luận đến từ luật (điện thoại, dấu vết tự động hóa) hoặc chưa đủ
+dữ liệu: khi đó điểm mô hình chuột không có ý nghĩa, hãy dùng `verdict`.
 
 ---
 

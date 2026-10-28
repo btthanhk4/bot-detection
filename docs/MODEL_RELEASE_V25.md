@@ -1,6 +1,6 @@
 # Model release v25: người thật trên site thật, bot tìm kiếm, IP dùng chung
 
-Bundle: `e9ac58496c9246db87b28570dd0396cb`. Policy: `25`. Collector: 1.11.0. Mô hình chuột train lại cùng dữ liệu và seed.
+Bundle: `e9ac58496c9246db87b28570dd0396cb`. Policy: `25`. Collector: 1.11.1. Mô hình chuột train lại cùng dữ liệu và seed.
 
 Xuất phát từ rà soát trường hợp góc trên production (2026-10-29). Mỗi kịch bản người thật dùng
 Chrome thật không tự động hóa, chuột điều khiển ở mức hệ điều hành (SendInput 125 Hz), gắn đúng
@@ -50,6 +50,14 @@ Trên production đã có 2 phiên Googlebot thật (66.249.64.x), và lý do hi
   - Nút "Sao chép danh sách IP" bỏ hai loại này, để khách dán vào tường lửa không chặn nhầm
     Googlebot hay chặn cả khách thật.
 
+## 2b. Sửa thêm (cùng bản phát hành, sau rà soát lần hai)
+
+| Vấn đề | Sửa |
+|---|---|
+| `/detect` trả `risk_score` 0,9989 cùng kết luận HUMAN cho iPhone thật (điểm tabular ngoài miền) | `risk_score` là `null` khi kết luận đến từ luật hoặc chưa đủ dữ liệu; `bot_probability` giữ nguyên cho client cũ |
+| Site có CSP cấm Worker `blob:` hoặc bắt Trusted Types nhận một báo cáo vi phạm CSP mỗi lượt tải trang | Collector nhớ lần bị từ chối 24 giờ trong localStorage (`datacat_worker_blocked`) và bỏ đầu dò Worker; đo: lượt đầu 1–2 lỗi, các lượt sau 0 |
+| Bút cảm ứng (Surface Pen, Wacom) sinh sự kiện chuột tương thích, bị mô hình chuột chấm dù ngoài miền huấn luyện | Nét bút không vào quỹ đạo chuột, chạm bút không vào phân tích click (`pointerStats.penEvents` ghi nhận); đo bằng CDP: chuột 40 điểm, bút 0 |
+
 ## 3. Đã kiểm tra, không có vấn đề
 
 | Trường hợp | Kết quả |
@@ -63,6 +71,7 @@ Trên production đã có 2 phiên Googlebot thật (66.249.64.x), và lý do hi
 | iCloud Private Relay, Edge Secure Network | Không bị coi là IP cloud (danh sách cloud không có Akamai/Cloudflare/Fastly) |
 | CSP `frame-src 'none'`, Trusted Types | Iframe tạm vẫn tạo được; không để lại iframe |
 | CSP `sandbox` | Dùng bản của trang như trước |
+| Firefox, Firefox `resistFingerprinting`, WebKit (nhân Safari) | Không nhóm bằng chứng nào (bỏ dấu vết của chính Playwright) |
 | Đồng hồ máy khách lệch | Thời điểm bị kẹp vào [server − 24 giờ, server + 5 phút], thứ tự phiên giữ được |
 
 ## 4. Giới hạn còn lại
@@ -72,9 +81,11 @@ Trên production đã có 2 phiên Googlebot thật (66.249.64.x), và lý do hi
   hiệu ngoài trình duyệt (dấu vân tay TLS ở edge, attestation thiết bị, thử thách).
 - Remote Desktop/UltraViewer/TeamViewer giao chuột theo nhịp thấp, một mẫu mỗi khung: NGHI VẤN
   (`FRAME_LOCKED_POINTER`). Đây là người điều khiển từ xa, chấp nhận được.
-- Trang có CSP chặn `worker-src blob:` sẽ ghi một lỗi CSP mỗi lượt tải (đầu dò Worker), có từ
-  các bản trước; đầu dò khi đó bỏ qua.
-- Chưa thử được: Brave, Firefox `resistFingerprinting`, Safari macOS, trình duyệt trong app
+- Đồng hồ máy khách bị lùi giữa phiên: telemetry có mốc thời gian cũ hơn bị bỏ cho tới khi đồng
+  hồ vượt mốc trước (NTP chỉ chỉnh vài mili giây, nên chấp nhận).
+- Bot có thể gửi sự kiện CDP dạng bút để tránh mô hình chuột; phiên khi đó "chưa đủ dữ liệu"
+  chứ không thành HUMAN.
+- Chưa thử được: Brave, Safari trên macOS thật, trình duyệt trong app
   Facebook/Zalo/TikTok (các app này chèn script bọc `console`; collector 1.11 đã miễn nhiễm với
   kiểu này).
 - Kẻ tấn công sửa cả `requestAnimationFrame` của iframe mới tạo làm bộ đo khung hình trống; trang

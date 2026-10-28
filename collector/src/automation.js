@@ -265,24 +265,58 @@ const WORKER_SOURCE = `(() => {
  * runs a fresh navigator and WebGL. Compares CPU count, UA, platform, webdriver
  * and the WebGL renderer between the two contexts.
  */
+// A site whose Content-Security-Policy forbids blob: workers (or requires Trusted Types)
+// reports a violation every time the probe tries. After one refusal the collector skips the
+// probe on that site for a day (collector 1.11), so the site's CSP reports are not flooded.
+const WORKER_BLOCKED_KEY = 'datacat_worker_blocked';
+const WORKER_BLOCKED_MS = 24 * 3600 * 1000;
+
+function workerBlocked(win) {
+  try {
+    const since = Number(win.localStorage.getItem(WORKER_BLOCKED_KEY));
+    return Number.isFinite(since) && since > 0 && Date.now() - since < WORKER_BLOCKED_MS;
+  } catch (e) { return false; }
+}
+
+function rememberWorkerBlocked(win) {
+  try { win.localStorage.setItem(WORKER_BLOCKED_KEY, String(Date.now())); } catch (e) { /* optional */ }
+}
+
 export function probeWorkerConsistency(nav, win, doc, timeoutMs = 800) {
   return new Promise((resolve) => {
     let worker = null;
     let url = null;
     let timer = null;
+    let onViolation = null;
     const finish = (value) => {
       if (timer) clearTimeout(timer);
+      try { if (onViolation) doc.removeEventListener('securitypolicyviolation', onViolation); } catch (e) {}
       try { if (worker) worker.terminate(); } catch (e) {}
       try { if (url) URL.revokeObjectURL(url); } catch (e) {}
       resolve(value);
     };
     try {
-      if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
+      if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined'
+          || workerBlocked(win)) {
         finish(null);
         return;
       }
       url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: 'text/javascript' }));
-      worker = new Worker(url);
+      onViolation = (event) => {
+        if (String((event && event.blockedURI) || '').indexOf('blob') === 0) {
+          rememberWorkerBlocked(win);
+          finish(null);
+        }
+      };
+      try { doc.addEventListener('securitypolicyviolation', onViolation); } catch (e) {}
+      try {
+        worker = new Worker(url);
+      } catch (e) {
+        // Trusted Types or a CSP that throws synchronously.
+        rememberWorkerBlocked(win);
+        finish(null);
+        return;
+      }
       timer = setTimeout(() => finish(null), timeoutMs);
       worker.onerror = (event) => { if (event && event.preventDefault) event.preventDefault(); finish(null); };
       worker.onmessage = (event) => {

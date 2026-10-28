@@ -1724,3 +1724,20 @@ def test_traffic_timeline_passes_the_viewer_utc_offset(client, monkeypatch):
     response = client.get("/api/v1/traffic/timeline?window_minutes=43200&utc_offset_minutes=420", headers=READ_HEADERS)
     assert response.status_code == 200
     assert seen == {"window": 43200, "bucket": 1440, "offset": 420}
+
+
+def test_detect_nulls_risk_score_for_rule_verdicts(client):
+    # Policy 25: a rule verdict carries no meaningful fused score (a real iPhone was HUMAN
+    # with 0.9989); risk_score is null then, bot_probability stays for old clients.
+    headless = "Mozilla/5.0 HeadlessChrome/154.0.0.0"
+    response = client.post(
+        "/api/v1/detect",
+        json={"sessionId": "sess_rule_detect", "visitorId": "visitor_rule",
+              "fingerprint": {"userAgent": headless}, "botd": {"detectors": {"chromeDriverGlobal": True}},
+              "mouse": {"records": []}},
+        headers={"User-Agent": headless, **READ_HEADERS},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["verdict"] == "BOT" and body["risk_score"] is None
+    assert isinstance(body["bot_probability"], float)

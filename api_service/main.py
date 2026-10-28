@@ -924,6 +924,11 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     latency_ms = _record_inference_latency(start_t)
 
     _attach_model_metadata(result)
+    # A rule verdict (phone, automation marker) has no meaningful fused score: a real iPhone
+    # was HUMAN with risk_score 0.9989 from the out-of-domain tabular model. bot_probability
+    # stays as it was for older clients; risk_score is null when it does not apply.
+    if (result.get("breakdown") or {}).get("risk_score_in_domain") is False:
+        result["risk_score"] = None
     result["latency_ms"] = latency_ms
     result["client_ip"] = client_ip
     result["sessionId"] = data.get("sessionId")
