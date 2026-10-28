@@ -4,6 +4,11 @@ Accounts live in the ``dashboard_users`` collection with scrypt password
 hashes. A session is a stateless HMAC-signed cookie that also carries a
 fingerprint of the stored hash, so changing a password revokes older sessions.
 Collectors and API clients keep using the static read/admin tokens.
+
+Roles: ``admin`` (everything), ``viewer`` (staff: reads every website) and ``customer`` (reads
+only the websites in its ``sites`` list). A ``disabled`` account cannot sign in, and its open
+sessions stop at the next request. Accounts an administrator creates or resets carry
+``must_change_password`` until their owner picks a password.
 """
 
 import base64
@@ -12,6 +17,7 @@ import hmac
 import json
 import re
 import secrets
+import string
 import threading
 import time
 from datetime import datetime, timezone
@@ -20,10 +26,11 @@ from typing import Optional
 SESSION_COOKIE = "datacat_session"
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "datacat"
-USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
+# Letters, digits and . _ - @ so an email address can be the username.
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.@-]{3,64}$")
 MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_LENGTH = 256
-ROLES = ("admin", "viewer")
+ROLES = ("admin", "viewer", "customer")
 
 _SCRYPT_N = 2 ** 14
 _SCRYPT_R = 8
@@ -97,6 +104,15 @@ def validate_new_password(password: str, username: str = "") -> Optional[str]:
             and any(c.isdigit() for c in password)):
         return "Mật khẩu cần có chữ hoa, chữ thường và chữ số"
     return None
+
+
+def generate_password(length: int = 14) -> str:
+    """A random password that passes validate_new_password (shown once to the administrator)."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        candidate = "".join(secrets.choice(alphabet) for _ in range(length))
+        if validate_new_password(candidate) is None:
+            return candidate
 
 
 def _fingerprint(password_hash: str) -> str:
@@ -176,11 +192,15 @@ def invalidate_user_cache(username: str = "") -> None:
             _user_cache.clear()
 
 
-def create_user(username: str, password: str, role: str = "admin", *, replace: bool = False) -> dict:
+def create_user(username: str, password: str, role: str = "admin", *, replace: bool = False,
+                sites=None, display_name: str = "", must_change_password: bool = False) -> dict:
     if not USERNAME_PATTERN.match(username):
-        raise ValueError("Tên đăng nhập gồm 3-32 ký tự chữ, số, '.', '_' hoặc '-'")
+        raise ValueError("Tên đăng nhập gồm 3-64 ký tự chữ, số, '.', '_', '-' hoặc '@'")
     if role not in ROLES:
         raise ValueError("Vai trò không hợp lệ")
+    sites = sorted(set(sites or [])) if role == "customer" else []
+    if role == "customer" and not sites:
+        raise ValueError("Tài khoản khách hàng cần ít nhất một website")
     problem = validate_new_password(password, username)
     if problem:
         raise ValueError(problem)
@@ -192,7 +212,8 @@ def create_user(username: str, password: str, role: str = "admin", *, replace: b
     document = {
         "username": username, "username_lower": username.lower(), "role": role,
         "password_hash": hash_password(password), "created_at": now, "password_changed_at": now,
-        "last_login_at": None,
+        "last_login_at": None, "sites": sites, "display_name": (display_name or "").strip()[:80],
+        "disabled": False, "must_change_password": bool(must_change_password),
     }
     if replace:
         users.update_one(
@@ -205,6 +226,70 @@ def create_user(username: str, password: str, role: str = "admin", *, replace: b
         users.insert_one(document)
     invalidate_user_cache(username)
     return {"username": username, "role": role}
+
+
+_PUBLIC_FIELDS = {"_id": 0, "username": 1, "role": 1, "sites": 1, "display_name": 1, "disabled": 1,
+                  "must_change_password": 1, "created_at": 1, "last_login_at": 1, "password_changed_at": 1}
+
+
+def _users():
+    users = get_users_collection()
+    if users is None:
+        raise RuntimeError("Database unavailable")
+    return users
+
+
+def list_users() -> list:
+    return sorted(_users().find({}, _PUBLIC_FIELDS), key=lambda user: user["username"].lower())
+
+
+def active_admins(exclude: str = "") -> int:
+    query = {"role": "admin", "disabled": {"$ne": True}}
+    if exclude:
+        query["username_lower"] = {"$ne": exclude.lower()}
+    return _users().count_documents(query)
+
+
+def update_user(username: str, changes: dict) -> dict:
+    """Role, websites, display name or disabled flag. Raises KeyError or ValueError."""
+    users = _users()
+    current = users.find_one({"username_lower": username.lower()})
+    if not current:
+        raise KeyError(username)
+    role = changes.get("role") or current.get("role", "viewer")
+    if role not in ROLES:
+        raise ValueError("Vai trò không hợp lệ")
+    sites = changes["sites"] if changes.get("sites") is not None else current.get("sites") or []
+    sites = sorted(set(sites)) if role == "customer" else []
+    if role == "customer" and not sites:
+        raise ValueError("Tài khoản khách hàng cần ít nhất một website")
+    update = {"role": role, "sites": sites}
+    if changes.get("display_name") is not None:
+        update["display_name"] = changes["display_name"].strip()[:80]
+    if changes.get("disabled") is not None:
+        update["disabled"] = bool(changes["disabled"])
+    users.update_one({"username_lower": username.lower()}, {"$set": update})
+    invalidate_user_cache(username)
+    return users.find_one({"username_lower": username.lower()}, _PUBLIC_FIELDS)
+
+
+def reset_password(username: str) -> str:
+    """New temporary password; the old one and every open session stop working."""
+    password = generate_password()
+    result = _users().update_one(
+        {"username_lower": username.lower()},
+        {"$set": {"password_hash": hash_password(password), "password_changed_at": datetime.now(timezone.utc),
+                  "must_change_password": True}})
+    if not result.matched_count:
+        raise KeyError(username)
+    invalidate_user_cache(username)
+    return password
+
+
+def delete_user(username: str) -> bool:
+    deleted = _users().delete_one({"username_lower": username.lower()}).deleted_count > 0
+    invalidate_user_cache(username)
+    return deleted
 
 
 def _failure_key(ip: str, username: str) -> str:
@@ -247,7 +332,8 @@ def authenticate(username: str, password: str) -> Optional[dict]:
     user = find_user(username, use_cache=False) if USERNAME_PATTERN.match(username or "") else None
     stored = user["password_hash"] if user else _DUMMY_HASH
     ok = verify_password(password or "", stored)
-    return user if (ok and user) else None
+    # A disabled account answers like a wrong password: no hint that it exists.
+    return user if (ok and user and not user.get("disabled")) else None
 
 
 def session_user(token: str) -> Optional[dict]:
@@ -256,6 +342,11 @@ def session_user(token: str) -> Optional[dict]:
     if not claims:
         return None
     user = find_user(str(claims.get("u", "")))
-    if not user or _fingerprint(user["password_hash"]) != claims.get("pf"):
+    if not user or user.get("disabled") or _fingerprint(user["password_hash"]) != claims.get("pf"):
         return None
-    return {"username": user["username"], "role": user.get("role", "viewer")}
+    role = user.get("role", "viewer")
+    return {"username": user["username"], "role": role,
+            # None: every website; a list: only these (customer accounts).
+            "sites": list(user.get("sites") or []) if role == "customer" else None,
+            "display_name": user.get("display_name") or "",
+            "must_change_password": bool(user.get("must_change_password"))}

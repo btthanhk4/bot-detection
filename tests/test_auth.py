@@ -81,10 +81,10 @@ def test_weak_passwords_are_rejected(password):
 def test_login_sets_httponly_strict_cookie(client):
     res = login(client)
     assert res.status_code == 200
-    assert res.json() == {"username": "admin", "role": "admin"}
+    assert res.json() == {"username": "admin", "role": "admin", "must_change_password": False}
     cookie = res.headers["set-cookie"].lower()
     assert "httponly" in cookie and "samesite=strict" in cookie and "datacat_session=" in cookie
-    assert "password" not in res.text.lower()
+    assert "password_hash" not in res.text and "scrypt$" not in res.text and GOOD_PASSWORD not in res.text
 
 
 def test_login_failure_is_generic_and_does_not_reveal_accounts(client):

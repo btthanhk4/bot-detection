@@ -124,15 +124,16 @@ def enrich_sessions(sessions):
                       if key != "_id"}} for row in sessions]
 
 
-def traffic_page(limit=50, before_number=None, site=None):
+def traffic_page(limit=50, before_number=None, site_filter=None):
+    """``site_filter`` is the dashboard's condition on ``site_id`` (one site, a list, or none)."""
     db = get_db()
     if db is None:
         raise RuntimeError("Database unavailable")
     with _lock:
         _prepare(db)
     query = {"deleted": {"$ne": True}}
-    if site:
-        query["attributed_site_id"] = None if site == "_none" else site
+    if site_filter:
+        query["attributed_site_id"] = site_filter["site_id"]
     if before_number is not None:
         query["traffic_number"] = {"$lt": before_number}
     rows = list(db["research_sessions"].find(query, {"label_history": 0})

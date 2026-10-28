@@ -740,11 +740,52 @@ def _observed_headers(request: Request) -> dict:
     }
 
 
+def _require_password_changed(request: Request, user: Optional[dict]) -> None:
+    """An account on a temporary password may only look itself up and change it."""
+    if user and user.get("must_change_password") and request.url.path != "/api/v1/auth/me":
+        raise HTTPException(status_code=403, detail="PASSWORD_CHANGE_REQUIRED")
+
+
+def _allowed_sites(user: Optional[dict]) -> Optional[list]:
+    """Websites a signed-in customer may read; None for staff, administrators and API tokens."""
+    return list(user.get("sites") or []) if user and user.get("role") == "customer" else None
+
+
+def _scope(user: Optional[dict], site: Optional[str]) -> dict:
+    """Mongo condition for the sessions this account may read, narrowed to ``site`` if given."""
+    allowed = _allowed_sites(user)
+    if allowed is None:
+        return sites.site_filter(site)
+    if site:
+        if site not in allowed:
+            raise HTTPException(status_code=403, detail="This website is not in your account")
+        return {"site_id": site}
+    return {"site_id": {"$in": allowed}}
+
+
+def _require_session_visible(user: Optional[dict], session_id: str) -> None:
+    allowed = _allowed_sites(user)
+    if allowed is None:
+        return
+    from api_service.database import get_db
+    db = get_db()
+    doc = db["detection_results"].find_one({"sessionId": session_id}, {"site_id": 1}) if db is not None else None
+    # Another customer's session answers like a missing one.
+    if not doc or doc.get("site_id") not in allowed:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+def _require_staff(user: Optional[dict]) -> None:
+    if _allowed_sites(user) is not None:
+        raise HTTPException(status_code=403, detail="Not available to customer accounts")
+
+
 def require_admin(request: Request):
     supplied = _bearer(request, "X-Admin-Token")
     if supplied and settings.ADMIN_TOKEN and secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
         return {"username": "token", "role": "admin"}
     user = _cookie_user(request)
+    _require_password_changed(request, user)
     if user and user["role"] == "admin":
         return user
     if not settings.ADMIN_TOKEN and not request.cookies.get(auth.SESSION_COOKIE):
@@ -760,6 +801,7 @@ def require_read_access(request: Request):
         if settings.ADMIN_TOKEN and secrets.compare_digest(supplied, settings.ADMIN_TOKEN):
             return {"username": "token", "role": "admin"}
     user = _cookie_user(request)
+    _require_password_changed(request, user)
     if user:
         return user
     if not settings.READ_TOKEN and not request.cookies.get(auth.SESSION_COOKIE):
@@ -1109,7 +1151,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 def get_recent_telemetry(
     limit: int = Query(default=50, ge=1, le=200),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
     """
     Returns the most recent detection sessions from MongoDB.
@@ -1118,7 +1160,7 @@ def get_recent_telemetry(
     from api_service.database import get_db, get_recent_results, get_total_count
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    scope = sites.site_filter(site)
+    scope = _scope(user, site)
     results = get_recent_results(limit=limit, site_filter=scope)
     total = get_total_count(site_filter=scope)
     if results is None or total is None:
@@ -1144,7 +1186,7 @@ def get_traffic_timeline(
     window_minutes: int = Query(default=60, ge=30, le=43200),
     utc_offset_minutes: int = Query(default=0, ge=-720, le=840),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
     """Return session counts using buckets sized for the requested window (up to 30 days,
     the data retention). Hour and day buckets start at the viewer's local midnight."""
@@ -1169,7 +1211,7 @@ def get_traffic_timeline(
         window_minutes=window_minutes,
         bucket_minutes=bucket_minutes,
         utc_offset_minutes=utc_offset_minutes,
-        site_filter=sites.site_filter(site),
+        site_filter=_scope(user, site),
     )
     if timeline is None:
         raise HTTPException(status_code=503, detail="Traffic timeline query failed")
@@ -1288,7 +1330,8 @@ async def auth_login(payload: LoginPayload, request: Request):
                              {"$set": {"last_login_at": datetime.now(timezone.utc)}})
     except Exception:
         logger.warning("Could not record last login", exc_info=True)
-    response = JSONResponse({"username": user["username"], "role": user.get("role", "viewer")},
+    response = JSONResponse({"username": user["username"], "role": user.get("role", "viewer"),
+                             "must_change_password": bool(user.get("must_change_password"))},
                             headers={"Cache-Control": "no-store"})
     _set_session_cookie(response, request, token, ttl)
     return response
@@ -1303,7 +1346,13 @@ def auth_logout(request: Request):
 
 @app.get("/api/v1/auth/me")
 def auth_me(user=Depends(require_read_access)):
-    return {"username": user["username"], "role": user["role"],
+    allowed = _allowed_sites(user)
+    return {"username": user["username"], "role": user["role"], "display_name": user.get("display_name") or "",
+            "must_change_password": bool(user.get("must_change_password")),
+            # None: every website.
+            "sites": None if allowed is None else [
+                {"site_id": site_id, "name": (sites.registry.get(site_id) or {}).get("name") or site_id}
+                for site_id in allowed],
             "session_hours": settings.SESSION_TTL_HOURS}
 
 
@@ -1323,7 +1372,7 @@ def auth_change_password(payload: PasswordChangePayload, request: Request):
         raise HTTPException(status_code=503, detail="Database unavailable")
     new_hash = auth.hash_password(payload.new_password)
     users.update_one({"username_lower": user["username"].lower()},
-                     {"$set": {"password_hash": new_hash,
+                     {"$set": {"password_hash": new_hash, "must_change_password": False,
                                "password_changed_at": datetime.now(timezone.utc)}})
     auth.invalidate_user_cache(user["username"])
     ttl = settings.SESSION_TTL_HOURS * 3600
@@ -1333,10 +1382,11 @@ def auth_change_password(payload: PasswordChangePayload, request: Request):
 
 
 @app.get("/api/v1/telemetry/raw/{session_id}")
-def get_raw_telemetry(session_id: str, _read=Depends(require_read_access)):
+def get_raw_telemetry(session_id: str, user=Depends(require_read_access)):
     """
     Returns the raw telemetry data for a specific session, including mouse records.
     """
+    _require_session_visible(user, session_id)
     from api_service.database import get_db, _sanitize_bson_value
     db = get_db()
     if db is not None:
@@ -1406,8 +1456,9 @@ def delete_all_sessions(_admin=Depends(require_admin)):
 
 
 @app.get("/api/v1/touch-samples/stats")
-def get_touch_sample_stats(_read=Depends(require_read_access)):
+def get_touch_sample_stats(user=Depends(require_read_access)):
     """Counts of stored phone/tablet gestures by weak label, device and kind."""
+    _require_staff(user)
     from api_service.database import get_touch_sample_stats as db_stats
     stats = db_stats()
     if stats is None:
@@ -1444,7 +1495,7 @@ def delete_touch_samples(_admin=Depends(require_admin)):
 def get_live_view(
     window_minutes: int = Query(default=1440, ge=5, le=10080),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
     """Recent traffic by location for the Live View globe (offline GeoIP, no external calls)."""
     from datetime import datetime, timedelta, timezone
@@ -1453,14 +1504,14 @@ def get_live_view(
     from api_service.live import build_live_view
 
     now = datetime.now(timezone.utc)
-    rows = get_live_sessions(now - timedelta(minutes=window_minutes), site_filter=sites.site_filter(site))
+    rows = get_live_sessions(now - timedelta(minutes=window_minutes), site_filter=_scope(user, site))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_live_view(rows, now=now, window_minutes=window_minutes)
 
 
 @app.get("/api/v1/live/online")
-def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), _read=Depends(require_read_access)):
+def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), user=Depends(require_read_access)):
     """Visitors on the site now (polled every few seconds; one indexed query over two minutes)."""
     from datetime import datetime, timedelta, timezone
 
@@ -1468,30 +1519,31 @@ def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE
     from api_service.live import ONLINE_SECONDS, build_online_view
 
     now = datetime.now(timezone.utc)
-    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS), site_filter=sites.site_filter(site))
+    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS), site_filter=_scope(user, site))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_online_view(rows, now=now)
 
 
 @app.get("/api/v1/stats/summary")
-def get_stats_summary(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), _read=Depends(require_read_access)):
+def get_stats_summary(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), user=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""
     from api_service.database import get_db, get_summary_stats
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    stats = get_summary_stats(site_filter=sites.site_filter(site))
+    stats = get_summary_stats(site_filter=_scope(user, site))
     if stats is None:
         raise HTTPException(status_code=503, detail="Database query failed")
     return {**stats, "inference_latency": _inference_latency_summary()}
 
 
 @app.get("/api/v1/sessions/{session_id}/detail")
-def get_session_detail(session_id: str, _read=Depends(require_read_access)):
+def get_session_detail(session_id: str, user=Depends(require_read_access)):
     """
     Returns comprehensive analysis detail for a specific session.
     Includes AI breakdown, fingerprint, botd detectors, mouse stats, and reasons.
     """
+    _require_session_visible(user, session_id)
     from api_service.database import get_db, _sanitize_bson_value
     db = get_db()
     if db is None:
@@ -1527,10 +1579,11 @@ def research_traffic(
     limit: int = Query(default=50, ge=1, le=200),
     before_number: Optional[int] = Query(default=None, ge=1),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
+    scope = _scope(user, site)
     try:
-        page = traffic_page(limit, before_number, site=site)
+        page = traffic_page(limit, before_number, site_filter=scope)
     except Exception as exc:
         logger.exception("Traffic registry query failed")
         raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc
@@ -1609,13 +1662,20 @@ def _collector_base(request: Request) -> str:
 
 
 @app.get("/api/v1/sites")
-def list_sites(request: Request, _read=Depends(require_read_access)):
+def list_sites(request: Request, user=Depends(require_read_access)):
     """Registered websites with their install state and the last 24 hours of traffic."""
     db = _require_sites_db()
     try:
         collector_base = _collector_base(request)
-        return sites.overview(db, collector_base=collector_base,
+        view = sites.overview(db, collector_base=collector_base,
                               own_hosts=(_request_host(request), urlsplit(collector_base).hostname))
+        allowed = _allowed_sites(user)
+        if allowed is not None:
+            empty = {"sessions": 0, "last_seen": None, "sessions_24h": 0, "humans_24h": 0, "bots_24h": 0,
+                     "suspects_24h": 0}
+            view.update(sites=[site for site in view["sites"] if site["site_id"] in allowed],
+                        removed_sites=[], unassigned=empty, unregistered_origins=[])
+        return view
     except Exception as exc:
         logger.exception("Site overview failed")
         raise HTTPException(status_code=503, detail="Database query failed") from exc
@@ -1658,7 +1718,7 @@ def delete_site(site_id: str, _admin=Depends(require_admin)):
 
 # ---- Reports: one website (or all) over a period ----
 
-def _report_scope(site: Optional[str], days: int):
+def _report_scope(user: Optional[dict], site: Optional[str], days: int):
     from api_service import reports
     if days not in reports.PERIOD_DAYS:
         raise HTTPException(status_code=422, detail="days must be 1, 7 or 30")
@@ -1666,17 +1726,17 @@ def _report_scope(site: Optional[str], days: int):
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    return reports, db, sites.site_filter(site)
+    return reports, db, _scope(user, site)
 
 
 @app.get("/api/v1/reports/summary")
 def report_summary(
     days: int = Query(default=7),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
     """Totals, reasons and bot sources of the sessions that started in the period."""
-    reports, db, scope = _report_scope(site, days)
+    reports, db, scope = _report_scope(user, site, days)
     try:
         return reports.summary(db, site_filter=scope, days=days)
     except Exception as exc:
@@ -1688,12 +1748,124 @@ def report_summary(
 def report_sessions(
     days: int = Query(default=7),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
-    _read=Depends(require_read_access),
+    user=Depends(require_read_access),
 ):
     """Sessions of the period for the CSV export (the dashboard builds the file)."""
-    reports, db, scope = _report_scope(site, days)
+    reports, db, scope = _report_scope(user, site, days)
     try:
         return reports.sessions(db, site_filter=scope, days=days)
     except Exception as exc:
         logger.exception("Report export failed")
         raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
+# ---- Accounts: who may sign in to the dashboard, and what they see ----
+
+class UserCreatePayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    username: str = Field(min_length=3, max_length=64)
+    role: Literal["admin", "viewer", "customer"]
+    sites: List[str] = Field(default_factory=list, max_length=200)
+    display_name: str = Field(default="", max_length=80)
+
+
+class UserUpdatePayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    role: Optional[Literal["admin", "viewer", "customer"]] = None
+    sites: Optional[List[str]] = Field(default=None, max_length=200)
+    display_name: Optional[str] = Field(default=None, max_length=80)
+    disabled: Optional[bool] = None
+
+
+def _user_out(user: dict) -> dict:
+    out = {key: value for key, value in user.items() if key not in ("password_hash", "username_lower")}
+    for key in ("created_at", "last_login_at", "password_changed_at"):
+        value = out.get(key)
+        if isinstance(value, datetime):
+            out[key] = int((value if value.tzinfo else value.replace(tzinfo=timezone.utc)).timestamp() * 1000)
+    out["sites"] = list(out.get("sites") or [])
+    return out
+
+
+def _check_sites(site_ids) -> None:
+    unknown = [site_id for site_id in site_ids or [] if not sites.registry.get(site_id)]
+    if unknown:
+        raise HTTPException(status_code=422, detail="Website không tồn tại: " + ", ".join(unknown))
+
+
+def _same_account(admin: dict, username: str) -> bool:
+    return admin.get("username", "").lower() == username.lower()
+
+
+def _account_call(fn, *args):
+    try:
+        return fn(*args)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
+
+
+@app.get("/api/v1/users")
+def list_accounts(_admin=Depends(require_admin)):
+    return {"users": [_user_out(user) for user in _account_call(auth.list_users)]}
+
+
+@app.post("/api/v1/users", status_code=201)
+def create_account(payload: UserCreatePayload, _admin=Depends(require_admin)):
+    """New account with a temporary password, returned once; its owner must change it."""
+    _check_sites(payload.sites)
+    if auth.find_user(payload.username, use_cache=False):
+        raise HTTPException(status_code=409, detail="Tên đăng nhập đã tồn tại")
+    password = auth.generate_password()
+    try:
+        _account_call(lambda: auth.create_user(
+            payload.username, password, payload.role, sites=payload.sites,
+            display_name=payload.display_name, must_change_password=True))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # A concurrent request created the same name (unique index).
+        raise HTTPException(status_code=409, detail="Tên đăng nhập đã tồn tại") from exc
+    user = auth.find_user(payload.username, use_cache=False)
+    return {"user": _user_out(user), "password": password}
+
+
+@app.patch("/api/v1/users/{username}")
+def update_account(username: str, payload: UserUpdatePayload, admin=Depends(require_admin)):
+    target = auth.find_user(username, use_cache=False)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("sites") is not None:
+        _check_sites(changes["sites"])
+    leaves_admin = target.get("role") == "admin" and (
+        changes.get("role") not in (None, "admin") or changes.get("disabled") is True)
+    if leaves_admin and _same_account(admin, username):
+        raise HTTPException(status_code=409, detail="Không thể tự hạ quyền hoặc khóa chính mình")
+    if leaves_admin and _account_call(auth.active_admins, username) == 0:
+        raise HTTPException(status_code=409, detail="Phải còn ít nhất một quản trị viên đang hoạt động")
+    return {"user": _user_out(_account_call(auth.update_user, username, changes))}
+
+
+@app.post("/api/v1/users/{username}/reset-password")
+def reset_account_password(username: str, admin=Depends(require_admin)):
+    """New temporary password (shown once); the account's open sessions end."""
+    if _same_account(admin, username):
+        raise HTTPException(status_code=409, detail="Đổi mật khẩu của chính mình ở trang Tài khoản")
+    return {"username": username, "password": _account_call(auth.reset_password, username)}
+
+
+@app.delete("/api/v1/users/{username}")
+def delete_account(username: str, admin=Depends(require_admin)):
+    target = auth.find_user(username, use_cache=False)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản")
+    if _same_account(admin, username):
+        raise HTTPException(status_code=409, detail="Không thể xóa chính mình")
+    if target.get("role") == "admin" and _account_call(auth.active_admins, username) == 0:
+        raise HTTPException(status_code=409, detail="Phải còn ít nhất một quản trị viên đang hoạt động")
+    _account_call(auth.delete_user, username)
+    return {"status": "deleted", "username": username}

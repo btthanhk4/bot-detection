@@ -410,6 +410,7 @@ là số khách online (5 phút), số phiên 24 giờ, tỉ lệ phân loại, 
 | `POST` / `PATCH` / `DELETE` | `/api/v1/sites[/{site_id}]` | Thêm, sửa, tạm dừng, xóa website (quyền quản trị) |
 | `GET` | `/api/v1/reports/summary?days=1\|7\|30&site=` | Báo cáo kỳ: tổng theo kết luận, lý do, IP/quốc gia/nhà mạng của bot |
 | `GET` | `/api/v1/reports/sessions?days=&site=` | Phiên trong kỳ để dashboard xuất CSV (tối đa 50.000) |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/api/v1/users[/{username}]`, `POST /api/v1/users/{username}/reset-password` | Quản lý tài khoản (quyền quản trị) |
 
 Các endpoint giám sát (`stats/summary`, `traffic/timeline`, `telemetry/recent`, `research/traffic`,
 `live`, `live/online`) nhận thêm `?site=<site_id>`, hoặc `?site=_none` cho phiên chưa gán website.
@@ -488,6 +489,25 @@ Cách gán phiên:
 - **Tạm dừng** từ chối dữ liệu của website mà không cần khách hàng gỡ mã. **Xóa** chỉ bỏ website
   khỏi danh sách; phiên đã ghi vẫn giữ.
 - Tài khoản chỉ xem thấy danh sách và mã cài đặt, không thêm, sửa hay xóa được.
+
+### Tài khoản và phân quyền
+
+Trang **Người dùng** (chỉ quản trị viên) tạo và quản lý tài khoản đăng nhập dashboard:
+
+| Vai trò | Xem | Sửa |
+|---|---|---|
+| Quản trị viên | Mọi website | Website, tài khoản, xóa phiên |
+| Nhân viên | Mọi website | Không |
+| Khách hàng | Chỉ các website được giao (Tổng quan, Live View, Báo cáo, Website) | Không |
+
+- Tài khoản mới và tài khoản được đặt lại mật khẩu dùng **mật khẩu tạm** do hệ thống sinh, chỉ hiện một
+  lần (kèm nút sao chép để gửi). Chủ tài khoản phải đổi mật khẩu trước khi xem được dữ liệu.
+- Giới hạn website được áp ở máy chủ: mọi endpoint đọc dữ liệu tự lọc theo website của khách; hỏi website
+  khác trả 403, phiên của website khác trả 404. Khách không thấy số thứ tự traffic toàn hệ thống và các
+  thông số nội bộ (độ trễ, policy, mẫu cảm ứng).
+- Khóa tài khoản hoặc đặt lại mật khẩu sẽ đăng xuất mọi phiên của tài khoản đó trong vòng 10 giây.
+- Không tự hạ quyền, tự khóa hay tự xóa chính mình, và luôn còn ít nhất một quản trị viên đang hoạt động.
+- Quản trị viên đầu tiên vẫn tạo bằng `python -m api_service.manage create-admin --username <tên>`.
 
 `BOT_PUBLIC_API_URL` là địa chỉ đặt trong đoạn mã cài đặt (mặc định trong `docker-compose.yml`:
 `https://api.datacat.io.vn`).

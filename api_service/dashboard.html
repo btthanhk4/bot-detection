@@ -2153,6 +2153,20 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .snippet-domains { margin-top: 14px; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 body.read-only .admin-only { display: none !important; }
 
+/* Accounts */
+body.role-customer .staff-only { display: none !important; }
+body.must-change .nav-item:not([data-view="account"]), body.must-change .site-picker, body.must-change .nav-section { display: none !important; }
+/* Traffic numbers count every website's sessions: not shown to a customer. */
+body.role-customer .traffic-table th:first-child, body.role-customer .traffic-table td:first-child { display: none; }
+.must-change-note { padding: 12px 16px; border-radius: var(--radius); background: color-mix(in srgb, var(--fill-suspect) 20%, var(--bg-card)); color: var(--text-primary); font-size: 13.5px; font-weight: 550; }
+.user-sites { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 6px; }
+.user-sites legend { padding: 0 4px; font-size: 13px; color: var(--text-secondary); }
+.user-sites label { display: flex !important; align-items: center; gap: 8px; margin: 4px 0 !important; font-size: 13px; color: var(--text-primary) !important; cursor: pointer; }
+.user-sites input { width: auto !important; accent-color: var(--brand); }
+.user-sites .field-hint { display: block; }
+.role-chip { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 12px; font-weight: 550; background: var(--bg-secondary); color: var(--text-secondary); white-space: nowrap; }
+.role-chip.admin { background: var(--brand-soft); color: var(--text-primary); }
+
 /* Reports */
 .report-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
 .report-period { display: inline-flex; padding: 2px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-card); }
@@ -2262,6 +2276,7 @@ body.read-only .admin-only { display: none !important; }
   <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
   <symbol id="icon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
   <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="icon-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
   <symbol id="icon-file-chart" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-1"/><path d="M12 18v-6"/><path d="M16 18v-3"/></symbol>
   <symbol id="icon-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
   <symbol id="icon-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
@@ -2277,7 +2292,8 @@ body.read-only .admin-only { display: none !important; }
     <a class="nav-item" href="#reports" data-view="reports"><svg class="ui-icon"><use href="#icon-file-chart"></use></svg>Báo cáo</a>
     <div class="nav-section">Quản trị</div>
     <a class="nav-item" href="#sites" data-view="sites"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Website</a>
-    <a class="nav-item" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
+    <a class="nav-item admin-only" href="#users" data-view="users"><svg class="ui-icon"><use href="#icon-users"></use></svg>Người dùng</a>
+    <a class="nav-item staff-only" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
     <a class="nav-item" href="#account" data-view="account"><svg class="ui-icon"><use href="#icon-user"></use></svg>Tài khoản</a>
   </nav>
   <div class="sidebar-foot">
@@ -2285,7 +2301,7 @@ body.read-only .admin-only { display: none !important; }
       <span class="status-dot" id="statusDot"></span>
       <span id="statusText">All Models Online</span>
     </div>
-    <div class="sidebar-meta" id="sidebarMeta">Policy -- · Bundle --</div>
+    <div class="sidebar-meta staff-only" id="sidebarMeta">Policy -- · Bundle --</div>
   </div>
 </aside>
 <div class="sidebar-scrim" id="sidebarScrim"></div>
@@ -2362,7 +2378,7 @@ body.read-only .admin-only { display: none !important; }
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
     </div>
-    <div class="kpi-card blue animate-in">
+    <div class="kpi-card blue animate-in staff-only">
       <div class="kpi-icon"><svg class="ui-icon"><use href="#icon-gauge"></use></svg></div>
       <div class="kpi-label">Độ trễ suy luận</div>
       <div class="kpi-value" id="kpiAvgLatency">--</div>
@@ -2644,6 +2660,22 @@ body.read-only .admin-only { display: none !important; }
     </div>
   </section>
 
+  <section class="view" id="view-users" data-title="Người dùng" hidden>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-users"></use></svg>Tài khoản đăng nhập</div>
+        <button class="btn-primary btn-compact" type="button" onclick="openUserDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm tài khoản</button>
+      </div>
+      <div class="table-scroll">
+        <table class="sites-table" id="usersTable">
+          <thead><tr><th>Tài khoản</th><th>Vai trò</th><th>Được xem</th><th>Trạng thái</th><th>Đăng nhập gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
+          <tbody id="usersBody"><tr><td colspan="6" class="empty-state">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="report-note"><b>Khách hàng</b> chỉ xem được Tổng quan, Live View, Báo cáo và Website của các website được giao, không sửa được gì. <b>Nhân viên</b> xem được mọi website. <b>Quản trị viên</b> có toàn quyền. Tài khoản mới dùng mật khẩu tạm và phải đổi ở lần đăng nhập đầu.</p>
+  </section>
+
   <section class="view" id="view-system" data-title="Hệ thống" hidden>
     <div class="sys-grid" id="sysGrid">
       <div class="sys-card"><span class="sys-label">Dịch vụ</span><strong id="sysStatus">--</strong><small id="sysStatusNote">--</small></div>
@@ -2674,6 +2706,7 @@ body.read-only .admin-only { display: none !important; }
   </section>
 
   <section class="view" id="view-account" data-title="Tài khoản" hidden>
+    <div class="must-change-note" id="mustChangeNote" hidden role="status">Bạn đang dùng mật khẩu tạm. Hãy đặt mật khẩu mới để bắt đầu sử dụng DATACAT.</div>
     <div class="account-grid">
       <div class="panel account-card">
         <div class="account-head"><span class="user-avatar large" id="accAvatar">A</span>
@@ -2933,6 +2966,36 @@ body.read-only .admin-only { display: none !important; }
     <p class="snippet-domains" id="snippetDomains"></p>
   </div>
   <div class="label-actions"><button type="button" onclick="document.getElementById('snippetDialog').close()">Đóng</button></div>
+</dialog>
+
+<dialog id="userDialog" class="label-dialog" aria-labelledby="userDialogTitle">
+  <form id="userForm" onsubmit="saveUser(event)" novalidate>
+    <h2 id="userDialogTitle">Thêm tài khoản</h2>
+    <label>Tên đăng nhập<input id="userLogin" maxlength="64" autocomplete="off" spellcheck="false" placeholder="vd. ten@congty.vn" aria-describedby="userNameHint">
+      <small class="field-hint" id="userNameHint">3–64 ký tự: chữ, số, . _ - @. Dùng email của khách cho dễ nhớ.</small></label>
+    <label>Tên hiển thị<input id="userDisplay" maxlength="80" autocomplete="off" placeholder="vd. Anh Minh – Cửa hàng ABC"></label>
+    <label>Vai trò<select id="acctRole">
+        <option value="customer">Khách hàng – chỉ xem website được giao</option>
+        <option value="viewer">Nhân viên – xem mọi website</option>
+        <option value="admin">Quản trị viên – toàn quyền</option>
+      </select></label>
+    <fieldset class="user-sites" id="userSitesField">
+      <legend>Website được xem</legend>
+      <div id="userSites"></div>
+    </fieldset>
+    <p id="userError" class="form-msg err" role="alert"></p>
+    <div class="label-actions"><button type="button" onclick="document.getElementById('userDialog').close()">Hủy</button><button type="submit" id="userSave">Lưu</button></div>
+  </form>
+</dialog>
+
+<dialog id="credDialog" class="label-dialog" aria-labelledby="credTitle">
+  <h2 id="credTitle">Thông tin đăng nhập</h2>
+  <p class="connect-lead">Mật khẩu tạm chỉ hiện một lần. Gửi cho người dùng qua kênh riêng (Zalo, email); họ sẽ phải đổi mật khẩu khi đăng nhập lần đầu.</p>
+  <div class="snippet-box">
+    <code id="credText" class="is-config"></code>
+    <button type="button" class="btn-secondary" id="credCopy" onclick="copyCredentials()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg><span>Sao chép để gửi</span></button>
+  </div>
+  <div class="label-actions"><button type="button" onclick="document.getElementById('credDialog').close()">Đã lưu, đóng</button></div>
 </dialog>
 
 <script>
@@ -5698,12 +5761,164 @@ window.addEventListener('afterprint', () => {
   if (typeof applyChartTheme === 'function') applyChartTheme();
 });
 
+// ──── Accounts (administrators) ────
+let usersData = [];
+let editingUser = null;
+
+function userSitesText(user) {
+  if (user.role !== 'customer') return '<span class="muted">Mọi website</span>';
+  return (user.sites || []).map(id => `<span class="domain-chip">${escapeHtml(siteLabel(id))}</span>`).join(' ') || '--';
+}
+
+function renderUsers() {
+  const me = currentUser ? currentUser.username.toLowerCase() : '';
+  document.getElementById('usersBody').innerHTML = usersData.length ? usersData.map(user => {
+    const self = user.username.toLowerCase() === me;
+    const name = escapeHtml(user.username);
+    const state = user.disabled ? ['Đã khóa', 'verdict-bot'] : user.must_change_password ? ['Chờ đổi mật khẩu', 'verdict-suspect'] : ['Hoạt động', 'verdict-human'];
+    return `<tr>
+      <td class="site-name"><strong>${name}${self ? ' <span class="muted">(bạn)</span>' : ''}</strong>${user.display_name ? `<span class="site-sub">${escapeHtml(user.display_name)}</span>` : ''}</td>
+      <td data-label="Vai trò"><span class="role-chip ${user.role}">${ROLE_LABELS[user.role] || user.role}</span></td>
+      <td class="site-domains" data-label="Được xem"><div class="domain-list">${userSitesText(user)}</div></td>
+      <td data-label="Trạng thái"><span class="verdict-badge ${state[1]}">${state[0]}</span></td>
+      <td data-label="Đăng nhập gần nhất">${user.last_login_at ? `<span title="${escapeHtml(formatDateTime(user.last_login_at))}">${relativeTime(user.last_login_at)}</span>` : '<span class="muted">Chưa đăng nhập</span>'}</td>
+      <td class="site-actions-cell"><div class="site-actions">
+        <button class="label-btn" type="button" data-user-action="edit" data-user="${name}" title="Sửa" aria-label="Sửa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-pencil"></use></svg></button>
+        ${self ? '' : `<button class="label-btn" type="button" data-user-action="reset" data-user="${name}" title="Đặt lại mật khẩu" aria-label="Đặt lại mật khẩu ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-key"></use></svg></button>
+        <button class="label-btn" type="button" data-user-action="toggle" data-user="${name}" title="${user.disabled ? 'Mở khóa' : 'Khóa'}" aria-label="${user.disabled ? 'Mở khóa' : 'Khóa'} ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-${user.disabled ? 'play' : 'pause'}"></use></svg></button>
+        <button class="label-btn danger" type="button" data-user-action="delete" data-user="${name}" title="Xóa" aria-label="Xóa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>`}
+      </div></td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty-state">Chưa có tài khoản</td></tr>';
+}
+
+async function loadUsers() {
+  if (!sitesData) await loadSites();
+  const data = await fetchJSON(API_BASE + '/api/v1/users');
+  if (!data || !Array.isArray(data.users)) {
+    document.getElementById('usersBody').innerHTML = '<tr><td colspan="6" class="empty-state">Không tải được danh sách tài khoản</td></tr>';
+    return;
+  }
+  usersData = data.users;
+  renderUsers();
+}
+
+function renderUserSites(selected) {
+  const list = (sitesData && sitesData.sites) || [];
+  document.getElementById('userSites').innerHTML = list.length ? list.map(site => `<label><input type="checkbox" value="${escapeHtml(site.site_id)}" ${selected.includes(site.site_id) ? 'checked' : ''}>${escapeHtml(site.name)} <span class="muted">${escapeHtml(site.origins.map(o => o.replace(/^https:\/\//, '')).join(', '))}</span></label>`).join('')
+    : '<small class="field-hint">Chưa có website nào. Thêm website trước ở trang Website.</small>';
+}
+
+function syncUserSitesField() {
+  document.getElementById('userSitesField').hidden = document.getElementById('acctRole').value !== 'customer';
+}
+
+function openUserDialog(user = null) {
+  editingUser = user ? user.username : null;
+  setText('userDialogTitle', user ? 'Sửa tài khoản' : 'Thêm tài khoản');
+  const name = document.getElementById('userLogin');
+  name.value = user ? user.username : '';
+  name.disabled = Boolean(user);
+  document.getElementById('userDisplay').value = user ? user.display_name || '' : '';
+  document.getElementById('acctRole').value = user ? user.role : 'customer';
+  renderUserSites(user ? user.sites || [] : (selectedSite && selectedSite !== '_none' ? [selectedSite] : []));
+  syncUserSitesField();
+  setText('userError', '');
+  document.getElementById('userDialog').showModal();
+  (user ? document.getElementById('userDisplay') : name).focus();
+}
+document.getElementById('acctRole').addEventListener('change', syncUserSitesField);
+
+function showCredentials(username, password, title) {
+  setText('credTitle', title);
+  const loginUrl = window.location.origin + '/login';
+  document.getElementById('credText').textContent =
+    `Địa chỉ: ${loginUrl}\nTên đăng nhập: ${username}\nMật khẩu tạm: ${password}\n(Hệ thống sẽ yêu cầu đổi mật khẩu ở lần đăng nhập đầu.)`;
+  document.querySelector('#credCopy span').textContent = 'Sao chép để gửi';
+  document.getElementById('credDialog').showModal();
+}
+
+async function copyCredentials() {
+  const label = document.querySelector('#credCopy span');
+  try {
+    await navigator.clipboard.writeText(document.getElementById('credText').textContent);
+    label.textContent = 'Đã sao chép';
+  } catch (e) {
+    window.getSelection().selectAllChildren(document.getElementById('credText'));
+    label.textContent = 'Đã chọn, nhấn Ctrl+C';
+  }
+}
+
+async function userRequest(path, method, body) {
+  try {
+    const res = await fetch(API_BASE + path, {
+      method, headers: { ...CSRF_HEADERS, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (handleUnauthorized(res)) return null;
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = typeof result.detail === 'string' ? result.detail
+        : 'Thông tin chưa hợp lệ: kiểm tra tên đăng nhập (3–64 ký tự: chữ, số, . _ - @)';
+      return { error: detail };
+    }
+    return result;
+  } catch (e) {
+    return { error: 'Không kết nối được máy chủ' };
+  }
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  const role = document.getElementById('acctRole').value;
+  const chosen = [...document.querySelectorAll('#userSites input:checked')].map(box => box.value);
+  const username = document.getElementById('userLogin').value.trim();
+  if (!editingUser && !/^[A-Za-z0-9_.@-]{3,64}$/.test(username)) { setText('userError', 'Tên đăng nhập gồm 3–64 ký tự: chữ, số, . _ - @'); return; }
+  if (role === 'customer' && !chosen.length) { setText('userError', 'Chọn ít nhất một website cho khách hàng'); return; }
+  const body = { role, sites: chosen, display_name: document.getElementById('userDisplay').value.trim() };
+  const button = document.getElementById('userSave');
+  button.disabled = true;
+  const result = editingUser
+    ? await userRequest('/api/v1/users/' + encodeURIComponent(editingUser), 'PATCH', body)
+    : await userRequest('/api/v1/users', 'POST', { username, ...body });
+  button.disabled = false;
+  if (!result) return;
+  if (result.error) { setText('userError', result.error); return; }
+  document.getElementById('userDialog').close();
+  await loadUsers();
+  if (!editingUser) showCredentials(result.user.username, result.password, 'Đã tạo tài khoản ' + result.user.username);
+}
+
+document.getElementById('usersBody').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-user-action]');
+  if (!button) return;
+  const user = usersData.find(u => u.username === button.dataset.user);
+  if (!user) return;
+  const action = button.dataset.userAction;
+  const path = '/api/v1/users/' + encodeURIComponent(user.username);
+  let result = null;
+  if (action === 'edit') return openUserDialog(user);
+  if (action === 'reset') {
+    if (!confirm(`Đặt lại mật khẩu cho ${user.username}? Mật khẩu cũ và mọi phiên đăng nhập của tài khoản này hết hiệu lực ngay.`)) return;
+    result = await userRequest(path + '/reset-password', 'POST');
+    if (result && !result.error) showCredentials(user.username, result.password, 'Mật khẩu mới của ' + user.username);
+  } else if (action === 'toggle') {
+    if (!user.disabled && !confirm(`Khóa ${user.username}? Tài khoản này bị đăng xuất và không đăng nhập được cho đến khi mở khóa.`)) return;
+    result = await userRequest(path, 'PATCH', { disabled: !user.disabled });
+  } else if (action === 'delete') {
+    if (!confirm(`Xóa tài khoản ${user.username}? Không thể hoàn tác.`)) return;
+    result = await userRequest(path, 'DELETE');
+  }
+  if (result && result.error) alert(result.error);
+  await loadUsers();
+});
+
 // ──── App shell: views, user, account ────
-const VIEWS = ['overview', 'live', 'reports', 'sites', 'system', 'account'];
+const VIEWS = ['overview', 'live', 'reports', 'sites', 'users', 'system', 'account'];
 let currentUser = null;
 
 function showView(name) {
   if (!VIEWS.includes(name)) name = 'overview';
+  if (!viewAllowed(name)) name = currentUser && currentUser.must_change_password ? 'account' : 'overview';
   VIEWS.forEach(v => { document.getElementById('view-' + v).hidden = v !== name; });
   document.querySelectorAll('.nav-item').forEach(a => {
     const active = a.dataset.view === name;
@@ -5719,6 +5934,7 @@ function showView(name) {
   if (name === 'live') startLive(); else stopLive();
   if (name === 'sites') startSites(); else stopSites();
   if (name === 'reports') loadReport();
+  if (name === 'users') loadUsers();
   syncSitePicker();
 }
 
@@ -5743,7 +5959,7 @@ userChip.addEventListener('click', (event) => {
 document.addEventListener('click', () => { userDropdown.hidden = true; userChip.setAttribute('aria-expanded', 'false'); });
 userDropdown.addEventListener('click', () => { userDropdown.hidden = true; });
 
-const ROLE_LABELS = { admin: 'Quản trị viên', viewer: 'Chỉ xem' };
+const ROLE_LABELS = { admin: 'Quản trị viên', viewer: 'Nhân viên', customer: 'Khách hàng' };
 
 async function loadCurrentUser() {
   const user = await fetchJSON(API_BASE + '/api/v1/auth/me');
@@ -5757,8 +5973,23 @@ async function loadCurrentUser() {
   setText('accName', user.username);
   setText('accRole', ROLE_LABELS[user.role] || user.role);
   setText('accSession', 'Tự hết hạn sau ' + user.session_hours + ' giờ');
-  setText('accScope', user.role === 'admin' ? 'Xem dữ liệu, gán nhãn, xóa phiên' : 'Chỉ xem dữ liệu');
-  if (user.role !== 'admin') document.body.classList.add('read-only');
+  setText('accScope', user.role === 'admin' ? 'Toàn quyền: website, tài khoản, xóa phiên'
+    : user.role === 'customer' ? 'Chỉ xem: ' + (user.sites || []).map(site => site.name).join(', ')
+      : 'Xem dữ liệu mọi website');
+  document.body.classList.toggle('read-only', user.role !== 'admin');
+  document.body.classList.toggle('role-customer', user.role === 'customer');
+  document.body.classList.toggle('must-change', Boolean(user.must_change_password));
+  document.getElementById('mustChangeNote').hidden = !user.must_change_password;
+  showView(currentViewFromHash());
+}
+
+// Views an account may open; anything else falls back to the overview.
+function viewAllowed(name) {
+  if (!currentUser) return true;
+  if (currentUser.must_change_password) return name === 'account';
+  if (name === 'users') return currentUser.role === 'admin';
+  if (name === 'system') return currentUser.role !== 'customer';
+  return true;
 }
 
 async function logout() {
@@ -5786,6 +6017,8 @@ document.getElementById('passwordForm').addEventListener('submit', async (event)
     if (res.ok) {
       setMsg('Đã đổi mật khẩu. Các phiên đăng nhập khác sẽ bị đăng xuất.', true);
       event.target.reset();
+      // A temporary password is gone: open the dashboard.
+      if (currentUser && currentUser.must_change_password) setTimeout(() => { window.location.hash = '#overview'; window.location.reload(); }, 900);
     } else {
       setMsg(typeof body.detail === 'string' ? body.detail : 'Không đổi được mật khẩu', false);
     }
