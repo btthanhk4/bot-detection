@@ -408,6 +408,8 @@ là số khách online (5 phút), số phiên 24 giờ, tỉ lệ phân loại, 
 | `GET` | `/api/v1/traffic/timeline` | Lưu lượng phân loại theo khoảng thời gian |
 | `GET` | `/api/v1/sites` | Danh sách website, trạng thái cài đặt, traffic 24 giờ (quyền xem) |
 | `POST` / `PATCH` / `DELETE` | `/api/v1/sites[/{site_id}]` | Thêm, sửa, tạm dừng, xóa website (quyền quản trị) |
+| `GET` | `/api/v1/reports/summary?days=1\|7\|30&site=` | Báo cáo kỳ: tổng theo kết luận, lý do, IP/quốc gia/nhà mạng của bot |
+| `GET` | `/api/v1/reports/sessions?days=&site=` | Phiên trong kỳ để dashboard xuất CSV (tối đa 50.000) |
 
 Các endpoint giám sát (`stats/summary`, `traffic/timeline`, `telemetry/recent`, `research/traffic`,
 `live`, `live/online`) nhận thêm `?site=<site_id>`, hoặc `?site=_none` cho phiên chưa gán website.
@@ -469,6 +471,9 @@ Trang **Website** trên dashboard là nơi đăng ký từng website của khác
    dẫn để gửi khách* sao chép các bước kèm mã dưới dạng văn bản. Trạng thái chuyển từ *Chờ cài đặt*
    sang *Đang nhận dữ liệu* khi có phiên đầu tiên.
 3. **Xem traffic** lọc Tổng quan và Live View theo website; bộ chọn website nằm cạnh tiêu đề trang.
+4. Trang **Báo cáo** (24 giờ, 7 hoặc 30 ngày, theo website): tỉ lệ người thật/bot/nghi vấn, biểu đồ theo
+   ngày, lý do bị đánh dấu, bot theo quốc gia và nhà mạng, IP bot nhiều nhất (sao chép để chặn), tải CSV
+   và in/lưu PDF để gửi khách.
 
 Cách gán phiên:
 

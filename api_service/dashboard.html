@@ -1174,23 +1174,21 @@ body::before { display: none; }
 .traffic-table th:nth-child(2),
 .traffic-table td:nth-child(2) { width: 90px; }
 .traffic-table th:nth-child(3),
-.traffic-table td:nth-child(3) { width: 150px; }
+.traffic-table td:nth-child(3) { width: 160px; }
 .traffic-table th:nth-child(4),
-.traffic-table td:nth-child(4) { width: 132px; }
+.traffic-table td:nth-child(4) { width: 112px; }
 .traffic-table th:nth-child(5),
 .traffic-table td:nth-child(5) { width: auto; }
 .traffic-table th:nth-child(6),
-.traffic-table td:nth-child(6) { width: 120px; }
+.traffic-table td:nth-child(6) { width: 104px; }
 .traffic-table th:nth-child(7),
-.traffic-table td:nth-child(7) { width: 96px; }
+.traffic-table td:nth-child(7) { width: 112px; }
 .traffic-table th:nth-child(8),
-.traffic-table td:nth-child(8) { width: 112px; }
+.traffic-table td:nth-child(8) { width: 210px; }
 .traffic-table th:nth-child(9),
-.traffic-table td:nth-child(9) { width: 190px; }
+.traffic-table td:nth-child(9) { width: 104px; }
 .traffic-table th:nth-child(10),
-.traffic-table td:nth-child(10) { width: 104px; }
-.traffic-table th:nth-child(11),
-.traffic-table td:nth-child(11) { width: 132px; }
+.traffic-table td:nth-child(10) { width: 132px; }
 .traffic-table th:first-child, .traffic-table td:first-child { position: sticky; left: 0; background: var(--bg-card); z-index: 1; }
 .traffic-table th:last-child, .traffic-table td:last-child { position: sticky; right: 0; background: var(--bg-card); z-index: 1; border-left: 1px solid var(--line); }
 .traffic-table thead th:first-child, .traffic-table thead th:last-child { z-index: 3; background: var(--bg-secondary); }
@@ -1809,7 +1807,7 @@ body.read-only .delete-btn, body.read-only .delete-all-btn, body.read-only .labe
 .bottom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .content-grid > div:last-child { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
 .trajectory-canvas-wrapper { height: 300px; min-height: 0; }
-.traffic-table { min-width: 1240px; }
+.traffic-table { min-width: 1150px; }
 .traffic-table th:nth-child(5), .traffic-table td:nth-child(5) { min-width: 80px; }
 .traffic-table .cell-main { display: block; overflow: hidden; color: var(--text-primary); white-space: nowrap; text-overflow: ellipsis; }
 .traffic-table .reason-text { display: block; overflow: hidden; font-size: 12px; color: var(--text-secondary); white-space: nowrap; text-overflow: ellipsis; }
@@ -2154,6 +2152,47 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .snippet-box code { display: block; width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; overflow-wrap: anywhere; user-select: all; }
 .snippet-domains { margin-top: 14px; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
 body.read-only .admin-only { display: none !important; }
+
+/* Reports */
+.report-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.report-period { display: inline-flex; padding: 2px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-card); }
+.report-period button { height: 28px; padding: 0 12px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.report-period button[aria-pressed="true"] { background: var(--bg-secondary); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.report-period button:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.report-range { font-size: 12.5px; color: var(--text-muted); }
+.report-actions { display: flex; gap: 8px; margin-left: auto; }
+.report-print-head { display: none; }
+.report-chart { height: 280px; padding: 12px 16px 16px; }
+.report-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.report-grid .panel { min-width: 0; }
+.report-list { padding: 8px 10px 12px; }
+.report-list .tag { margin-right: 6px; padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.report-list .tag.bot { background: color-mix(in srgb, var(--fill-bot) 16%, transparent); color: var(--accent-red); }
+.report-list .tag.suspect { background: color-mix(in srgb, var(--fill-suspect) 22%, transparent); color: var(--text-primary); }
+.report-copy { margin-left: auto; }
+.panel-title .panel-badge { margin-left: 8px; }
+.report-ip-scroll { max-height: none; }
+.report-ips td:first-child { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-primary); }
+.report-note { font-size: 12.5px; line-height: 1.6; color: var(--text-muted); }
+@media (max-width: 1100px) { .report-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .report-actions { margin-left: 0; } }
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { background: #fff !important; }
+  .sidebar, .sidebar-scrim, .topbar, .page-header, .report-toolbar, .report-copy, .session-drawer, .alert-banner { display: none !important; }
+  .app-body { margin: 0 !important; padding: 0 !important; }
+  .main { max-width: none; padding: 0 !important; }
+  .report-print-head { display: block; margin-bottom: 4px; }
+  .report-print-head h2 { font-size: 18px; color: #111; }
+  .report-print-head p { font-size: 12px; color: #555; }
+  .kpi-card, .panel { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
+  .kpi-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 8px; }
+  .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .report-grid .panel:first-child { grid-column: 1 / -1; }
+  .report-chart { height: auto; }
+  .report-chart canvas { width: 100% !important; height: auto !important; }
+  .table-scroll { max-height: none !important; overflow: visible !important; }
+}
 @media (max-width: 640px) {
   .page-header { flex-wrap: wrap; }
   .site-picker, .site-picker select { width: 100%; max-width: none; }
@@ -2223,6 +2262,9 @@ body.read-only .admin-only { display: none !important; }
   <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
   <symbol id="icon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
   <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="icon-file-chart" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-1"/><path d="M12 18v-6"/><path d="M16 18v-3"/></symbol>
+  <symbol id="icon-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="icon-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
 </svg>
 
 <!-- ═══════ HEADER ═══════ -->
@@ -2232,6 +2274,7 @@ body.read-only .admin-only { display: none !important; }
     <div class="nav-section">Giám sát</div>
     <a class="nav-item" href="#overview" data-view="overview"><svg class="ui-icon"><use href="#icon-layout"></use></svg>Tổng quan</a>
     <a class="nav-item" href="#live" data-view="live"><svg class="ui-icon"><use href="#icon-globe"></use></svg>Live View</a>
+    <a class="nav-item" href="#reports" data-view="reports"><svg class="ui-icon"><use href="#icon-file-chart"></use></svg>Báo cáo</a>
     <div class="nav-section">Quản trị</div>
     <a class="nav-item" href="#sites" data-view="sites"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Website</a>
     <a class="nav-item" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
@@ -2381,7 +2424,6 @@ body.read-only .admin-only { display: none !important; }
               <th>IP</th>
               <th>Thiết bị</th>
               <th>Trang</th>
-              <th title="Kênh đưa khách tới: tham số utm, mã quảng cáo hoặc trang giới thiệu">Nguồn</th>
               <th title="Từ lần gửi dữ liệu đầu tiên tới lần gần nhất của phiên">Thời lượng</th>
               <th>Kết luận</th>
               <th>Lý do</th>
@@ -2390,7 +2432,7 @@ body.read-only .admin-only { display: none !important; }
             </tr>
           </thead>
           <tbody id="trafficBody">
-            <tr><td colspan="11" class="empty-state">Chưa có lượt truy cập</td></tr>
+            <tr><td colspan="10" class="empty-state">Chưa có lượt truy cập</td></tr>
           </tbody>
         </table>
       </div>
@@ -2538,6 +2580,51 @@ body.read-only .admin-only { display: none !important; }
       </div>
     </div>
   </section>
+  <section class="view" id="view-reports" data-title="Báo cáo" hidden>
+    <div class="report-toolbar">
+      <div class="report-period" id="reportPeriod" role="group" aria-label="Kỳ báo cáo">
+        <button type="button" data-days="1" aria-pressed="false">24 giờ</button>
+        <button type="button" data-days="7" aria-pressed="true">7 ngày</button>
+        <button type="button" data-days="30" aria-pressed="false">30 ngày</button>
+      </div>
+      <span class="report-range" id="reportRange"></span>
+      <div class="report-actions">
+        <button class="btn-secondary btn-compact" type="button" id="reportCsv" onclick="exportReportCsv()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>Tải CSV</span></button>
+        <button class="btn-primary btn-compact" type="button" onclick="printReport()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-printer"></use></svg>In / Lưu PDF</button>
+      </div>
+    </div>
+    <div class="report-print-head"><h2 id="reportTitle">Báo cáo lưu lượng</h2><p id="reportSub"></p></div>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Tổng phiên</div><div class="kpi-value" id="repTotal">--</div><div class="kpi-extra">Phiên bắt đầu trong kỳ</div></div>
+      <div class="kpi-card"><div class="kpi-label">Người thật</div><div class="kpi-value" id="repHuman">--</div><div class="kpi-extra" id="repHumanPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Bot</div><div class="kpi-value" id="repBot">--</div><div class="kpi-extra" id="repBotPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Nghi vấn</div><div class="kpi-value" id="repSuspect">--</div><div class="kpi-extra" id="repSuspectPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label">Chưa đủ dữ liệu</div><div class="kpi-value" id="repPending">--</div><div class="kpi-extra" id="repPendingPct">--</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-chart-column"></use></svg><span id="reportChartTitle">Lưu lượng theo ngày</span></div></div>
+      <div class="report-chart"><canvas id="reportChart" role="img" aria-label="Biểu đồ lưu lượng theo kết luận"></canvas></div>
+    </div>
+    <div class="report-grid">
+      <div class="panel"><div class="panel-header"><div class="panel-title">Vì sao bị đánh dấu</div></div><ol class="live-list report-list" id="reportReasons"></ol></div>
+      <div class="panel"><div class="panel-header"><div class="panel-title">Bot theo quốc gia</div></div><ol class="live-list report-list" id="reportCountries"></ol></div>
+      <div class="panel"><div class="panel-header"><div class="panel-title">Bot theo nhà mạng</div></div><ol class="live-list report-list" id="reportNetworks"></ol></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">IP bot nhiều nhất<span class="panel-badge badge-count" id="reportIpCount"></span></div>
+        <button class="btn-secondary btn-compact report-copy" type="button" id="reportCopyIps" onclick="copyReportIps()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg><span>Sao chép danh sách IP</span></button>
+      </div>
+      <div class="table-scroll report-ip-scroll">
+        <table class="sites-table report-ips">
+          <thead><tr><th>IP</th><th>Vị trí</th><th>Nhà mạng</th><th class="num">Phiên bot</th><th>Lần cuối</th></tr></thead>
+          <tbody id="reportIps"><tr><td colspan="5" class="empty-state">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <p class="report-note"><b>Bot</b>: có bằng chứng tự động hóa rõ ràng. <b>Nghi vấn</b>: có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot, không nên chặn chỉ vì nhãn này. <b>Chưa đủ dữ liệu</b>: khách rời trang trước khi có đủ thao tác để đánh giá. Số liệu tính trên các phiên bắt đầu trong kỳ.</p>
+  </section>
+
   <section class="view" id="view-sites" data-title="Website" hidden>
     <div class="panel">
       <div class="panel-header">
@@ -3277,46 +3364,19 @@ function formatPageLabel(pageUrl) {
   }
 }
 
-// "Chrome · Windows" from the user agent the browser reported (or the server saw).
+// Operating system and kind of device from the user agent the browser reported (or the server saw).
 function describeDevice(s) {
   const ua = String((s.fingerprint || {}).userAgent || s.user_agent || '');
-  if (!ua) return { browser: '--', os: '' };
-  const browsers = [[/coc_coc_browser/i, 'Cốc Cốc'], [/Edg(A|iOS)?\//, 'Edge'], [/OPR\/|Opera/, 'Opera'],
-    [/SamsungBrowser/, 'Samsung Internet'], [/Zalo/i, 'Zalo'], [/FBAN|FBAV|FB_IAB/, 'Facebook'],
-    [/Instagram/, 'Instagram'], [/TikTok|musical_ly|BytedanceWebview/i, 'TikTok'], [/HeadlessChrome/, 'HeadlessChrome'],
-    [/CriOS|Chrome\//, 'Chrome'], [/FxiOS|Firefox\//, 'Firefox'], [/Safari\//, 'Safari'],
-    [/curl|python|wget|okhttp|go-http|java|axios|node-fetch|scrapy/i, 'Công cụ HTTP']];
-  const systems = [[/iPhone/, 'iPhone'], [/iPad/, 'iPad'], [/Android/, 'Android'], [/Windows/, 'Windows'],
-    [/Mac OS X|Macintosh/, 'macOS'], [/CrOS/, 'ChromeOS'], [/Linux/, 'Linux']];
-  const pick = (list) => (list.find(([re]) => re.test(ua)) || [null, ''])[1];
-  return { browser: pick(browsers) || 'Khác', os: pick(systems) };
-}
-
-const SOURCE_NAMES = [[/(^|\.)google\./, 'Google'], [/(^|\.)(facebook|fb)\.com$|^l\.facebook|^lm\.facebook/, 'Facebook'],
-  [/zalo/, 'Zalo'], [/tiktok/, 'TikTok'], [/youtube|youtu\.be/, 'YouTube'], [/instagram/, 'Instagram'],
-  [/bing\./, 'Bing'], [/coccoc\.com/, 'Cốc Cốc'], [/shopee/, 'Shopee'], [/(^|\.)t\.co$|twitter|x\.com$/, 'X']];
-
-// Where the visitor came from: utm/ad click ids first, then the referring site.
-function trafficSource(s) {
-  let page = null;
-  try { page = new URL(s.pageUrl || '', window.location.origin); } catch (e) { page = null; }
-  const params = page ? page.searchParams : new URLSearchParams();
-  const campaign = params.get('utm_campaign') || '';
-  const utm = params.get('utm_source');
-  if (utm) {
-    const known = SOURCE_NAMES.find(([re]) => re.test(utm.toLowerCase() + '.com'));
-    return { label: known ? known[1] : utm, detail: [params.get('utm_medium'), campaign].filter(Boolean).join(' · ') };
-  }
-  if (params.get('gclid') || params.get('gbraid') || params.get('wbraid')) return { label: 'Google Ads', detail: campaign };
-  if (params.get('fbclid')) return { label: 'Facebook', detail: '' };
-  if (params.get('ttclid')) return { label: 'TikTok', detail: '' };
-  let ref = null;
-  try { ref = s.referrer ? new URL(s.referrer) : null; } catch (e) { ref = null; }
-  if (!ref) return { label: 'Trực tiếp', detail: 'gõ địa chỉ, bookmark hoặc ứng dụng không gửi nguồn' };
-  const host = ref.hostname.replace(/^www\./, '');
-  if (page && host === page.hostname.replace(/^www\./, '')) return { label: 'Trong website', detail: 'chuyển từ trang khác của website' };
-  const known = SOURCE_NAMES.find(([re]) => re.test(host));
-  return { label: known ? known[1] : host, detail: '' };
+  if (!ua) return { os: '--', kind: '' };
+  if (/curl|python|wget|okhttp|go-http|java\/|axios|node-fetch|scrapy|httpie|postman/i.test(ua)) return { os: 'Công cụ HTTP', kind: '' };
+  if (/iPhone|iPod/.test(ua)) return { os: 'iPhone', kind: 'Điện thoại' };
+  if (/iPad/.test(ua)) return { os: 'iPad', kind: 'Máy tính bảng' };
+  if (/Android/.test(ua)) return { os: 'Android', kind: /Mobile/.test(ua) ? 'Điện thoại' : 'Máy tính bảng' };
+  if (/Windows/.test(ua)) return { os: 'Windows', kind: 'Máy tính' };
+  if (/Mac OS X|Macintosh/.test(ua)) return { os: 'macOS', kind: 'Máy tính' };
+  if (/CrOS/.test(ua)) return { os: 'ChromeOS', kind: 'Máy tính' };
+  if (/Linux/.test(ua)) return { os: 'Linux', kind: 'Máy tính' };
+  return { os: 'Khác', kind: '' };
 }
 
 function formatDuration(s) {
@@ -3386,7 +3446,7 @@ function hasApplicableRiskScore(session) {
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Chưa có lượt truy cập</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">Chưa có lượt truy cập</td></tr>`;
     _lastTableHTML = '';
     return;
   }
@@ -3394,7 +3454,7 @@ function renderTrafficTable() {
   const selectedId = selectedSession ? selectedSession.sessionId : null;
   const visible = allSessions.map((s, idx) => [s, idx]).filter(([s]) => sessionMatches(s, trafficQuery));
   if (visible.length === 0) {
-    const empty = `<tr><td colspan="11" class="empty-state">Không có kết quả cho “${escapeHtml(trafficQuery)}”</td></tr>`;
+    const empty = `<tr><td colspan="10" class="empty-state">Không có kết quả cho “${escapeHtml(trafficQuery)}”</td></tr>`;
     if (empty !== _lastTableHTML) { tbody.innerHTML = empty; _lastTableHTML = empty; }
     return;
   }
@@ -3409,7 +3469,6 @@ function renderTrafficTable() {
     const riskAvailable = hasApplicableRiskScore(s);
     const probPct = riskAvailable ? (prob * 100).toFixed(1) : '--';
     const device = describeDevice(s);
-    const source = trafficSource(s);
     const reason = shortReason(s, deferred);
     // Which website, when the table shows all of them.
     const siteName = !selectedSite && s.site_id ? siteLabel(s.site_id) : '';
@@ -3436,9 +3495,8 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(s.traffic_number ?? '--')}</span></td>
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span>${geoShort ? `<span class="geo-text" title="${escapeHtml(geoTitle)}">${escapeHtml(geoShort)}</span>` : ''}</td>
-      <td><span class="cell-main">${escapeHtml(device.browser)}</span>${device.os ? `<span class="geo-text">${escapeHtml(device.os)}</span>` : ''}</td>
+      <td><span class="cell-main">${escapeHtml(device.os)}</span>${device.kind ? `<span class="geo-text">${escapeHtml(device.kind)}</span>` : ''}</td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span>${siteName ? `<span class="geo-text">${escapeHtml(siteName)}</span>` : ''}</td>
-      <td><span class="cell-main" title="${escapeHtml(source.detail || '')}">${escapeHtml(source.label)}</span>${source.detail && source.label !== 'Trực tiếp' && source.label !== 'Trong website' ? `<span class="geo-text" title="${escapeHtml(source.detail)}">${escapeHtml(source.detail)}</span>` : ''}</td>
       <td><span class="time-text">${escapeHtml(formatDuration(s))}</span></td>
       <td><span class="verdict-badge ${verdictClass}" title="${deferred ? 'Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)' : ''}">${verdictLabel}</span></td>
       <td><span class="reason-text" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span></td>
@@ -4524,7 +4582,7 @@ function sessionMatches(s, query) {
   const device = describeDevice(s);
   const haystack = normalizeText([s.traffic_number, s.sessionId, s.client_ip, s.pageUrl, s.verdict,
     geo.city, geo.region, geo.country, geo.country_code, geo.isp, geo.asn && 'AS' + geo.asn,
-    device.browser, device.os, trafficSource(s).label].join(' '));
+    device.os, device.kind].join(' '));
   return terms.every(term => haystack.includes(term));
 }
 const globalSearch = document.getElementById('globalSearch');
@@ -5009,7 +5067,7 @@ function syncSitePicker() {
     `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
   select.value = selectedSite;
   picker.classList.toggle('filtered', Boolean(selectedSite));
-  picker.hidden = !['overview', 'live'].includes(view) || options.length < 2;
+  picker.hidden = !['overview', 'live', 'reports'].includes(view) || options.length < 2;
 }
 
 function changeSiteFilter(value) {
@@ -5028,6 +5086,7 @@ function changeSiteFilter(value) {
   nextSummaryPollAt = 0;
   Promise.resolve(activePoll).then(() => pollAll());
   if (liveActive) { refreshLive(); refreshOnline(); }
+  if (currentViewFromHash() === 'reports') loadReport();
 }
 
 function siteActionButtons(site) {
@@ -5435,8 +5494,212 @@ document.getElementById('unregisteredList').addEventListener('click', (event) =>
   if (button) openSiteDialog(null, button.dataset.origin);
 });
 
+// ──── Reports: one website (or all) over 24 hours, 7 or 30 days ────
+let reportDays = 7;
+let reportData = null;
+let reportChart = null;
+let reportVersion = 0;
+const VERDICT_TEXT = { HUMAN: 'Người thật', BOT: 'Bot', SUSPECT: 'Nghi vấn' };
+
+let regionNames = null;
+try { regionNames = new Intl.DisplayNames(['vi'], { type: 'region' }); } catch (e) { regionNames = null; }
+function countryName(row) {
+  try { return (row.code && regionNames && regionNames.of(row.code)) || row.name; } catch (e) { return row.name; }
+}
+
+function percentOf(part, total) { return total ? (part / total * 100).toFixed(1).replace('.', ',') + '%' : '--'; }
+
+function formatDateTime(ms) { return ms ? new Date(ms).toLocaleString('vi-VN', { hour12: false }) : '--'; }
+
+function initReportChart() {
+  if (reportChart || !window.Chart) return;
+  const bar = (label, colorVar) => ({ label, data: [], backgroundColor: cssVar(colorVar), borderRadius: 3, maxBarThickness: 28 });
+  reportChart = new Chart(document.getElementById('reportChart').getContext('2d'), {
+    type: 'bar',
+    // Order matters: applyChartTheme reads [human, suspect, bot].
+    data: { labels: [], datasets: [bar('Người thật', '--fill-human'), bar('Nghi vấn', '--fill-suspect'), bar('Bot', '--fill-bot')] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { color: cssVar('--chart-tick'), maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } },
+        y: { stacked: true, beginAtZero: true, grid: { color: cssVar('--chart-grid') },
+             ticks: { color: cssVar('--chart-tick'), precision: 0, maxTicksLimit: 6, callback: formatTrafficAxis } },
+      },
+      plugins: {
+        legend: { position: 'top', labels: { color: cssVar('--chart-tick'), usePointStyle: true, boxWidth: 6, font: { family: UI_FONT, size: 11 } } },
+        tooltip: { mode: 'index', intersect: false, backgroundColor: cssVar('--chart-tooltip-bg'), titleColor: cssVar('--chart-tooltip-fg'),
+                   bodyColor: cssVar('--chart-tooltip-muted'), borderColor: cssVar('--line'), borderWidth: 1 },
+      },
+    },
+  });
+}
+
+// Day bars for 7 and 30 days (local midnight to midnight); hour bars for 24 hours.
+async function loadReportChart(version) {
+  const offset = -new Date().getTimezoneOffset();
+  const window_minutes = reportDays === 1 ? 1440 : 43200;
+  const data = await fetchJSON(API_BASE + `/api/v1/traffic/timeline?window_minutes=${window_minutes}&utc_offset_minutes=${offset}` + siteParam('&'));
+  if (version !== reportVersion || !data || !Array.isArray(data.buckets)) return;
+  let buckets = data.buckets;
+  if (reportDays === 1) {
+    const hours = new Map();
+    for (const b of buckets) {
+      const start = Math.floor(b.start / 3600000) * 3600000;
+      const h = hours.get(start) || { start, human: 0, suspect: 0, bot: 0 };
+      h.human += b.human; h.suspect += b.suspect; h.bot += b.bot;
+      hours.set(start, h);
+    }
+    buckets = [...hours.values()].slice(-24);
+  } else {
+    buckets = buckets.slice(-reportDays);
+  }
+  setText('reportChartTitle', reportDays === 1 ? 'Lưu lượng theo giờ' : 'Lưu lượng theo ngày');
+  initReportChart();
+  if (!reportChart) return;
+  reportChart.data.labels = buckets.map(b => reportDays === 1
+    ? new Date(b.start).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : new Date(b.start).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }));
+  const [human, suspect, bot] = reportChart.data.datasets;
+  human.data = buckets.map(b => b.human);
+  suspect.data = buckets.map(b => b.suspect);
+  bot.data = buckets.map(b => b.bot);
+  reportChart.update('none');
+}
+
+function reportListHTML(rows, total, label) {
+  if (!rows.length) return '<li class="live-empty">Không có bot trong kỳ</li>';
+  const max = Math.max(...rows.map(r => r.sessions)) || 1;
+  return rows.map(r => `<li><div class="row"><span class="name" title="${escapeHtml(label(r, true))}">${label(r)}</span>` +
+    `<span class="count">${fmtCount(r.sessions)} · ${percentOf(r.sessions, total)}</span>` +
+    `<span class="bar"><i style="width:${Math.max(2, r.sessions / max * 100)}%"></i></span></div></li>`).join('');
+}
+
+function renderReport(data) {
+  const t = data.totals;
+  setText('repTotal', fmtCount(t.sessions));
+  setText('repHuman', fmtCount(t.human)); setText('repHumanPct', percentOf(t.human, t.sessions));
+  setText('repBot', fmtCount(t.bot)); setText('repBotPct', percentOf(t.bot, t.sessions));
+  setText('repSuspect', fmtCount(t.suspect)); setText('repSuspectPct', percentOf(t.suspect, t.sessions));
+  setText('repPending', fmtCount(t.insufficient)); setText('repPendingPct', percentOf(t.insufficient, t.sessions));
+  const range = formatDateTime(data.period.from) + ' – ' + formatDateTime(data.period.to);
+  setText('reportRange', range);
+  const scope = selectedSite ? siteLabel(selectedSite) : 'Tất cả website';
+  setText('reportTitle', 'Báo cáo lưu lượng · ' + scope);
+  setText('reportSub', `${range} · ${fmtCount(t.sessions)} phiên · DATACAT`);
+
+  const flagged = t.bot + t.suspect;
+  document.getElementById('reportReasons').innerHTML = data.reasons.length ? reportListHTML(data.reasons, flagged, (r, plain) => {
+    const text = shortReason({ verdict: r.verdict, breakdown: { decision_basis: r.decision_basis, automation_rule: r.automation_rule,
+      desktop_risk: { codes: r.code ? [r.code] : [] }, mobile_human: { risk: r.code ? [r.code] : [] } } }, false);
+    return plain ? text : `<span class="tag ${r.verdict === 'BOT' ? 'bot' : 'suspect'}">${VERDICT_TEXT[r.verdict] || r.verdict}</span>${escapeHtml(text)}`;
+  }) : '<li class="live-empty">Không có phiên bị đánh dấu</li>';
+  document.getElementById('reportCountries').innerHTML = reportListHTML(data.bot_countries, t.bot, r => escapeHtml(countryName(r)));
+  document.getElementById('reportNetworks').innerHTML = reportListHTML(data.bot_networks, t.bot, r => escapeHtml(shortIsp(r.name)));
+
+  setText('reportIpCount', data.bot_ip_count ? fmtCount(data.bot_ip_count) + ' IP' + (data.bot_ip_count_capped ? '+' : '') : '');
+  document.getElementById('reportCopyIps').disabled = !data.bot_ips.length;
+  document.getElementById('reportIps').innerHTML = data.bot_ips.length ? data.bot_ips.map(row => `<tr>
+      <td class="site-name">${escapeHtml(row.client_ip)}</td><td data-label="Vị trí">${escapeHtml(formatGeo(row.geo, false) || '--')}</td>
+      <td data-label="Nhà mạng">${escapeHtml(row.geo && row.geo.isp ? shortIsp(row.geo.isp) : '--')}</td>
+      <td class="num" data-label="Phiên bot">${fmtCount(row.sessions)}</td><td data-label="Lần cuối">${row.last_seen ? relativeTime(row.last_seen) : '--'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty-state">Không có bot trong kỳ</td></tr>';
+}
+
+async function loadReport() {
+  const version = ++reportVersion;
+  document.querySelectorAll('#reportPeriod button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.days) === reportDays)));
+  const chart = loadReportChart(version);
+  const data = await fetchJSON(API_BASE + '/api/v1/reports/summary?days=' + reportDays + siteParam('&'));
+  if (version !== reportVersion) return;
+  if (!data || !data.totals) {
+    document.getElementById('reportIps').innerHTML = '<tr><td colspan="5" class="empty-state">Không tải được báo cáo</td></tr>';
+    return;
+  }
+  reportData = data;
+  renderReport(data);
+  await chart;
+}
+
+document.getElementById('reportPeriod').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-days]');
+  if (!button || Number(button.dataset.days) === reportDays) return;
+  reportDays = Number(button.dataset.days);
+  loadReport();
+});
+
+async function copyReportIps() {
+  if (!reportData || !reportData.bot_ips.length) return;
+  const label = document.querySelector('#reportCopyIps span');
+  try {
+    await navigator.clipboard.writeText(reportData.bot_ips.map(row => row.client_ip).join('\n'));
+    label.textContent = `Đã sao chép ${reportData.bot_ips.length} IP`;
+  } catch (e) {
+    label.textContent = 'Không sao chép được';
+  }
+  setTimeout(() => { label.textContent = 'Sao chép danh sách IP'; }, 2500);
+}
+
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\n;]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+
+async function exportReportCsv() {
+  const button = document.getElementById('reportCsv');
+  const label = button.querySelector('span');
+  button.disabled = true;
+  label.textContent = 'Đang tạo…';
+  try {
+    const data = await fetchJSON(API_BASE + '/api/v1/reports/sessions?days=' + reportDays + siteParam('&'));
+    if (!data || !Array.isArray(data.sessions)) { label.textContent = 'Không tải được'; return; }
+    const header = ['Mã phiên', 'Bắt đầu', 'Lần cuối', 'Thời lượng (giây)', 'Website', 'IP', 'Quốc gia', 'Thành phố', 'Nhà mạng',
+      'Thiết bị', 'Loại thiết bị', 'Trang', 'Kết luận', 'Lý do'];
+    const lines = data.sessions.map(row => {
+      const bd = row.breakdown || {};
+      const deferred = bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE';
+      const device = describeDevice(row);
+      const geo = row.geo || {};
+      const seconds = row.created_at && row.updated_at ? Math.round((row.updated_at - row.created_at) / 1000) : '';
+      return [row.sessionId, formatDateTime(row.created_at), formatDateTime(row.updated_at), seconds,
+        row.site_id ? siteLabel(row.site_id) : '', row.client_ip, geo.country, geo.city, geo.isp, device.os, device.kind,
+        row.pageUrl, deferred ? 'Chưa đủ dữ liệu' : (VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict),
+        shortReason(row, deferred)].map(csvCell).join(',');
+    });
+    // The BOM makes Excel read UTF-8 (Vietnamese) correctly.
+    const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    const scope = selectedSite ? (selectedSite === '_none' ? 'chua-gan' : selectedSite) : 'tat-ca';
+    link.href = URL.createObjectURL(blob);
+    link.download = `datacat-${scope}-${reportDays === 1 ? '24h' : reportDays + 'ngay'}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    label.textContent = data.truncated ? `Đã tải ${fmtCount(lines.length)} phiên đầu` : `Đã tải ${fmtCount(lines.length)} phiên`;
+  } finally {
+    button.disabled = false;
+    setTimeout(() => { label.textContent = 'Tải CSV'; }, 3000);
+  }
+}
+
+// Print in the light theme whatever the screen uses, then restore it.
+function printReport() { window.print(); }
+let themeBeforePrint = null;
+window.addEventListener('beforeprint', () => {
+  themeBeforePrint = document.documentElement.dataset.theme || '';
+  document.documentElement.dataset.theme = 'light';
+  if (typeof applyChartTheme === 'function') applyChartTheme();
+  if (reportChart) reportChart.resize();
+});
+window.addEventListener('afterprint', () => {
+  if (themeBeforePrint === null) return;
+  if (themeBeforePrint) document.documentElement.dataset.theme = themeBeforePrint; else delete document.documentElement.dataset.theme;
+  themeBeforePrint = null;
+  if (typeof applyChartTheme === 'function') applyChartTheme();
+});
+
 // ──── App shell: views, user, account ────
-const VIEWS = ['overview', 'live', 'sites', 'system', 'account'];
+const VIEWS = ['overview', 'live', 'reports', 'sites', 'system', 'account'];
 let currentUser = null;
 
 function showView(name) {
@@ -5455,6 +5718,7 @@ function showView(name) {
   if (name === 'overview') window.dispatchEvent(new Event('resize'));
   if (name === 'live') startLive(); else stopLive();
   if (name === 'sites') startSites(); else stopSites();
+  if (name === 'reports') loadReport();
   syncSitePicker();
 }
 
@@ -5570,6 +5834,17 @@ function applyChartTheme() {
     timelineChart.update('none');
   }
   if (lastTrajectory) drawTrajectory(...lastTrajectory);
+  if (reportChart) {
+    const [human, suspect, bot] = reportChart.data.datasets;
+    human.backgroundColor = cssVar('--fill-human');
+    suspect.backgroundColor = cssVar('--fill-suspect');
+    bot.backgroundColor = cssVar('--fill-bot');
+    reportChart.options.scales.y.grid.color = cssVar('--chart-grid');
+    for (const axis of Object.values(reportChart.options.scales)) axis.ticks.color = cssVar('--chart-tick');
+    reportChart.options.plugins.legend.labels.color = cssVar('--chart-tick');
+    tooltip(reportChart.options.plugins.tooltip);
+    reportChart.update('none');
+  }
 }
 
 const themeToggle = document.getElementById('themeToggle');

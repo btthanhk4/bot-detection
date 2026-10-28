@@ -1654,3 +1654,46 @@ def delete_site(site_id: str, _admin=Depends(require_admin)):
     if not sites.delete_site(_require_sites_db(), site_id):
         raise HTTPException(status_code=404, detail="Site not found")
     return {"status": "deleted", "site_id": site_id}
+
+
+# ---- Reports: one website (or all) over a period ----
+
+def _report_scope(site: Optional[str], days: int):
+    from api_service import reports
+    if days not in reports.PERIOD_DAYS:
+        raise HTTPException(status_code=422, detail="days must be 1, 7 or 30")
+    from api_service.database import get_db
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return reports, db, sites.site_filter(site)
+
+
+@app.get("/api/v1/reports/summary")
+def report_summary(
+    days: int = Query(default=7),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    _read=Depends(require_read_access),
+):
+    """Totals, reasons and bot sources of the sessions that started in the period."""
+    reports, db, scope = _report_scope(site, days)
+    try:
+        return reports.summary(db, site_filter=scope, days=days)
+    except Exception as exc:
+        logger.exception("Report summary failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
+@app.get("/api/v1/reports/sessions")
+def report_sessions(
+    days: int = Query(default=7),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    _read=Depends(require_read_access),
+):
+    """Sessions of the period for the CSV export (the dashboard builds the file)."""
+    reports, db, scope = _report_scope(site, days)
+    try:
+        return reports.sessions(db, site_filter=scope, days=days)
+    except Exception as exc:
+        logger.exception("Report export failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
