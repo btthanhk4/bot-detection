@@ -463,8 +463,11 @@ Trang **Website** trên dashboard là nơi đăng ký từng website của khác
 1. **Thêm website**: tên, các tên miền (mỗi dòng một tên miền, gồm cả bản `www` nếu có), người
    liên hệ. Lưu xong, dashboard hiện đoạn mã cài đặt riêng của website đó:
    `<script defer src="https://api.datacat.io.vn/bot-collector.js" data-datacat data-study-id="datacat_live" data-site-id="<site_id>"></script>`.
-2. Khách hàng dán đoạn mã vào trước `</head>` (hoặc thẻ HTML tùy chỉnh trong Google Tag Manager).
-   Trạng thái chuyển từ *Chờ cài đặt* sang *Đang nhận dữ liệu* khi có phiên đầu tiên.
+2. Hộp **Kết nối** có 8 cách, mỗi cách kèm các bước riêng: Google Tag Manager, WordPress (plugin
+   WPCode), Shopify, Haravan, Sapo, Wix, web tự code (dán trước `</head>` trong file khung chung) và
+   máy chủ nginx (`sub_filter` chèn tự động). Cách đã chọn được lưu cho website; nút *Sao chép hướng
+   dẫn để gửi khách* sao chép các bước kèm mã dưới dạng văn bản. Trạng thái chuyển từ *Chờ cài đặt*
+   sang *Đang nhận dữ liệu* khi có phiên đầu tiên.
 3. **Xem traffic** lọc Tổng quan và Live View theo website; bộ chọn website nằm cạnh tiêu đề trang.
 
 Cách gán phiên:

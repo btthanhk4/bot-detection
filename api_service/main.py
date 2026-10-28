@@ -1578,6 +1578,7 @@ class SiteCreatePayload(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
     notes: Optional[str] = Field(default=None, max_length=2000)
     status: Literal["active", "paused"] = "active"
+    platform: Optional[Literal["gtm", "wordpress", "shopify", "haravan", "sapo", "wix", "code", "nginx"]] = None
 
 
 class SiteUpdatePayload(BaseModel):
@@ -1587,6 +1588,7 @@ class SiteUpdatePayload(BaseModel):
     contact: Optional[str] = Field(default=None, max_length=200)
     notes: Optional[str] = Field(default=None, max_length=2000)
     status: Optional[Literal["active", "paused"]] = None
+    platform: Optional[Literal["gtm", "wordpress", "shopify", "haravan", "sapo", "wix", "code", "nginx"]] = None
 
 
 def _require_sites_db():

@@ -26,6 +26,8 @@ _SITE_ID = re.compile(SITE_ID_PATTERN)
 UNASSIGNED = "_none"
 SITE_FILTER_PATTERN = r"^(_none|[a-z0-9][a-z0-9_-]{0,63})$"
 STATUSES = ("active", "paused")
+# How the tag reaches the site's pages; the dashboard shows the matching install steps.
+PLATFORMS = ("gtm", "wordpress", "shopify", "haravan", "sapo", "wix", "code", "nginx")
 MAX_ORIGINS = 20
 # Study id the pilot tag carries; research captures group by it.
 STUDY_ID = "datacat_live"
@@ -154,7 +156,7 @@ def ensure_indexes(db) -> bool:
 
 
 def _public(site: dict) -> dict:
-    return {key: site.get(key) for key in ("site_id", "name", "origins", "status", "contact", "notes",
+    return {key: site.get(key) for key in ("site_id", "name", "origins", "status", "platform", "contact", "notes",
                                           "created_at", "updated_at")}
 
 
@@ -198,7 +200,7 @@ def attribute_history(db, site_id: str, origins) -> int:
 
 
 def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contact: Optional[str] = None,
-                notes: Optional[str] = None, status: str = "active") -> dict:
+                notes: Optional[str] = None, status: str = "active", platform: Optional[str] = None) -> dict:
     """Raises ValueError (bad input) or LookupError (id or origin already taken)."""
     origins = sorted({normalize_origin(origin) for origin in origins})
     if not origins or len(origins) > MAX_ORIGINS:
@@ -207,6 +209,8 @@ def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contac
         raise ValueError("Site id may use lowercase letters, digits, '-' and '_'")
     if status not in STATUSES:
         raise ValueError("Unknown status")
+    if platform is not None and platform not in PLATFORMS:
+        raise ValueError("Unknown platform")
     conflict = _conflicts(db, origins)
     if conflict:
         raise LookupError(f"{conflict[0]} already belongs to site {conflict[1]}")
@@ -214,7 +218,7 @@ def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contac
     if db["sites"].find_one({"site_id": site_id}, {"_id": 1}):
         raise LookupError(f"Site id {site_id} is already used")
     now = datetime.now(timezone.utc)
-    site = {"site_id": site_id, "name": name.strip(), "origins": origins, "status": status,
+    site = {"site_id": site_id, "name": name.strip(), "origins": origins, "status": status, "platform": platform,
             "contact": (contact or "").strip() or None, "notes": (notes or "").strip() or None,
             "created_at": now, "updated_at": now}
     db["sites"].insert_one(dict(site))
@@ -242,6 +246,10 @@ def update_site(db, site_id: str, changes: dict) -> dict:
         if changes["status"] not in STATUSES:
             raise ValueError("Unknown status")
         update["status"] = changes["status"]
+    if "platform" in changes:
+        if changes["platform"] is not None and changes["platform"] not in PLATFORMS:
+            raise ValueError("Unknown platform")
+        update["platform"] = changes["platform"]
     for key in ("contact", "notes"):
         if key in changes:
             update[key] = (changes[key] or "").strip() or None

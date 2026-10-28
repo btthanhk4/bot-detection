@@ -171,6 +171,22 @@ def test_no_telemetry_sessions_take_the_site_of_their_host(db):
 
 # ---- API ----
 
+def test_site_remembers_how_it_is_connected(api, db):
+    created = api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP], "platform": "wordpress"},
+                       headers=ADMIN).json()
+    assert created["platform"] == "wordpress"
+    assert api.post("/api/v1/sites", json={"name": "Blog", "origins": [BLOG], "platform": "joomla"},
+                    headers=ADMIN).status_code == 422
+    assert api.patch("/api/v1/sites/shop", json={"platform": "gtm"}, headers=ADMIN).json()["platform"] == "gtm"
+    assert api.patch("/api/v1/sites/shop", json={"platform": None}, headers=ADMIN).json()["platform"] is None
+    # Changing other fields leaves the method alone.
+    api.patch("/api/v1/sites/shop", json={"platform": "shopify"}, headers=ADMIN)
+    assert api.patch("/api/v1/sites/shop", json={"name": "Shop 2"}, headers=ADMIN).json()["platform"] == "shopify"
+    assert api.get("/api/v1/sites", headers=READ).json()["sites"][0]["platform"] == "shopify"
+    with pytest.raises(ValueError):
+        sites.create_site(db, name="X", origins=["https://x.vn"], platform="joomla")
+
+
 def test_site_management_needs_admin(api):
     body = {"name": "Shop", "origins": [SHOP]}
     assert api.post("/api/v1/sites", json=body, headers=READ).status_code == 401

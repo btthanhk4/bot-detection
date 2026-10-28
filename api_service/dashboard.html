@@ -2135,7 +2135,20 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .field-hint { font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-muted); }
 .label-dialog input:disabled { color: var(--text-muted); background: var(--bg-secondary); }
 .label-dialog { margin: auto; }
-.snippet-dialog { width: min(620px, calc(100% - 32px)); }
+.snippet-dialog { width: min(760px, calc(100% - 32px)); }
+.connect-lead { margin: -8px 0 14px; font-size: 13px; color: var(--text-secondary); }
+.connect-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.connect-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 52px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.connect-option:hover { background: var(--bg-secondary); }
+.connect-option:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.connect-option strong { font-size: 13px; font-weight: 600; }
+.connect-option small { font-size: 11.5px; line-height: 1.35; color: var(--text-muted); }
+.connect-option[aria-checked="true"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.connect-guide { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.snippet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.snippet-box code.is-config { white-space: pre-wrap; }
+.connect-note { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+@media (max-width: 640px) { .connect-options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .install-steps { display: grid; gap: 14px; padding-left: 20px; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
 .install-steps code { font-family: var(--font-mono); font-size: 12px; }
 .snippet-box { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px; }
@@ -2800,6 +2813,17 @@ body.read-only .admin-only { display: none !important; }
       <small class="field-hint" id="siteIdHint">Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.</small></label>
     <label>Tên miền<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="abc.vn&#10;www.abc.vn" aria-describedby="siteOriginsHint"></textarea>
       <small class="field-hint" id="siteOriginsHint">Mỗi dòng một tên miền. Ghi cả bản có www nếu website dùng cả hai.</small></label>
+    <label>Cách kết nối<select id="sitePlatform">
+        <option value="">Chọn sau</option>
+        <option value="gtm">Google Tag Manager</option>
+        <option value="wordpress">WordPress</option>
+        <option value="shopify">Shopify</option>
+        <option value="haravan">Haravan</option>
+        <option value="sapo">Sapo</option>
+        <option value="wix">Wix</option>
+        <option value="code">Web tự code (HTML, PHP, React…)</option>
+        <option value="nginx">Máy chủ nginx (chèn tự động)</option>
+      </select></label>
     <label>Người liên hệ<input id="siteContact" maxlength="200" autocomplete="off" placeholder="Tên, email hoặc số điện thoại"></label>
     <label>Ghi chú<textarea id="siteNotes" maxlength="2000" rows="2"></textarea></label>
     <p id="siteError" class="form-msg err" role="alert"></p>
@@ -2808,15 +2832,21 @@ body.read-only .admin-only { display: none !important; }
 </dialog>
 
 <dialog id="snippetDialog" class="label-dialog snippet-dialog" aria-labelledby="snippetTitle">
-  <h2 id="snippetTitle">Mã cài đặt</h2>
-  <ol class="install-steps">
-    <li>Sao chép đoạn mã:
-      <div class="snippet-box"><code id="snippetCode"></code>
-        <button type="button" class="btn-secondary" id="snippetCopy" onclick="copySnippet()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg><span>Sao chép</span></button></div></li>
-    <li>Dán vào trước thẻ <code>&lt;/head&gt;</code> trên mọi trang. Nếu dùng Google Tag Manager: tạo thẻ <em>HTML tùy chỉnh</em>, kích hoạt trên <em>Tất cả các trang</em>.</li>
-    <li>Mở website và di chuột vài giây. Trạng thái chuyển sang <strong>Đang nhận dữ liệu</strong> trong khoảng một phút.</li>
-  </ol>
-  <p class="snippet-domains" id="snippetDomains"></p>
+  <h2 id="snippetTitle">Kết nối website</h2>
+  <p class="connect-lead">Chọn cách website được làm. Mọi cách đều dùng cùng một đoạn mã, chỉ khác chỗ dán.</p>
+  <div class="connect-options" id="connectOptions" role="radiogroup" aria-label="Cách kết nối"></div>
+  <div class="connect-guide">
+    <ol class="install-steps" id="connectSteps"></ol>
+    <div class="snippet-box">
+      <code id="snippetCode"></code>
+      <div class="snippet-actions">
+        <button type="button" class="btn-secondary" id="snippetCopy" onclick="copyConnection('code')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg><span>Sao chép mã</span></button>
+        <button type="button" class="btn-secondary" id="guideCopy" onclick="copyConnection('guide')"><svg class="ui-icon" aria-hidden="true"><use href="#icon-clipboard"></use></svg><span>Sao chép hướng dẫn để gửi khách</span></button>
+      </div>
+    </div>
+    <p class="connect-note" id="connectNote" hidden></p>
+    <p class="snippet-domains" id="snippetDomains"></p>
+  </div>
   <div class="label-actions"><button type="button" onclick="document.getElementById('snippetDialog').close()">Đóng</button></div>
 </dialog>
 
@@ -4923,7 +4953,7 @@ function siteActionButtons(site) {
   const paused = site.status === 'paused';
   return `<div class="site-actions">
     <button class="label-btn" type="button" data-action="traffic" data-site="${id}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button>
-    <button class="label-btn" type="button" data-action="snippet" data-site="${id}" title="Mã cài đặt" aria-label="Mã cài đặt của ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg></button>
+    <button class="label-btn" type="button" data-action="snippet" data-site="${id}" title="Cách kết nối" aria-label="Cách kết nối ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg></button>
     <button class="label-btn admin-only" type="button" data-action="edit" data-site="${id}" title="Sửa" aria-label="Sửa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-pencil"></use></svg></button>
     <button class="label-btn admin-only" type="button" data-action="toggle" data-site="${id}" title="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'}" aria-label="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'} ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-${paused ? 'play' : 'pause'}"></use></svg></button>
     <button class="label-btn admin-only danger" type="button" data-action="delete" data-site="${id}" title="Xóa" aria-label="Xóa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
@@ -4947,7 +4977,7 @@ function renderSites(data) {
     const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
     const domains = site.origins.map(o => `<span class="domain-chip">${escapeHtml(o.replace(/^https:\/\//, ''))}</span>`).join('');
     return `<tr>
-      <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code></span></td>
+      <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.platform && PLATFORM_GUIDES[site.platform] ? ' · ' + PLATFORM_GUIDES[site.platform].label : ''}</span></td>
       <td class="site-domains"><div class="domain-list">${domains}</div></td>
       <td data-label="Trạng thái"><span class="verdict-badge ${state[1]}">${state[0]}</span></td>
       ${siteStatsCells(site)}
@@ -5015,6 +5045,7 @@ function openSiteDialog(site = null, origin = '') {
   document.getElementById('siteOrigins').value = site ? site.origins.join('\n') : origin;
   document.getElementById('siteContact').value = site ? site.contact || '' : '';
   document.getElementById('siteNotes').value = site ? site.notes || '' : '';
+  document.getElementById('sitePlatform').value = site ? site.platform || '' : '';
   setText('siteError', '');
   document.getElementById('siteSave').disabled = false;
   document.getElementById('siteDialog').showModal();
@@ -5057,6 +5088,7 @@ async function saveSite(event) {
     name, origins,
     contact: document.getElementById('siteContact').value.trim() || null,
     notes: document.getElementById('siteNotes').value.trim() || null,
+    platform: document.getElementById('sitePlatform').value || null,
   };
   if (!editingSiteId && siteId) body.site_id = siteId;
   button.disabled = true;
@@ -5081,29 +5113,189 @@ async function saveSite(event) {
   }
 }
 
-function openSnippet(site) {
-  setText('snippetTitle', 'Mã cài đặt · ' + site.name);
-  setText('snippetCode', site.snippet);
-  setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
-    '. Trang ở tên miền khác sẽ bị từ chối dù dùng cùng đoạn mã.');
-  const copy = document.getElementById('snippetCopy');
-  copy.querySelector('span').textContent = 'Sao chép';
-  document.getElementById('snippetDialog').showModal();
-  copy.focus();
+// One tag for every website; each platform only changes where it is pasted.
+const HEAD_TAG = '<code>&lt;/head&gt;</code>';
+const PLATFORM_GUIDES = {
+  gtm: {
+    label: 'Google Tag Manager', hint: 'Web đã gắn GTM, không sửa code',
+    steps: [
+      'Mở <b>tagmanager.google.com</b>, chọn container của website.',
+      'Vào <b>Thẻ</b> (Tags) → <b>Mới</b> → <b>Cấu hình thẻ</b> → chọn <b>HTML tùy chỉnh</b> (Custom HTML).',
+      'Dán đoạn mã bên dưới vào ô HTML.',
+      'Ở <b>Kích hoạt</b> (Triggering) chọn <b>All Pages</b>, đặt tên thẻ "DATACAT" rồi bấm <b>Lưu</b>.',
+      'Bấm <b>Gửi</b> (Submit) → <b>Xuất bản</b> (Publish). Thẻ chỉ chạy sau khi xuất bản.',
+    ],
+    check: 'GTM chèn mã khi trang chạy nên Ctrl+U không thấy mã; hãy xem trạng thái trên DATACAT.',
+  },
+  wordpress: {
+    label: 'WordPress', hint: 'Dùng plugin, không sửa code',
+    steps: [
+      'Đăng nhập trang quản trị (<code>/wp-admin</code>) → <b>Plugin</b> → <b>Cài mới</b>.',
+      'Tìm <b>WPCode</b> → <b>Cài đặt</b> → <b>Kích hoạt</b>.',
+      'Vào <b>Code Snippets</b> → <b>Header &amp; Footer</b>.',
+      'Dán đoạn mã vào ô <b>Header</b> → <b>Lưu thay đổi</b>.',
+      'Nếu web dùng plugin cache (WP Rocket, LiteSpeed Cache…), xóa cache.',
+    ],
+  },
+  shopify: {
+    label: 'Shopify', hint: 'Sửa theme.liquid',
+    steps: [
+      'Vào Shopify admin → <b>Online Store</b> → <b>Themes</b>.',
+      'Ở theme đang dùng, bấm <b>…</b> → <b>Edit code</b>.',
+      'Mở <b>layout/theme.liquid</b>, tìm dòng ' + HEAD_TAG + '.',
+      'Dán đoạn mã ngay phía trên ' + HEAD_TAG + ' → <b>Save</b>.',
+    ],
+    note: 'Trang thanh toán (checkout) của Shopify không dùng theme nên không được theo dõi; các trang còn lại đều có.',
+  },
+  haravan: {
+    label: 'Haravan', hint: 'Sửa giao diện',
+    steps: [
+      'Vào trang quản trị Haravan → <b>Website</b> → <b>Giao diện</b>.',
+      'Ở giao diện đang dùng, chọn <b>Sửa HTML/CSS</b>.',
+      'Mở <b>layout/theme.liquid</b>, tìm dòng ' + HEAD_TAG + '.',
+      'Dán đoạn mã ngay phía trên ' + HEAD_TAG + ' → <b>Lưu</b>.',
+    ],
+    note: 'Tên mục có thể khác đôi chút giữa các phiên bản. Không tìm thấy thì hỏi hỗ trợ Haravan cách "chèn mã vào thẻ head".',
+  },
+  sapo: {
+    label: 'Sapo', hint: 'Sửa giao diện',
+    steps: [
+      'Vào trang quản trị Sapo → <b>Website</b> → <b>Giao diện</b>.',
+      'Ở giao diện đang dùng, chọn chỉnh sửa <b>HTML/CSS</b> (mã nguồn giao diện).',
+      'Mở file layout chính (<b>layouts/theme.bwt</b>), tìm dòng ' + HEAD_TAG + '.',
+      'Dán đoạn mã ngay phía trên ' + HEAD_TAG + ' → <b>Lưu</b>.',
+    ],
+    note: 'Tên mục có thể khác đôi chút giữa các phiên bản. Không tìm thấy thì hỏi hỗ trợ Sapo cách "chèn mã vào thẻ head".',
+  },
+  wix: {
+    label: 'Wix', hint: 'Custom Code',
+    steps: [
+      'Vào bảng điều khiển Wix → <b>Settings</b> → <b>Custom Code</b> (mục Advanced).',
+      'Bấm <b>+ Add Custom Code</b>, dán đoạn mã, đặt tên "DATACAT".',
+      'Chọn <b>All pages</b> và <b>Load code once</b>, vị trí <b>Head</b> → <b>Apply</b>.',
+    ],
+    note: 'Wix chỉ cho thêm mã khi website dùng gói trả phí và đã gắn tên miền riêng.',
+  },
+  code: {
+    label: 'Web tự code', hint: 'HTML, PHP, React, Laravel…',
+    steps: [
+      'Mở file khung dùng chung cho mọi trang: <code>index.html</code> (React, Vue, Vite), <code>header.php</code> (PHP), <code>layouts/app.blade.php</code> (Laravel)…',
+      'Dán đoạn mã ngay phía trên dòng ' + HEAD_TAG + ', lưu file.',
+      'Triển khai lại như mọi lần cập nhật web (React, Vue: build lại rồi deploy).',
+    ],
+  },
+  nginx: {
+    label: 'Máy chủ nginx', hint: 'Chèn tự động, không sửa web',
+    config: true,
+    steps: [
+      'Mở file cấu hình nginx của website (thường trong <code>/etc/nginx/sites-available/</code> hoặc <code>/etc/nginx/conf.d/</code>).',
+      'Trong khối <code>location /</code> trả về trang HTML, thêm các dòng bên dưới.',
+      'Kiểm tra rồi nạp lại: <code>nginx -t &amp;&amp; nginx -s reload</code>.',
+    ],
+    note: 'Dòng <code>Accept-Encoding</code> chỉ cần khi nginx chuyển tiếp (<code>proxy_pass</code>) tới máy chủ web khác, vì nginx không sửa được HTML đã nén. Nếu nginx chạy trong Docker và gắn file cấu hình, hãy khởi động lại container thay vì reload.',
+  },
+};
+const PLATFORM_ORDER = ['gtm', 'wordpress', 'shopify', 'haravan', 'sapo', 'wix', 'code', 'nginx'];
+let connectSite = null;
+let connectPlatform = 'gtm';
+
+function connectionCode(site, key) {
+  if (!PLATFORM_GUIDES[key].config) return site.snippet;
+  return '# DATACAT: chèn mã giám sát vào mọi trang HTML\n' +
+    'proxy_set_header Accept-Encoding "";\n' +
+    "sub_filter '</head>' '" + site.snippet + "</head>';\n" +
+    'sub_filter_once on;';
 }
 
-async function copySnippet() {
+function connectionSteps(key) {
+  const guide = PLATFORM_GUIDES[key];
+  const check = guide.check || 'Kiểm tra: mở website, nhấn <b>Ctrl+U</b> và tìm <code>bot-collector.js</code>.';
+  return [...guide.steps, check,
+    'Di chuột trên website vài giây. Trạng thái trên DATACAT chuyển sang <b>Đang nhận dữ liệu</b> trong khoảng một phút.'];
+}
+
+function renderConnection(key) {
+  connectPlatform = PLATFORM_GUIDES[key] ? key : 'gtm';
+  const guide = PLATFORM_GUIDES[connectPlatform];
+  document.querySelectorAll('#connectOptions .connect-option').forEach(button => {
+    const selected = button.dataset.platform === connectPlatform;
+    button.setAttribute('aria-checked', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+  document.getElementById('connectSteps').innerHTML = connectionSteps(connectPlatform).map(step => `<li>${step}</li>`).join('');
   const code = document.getElementById('snippetCode');
-  const label = document.getElementById('snippetCopy').querySelector('span');
+  code.textContent = connectionCode(connectSite, connectPlatform);
+  code.classList.toggle('is-config', Boolean(guide.config));
+  const note = document.getElementById('connectNote');
+  note.hidden = !guide.note;
+  note.innerHTML = guide.note || '';
+  document.getElementById('snippetCopy').querySelector('span').textContent = guide.config ? 'Sao chép cấu hình' : 'Sao chép mã';
+  document.getElementById('guideCopy').querySelector('span').textContent = 'Sao chép hướng dẫn để gửi khách';
+}
+
+function openSnippet(site) {
+  connectSite = site;
+  setText('snippetTitle', 'Kết nối · ' + site.name);
+  document.getElementById('connectOptions').innerHTML = PLATFORM_ORDER.map(key => `
+    <button type="button" class="connect-option" role="radio" data-platform="${key}">
+      <strong>${PLATFORM_GUIDES[key].label}</strong><small>${PLATFORM_GUIDES[key].hint}</small></button>`).join('');
+  setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
+    '. Trang ở tên miền khác sẽ bị từ chối dù dùng cùng đoạn mã.');
+  renderConnection(site.platform || 'gtm');
+  document.getElementById('snippetDialog').showModal();
+  document.querySelector('#connectOptions [aria-checked="true"]').focus();
+}
+
+function chooseConnection(key) {
+  renderConnection(key);
+  // Remember the method on the website so the list and the next visit show it.
+  if (connectSite && connectSite.platform !== key && !document.body.classList.contains('read-only')) {
+    connectSite.platform = key;
+    siteRequest(connectSite.site_id, 'PATCH', { platform: key }).then(ok => { if (ok) loadSites(); });
+  }
+}
+
+document.getElementById('connectOptions').addEventListener('click', (event) => {
+  const button = event.target.closest('.connect-option');
+  if (button) chooseConnection(button.dataset.platform);
+});
+document.getElementById('connectOptions').addEventListener('keydown', (event) => {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+  if (!step) return;
+  event.preventDefault();
+  const next = PLATFORM_ORDER[(PLATFORM_ORDER.indexOf(connectPlatform) + step + PLATFORM_ORDER.length) % PLATFORM_ORDER.length];
+  chooseConnection(next);
+  document.querySelector(`#connectOptions [data-platform="${next}"]`).focus();
+});
+
+function connectionGuideText() {
+  const holder = document.createElement('div');
+  const lines = connectionSteps(connectPlatform).map((step, index) => {
+    holder.innerHTML = step;
+    return (index + 1) + '. ' + holder.textContent;
+  });
+  const guide = PLATFORM_GUIDES[connectPlatform];
+  holder.innerHTML = guide.note || '';
+  return [`Kết nối ${connectSite.name} với DATACAT (${guide.label})`, '', ...lines, '',
+    guide.config ? 'Cấu hình:' : 'Đoạn mã:', connectionCode(connectSite, connectPlatform),
+    ...(guide.note ? ['', 'Lưu ý: ' + holder.textContent] : []), '',
+    'Chỉ nhận dữ liệu từ: ' + connectSite.origins.map(o => o.replace(/^https:\/\//, '')).join(', ')].join('\n');
+}
+
+async function copyConnection(what) {
+  const button = document.getElementById(what === 'guide' ? 'guideCopy' : 'snippetCopy');
+  const label = button.querySelector('span');
+  const original = label.textContent;
+  const text = what === 'guide' ? connectionGuideText() : document.getElementById('snippetCode').textContent;
   try {
-    await navigator.clipboard.writeText(code.textContent);
+    await navigator.clipboard.writeText(text);
     label.textContent = 'Đã sao chép';
   } catch (e) {
-    // Clipboard API unavailable (non-secure page): select the text for Ctrl+C.
-    window.getSelection().selectAllChildren(code);
-    label.textContent = 'Đã chọn, nhấn Ctrl+C';
+    // Clipboard API unavailable (non-secure page): select the code for Ctrl+C.
+    window.getSelection().selectAllChildren(document.getElementById('snippetCode'));
+    label.textContent = 'Đã chọn mã, nhấn Ctrl+C';
   }
-  setTimeout(() => { label.textContent = 'Sao chép'; }, 2500);
+  setTimeout(() => { label.textContent = original; }, 2500);
 }
 
 async function siteRequest(siteId, method, body) {
