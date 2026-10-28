@@ -6,7 +6,9 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   served. ``missing``/``unknown`` mean a script posted it without loading the page (or with
   a made-up cookie); ``mismatched`` that another User-Agent loaded the page; ``reused``
   that one page's cookie was presented by many sessions.
-  ``untracked`` (no gateway in front of the site) and ``unavailable`` are not judged.
+  ``untracked`` (no gateway in front of the site), ``gateway_idle`` (the gateway has not
+  mirrored a page in ten minutes, so a missing cookie proves nothing) and ``unavailable``
+  are not judged.
 * ``device_sessions``: sessions in the last hour from the same device fingerprint on the
   same address. A person opens a few tabs; a farm that clears storage between runs starts
   a new session every minute on one machine.

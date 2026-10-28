@@ -97,6 +97,30 @@ def record_page_view(db, page_view_id: str, *, ip: str, user_agent: str, host: s
         return False
 
 
+GATEWAY_LIVE_SECONDS = 600
+_gateway_live = {}
+_gateway_live_lock = threading.Lock()
+
+
+def gateway_live(db, host: str) -> bool:
+    """Whether the gateway recorded a page view for this host recently (memoised for a minute)."""
+    if db is None:
+        return False
+    key = str(host or "").lower()
+    with _gateway_live_lock:
+        cached = _gateway_live.get(key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+    try:
+        since = datetime.now(timezone.utc) - timedelta(seconds=GATEWAY_LIVE_SECONDS)
+        live = db["page_views"].find_one({"host": key, "ts": {"$gte": since}}, {"_id": 1}) is not None
+    except Exception:
+        live = False
+    with _gateway_live_lock:
+        _gateway_live[key] = (time.monotonic() + 60, live)
+    return live
+
+
 def page_view_state(db, *, host: str, tracked_hosts, page_view_id, session_id: str, link: bool = True,
                     user_agent: str = None) -> str:
     """untracked | missing | unknown | mismatched | reused | verified for one telemetry request.
@@ -106,7 +130,11 @@ def page_view_state(db, *, host: str, tracked_hosts, page_view_id, session_id: s
     """
     tracked = bool(tracked_hosts) and str(host or "").lower() in tracked_hosts
     if not valid_page_view_id(page_view_id):
-        return "missing" if tracked else "untracked"
+        if not tracked:
+            return "untracked"
+        # Without page views from the gateway lately it is not mirroring (not deployed yet,
+        # or broken): a missing cookie then says nothing about the client.
+        return "missing" if gateway_live(db, host) else "gateway_idle"
     if db is None:
         return "unavailable" if tracked else "untracked"
     try:

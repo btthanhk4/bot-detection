@@ -56,10 +56,32 @@ def test_classify_client(ua, expected):
     assert gateway.classify_client(ua) == expected
 
 
+@pytest.fixture(autouse=True)
+def fresh_liveness():
+    gateway._gateway_live.clear()
+    yield
+    gateway._gateway_live.clear()
+
+
+def test_missing_cookie_is_judged_only_while_the_gateway_mirrors(db):
+    state = lambda: gateway.page_view_state(db, host=SHOP, tracked_hosts=[SHOP], page_view_id=None,  # noqa: E731
+                                            session_id="s1", user_agent=CHROME)
+    # Nothing mirrored yet (nginx not switched, or broken): no client is flagged for it.
+    assert state() == "gateway_idle"
+    view(db, age=30)
+    gateway._gateway_live.clear()
+    assert state() == "missing"
+    # The last page view was long ago: the mirror stopped.
+    db["page_views"].update_one({"_id": PV}, {"$set": {"ts": datetime.now(timezone.utc) - timedelta(hours=1)}})
+    gateway._gateway_live.clear()
+    assert state() == "gateway_idle"
+
+
 def test_page_view_states(db):
     state = lambda **kw: gateway.page_view_state(db, tracked_hosts=[SHOP], session_id="s1", user_agent=CHROME, **kw)  # noqa: E731
     assert gateway.page_view_state(db, host="partner.example", tracked_hosts=[SHOP], page_view_id=None,
                                    session_id="s1") == "untracked"
+    view(db, "a" * 32)  # the gateway is mirroring
     assert state(host=SHOP, page_view_id=None) == "missing"
     assert state(host=SHOP, page_view_id="not-a-request-id") == "missing"
     assert state(host=SHOP, page_view_id=PV) == "unknown"
@@ -270,6 +292,11 @@ def test_server_context_marks_telemetry_without_a_served_page(api, db, monkeypat
         return Request({"type": "http", "method": "POST", "path": "/api/v1/telemetry", "headers": headers,
                         "client": ("203.0.113.7", 1234), "query_string": b""})
 
+    data = {"sessionId": "s9", "visitorId": "dev-9", "client_ip": "203.0.113.7"}
+    main._attach_server_context(request(), data, link=True)
+    assert data["_server_headers"]["page_view"] == "gateway_idle"
+    view(db, "a" * 32)
+    gateway._gateway_live.clear()
     data = {"sessionId": "s9", "visitorId": "dev-9", "client_ip": "203.0.113.7"}
     main._attach_server_context(request(), data, link=True)
     assert data["_server_headers"]["page_view"] == "missing"
