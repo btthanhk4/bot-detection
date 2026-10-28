@@ -138,8 +138,10 @@ def test_overview_reports_install_state_and_unregistered_traffic(db):
         doc("b1", site="blog", age=2 * 86400),
         doc("gone", site="deleted-site"),
         doc("u1", page="https://unknown.vn/a"), doc("u2", page="https://unknown.vn/b"),
+        # DATACAT's own dashboard and a shop opened by IP are not websites to register.
+        doc("own", page="https://www.datacat.io.vn/dashboard"), doc("ip", page="http://152.42.205.62/"),
     ])
-    view = sites.overview(db, collector_base="https://api.datacat.io.vn", configured_origins=[])
+    view = sites.overview(db, collector_base="https://api.datacat.io.vn", own_hosts=["datacat.io.vn"])
     by_id = {site["site_id"]: site for site in view["sites"]}
     shop = by_id["shop"]
     assert (shop["sessions"], shop["sessions_24h"], shop["humans_24h"], shop["bots_24h"]) == (3, 2, 1, 1)
@@ -149,11 +151,11 @@ def test_overview_reports_install_state_and_unregistered_traffic(db):
     assert 'data-site-id="shop"' in shop["snippet"]
     assert shop["snippet"].startswith('<script defer src="https://api.datacat.io.vn/bot-collector.js"')
     assert [row["site_id"] for row in view["removed_sites"]] == ["deleted-site"]
-    assert view["unassigned"]["sessions"] == 2
-    assert view["unregistered_origins"][0]["origin"] == "https://unknown.vn"
-    assert view["unregistered_origins"][0]["sessions"] == 2
+    assert view["unassigned"]["sessions"] == 4
+    assert view["unregistered_origins"] == [
+        {"origin": "https://unknown.vn", "sessions": 2, "last_seen": view["unregistered_origins"][0]["last_seen"]}]
     empty = sites.create_site(db, name="New", origins=["https://new.vn"])
-    assert {s["site_id"]: s for s in sites.overview(db, collector_base="x", configured_origins=[])["sites"]}[
+    assert {s["site_id"]: s for s in sites.overview(db, collector_base="x")["sites"]}[
         empty["site_id"]]["install_state"] == "waiting"
 
 

@@ -2108,8 +2108,9 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .site-picker select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .site-picker.filtered select { border-color: var(--brand); background: var(--brand-soft); }
 .site-picker.filtered .ui-icon { color: var(--brand); }
-.sites-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; }
-.sites-intro { max-width: 72ch; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.btn-compact { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn-compact .ui-icon { width: 16px; height: 16px; }
+.sites-table.is-empty thead { display: none; }
 .sites-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sites-table th { position: sticky; top: 0; z-index: 1; padding: 9px 16px; text-align: left; white-space: nowrap; font-size: 12px; font-weight: 550; color: var(--text-muted); background: var(--bg-secondary); }
 .sites-table td { padding: 12px 16px; border-top: 1px solid var(--border-subtle); vertical-align: middle; color: var(--text-secondary); }
@@ -2119,7 +2120,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .site-name { min-width: 180px; }
 .site-name strong { display: block; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
 .site-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
-.site-sub code, .unregistered-list code { font-family: var(--font-mono); font-size: 12px; }
+.site-sub code { font-family: var(--font-mono); font-size: 12px; }
 .domain-list { display: flex; flex-wrap: wrap; gap: 4px; min-width: 150px; max-width: 320px; }
 .domain-chip { padding: 1px 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .muted { color: var(--text-muted); }
@@ -2127,11 +2128,10 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 .site-actions .label-btn { min-height: 28px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
 .site-actions .label-btn .ui-icon { width: 14px; height: 14px; }
 .site-actions .label-btn.danger { color: var(--accent-red); }
-.sites-foot, .sites-note { padding: 10px 16px 14px; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
-.sites-foot { border-top: 1px solid var(--border-subtle); }
-.unregistered-list { list-style: none; padding: 0 16px 12px; }
-.unregistered-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); }
-.unregistered-list code { color: var(--text-primary); overflow-wrap: anywhere; }
+.unregistered-list { list-style: none; padding: 0 16px 4px; }
+.unregistered-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 0; font-size: 13px; color: var(--text-secondary); }
+.unregistered-list li + li { border-top: 1px solid var(--border-subtle); }
+.unregistered-list strong { font-weight: 550; color: var(--text-primary); overflow-wrap: anywhere; }
 .field-hint { font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-muted); }
 .label-dialog input:disabled { color: var(--text-muted); background: var(--bg-secondary); }
 .label-dialog { margin: auto; }
@@ -2528,32 +2528,20 @@ body.read-only .admin-only { display: none !important; }
     </div>
   </section>
   <section class="view" id="view-sites" data-title="Website" hidden>
-    <div class="sites-toolbar">
-      <p class="sites-intro">Mỗi website có một mã cài đặt riêng. Phiên được gán cho website theo tên miền mà trình duyệt gửi lên; trang ở tên miền chưa đăng ký sẽ bị từ chối.</p>
-      <button class="btn-primary admin-only" type="button" onclick="openSiteDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm website</button>
-    </div>
-    <div class="sys-grid">
-      <div class="sys-card"><span class="sys-label">Đang giám sát</span><strong id="sitesActive">--</strong><small id="sitesActiveNote">--</small></div>
-      <div class="sys-card"><span class="sys-label">Đang nhận dữ liệu</span><strong id="sitesReceiving">--</strong><small>Có phiên trong 24 giờ qua</small></div>
-      <div class="sys-card"><span class="sys-label">Phiên 24 giờ</span><strong id="sitesSessions">--</strong><small>Mọi website</small></div>
-      <div class="sys-card"><span class="sys-label">Bot 24 giờ</span><strong id="sitesBots">--</strong><small id="sitesBotsNote">--</small></div>
-    </div>
     <div class="panel">
       <div class="panel-header">
         <div class="panel-title"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Danh sách website</div>
-        <span class="panel-badge badge-count" id="sitesCount">0 website</span>
+        <button class="btn-primary btn-compact admin-only" type="button" onclick="openSiteDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm website</button>
       </div>
       <div class="table-scroll">
-        <table class="sites-table">
+        <table class="sites-table" id="sitesTable">
           <thead><tr><th>Website</th><th>Tên miền</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
           <tbody id="sitesBody"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
-      <p class="sites-foot" id="sitesFoot" hidden></p>
     </div>
     <div class="panel" id="unregisteredPanel" hidden>
-      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Nguồn chưa đăng ký</div></div>
-      <p class="sites-note">Các trang này đã gửi dữ liệu trong 7 ngày qua nhưng chưa thuộc website nào. Đăng ký để gán cả phiên cũ của chúng.</p>
+      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Tên miền chưa đăng ký</div></div>
       <ul class="unregistered-list" id="unregisteredList"></ul>
     </div>
   </section>
@@ -3136,7 +3124,8 @@ async function fetchClassificationSummary() {
 // Average model inference time over the API's recent live sessions (since start-up).
 function updateLatencyKPI(latency) {
   const avg = Number(latency && latency.avg_ms);
-  if (!Number.isFinite(avg)) {
+  // No inference since the API started: latency is null, and Number(null) would read as 0 ms.
+  if (!latency || !Number.isFinite(avg)) {
     setText('kpiAvgLatency', '--');
     setText('kpiLatencyExtra', '');
     return;
@@ -4900,7 +4889,7 @@ function syncSitePicker() {
   if (sitesData) {
     sitesData.sites.forEach(s => options.push([s.site_id, s.name + (s.status === 'paused' ? ' (tạm dừng)' : '')]));
     sitesData.removed_sites.forEach(s => options.push([s.site_id, s.site_id + ' (đã xóa)']));
-    if (sitesData.unassigned.sessions > 0) options.push(['_none', 'Chưa gán website']);
+    if (sitesData.sites.length && sitesData.unassigned.sessions > 0) options.push(['_none', 'Chưa gán website']);
   }
   if (selectedSite && !options.some(([value]) => value === selectedSite)) options.push([selectedSite, siteLabel(selectedSite)]);
   select.innerHTML = options.map(([value, label]) =>
@@ -4954,55 +4943,35 @@ function siteStatsCells(stats) {
 
 function renderSites(data) {
   const sites = data.sites;
-  const active = sites.filter(s => s.status === 'active').length;
-  const receiving = sites.filter(s => s.install_state === 'receiving').length;
-  const all = [...sites, ...data.removed_sites, data.unassigned];
-  const sessions = all.reduce((sum, s) => sum + (Number(s.sessions_24h) || 0), 0);
-  const bots = all.reduce((sum, s) => sum + (Number(s.bots_24h) || 0), 0);
-  setText('sitesActive', fmtCount(active));
-  setText('sitesActiveNote', sites.length - active ? (sites.length - active) + ' website tạm dừng' : 'Trên ' + sites.length + ' website');
-  setText('sitesReceiving', fmtCount(receiving));
-  setText('sitesSessions', fmtCount(sessions));
-  setText('sitesBots', fmtCount(bots));
-  setText('sitesBotsNote', sessions ? Math.round(bots / sessions * 100) + '% số phiên' : 'Chưa có phiên');
-  setText('sitesCount', sites.length + ' website');
-
   const rows = sites.map(site => {
     const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
     const domains = site.origins.map(o => `<span class="domain-chip">${escapeHtml(o.replace(/^https:\/\//, ''))}</span>`).join('');
     return `<tr>
-      <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.contact ? ' · ' + escapeHtml(site.contact) : ''}</span></td>
+      <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code></span></td>
       <td class="site-domains"><div class="domain-list">${domains}</div></td>
       <td data-label="Trạng thái"><span class="verdict-badge ${state[1]}">${state[0]}</span></td>
       ${siteStatsCells(site)}
       <td class="site-actions-cell">${siteActionButtons(site)}</td></tr>`;
   });
   data.removed_sites.forEach(site => rows.push(`<tr class="site-muted">
-      <td class="site-name"><strong>${escapeHtml(site.site_id)}</strong><span class="site-sub">Đã xóa khỏi danh sách, phiên cũ vẫn giữ</span></td>
+      <td class="site-name"><strong>${escapeHtml(site.site_id)}</strong><span class="site-sub">Đã xóa</span></td>
       <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(site)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="${escapeHtml(site.site_id)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`));
-  if (data.unassigned.sessions > 0) rows.push(`<tr class="site-muted">
-      <td class="site-name"><strong>Chưa gán website</strong><span class="site-sub">Phiên trước khi đăng ký, hoặc từ tên miền cấu hình trên máy chủ</span></td>
+  // Shown only for current unassigned traffic; with no website registered it would repeat the list below.
+  if (sites.length && data.unassigned.sessions_24h > 0) rows.push(`<tr class="site-muted">
+      <td class="site-name"><strong>Chưa gán website</strong></td>
       <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(data.unassigned)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="_none"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`);
-  if (!sites.length) rows.unshift(`<tr><td colspan="7" class="empty-state">Chưa có website nào. ` +
-    (document.body.classList.contains('read-only') ? 'Quản trị viên thêm website để nhận mã cài đặt.'
-      : 'Bấm <strong>Thêm website</strong> để nhận mã cài đặt cho website đầu tiên.') + '</td></tr>');
-  document.getElementById('sitesBody').innerHTML = rows.join('');
-
-  const foot = document.getElementById('sitesFoot');
-  const configured = data.configured_origins.filter(o => !sites.some(s => s.origins.includes(o)));
-  foot.hidden = !configured.length;
-  foot.textContent = configured.length
-    ? 'Máy chủ còn nhận dữ liệu từ ' + configured.map(o => o.replace(/^https:\/\//, '')).join(', ') +
-      ' (cấu hình BOT_TELEMETRY_ORIGINS). Đăng ký các tên miền này để gán phiên của chúng cho một website.'
-    : '';
+  const empty = !rows.length;
+  document.getElementById('sitesTable').classList.toggle('is-empty', empty);
+  document.getElementById('sitesBody').innerHTML = empty
+    ? '<tr><td colspan="7" class="empty-state">Chưa có website nào</td></tr>' : rows.join('');
 
   const unregistered = data.unregistered_origins;
   document.getElementById('unregisteredPanel').hidden = !unregistered.length;
   document.getElementById('unregisteredList').innerHTML = unregistered.map(row => `<li>
-      <code>${escapeHtml(row.origin)}</code>
-      <span class="muted">${fmtCount(row.sessions)} phiên${row.last_seen ? ' · ' + relativeTime(row.last_seen) : ''}</span>
+      <strong>${escapeHtml(row.origin.replace(/^https:\/\//, ''))}</strong>
+      <span class="muted">${fmtCount(row.sessions)} phiên${row.last_seen ? ' · ' + relativeTime(row.last_seen).toLowerCase() : ''}</span>
       <button class="label-btn admin-only" type="button" data-origin="${escapeHtml(row.origin)}">Đăng ký</button></li>`).join('');
 }
 

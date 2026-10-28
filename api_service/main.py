@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, List, Literal
+from urllib.parse import urlsplit
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -1607,8 +1608,9 @@ def list_sites(request: Request, _read=Depends(require_read_access)):
     """Registered websites with their install state and the last 24 hours of traffic."""
     db = _require_sites_db()
     try:
-        return sites.overview(db, collector_base=_collector_base(request),
-                              configured_origins=settings.TELEMETRY_ALLOWED_ORIGINS)
+        collector_base = _collector_base(request)
+        return sites.overview(db, collector_base=collector_base,
+                              own_hosts=(_request_host(request), urlsplit(collector_base).hostname))
     except Exception as exc:
         logger.exception("Site overview failed")
         raise HTTPException(status_code=503, detail="Database query failed") from exc

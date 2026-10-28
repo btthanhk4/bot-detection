@@ -12,6 +12,7 @@ Lookups on the request path read an in-memory snapshot. The snapshot is reloaded
 write here and by the maintenance loop, so the CORS middleware never waits on MongoDB.
 """
 
+import ipaddress
 import re
 import threading
 import unicodedata
@@ -311,9 +312,27 @@ def site_activity(db, now=None) -> dict:
     return activity
 
 
-def unregistered_origins(db, now=None, limit: int = 10) -> list:
-    """Origins of recent unattributed sessions: sites sending data that nobody registered."""
+def _bare_host(host) -> str:
+    host = str(host or "").split(":")[0].lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
+def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list:
+    """Origins of recent unattributed sessions: sites sending data that nobody registered.
+
+    DATACAT's own hosts (dashboard, collector) and bare IP addresses are left out: that is
+    test traffic, not a customer's website to register.
+    """
     now = now or datetime.now(timezone.utc)
+    ignored = {_bare_host(host) for host in ignore_hosts if host}
     counts = {}
     for doc in db["detection_results"].find(
             {"site_id": None, "updated_at": {"$gte": now - timedelta(days=7)}, "pageUrl": {"$type": "string"}},
@@ -321,6 +340,9 @@ def unregistered_origins(db, now=None, limit: int = 10) -> list:
         try:
             origin = normalize_origin(doc["pageUrl"].split("?")[0])
         except ValueError:
+            continue
+        host = origin_host(origin)
+        if _bare_host(host) in ignored or _is_ip(host):
             continue
         entry = counts.setdefault(origin, {"origin": origin, "sessions": 0, "last_seen": None})
         entry["sessions"] += 1
@@ -336,7 +358,7 @@ def install_snippet(collector_base: str, site_id: str) -> str:
             f'data-study-id="{STUDY_ID}" data-site-id="{site_id}"></script>')
 
 
-def overview(db, *, collector_base: str, configured_origins, now=None) -> dict:
+def overview(db, *, collector_base: str, own_hosts=(), now=None) -> dict:
     """Everything the Websites page shows, in one call."""
     now = now or datetime.now(timezone.utc)
     activity = site_activity(db, now)
@@ -361,8 +383,7 @@ def overview(db, *, collector_base: str, configured_origins, now=None) -> dict:
         "sites": sites,
         "removed_sites": removed,
         "unassigned": {**unassigned, "last_seen": _ms(unassigned["last_seen"])},
-        "unregistered_origins": unregistered_origins(db, now),
-        "configured_origins": sorted(configured_origins or []),
+        "unregistered_origins": unregistered_origins(db, now, ignore_hosts=own_hosts),
         "collector_base": collector_base,
         "study_id": STUDY_ID,
         "checked_at": _ms(now),
