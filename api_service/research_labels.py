@@ -31,6 +31,9 @@ def _register(db, data):
     if existing:
         if existing.get("deleted"):
             collection.update_one({"_id": identifier}, {"$set": {"deleted": False}})
+        if data.get("_site_id") and not existing.get("attributed_site_id"):
+            # A session that began before its website was registered.
+            collection.update_one({"_id": identifier}, {"$set": {"attributed_site_id": data["_site_id"]}})
         return existing
     counter = db["research_counters"].find_one_and_update(
         {"_id": "traffic"}, {"$inc": {"value": 1}}, upsert=True,
@@ -42,6 +45,9 @@ def _register(db, data):
         "first_received_at": _milliseconds(data.get("received_at") or data.get("created_at")),
         "study_id": data.get("study_id") or meta.get("studyId"),
         "site_id": data.get("site_id") or meta.get("siteId"),
+        # site_id is what the tag declared (study metadata); attributed_site_id is the
+        # registered website its Origin belongs to, which the dashboard filters by.
+        "attributed_site_id": data.get("_site_id"),
         "revision": 0, "manual_label": None,
     }
     # $setOnInsert makes retries and concurrent first snapshots idempotent.
@@ -118,13 +124,15 @@ def enrich_sessions(sessions):
                       if key != "_id"}} for row in sessions]
 
 
-def traffic_page(limit=50, before_number=None):
+def traffic_page(limit=50, before_number=None, site=None):
     db = get_db()
     if db is None:
         raise RuntimeError("Database unavailable")
     with _lock:
         _prepare(db)
     query = {"deleted": {"$ne": True}}
+    if site:
+        query["attributed_site_id"] = None if site == "_none" else site
     if before_number is not None:
         query["traffic_number"] = {"$lt": before_number}
     rows = list(db["research_sessions"].find(query, {"label_history": 0})
@@ -149,7 +157,8 @@ def traffic_page(limit=50, before_number=None):
                 doc[field] = _milliseconds(doc[field])
         sessions.append(doc)
     return {"sessions": sessions, "returned": len(sessions),
-            "total": db["research_sessions"].count_documents({"deleted": {"$ne": True}}),
+            "total": db["research_sessions"].count_documents(
+                {key: value for key, value in query.items() if key != "traffic_number"}),
             "next_before": rows[-1]["traffic_number"] if has_more else None}
 
 

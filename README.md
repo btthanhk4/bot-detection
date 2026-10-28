@@ -406,6 +406,11 @@ là số khách online (5 phút), số phiên 24 giờ, tỉ lệ phân loại, 
 | `POST` | `/api/v1/detect` | Real-time bot classification |
 | `POST` | `/api/v1/telemetry` | Asynchronous telemetry ingestion |
 | `GET` | `/api/v1/traffic/timeline` | Lưu lượng phân loại theo khoảng thời gian |
+| `GET` | `/api/v1/sites` | Danh sách website, trạng thái cài đặt, traffic 24 giờ (quyền xem) |
+| `POST` / `PATCH` / `DELETE` | `/api/v1/sites[/{site_id}]` | Thêm, sửa, tạm dừng, xóa website (quyền quản trị) |
+
+Các endpoint giám sát (`stats/summary`, `traffic/timeline`, `telemetry/recent`, `research/traffic`,
+`live`, `live/online`) nhận thêm `?site=<site_id>`, hoặc `?site=_none` cho phiên chưa gán website.
 
 ### Ví dụ Response từ `/api/v1/detect`
 
@@ -450,6 +455,34 @@ nên dùng giá trị `bot_probability` để chặn người dùng trong trạn
 ---
 
 ## Tích hợp vào Website
+
+### Quản lý nhiều website
+
+Trang **Website** trên dashboard là nơi đăng ký từng website của khách hàng:
+
+1. **Thêm website**: tên, các tên miền (mỗi dòng một tên miền, gồm cả bản `www` nếu có), người
+   liên hệ. Lưu xong, dashboard hiện đoạn mã cài đặt riêng của website đó:
+   `<script defer src="https://api.datacat.io.vn/bot-collector.js" data-datacat data-study-id="datacat_live" data-site-id="<site_id>"></script>`.
+2. Khách hàng dán đoạn mã vào trước `</head>` (hoặc thẻ HTML tùy chỉnh trong Google Tag Manager).
+   Trạng thái chuyển từ *Chờ cài đặt* sang *Đang nhận dữ liệu* khi có phiên đầu tiên.
+3. **Xem traffic** lọc Tổng quan và Live View theo website; bộ chọn website nằm cạnh tiêu đề trang.
+
+Cách gán phiên:
+
+- Website được xác định bằng header `Origin` do trình duyệt gửi, không bằng `data-site-id` trong thẻ:
+  trang khác chép nguyên đoạn mã vẫn được tính đúng website của nó, hoặc bị từ chối nếu tên miền
+  chưa đăng ký.
+- Tên miền đã đăng ký được nhận dữ liệu và qua CORS ngay, không cần sửa `.env` hay khởi động lại.
+  Tên miền trong `BOT_TELEMETRY_ORIGINS` vẫn được nhận như trước nhưng không thuộc website nào
+  cho đến khi được đăng ký.
+- Đăng ký một tên miền sẽ gán cả các phiên cũ của nó (trước đó là *Chưa gán website*). Mục
+  *Nguồn chưa đăng ký* liệt kê tên miền đã gửi dữ liệu trong 7 ngày mà chưa thuộc website nào.
+- **Tạm dừng** từ chối dữ liệu của website mà không cần khách hàng gỡ mã. **Xóa** chỉ bỏ website
+  khỏi danh sách; phiên đã ghi vẫn giữ.
+- Tài khoản chỉ xem thấy danh sách và mã cài đặt, không thêm, sửa hay xóa được.
+
+`BOT_PUBLIC_API_URL` là địa chỉ đặt trong đoạn mã cài đặt (mặc định trong `docker-compose.yml`:
+`https://api.datacat.io.vn`).
 
 ### Cách 1: Nhúng Script trực tiếp
 

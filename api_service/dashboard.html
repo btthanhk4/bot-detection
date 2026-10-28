@@ -2098,6 +2098,69 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
   #globeCanvas { height: 380px; }
   .live-map-tools { flex-wrap: wrap; }
 }
+
+/* Websites */
+.page-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+.site-picker { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; }
+.site-picker[hidden] { display: none; }
+.site-picker .ui-icon { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--text-muted); pointer-events: none; }
+.site-picker select { height: 34px; max-width: 260px; min-width: 0; padding: 0 8px 0 32px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.site-picker select:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.site-picker.filtered select { border-color: var(--brand); background: var(--brand-soft); }
+.site-picker.filtered .ui-icon { color: var(--brand); }
+.sites-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; }
+.sites-intro { max-width: 72ch; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.sites-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sites-table th { position: sticky; top: 0; z-index: 1; padding: 9px 16px; text-align: left; white-space: nowrap; font-size: 12px; font-weight: 550; color: var(--text-muted); background: var(--bg-secondary); }
+.sites-table td { padding: 12px 16px; border-top: 1px solid var(--border-subtle); vertical-align: middle; color: var(--text-secondary); }
+.sites-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sites-table .verdict-badge { text-transform: none; white-space: nowrap; }
+.sites-table tr.site-muted td { background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); }
+.site-name { min-width: 180px; }
+.site-name strong { display: block; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
+.site-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.site-sub code, .unregistered-list code { font-family: var(--font-mono); font-size: 12px; }
+.domain-list { display: flex; flex-wrap: wrap; gap: 4px; min-width: 150px; max-width: 320px; }
+.domain-chip { padding: 1px 8px; border-radius: 6px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.muted { color: var(--text-muted); }
+.site-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.site-actions .label-btn { min-height: 28px; padding: 4px 8px; border-radius: 6px; white-space: nowrap; }
+.site-actions .label-btn .ui-icon { width: 14px; height: 14px; }
+.site-actions .label-btn.danger { color: var(--accent-red); }
+.sites-foot, .sites-note { padding: 10px 16px 14px; font-size: 12.5px; line-height: 1.5; color: var(--text-muted); }
+.sites-foot { border-top: 1px solid var(--border-subtle); }
+.unregistered-list { list-style: none; padding: 0 16px 12px; }
+.unregistered-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); }
+.unregistered-list code { color: var(--text-primary); overflow-wrap: anywhere; }
+.field-hint { font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-muted); }
+.label-dialog input:disabled { color: var(--text-muted); background: var(--bg-secondary); }
+.label-dialog { margin: auto; }
+.snippet-dialog { width: min(620px, calc(100% - 32px)); }
+.install-steps { display: grid; gap: 14px; padding-left: 20px; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.install-steps code { font-family: var(--font-mono); font-size: 12px; }
+.snippet-box { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.snippet-box code { display: block; width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; overflow-wrap: anywhere; user-select: all; }
+.snippet-domains { margin-top: 14px; font-size: 12.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+body.read-only .admin-only { display: none !important; }
+@media (max-width: 640px) {
+  .page-header { flex-wrap: wrap; }
+  .site-picker, .site-picker select { width: 100%; max-width: none; }
+  .unregistered-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .unregistered-list li .muted { grid-column: 1 / -1; grid-row: 2; }
+}
+@media (max-width: 760px) {
+  .sites-table thead { display: none; }
+  .sites-table, .sites-table tbody { display: block; }
+  .sites-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 14px 16px; border-top: 1px solid var(--border-subtle); }
+  .sites-table tr.site-muted { background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); }
+  .sites-table td, .sites-table tr.site-muted td { display: block; padding: 0; border: 0; background: none; }
+  .sites-table td.site-name, .sites-table td.site-domains, .sites-table td.site-actions-cell, .sites-table td.empty-state { grid-column: 1 / -1; }
+  .sites-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 11.5px; color: var(--text-muted); }
+  .sites-table td:empty, .sites-table td.site-domains:has(.muted) { display: none; }
+  .sites-table .num { text-align: left; }
+  .site-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .domain-list { max-width: none; }
+}
 </style>
 </head>
 <body>
@@ -2143,6 +2206,11 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
   <symbol id="icon-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
   <symbol id="icon-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
   <symbol id="icon-flask" viewBox="0 0 24 24"><path d="M10 2v7.5L4.5 19a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L14 9.5V2"/><path d="M8.5 2h7M7 16h10"/></symbol>
+  <symbol id="icon-app-window" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></symbol>
+  <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="icon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></symbol>
+  <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
 </svg>
 
 <!-- ═══════ HEADER ═══════ -->
@@ -2153,6 +2221,7 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
     <a class="nav-item" href="#overview" data-view="overview"><svg class="ui-icon"><use href="#icon-layout"></use></svg>Tổng quan</a>
     <a class="nav-item" href="#live" data-view="live"><svg class="ui-icon"><use href="#icon-globe"></use></svg>Live View</a>
     <div class="nav-section">Quản trị</div>
+    <a class="nav-item" href="#sites" data-view="sites"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Website</a>
     <a class="nav-item" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
     <a class="nav-item" href="#account" data-view="account"><svg class="ui-icon"><use href="#icon-user"></use></svg>Tài khoản</a>
   </nav>
@@ -2196,7 +2265,14 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
 
 <!-- ═══════ MAIN ═══════ -->
 <main class="main" id="main">
-  <div class="page-header"><h1 id="pageTitle">Tổng quan</h1><span class="page-sub" id="pageSub"></span></div>
+  <div class="page-header">
+    <div class="page-heading"><h1 id="pageTitle">Tổng quan</h1><span class="page-sub" id="pageSub"></span></div>
+    <label class="site-picker" id="sitePicker" hidden>
+      <svg class="ui-icon" aria-hidden="true"><use href="#icon-app-window"></use></svg>
+      <span class="sr-only">Website đang xem</span>
+      <select id="siteFilter" onchange="changeSiteFilter(this.value)"><option value="">Tất cả website</option></select>
+    </label>
+  </div>
   <section class="view" id="view-overview" data-title="Tổng quan">
 <!-- ALERT BANNER -->
   <div class="alert-banner" id="alertBanner">
@@ -2451,6 +2527,37 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
       </div>
     </div>
   </section>
+  <section class="view" id="view-sites" data-title="Website" hidden>
+    <div class="sites-toolbar">
+      <p class="sites-intro">Mỗi website có một mã cài đặt riêng. Phiên được gán cho website theo tên miền mà trình duyệt gửi lên; trang ở tên miền chưa đăng ký sẽ bị từ chối.</p>
+      <button class="btn-primary admin-only" type="button" onclick="openSiteDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm website</button>
+    </div>
+    <div class="sys-grid">
+      <div class="sys-card"><span class="sys-label">Đang giám sát</span><strong id="sitesActive">--</strong><small id="sitesActiveNote">--</small></div>
+      <div class="sys-card"><span class="sys-label">Đang nhận dữ liệu</span><strong id="sitesReceiving">--</strong><small>Có phiên trong 24 giờ qua</small></div>
+      <div class="sys-card"><span class="sys-label">Phiên 24 giờ</span><strong id="sitesSessions">--</strong><small>Mọi website</small></div>
+      <div class="sys-card"><span class="sys-label">Bot 24 giờ</span><strong id="sitesBots">--</strong><small id="sitesBotsNote">--</small></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Danh sách website</div>
+        <span class="panel-badge badge-count" id="sitesCount">0 website</span>
+      </div>
+      <div class="table-scroll">
+        <table class="sites-table">
+          <thead><tr><th>Website</th><th>Tên miền</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
+          <tbody id="sitesBody"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+      <p class="sites-foot" id="sitesFoot" hidden></p>
+    </div>
+    <div class="panel" id="unregisteredPanel" hidden>
+      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Nguồn chưa đăng ký</div></div>
+      <p class="sites-note">Các trang này đã gửi dữ liệu trong 7 ngày qua nhưng chưa thuộc website nào. Đăng ký để gán cả phiên cũ của chúng.</p>
+      <ul class="unregistered-list" id="unregisteredList"></ul>
+    </div>
+  </section>
+
   <section class="view" id="view-system" data-title="Hệ thống" hidden>
     <div class="sys-grid" id="sysGrid">
       <div class="sys-card"><span class="sys-label">Dịch vụ</span><strong id="sysStatus">--</strong><small id="sysStatusNote">--</small></div>
@@ -2697,6 +2804,34 @@ body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; lette
   </form>
 </dialog>
 
+<dialog id="siteDialog" class="label-dialog" aria-labelledby="siteDialogTitle">
+  <form id="siteForm" onsubmit="saveSite(event)" novalidate>
+    <h2 id="siteDialogTitle">Thêm website</h2>
+    <label>Tên website<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Cửa hàng ABC"></label>
+    <label>Mã website<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
+      <small class="field-hint" id="siteIdHint">Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.</small></label>
+    <label>Tên miền<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="abc.vn&#10;www.abc.vn" aria-describedby="siteOriginsHint"></textarea>
+      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một tên miền. Ghi cả bản có www nếu website dùng cả hai.</small></label>
+    <label>Người liên hệ<input id="siteContact" maxlength="200" autocomplete="off" placeholder="Tên, email hoặc số điện thoại"></label>
+    <label>Ghi chú<textarea id="siteNotes" maxlength="2000" rows="2"></textarea></label>
+    <p id="siteError" class="form-msg err" role="alert"></p>
+    <div class="label-actions"><button type="button" onclick="document.getElementById('siteDialog').close()">Hủy</button><button type="submit" id="siteSave">Lưu</button></div>
+  </form>
+</dialog>
+
+<dialog id="snippetDialog" class="label-dialog snippet-dialog" aria-labelledby="snippetTitle">
+  <h2 id="snippetTitle">Mã cài đặt</h2>
+  <ol class="install-steps">
+    <li>Sao chép đoạn mã:
+      <div class="snippet-box"><code id="snippetCode"></code>
+        <button type="button" class="btn-secondary" id="snippetCopy" onclick="copySnippet()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg><span>Sao chép</span></button></div></li>
+    <li>Dán vào trước thẻ <code>&lt;/head&gt;</code> trên mọi trang. Nếu dùng Google Tag Manager: tạo thẻ <em>HTML tùy chỉnh</em>, kích hoạt trên <em>Tất cả các trang</em>.</li>
+    <li>Mở website và di chuột vài giây. Trạng thái chuyển sang <strong>Đang nhận dữ liệu</strong> trong khoảng một phút.</li>
+  </ol>
+  <p class="snippet-domains" id="snippetDomains"></p>
+  <div class="label-actions"><button type="button" onclick="document.getElementById('snippetDialog').close()">Đóng</button></div>
+</dialog>
+
 <script>
 /* ═══════════════════════════════════════════════════
    REAL-TIME DASHBOARD ENGINE
@@ -2924,7 +3059,7 @@ function renderReferenceConnection(integration, failed = false) {
 async function fetchRecentTelemetry() {
   const requestVersion = ++trafficRequestVersion;
   const data = await fetchJSON(API_BASE + '/api/v1/research/traffic?limit=50' +
-    (trafficBefore == null ? '' : '&before_number=' + trafficBefore));
+    (trafficBefore == null ? '' : '&before_number=' + trafficBefore) + siteParam('&'));
   if (requestVersion !== trafficRequestVersion) return;
 
   if (data && data.sessions) {
@@ -2977,8 +3112,9 @@ function changeTrafficPage(older) {
 }
 
 async function fetchClassificationSummary() {
-  const data = await fetchJSON(API_BASE + '/api/v1/stats/summary');
-  if (!data) return;
+  const requestedSite = selectedSite;
+  const data = await fetchJSON(API_BASE + '/api/v1/stats/summary' + siteParam('?'));
+  if (!data || requestedSite !== selectedSite) return;
 
   const total = Number(data.total);
   const humans = Number(data.humans);
@@ -3050,7 +3186,8 @@ async function fetchTrafficTimeline() {
   const requestedRange = selectedTimelineMinutes;
   const requestVersion = ++timelineRequestVersion;
   const data = await fetchJSON(
-    API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}&utc_offset_minutes=${-new Date().getTimezoneOffset()}`
+    API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}&utc_offset_minutes=${-new Date().getTimezoneOffset()}` +
+    siteParam('&')
   );
   if (
     requestVersion === timelineRequestVersion &&
@@ -4676,12 +4813,12 @@ function applyOnline(online) {
 }
 
 async function refreshOnline() {
-  const online = await fetchJSON(API_BASE + '/api/v1/live/online');
+  const online = await fetchJSON(API_BASE + '/api/v1/live/online' + siteParam('?'));
   if (online) applyOnline(online);
 }
 
 async function refreshLive() {
-  const data = await fetchJSON(API_BASE + '/api/v1/live');
+  const data = await fetchJSON(API_BASE + '/api/v1/live' + siteParam('?'));
   if (!data) { setText('pageSub', 'Không tải được dữ liệu Live View'); return; }
   liveData = data;
   renderLiveSide(data);
@@ -4713,8 +4850,349 @@ document.getElementById('liveTopLocations').addEventListener('click', (event) =>
   if (button) focusPlace(button.dataset.place);
 });
 
+// ──── Websites ────
+// The monitoring views show one website or all; the choice is kept per browser.
+const SITE_STATES = {
+  receiving: ['Đang nhận dữ liệu', 'verdict-human'],
+  quiet: ['Không có dữ liệu 24 giờ', 'verdict-suspect'],
+  waiting: ['Chờ cài đặt', 'verdict-pending'],
+  paused: ['Tạm dừng', 'verdict-pending'],
+};
+const SITE_FILTER_RE = /^(_none|[a-z0-9][a-z0-9_-]{0,63})$/;
+const SITES_POLL_MS = 30000;
+let selectedSite = '';
+try { selectedSite = localStorage.getItem('datacat-site') || ''; } catch (e) { /* storage unavailable */ }
+if (!SITE_FILTER_RE.test(selectedSite)) selectedSite = '';
+let sitesData = null;
+let sitesTimer = null;
+let editingSiteId = null;
+
+function siteParam(separator) {
+  return selectedSite ? separator + 'site=' + encodeURIComponent(selectedSite) : '';
+}
+
+function fmtCount(value) { return (Number(value) || 0).toLocaleString('vi-VN'); }
+
+function relativeTime(epochMs) {
+  const seconds = Math.max(0, (Date.now() - epochMs) / 1000);
+  if (seconds < 60) return 'Vừa xong';
+  if (seconds < 3600) return Math.floor(seconds / 60) + ' phút trước';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + ' giờ trước';
+  return Math.floor(seconds / 86400) + ' ngày trước';
+}
+
+function slugPreview(name) {
+  return String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+}
+
+function siteLabel(siteId) {
+  if (siteId === '_none') return 'Chưa gán website';
+  const site = sitesData && sitesData.sites.find(s => s.site_id === siteId);
+  return site ? site.name : siteId + ' (đã xóa)';
+}
+
+function syncSitePicker() {
+  const picker = document.getElementById('sitePicker');
+  const select = document.getElementById('siteFilter');
+  const view = currentViewFromHash();
+  const options = [['', 'Tất cả website']];
+  if (sitesData) {
+    sitesData.sites.forEach(s => options.push([s.site_id, s.name + (s.status === 'paused' ? ' (tạm dừng)' : '')]));
+    sitesData.removed_sites.forEach(s => options.push([s.site_id, s.site_id + ' (đã xóa)']));
+    if (sitesData.unassigned.sessions > 0) options.push(['_none', 'Chưa gán website']);
+  }
+  if (selectedSite && !options.some(([value]) => value === selectedSite)) options.push([selectedSite, siteLabel(selectedSite)]);
+  select.innerHTML = options.map(([value, label]) =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  select.value = selectedSite;
+  picker.classList.toggle('filtered', Boolean(selectedSite));
+  picker.hidden = !['overview', 'live'].includes(view) || options.length < 2;
+}
+
+function changeSiteFilter(value) {
+  selectedSite = SITE_FILTER_RE.test(value || '') ? value : '';
+  try {
+    if (selectedSite) localStorage.setItem('datacat-site', selectedSite); else localStorage.removeItem('datacat-site');
+  } catch (e) { /* storage unavailable: the choice lasts for this page */ }
+  syncSitePicker();
+  // Start the traffic table from the newest page of the chosen website.
+  trafficBefore = null;
+  trafficNextCursor = null;
+  trafficPageHistory.length = 0;
+  trafficRequestVersion++;
+  timelineRequestVersion++;
+  nextTimelinePollAt = 0;
+  nextSummaryPollAt = 0;
+  Promise.resolve(activePoll).then(() => pollAll());
+  if (liveActive) { refreshLive(); refreshOnline(); }
+}
+
+function siteActionButtons(site) {
+  const id = escapeHtml(site.site_id);
+  const name = escapeHtml(site.name);
+  const paused = site.status === 'paused';
+  return `<div class="site-actions">
+    <button class="label-btn" type="button" data-action="traffic" data-site="${id}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button>
+    <button class="label-btn" type="button" data-action="snippet" data-site="${id}" title="Mã cài đặt" aria-label="Mã cài đặt của ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg></button>
+    <button class="label-btn admin-only" type="button" data-action="edit" data-site="${id}" title="Sửa" aria-label="Sửa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-pencil"></use></svg></button>
+    <button class="label-btn admin-only" type="button" data-action="toggle" data-site="${id}" title="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'}" aria-label="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'} ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-${paused ? 'play' : 'pause'}"></use></svg></button>
+    <button class="label-btn admin-only danger" type="button" data-action="delete" data-site="${id}" title="Xóa" aria-label="Xóa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
+  </div>`;
+}
+
+function siteStatsCells(stats) {
+  const total = Number(stats.sessions_24h) || 0;
+  const bots = Number(stats.bots_24h) || 0;
+  const rate = total ? ` <span class="muted">(${Math.round(bots / total * 100)}%)</span>` : '';
+  const seen = stats.last_seen
+    ? `<span title="${escapeHtml(new Date(stats.last_seen).toLocaleString('vi-VN'))}">${relativeTime(stats.last_seen)}</span>`
+    : '<span class="muted">Chưa có</span>';
+  return `<td class="num" data-label="Phiên 24 giờ">${fmtCount(total)}</td>` +
+    `<td class="num" data-label="Bot 24 giờ">${fmtCount(bots)}${rate}</td><td data-label="Hoạt động gần nhất">${seen}</td>`;
+}
+
+function renderSites(data) {
+  const sites = data.sites;
+  const active = sites.filter(s => s.status === 'active').length;
+  const receiving = sites.filter(s => s.install_state === 'receiving').length;
+  const all = [...sites, ...data.removed_sites, data.unassigned];
+  const sessions = all.reduce((sum, s) => sum + (Number(s.sessions_24h) || 0), 0);
+  const bots = all.reduce((sum, s) => sum + (Number(s.bots_24h) || 0), 0);
+  setText('sitesActive', fmtCount(active));
+  setText('sitesActiveNote', sites.length - active ? (sites.length - active) + ' website tạm dừng' : 'Trên ' + sites.length + ' website');
+  setText('sitesReceiving', fmtCount(receiving));
+  setText('sitesSessions', fmtCount(sessions));
+  setText('sitesBots', fmtCount(bots));
+  setText('sitesBotsNote', sessions ? Math.round(bots / sessions * 100) + '% số phiên' : 'Chưa có phiên');
+  setText('sitesCount', sites.length + ' website');
+
+  const rows = sites.map(site => {
+    const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
+    const domains = site.origins.map(o => `<span class="domain-chip">${escapeHtml(o.replace(/^https:\/\//, ''))}</span>`).join('');
+    return `<tr>
+      <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.contact ? ' · ' + escapeHtml(site.contact) : ''}</span></td>
+      <td class="site-domains"><div class="domain-list">${domains}</div></td>
+      <td data-label="Trạng thái"><span class="verdict-badge ${state[1]}">${state[0]}</span></td>
+      ${siteStatsCells(site)}
+      <td class="site-actions-cell">${siteActionButtons(site)}</td></tr>`;
+  });
+  data.removed_sites.forEach(site => rows.push(`<tr class="site-muted">
+      <td class="site-name"><strong>${escapeHtml(site.site_id)}</strong><span class="site-sub">Đã xóa khỏi danh sách, phiên cũ vẫn giữ</span></td>
+      <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(site)}
+      <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="${escapeHtml(site.site_id)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`));
+  if (data.unassigned.sessions > 0) rows.push(`<tr class="site-muted">
+      <td class="site-name"><strong>Chưa gán website</strong><span class="site-sub">Phiên trước khi đăng ký, hoặc từ tên miền cấu hình trên máy chủ</span></td>
+      <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(data.unassigned)}
+      <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="_none"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`);
+  if (!sites.length) rows.unshift(`<tr><td colspan="7" class="empty-state">Chưa có website nào. ` +
+    (document.body.classList.contains('read-only') ? 'Quản trị viên thêm website để nhận mã cài đặt.'
+      : 'Bấm <strong>Thêm website</strong> để nhận mã cài đặt cho website đầu tiên.') + '</td></tr>');
+  document.getElementById('sitesBody').innerHTML = rows.join('');
+
+  const foot = document.getElementById('sitesFoot');
+  const configured = data.configured_origins.filter(o => !sites.some(s => s.origins.includes(o)));
+  foot.hidden = !configured.length;
+  foot.textContent = configured.length
+    ? 'Máy chủ còn nhận dữ liệu từ ' + configured.map(o => o.replace(/^https:\/\//, '')).join(', ') +
+      ' (cấu hình BOT_TELEMETRY_ORIGINS). Đăng ký các tên miền này để gán phiên của chúng cho một website.'
+    : '';
+
+  const unregistered = data.unregistered_origins;
+  document.getElementById('unregisteredPanel').hidden = !unregistered.length;
+  document.getElementById('unregisteredList').innerHTML = unregistered.map(row => `<li>
+      <code>${escapeHtml(row.origin)}</code>
+      <span class="muted">${fmtCount(row.sessions)} phiên${row.last_seen ? ' · ' + relativeTime(row.last_seen) : ''}</span>
+      <button class="label-btn admin-only" type="button" data-origin="${escapeHtml(row.origin)}">Đăng ký</button></li>`).join('');
+}
+
+async function loadSites() {
+  const data = await fetchJSON(API_BASE + '/api/v1/sites');
+  if (data && Array.isArray(data.sites)) {
+    sitesData = data;
+    if (currentViewFromHash() === 'sites') renderSites(data);
+  } else if (currentViewFromHash() === 'sites' && !sitesData) {
+    document.getElementById('sitesBody').innerHTML = '<tr><td colspan="7" class="empty-state">Không tải được danh sách website</td></tr>';
+  }
+  syncSitePicker();
+}
+
+function startSites() {
+  if (sitesData) renderSites(sitesData);
+  loadSites();
+  clearInterval(sitesTimer);
+  sitesTimer = setInterval(() => { if (!document.hidden) loadSites(); }, SITES_POLL_MS);
+}
+
+function stopSites() {
+  clearInterval(sitesTimer);
+  sitesTimer = null;
+}
+
+function findSite(siteId) {
+  return sitesData && sitesData.sites.find(s => s.site_id === siteId);
+}
+
+function openSiteDialog(site = null, origin = '') {
+  editingSiteId = site ? site.site_id : null;
+  setText('siteDialogTitle', site ? 'Sửa website' : 'Thêm website');
+  const idInput = document.getElementById('siteIdInput');
+  document.getElementById('siteName').value = site ? site.name : (origin ? origin.replace(/^https?:\/\//, '') : '');
+  idInput.value = site ? site.site_id : '';
+  idInput.disabled = Boolean(site);
+  idInput.placeholder = site ? '' : slugPreview(document.getElementById('siteName').value) || 'tu-tao-tu-ten';
+  setText('siteIdHint', site ? 'Mã nằm trong đoạn mã cài đặt nên không đổi được.'
+    : 'Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.');
+  document.getElementById('siteOrigins').value = site ? site.origins.join('\n') : origin;
+  document.getElementById('siteContact').value = site ? site.contact || '' : '';
+  document.getElementById('siteNotes').value = site ? site.notes || '' : '';
+  setText('siteError', '');
+  document.getElementById('siteSave').disabled = false;
+  document.getElementById('siteDialog').showModal();
+  document.getElementById('siteName').focus();
+}
+
+document.getElementById('siteName').addEventListener('input', (event) => {
+  const idInput = document.getElementById('siteIdInput');
+  if (!idInput.disabled) idInput.placeholder = slugPreview(event.target.value) || 'tu-tao-tu-ten';
+});
+
+function siteErrorText(status, detail) {
+  if (status === 401 || status === 403) return typeof detail === 'string' && detail.startsWith('Monitoring')
+    ? detail : 'Tài khoản này không có quyền quản trị website';
+  if (typeof detail !== 'string') return 'Thông tin chưa hợp lệ: kiểm tra mã website (chữ thường, số, "-", "_") và tên miền';
+  let match = detail.match(/^(.*) already belongs to site (.*)$/);
+  if (match) return `${match[1]} đã thuộc website ${match[2]}`;
+  match = detail.match(/^Site id (.*) is already used$/);
+  if (match) return `Mã website ${match[1]} đã được dùng`;
+  match = detail.match(/^'?(.*?)'? (is not a valid domain|must be an http\(s\) domain)$/);
+  if (match) return `Tên miền không hợp lệ: ${match[1]}`;
+  if (/1 to \d+ domains/.test(detail)) return 'Mỗi website cần từ 1 đến 20 tên miền';
+  return detail;
+}
+
+async function saveSite(event) {
+  event.preventDefault();
+  const button = document.getElementById('siteSave');
+  const name = document.getElementById('siteName').value.trim();
+  const siteId = document.getElementById('siteIdInput').value.trim();
+  const origins = document.getElementById('siteOrigins').value.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
+  if (!name) { setText('siteError', 'Nhập tên website'); document.getElementById('siteName').focus(); return; }
+  if (!origins.length) { setText('siteError', 'Nhập ít nhất một tên miền'); document.getElementById('siteOrigins').focus(); return; }
+  if (!editingSiteId && siteId && !SITE_FILTER_RE.test(siteId)) {
+    setText('siteError', 'Mã website chỉ gồm chữ thường, số, "-" và "_"');
+    document.getElementById('siteIdInput').focus();
+    return;
+  }
+  const body = {
+    name, origins,
+    contact: document.getElementById('siteContact').value.trim() || null,
+    notes: document.getElementById('siteNotes').value.trim() || null,
+  };
+  if (!editingSiteId && siteId) body.site_id = siteId;
+  button.disabled = true;
+  setText('siteError', '');
+  try {
+    const res = await fetch(API_BASE + '/api/v1/sites' + (editingSiteId ? '/' + encodeURIComponent(editingSiteId) : ''), {
+      method: editingSiteId ? 'PATCH' : 'POST',
+      headers: { ...CSRF_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (handleUnauthorized(res)) return;
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) { setText('siteError', siteErrorText(res.status, result.detail)); return; }
+    document.getElementById('siteDialog').close();
+    const created = !editingSiteId;
+    await loadSites();
+    if (created) openSnippet(result);
+  } catch (e) {
+    setText('siteError', 'Không kết nối được máy chủ');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function openSnippet(site) {
+  setText('snippetTitle', 'Mã cài đặt · ' + site.name);
+  setText('snippetCode', site.snippet);
+  setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
+    '. Trang ở tên miền khác sẽ bị từ chối dù dùng cùng đoạn mã.');
+  const copy = document.getElementById('snippetCopy');
+  copy.querySelector('span').textContent = 'Sao chép';
+  document.getElementById('snippetDialog').showModal();
+  copy.focus();
+}
+
+async function copySnippet() {
+  const code = document.getElementById('snippetCode');
+  const label = document.getElementById('snippetCopy').querySelector('span');
+  try {
+    await navigator.clipboard.writeText(code.textContent);
+    label.textContent = 'Đã sao chép';
+  } catch (e) {
+    // Clipboard API unavailable (non-secure page): select the text for Ctrl+C.
+    window.getSelection().selectAllChildren(code);
+    label.textContent = 'Đã chọn, nhấn Ctrl+C';
+  }
+  setTimeout(() => { label.textContent = 'Sao chép'; }, 2500);
+}
+
+async function siteRequest(siteId, method, body) {
+  try {
+    const res = await fetch(API_BASE + '/api/v1/sites/' + encodeURIComponent(siteId), {
+      method, headers: { ...CSRF_HEADERS, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (handleUnauthorized(res)) return false;
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      alert(siteErrorText(res.status, result.detail));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    alert('Không kết nối được máy chủ');
+    return false;
+  }
+}
+
+document.getElementById('sitesBody').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  const siteId = button.dataset.site;
+  const site = findSite(siteId);
+  const action = button.dataset.action;
+  if (action === 'traffic') {
+    changeSiteFilter(siteId);
+    window.location.hash = '#overview';
+  } else if (action === 'snippet' && site) {
+    openSnippet(site);
+  } else if (action === 'edit' && site) {
+    openSiteDialog(site);
+  } else if (action === 'toggle' && site) {
+    const pause = site.status !== 'paused';
+    if (pause && !confirm(`Tạm dừng giám sát ${site.name}? Trang của website này sẽ không gửi được dữ liệu cho đến khi bật lại.`)) return;
+    button.disabled = true;
+    if (await siteRequest(siteId, 'PATCH', { status: pause ? 'paused' : 'active' })) await loadSites();
+    button.disabled = false;
+  } else if (action === 'delete' && site) {
+    if (!confirm(`Xóa ${site.name} khỏi danh sách? Phiên đã ghi vẫn được giữ, nhưng trang của website này sẽ không gửi được dữ liệu nữa.`)) return;
+    button.disabled = true;
+    if (await siteRequest(siteId, 'DELETE')) {
+      if (selectedSite === siteId) changeSiteFilter('');
+      await loadSites();
+    }
+    button.disabled = false;
+  }
+});
+
+document.getElementById('unregisteredList').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-origin]');
+  if (button) openSiteDialog(null, button.dataset.origin);
+});
+
 // ──── App shell: views, user, account ────
-const VIEWS = ['overview', 'live', 'system', 'account'];
+const VIEWS = ['overview', 'live', 'sites', 'system', 'account'];
 let currentUser = null;
 
 function showView(name) {
@@ -4732,6 +5210,8 @@ function showView(name) {
   window.scrollTo(0, 0);
   if (name === 'overview') window.dispatchEvent(new Event('resize'));
   if (name === 'live') startLive(); else stopLive();
+  if (name === 'sites') startSites(); else stopSites();
+  syncSitePicker();
 }
 
 function currentViewFromHash() {
@@ -4810,6 +5290,7 @@ document.getElementById('passwordForm').addEventListener('submit', async (event)
 
 showView(currentViewFromHash());
 loadCurrentUser();
+loadSites();
 
 if (window.Chart) { Chart.defaults.font.family = UI_FONT; Chart.defaults.color = cssVar('--chart-tick'); }
 

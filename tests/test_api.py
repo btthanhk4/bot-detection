@@ -880,8 +880,8 @@ def test_dashboard_uses_only_real_mouse_trajectory(client, monkeypatch):
 
 def test_recent_telemetry_reports_database_query_failure(client, monkeypatch):
     monkeypatch.setattr("api_service.database.get_db", lambda: object())
-    monkeypatch.setattr("api_service.database.get_recent_results", lambda limit: None)
-    monkeypatch.setattr("api_service.database.get_total_count", lambda: 1)
+    monkeypatch.setattr("api_service.database.get_recent_results", lambda limit, site_filter=None: None)
+    monkeypatch.setattr("api_service.database.get_total_count", lambda site_filter=None: 1)
 
     response = client.get("/api/v1/telemetry/recent", headers=READ_HEADERS)
 
@@ -895,9 +895,9 @@ def test_recent_telemetry_reports_database_total_with_compatibility_alias(
     monkeypatch.setattr("api_service.database.get_db", lambda: object())
     monkeypatch.setattr(
         "api_service.database.get_recent_results",
-        lambda limit: [{"sessionId": "session-1"}],
+        lambda limit, site_filter=None: [{"sessionId": "session-1"}],
     )
-    monkeypatch.setattr("api_service.database.get_total_count", lambda: 7)
+    monkeypatch.setattr("api_service.database.get_total_count", lambda site_filter=None: 7)
 
     response = client.get("/api/v1/telemetry/recent", headers=READ_HEADERS)
 
@@ -922,7 +922,7 @@ def test_traffic_timeline_defaults_to_one_hour_window(client, monkeypatch):
     }
     query_args = {}
 
-    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0, site_filter=None):
         query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
         return timeline
 
@@ -947,7 +947,7 @@ def test_traffic_timeline_uses_adaptive_buckets(
 ):
     query_args = {}
 
-    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0, site_filter=None):
         query_args.update(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
         return {
             "window_minutes": window_minutes,
@@ -984,7 +984,7 @@ def test_traffic_timeline_rejects_out_of_range_windows(client):
 def test_traffic_timeline_reports_database_query_failure(client, monkeypatch):
     monkeypatch.setattr(
         "api_service.database.get_traffic_timeline",
-        lambda window_minutes, bucket_minutes, utc_offset_minutes=0: None,
+        lambda window_minutes, bucket_minutes, utc_offset_minutes=0, site_filter=None: None,
     )
 
     response = client.get("/api/v1/traffic/timeline", headers=READ_HEADERS)
@@ -995,7 +995,7 @@ def test_traffic_timeline_reports_database_query_failure(client, monkeypatch):
 
 def test_summary_reports_database_query_failure(client, monkeypatch):
     monkeypatch.setattr("api_service.database.get_db", lambda: object())
-    monkeypatch.setattr("api_service.database.get_summary_stats", lambda: None)
+    monkeypatch.setattr("api_service.database.get_summary_stats", lambda site_filter=None: None)
 
     response = client.get("/api/v1/stats/summary", headers=READ_HEADERS)
 
@@ -1008,7 +1008,7 @@ def test_summary_reports_recent_inference_latency(client, monkeypatch):
 
     monkeypatch.setattr("api_service.database.get_db", lambda: object())
     monkeypatch.setattr("api_service.database.get_summary_stats",
-                        lambda: {"total": 3, "humans": 2, "bots": 1, "suspects": 0})
+                        lambda site_filter=None: {"total": 3, "humans": 2, "bots": 1, "suspects": 0})
     monkeypatch.setattr(main, "_inference_latency_ms", main.collections.deque(maxlen=500))
 
     empty = client.get("/api/v1/stats/summary", headers=READ_HEADERS).json()
@@ -1716,7 +1716,7 @@ def test_minimal_detect_response_hides_evidence_from_anonymous_callers(client, m
 def test_traffic_timeline_passes_the_viewer_utc_offset(client, monkeypatch):
     seen = {}
 
-    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0):
+    def fake_timeline(window_minutes, bucket_minutes, utc_offset_minutes=0, site_filter=None):
         seen.update(window=window_minutes, bucket=bucket_minutes, offset=utc_offset_minutes)
         return {"window_minutes": window_minutes, "bucket_minutes": bucket_minutes, "buckets": []}
 

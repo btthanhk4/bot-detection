@@ -60,7 +60,7 @@ def test_live_endpoint_requires_read_access_and_queries_the_window(monkeypatch):
 
     seen = {}
 
-    def fake_sessions(since, limit=20000):
+    def fake_sessions(since, limit=20000, site_filter=None):
         seen["since"] = since
         return [_row("42.113.160.186")]
 
@@ -72,7 +72,7 @@ def test_live_endpoint_requires_read_access_and_queries_the_window(monkeypatch):
     assert response.status_code == 200
     assert response.json()["window_minutes"] == 60 and response.json()["sessions"] == 1
     assert timedelta(minutes=59) < datetime.now(timezone.utc) - seen["since"] < timedelta(minutes=61)
-    monkeypatch.setattr(database, "get_live_sessions", lambda since, limit=20000: None)
+    monkeypatch.setattr(database, "get_live_sessions", lambda since, limit=20000, site_filter=None: None)
     assert client.get("/api/v1/live", headers={"X-Read-Token": "read-secret"}).status_code == 503
 
 
@@ -96,7 +96,7 @@ def test_online_endpoint(monkeypatch):
 
     seen = {}
 
-    def fake_online(since, limit=5000):
+    def fake_online(since, limit=5000, site_filter=None):
         seen["since"] = since
         return [{**_row("42.113.160.186"), "updated_at": datetime.now(timezone.utc)}]
 

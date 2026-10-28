@@ -268,8 +268,11 @@ def _no_telemetry_verdict(client: str):
         "the tab closed at once, or a script that only fetches HTML)")
 
 
-def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None) -> int:
-    """Turn page views that never sent telemetry into sessions; returns page views accounted."""
+def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None, site_for_host=None) -> int:
+    """Turn page views that never sent telemetry into sessions; returns page views accounted.
+
+    ``site_for_host`` maps the host the gateway served to a registered site id.
+    """
     if db is None:
         return 0
     now = now or datetime.now(timezone.utc)
@@ -314,6 +317,7 @@ def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None
         session_id = previous["sessionId"] if previous else "nojs_" + hashlib.sha256(
             f"{ip}|{ua}|{group['first'].isoformat()}".encode()).hexdigest()[:24]
         paths = sorted({str(v.get("path") or "") for v in group["views"]})[:20]
+        site_id = site_for_host(sample.get("host")) if site_for_host else None
         try:
             detections.update_one(
                 {"sessionId": session_id},
@@ -330,6 +334,7 @@ def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None
                         "breakdown": {"decision_basis": basis, "no_telemetry": {
                             "client": client, "accept_language": bool(sample.get("accept_language"))}},
                         "reasons": [reason],
+                        **({"site_id": site_id} if site_id else {}),
                     },
                     "$max": {"updated_at": group["last"]},
                     "$inc": {"no_telemetry_pages": len(group["views"])},

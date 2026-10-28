@@ -104,7 +104,7 @@ def test_traffic_and_detail_carry_location(readers, monkeypatch):
     from api_service import main
 
     monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
-    monkeypatch.setattr(main, "traffic_page", lambda limit, before: {
+    monkeypatch.setattr(main, "traffic_page", lambda limit, before, site=None: {
         "sessions": [{"sessionId": "s1", "client_ip": "42.113.160.186"}], "returned": 1, "total": 1, "next_before": None})
     response = TestClient(main.app).get("/api/v1/research/traffic", headers={"X-Read-Token": "read-secret"})
     assert response.status_code == 200

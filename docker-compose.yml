@@ -33,6 +33,7 @@ services:
       - BOT_SESSION_TTL_HOURS=${BOT_SESSION_TTL_HOURS:-12}
       - BOT_TELEMETRY_ORIGINS=${BOT_TELEMETRY_ORIGINS:-}
       - BOT_DETECT_RESPONSE=${BOT_DETECT_RESPONSE:-full}
+      - BOT_PUBLIC_API_URL=${BOT_PUBLIC_API_URL:-https://api.datacat.io.vn}
       # Policy 24 gateway (deploy/silkmoon-gateway): shared secret and the shop hosts whose
       # telemetry must come from a page the gateway served. Empty disables both.
       - BOT_GATEWAY_SECRET=${BOT_GATEWAY_SECRET:-}

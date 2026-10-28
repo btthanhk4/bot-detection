@@ -267,7 +267,7 @@ def _ensure_indexes(db):
 
 # Fields refreshed when a later page may not replace the session's verdict.
 _ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at",
-                    "last_action", "page_view_id")
+                    "last_action", "page_view_id", "site_id")
 
 
 def is_session_closed(session_id: str) -> bool:
@@ -566,6 +566,10 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "updated_at": now,
             "page_view_id": telemetry.get("_page_view_id"),
         }
+        # The website, from the Origin the browser sent (absent: unattributed). Never written
+        # as empty, so a later event cannot erase the attribution.
+        if telemetry.get("_site_id"):
+            doc["site_id"] = str(telemetry["_site_id"])[:64]
 
         visitor_id = telemetry.get("visitorId")
         if normalized_event_timestamp is None:
@@ -613,7 +617,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             # The earlier verdict stands; still record that the session is active.
             result = collection.update_one(
                 {"sessionId": session_id, "$and": base_conditions},
-                {"$set": {key: doc[key] for key in _ACTIVITY_FIELDS}},
+                {"$set": {key: doc[key] for key in _ACTIVITY_FIELDS if key in doc}},
                 upsert=False,
             )
         if result.matched_count == 0:
@@ -644,7 +648,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         raise DatabasePersistenceError("Failed to persist detection result") from e
 
 
-def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
+def get_recent_results(limit: int = 50, site_filter: Optional[dict] = None) -> Optional[List[dict]]:
     """Get most recent detection results, sorted by created_at descending."""
     db = get_db()
     if db is None:
@@ -652,13 +656,14 @@ def get_recent_results(limit: int = 50) -> Optional[List[dict]]:
 
     try:
         cursor = db["detection_results"].find(
-            {},
+            site_filter or {},
             {
                 "_id": 0,
                 "sessionId": 1,
                 "visitorId": 1,
                 "client_ip": 1,
                 "pageUrl": 1,
+                "site_id": 1,
                 "verdict": 1,
                 "bot_probability": 1,
                 "decision_state": 1,
@@ -701,6 +706,7 @@ def get_traffic_timeline(
     bucket_minutes: int = 1,
     now: Optional[datetime] = None,
     utc_offset_minutes: int = 0,
+    site_filter: Optional[dict] = None,
 ) -> Optional[dict]:
     """Aggregate newly-created sessions into fixed time buckets.
 
@@ -730,18 +736,17 @@ def get_traffic_timeline(
         # created_at is server-generated when a session first appears, so an
         # active session is counted once instead of moving between buckets on
         # every heartbeat. updated_at is only a compatibility fallback.
+        in_window = {
+            "$or": [
+                {"created_at": {"$gte": window_start, "$lt": window_end}},
+                {
+                    "created_at": None,
+                    "updated_at": {"$gte": window_start, "$lt": window_end},
+                },
+            ]
+        }
         pipeline = [
-            {
-                "$match": {
-                    "$or": [
-                        {"created_at": {"$gte": window_start, "$lt": window_end}},
-                        {
-                            "created_at": None,
-                            "updated_at": {"$gte": window_start, "$lt": window_end},
-                        },
-                    ]
-                }
-            },
+            {"$match": {"$and": [site_filter, in_window]} if site_filter else in_window},
             {
                 "$project": {
                     "event_time": {"$ifNull": ["$created_at", "$updated_at"]},
@@ -812,13 +817,13 @@ def get_traffic_timeline(
         return None
 
 
-def get_total_count() -> Optional[int]:
+def get_total_count(site_filter: Optional[dict] = None) -> Optional[int]:
     """Get total number of detection results."""
     db = get_db()
     if db is None:
         return None
     try:
-        return db["detection_results"].count_documents({})
+        return db["detection_results"].count_documents(site_filter or {})
     except Exception as e:
         logger.error(f"[DB] Count failed: {e}")
         return None
@@ -876,14 +881,15 @@ def delete_all_sessions() -> Optional[int]:
         return None
 
 
-def get_live_sessions(since: datetime, limit: int = 20000) -> Optional[List[dict]]:
+def get_live_sessions(since: datetime, limit: int = 20000,
+                      site_filter: Optional[dict] = None) -> Optional[List[dict]]:
     """Sessions active since a time, newest first, with what the Live View needs."""
     db = get_db()
     if db is None:
         return None
     try:
         return list(db["detection_results"].find(
-            {"updated_at": {"$gte": since}},
+            {"updated_at": {"$gte": since}, **(site_filter or {})},
             {"_id": 0, "sessionId": 1, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1,
              "last_action": 1},
         ).sort("updated_at", -1).limit(limit))
@@ -892,14 +898,15 @@ def get_live_sessions(since: datetime, limit: int = 20000) -> Optional[List[dict
         return None
 
 
-def get_online_sessions(since: datetime, limit: int = 5000) -> Optional[List[dict]]:
+def get_online_sessions(since: datetime, limit: int = 5000,
+                        site_filter: Optional[dict] = None) -> Optional[List[dict]]:
     """Sessions that sent telemetry since a time and have not left the page."""
     db = get_db()
     if db is None:
         return None
     try:
         return list(db["detection_results"].find(
-            {"updated_at": {"$gte": since}, "last_action": {"$ne": "pagehide"}},
+            {"updated_at": {"$gte": since}, "last_action": {"$ne": "pagehide"}, **(site_filter or {})},
             {"_id": 0, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1, "last_action": 1},
         ).limit(limit))
     except Exception as e:
@@ -907,13 +914,14 @@ def get_online_sessions(since: datetime, limit: int = 5000) -> Optional[List[dic
         return None
 
 
-def get_summary_stats() -> Optional[dict]:
+def get_summary_stats(site_filter: Optional[dict] = None) -> Optional[dict]:
     """Get aggregated statistics from the database."""
     db = get_db()
     if db is None:
         return None
     try:
         pipeline = [
+            *([{"$match": site_filter}] if site_filter else []),
             {
                 "$group": {
                     "_id": "$verdict",

@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager, suppress
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, List, Literal
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from api_service import auth
 from api_service.config import settings
 from api_service.capture import build_capture
-from api_service import gateway, geoip
+from api_service import gateway, geoip, sites
 from api_service.spool import TelemetrySpool
 from api_service.research_labels import (
     delete_research_data, enrich_sessions, register_traffic, set_manual_label, traffic_page,
@@ -96,6 +96,7 @@ class RequestBodyLimitMiddleware:
 @asynccontextmanager
 async def app_lifespan(_app):
     await run_in_threadpool(_restore_telemetry_spool)
+    await run_in_threadpool(_reload_sites)
     try:
         await run_in_threadpool(auth.ensure_user_indexes)
     except Exception:
@@ -133,9 +134,16 @@ app = FastAPI(
 
 app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BYTES)
 
+class SiteAwareCORSMiddleware(CORSMiddleware):
+    """CORS for the configured origins plus the active sites registered on the dashboard."""
+
+    def is_allowed_origin(self, origin: str) -> bool:
+        return super().is_allowed_origin(origin) or sites.registry.allows_cors(origin)
+
+
 # Enable CORS for local development and cloud deployments
 app.add_middleware(
-    CORSMiddleware,
+    SiteAwareCORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials="*" not in settings.CORS_ORIGINS,
     allow_methods=["*"],
@@ -247,6 +255,12 @@ async def _maintenance_loop():
             raise
         except Exception:
             logger.exception("Telemetry maintenance iteration failed")
+        try:
+            await run_in_threadpool(_reload_sites)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Site registry refresh failed")
         if settings.GATEWAY_SECRET and time.monotonic() - last_accounting >= 60:
             last_accounting = time.monotonic()
             try:
@@ -273,8 +287,30 @@ def _gateway_db():
 def _account_unmonitored_page_views() -> int:
     return gateway.account_unmonitored(
         _gateway_db(), after_seconds=settings.NO_TELEMETRY_AFTER_SECONDS,
-        policy_version=str(DECISION_POLICY_VERSION),
+        policy_version=str(DECISION_POLICY_VERSION), site_for_host=_site_id_for_host,
     )
+
+
+_site_indexes_ready = False
+
+
+def _sites_db():
+    """The database holding the site registry, with its indexes (best effort)."""
+    global _site_indexes_ready
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None and not _site_indexes_ready:
+        _site_indexes_ready = sites.ensure_indexes(db)
+    return db
+
+
+def _reload_sites() -> bool:
+    return sites.registry.reload(_sites_db())
+
+
+def _site_id_for_host(host: str) -> Optional[str]:
+    site = sites.registry.for_host(host)
+    return site["site_id"] if site else None
 
 
 def _request_host(request: Request) -> str:
@@ -661,12 +697,17 @@ def _bearer(request: Request, header: str) -> str:
     return supplied
 
 
-def _require_allowed_origin(request: Request) -> None:
-    """Reject browsers posting from pages that are not part of the study."""
-    allowed = settings.TELEMETRY_ALLOWED_ORIGINS
-    origin = (request.headers.get("origin") or "").rstrip("/")
-    if allowed and origin and origin not in allowed:
+def _require_allowed_origin(request: Request) -> Optional[dict]:
+    """Reject browsers posting from pages that are not monitored; return the page's site.
+
+    The site comes from the Origin header the browser sets, not from the tag's site id.
+    """
+    allowed, site = sites.registry.origin_decision(request.headers.get("origin"), settings.TELEMETRY_ALLOWED_ORIGINS)
+    if not allowed:
+        if site is not None:
+            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
         raise HTTPException(status_code=403, detail="Origin is not allowed to submit telemetry")
+    return site
 
 
 def _has_read_credentials(request: Request) -> bool:
@@ -913,7 +954,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             detail="Rate limit exceeded.",
             headers={"Retry-After": "60"},
         )
-    _require_allowed_origin(request)
+    site = _require_allowed_origin(request)
 
     # Robust parsing supporting application/json, text/plain (sendBeacon), or raw bytes
     try:
@@ -968,6 +1009,8 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             )
         except (ValueError, OverflowError, RecursionError) as exc:
             raise HTTPException(status_code=422, detail="Telemetry cannot be captured as finite JSON") from exc
+    if site is not None:
+        data["_site_id"] = site["site_id"]
     traffic_number = await run_in_threadpool(register_traffic, data)
     if capture is not None:
         capture_status = await run_in_threadpool(_persist_capture, capture)
@@ -1061,7 +1104,11 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
 
 @app.get("/api/v1/telemetry/recent")
-def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Depends(require_read_access)):
+def get_recent_telemetry(
+    limit: int = Query(default=50, ge=1, le=200),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    _read=Depends(require_read_access),
+):
     """
     Returns the most recent detection sessions from MongoDB.
     Single source of truth — no fallback to in-memory buffer.
@@ -1069,8 +1116,9 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
     from api_service.database import get_db, get_recent_results, get_total_count
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    results = get_recent_results(limit=limit)
-    total = get_total_count()
+    scope = sites.site_filter(site)
+    results = get_recent_results(limit=limit, site_filter=scope)
+    total = get_total_count(site_filter=scope)
     if results is None or total is None:
         raise HTTPException(status_code=503, detail="Database query failed")
     try:
@@ -1093,6 +1141,7 @@ def get_recent_telemetry(limit: int = Query(default=50, ge=1, le=200), _read=Dep
 def get_traffic_timeline(
     window_minutes: int = Query(default=60, ge=30, le=43200),
     utc_offset_minutes: int = Query(default=0, ge=-720, le=840),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
     _read=Depends(require_read_access),
 ):
     """Return session counts using buckets sized for the requested window (up to 30 days,
@@ -1118,6 +1167,7 @@ def get_traffic_timeline(
         window_minutes=window_minutes,
         bucket_minutes=bucket_minutes,
         utc_offset_minutes=utc_offset_minutes,
+        site_filter=sites.site_filter(site),
     )
     if timeline is None:
         raise HTTPException(status_code=503, detail="Traffic timeline query failed")
@@ -1387,7 +1437,11 @@ def delete_touch_samples(_admin=Depends(require_admin)):
 
 
 @app.get("/api/v1/live")
-def get_live_view(window_minutes: int = Query(default=1440, ge=5, le=10080), _read=Depends(require_read_access)):
+def get_live_view(
+    window_minutes: int = Query(default=1440, ge=5, le=10080),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    _read=Depends(require_read_access),
+):
     """Recent traffic by location for the Live View globe (offline GeoIP, no external calls)."""
     from datetime import datetime, timedelta, timezone
 
@@ -1395,14 +1449,14 @@ def get_live_view(window_minutes: int = Query(default=1440, ge=5, le=10080), _re
     from api_service.live import build_live_view
 
     now = datetime.now(timezone.utc)
-    rows = get_live_sessions(now - timedelta(minutes=window_minutes))
+    rows = get_live_sessions(now - timedelta(minutes=window_minutes), site_filter=sites.site_filter(site))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_live_view(rows, now=now, window_minutes=window_minutes)
 
 
 @app.get("/api/v1/live/online")
-def get_live_online(_read=Depends(require_read_access)):
+def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), _read=Depends(require_read_access)):
     """Visitors on the site now (polled every few seconds; one indexed query over two minutes)."""
     from datetime import datetime, timedelta, timezone
 
@@ -1410,19 +1464,19 @@ def get_live_online(_read=Depends(require_read_access)):
     from api_service.live import ONLINE_SECONDS, build_online_view
 
     now = datetime.now(timezone.utc)
-    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS))
+    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS), site_filter=sites.site_filter(site))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_online_view(rows, now=now)
 
 
 @app.get("/api/v1/stats/summary")
-def get_stats_summary(_read=Depends(require_read_access)):
+def get_stats_summary(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), _read=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""
     from api_service.database import get_db, get_summary_stats
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    stats = get_summary_stats()
+    stats = get_summary_stats(site_filter=sites.site_filter(site))
     if stats is None:
         raise HTTPException(status_code=503, detail="Database query failed")
     return {**stats, "inference_latency": _inference_latency_summary()}
@@ -1468,10 +1522,11 @@ def get_session_detail(session_id: str, _read=Depends(require_read_access)):
 def research_traffic(
     limit: int = Query(default=50, ge=1, le=200),
     before_number: Optional[int] = Query(default=None, ge=1),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
     _read=Depends(require_read_access),
 ):
     try:
-        page = traffic_page(limit, before_number)
+        page = traffic_page(limit, before_number, site=site)
     except Exception as exc:
         logger.exception("Traffic registry query failed")
         raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc
@@ -1510,3 +1565,85 @@ def label_session(session_id: str, payload: ManualLabelPayload, _admin=Depends(r
     except Exception as exc:
         logger.exception("Manual label persistence failed")
         raise HTTPException(status_code=503, detail="Label storage unavailable; nothing acknowledged") from exc
+
+
+# ---- Websites: the sites DATACAT monitors ----
+
+class SiteCreatePayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=120)
+    site_id: Optional[str] = Field(default=None, pattern=sites.SITE_ID_PATTERN)
+    origins: List[str] = Field(min_length=1, max_length=sites.MAX_ORIGINS)
+    contact: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    status: Literal["active", "paused"] = "active"
+
+
+class SiteUpdatePayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    origins: Optional[List[str]] = Field(default=None, min_length=1, max_length=sites.MAX_ORIGINS)
+    contact: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    status: Optional[Literal["active", "paused"]] = None
+
+
+def _require_sites_db():
+    db = _sites_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return db
+
+
+def _collector_base(request: Request) -> str:
+    if settings.PUBLIC_API_URL:
+        return settings.PUBLIC_API_URL
+    scheme = "https" if _is_https(request) else request.url.scheme
+    return f"{scheme}://{request.headers.get('host') or request.url.netloc}"
+
+
+@app.get("/api/v1/sites")
+def list_sites(request: Request, _read=Depends(require_read_access)):
+    """Registered websites with their install state and the last 24 hours of traffic."""
+    db = _require_sites_db()
+    try:
+        return sites.overview(db, collector_base=_collector_base(request),
+                              configured_origins=settings.TELEMETRY_ALLOWED_ORIGINS)
+    except Exception as exc:
+        logger.exception("Site overview failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
+@app.post("/api/v1/sites", status_code=201)
+def create_site(payload: SiteCreatePayload, request: Request, _admin=Depends(require_admin)):
+    db = _require_sites_db()
+    try:
+        site = sites.create_site(db, **payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {**site, "snippet": sites.install_snippet(_collector_base(request), site["site_id"])}
+
+
+@app.patch("/api/v1/sites/{site_id}")
+def update_site(site_id: str, payload: SiteUpdatePayload, request: Request, _admin=Depends(require_admin)):
+    db = _require_sites_db()
+    try:
+        site = sites.update_site(db, site_id, payload.model_dump(exclude_unset=True))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Site not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {**site, "snippet": sites.install_snippet(_collector_base(request), site["site_id"])}
+
+
+@app.delete("/api/v1/sites/{site_id}")
+def delete_site(site_id: str, _admin=Depends(require_admin)):
+    """Remove a site from the registry. Its sessions stay; its pages are no longer accepted
+    unless their origin is also in the server's allowlist."""
+    if not sites.delete_site(_require_sites_db(), site_id):
+        raise HTTPException(status_code=404, detail="Site not found")
+    return {"status": "deleted", "site_id": site_id}

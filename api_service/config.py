@@ -66,6 +66,9 @@ class Settings:
         for origin in os.getenv("BOT_TELEMETRY_ORIGINS", "").split(",")
         if origin.strip()
     ]
+    # Base URL customers load the collector from; it goes into the install snippet on the
+    # Websites page. Empty: the address the dashboard was opened on.
+    PUBLIC_API_URL: str = os.getenv("BOT_PUBLIC_API_URL", "").strip().rstrip("/")
     # "minimal" hides scores and evidence from unauthenticated /detect callers so a
     # bot cannot use the endpoint as an oracle; "full" keeps the old response.
     DETECT_RESPONSE: str = os.getenv("BOT_DETECT_RESPONSE", "full").strip().lower()
