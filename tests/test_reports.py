@@ -41,7 +41,8 @@ def test_summary_counts_the_period_and_the_site(db):
     add(db, "s1", "SUSPECT", decision_basis="desktop_risk", desktop_risk={"codes": ["FRAME_LOCKED_POINTER", "CDP_ATTACHED"]})
     add(db, "b1", "BOT", decision_basis="automation_marker", automation_rule="automation_marker_v1")
     add(db, "b2", "BOT", decision_basis="automation_marker", automation_rule="automation_marker_v1", ip="198.51.100.7")
-    add(db, "b3", "BOT", decision_basis="automation_marker", automation_rule="automation_marker_v1", ip="198.51.100.7")
+    add(db, "b3", "BOT", decision_basis="automation_marker", automation_rule="automation_marker_v1", ip="198.51.100.7",
+        desktop_risk={"codes": ["CDP_ATTACHED"]})
     add(db, "old", "BOT", age_hours=24 * 40)
     add(db, "other", "BOT", site="blog")
 

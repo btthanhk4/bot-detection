@@ -54,9 +54,13 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
         else:
             totals["suspect"] += count
 
-    # Why sessions were judged BOT or SUSPECT: decision basis, rule and the first evidence code.
-    first_code = {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
-                              {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]}
+    # Why sessions were judged BOT or SUSPECT: decision basis, rule, and for the risk-based verdicts
+    # the first evidence code (a BOT from a rule also carries risk codes; they do not name its reason).
+    first_code = {"$cond": [
+        {"$in": ["$breakdown.decision_basis", ["desktop_risk", "mobile_risk"]]},
+        {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
+                     {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]},
+        None]}
     reasons = [
         {"verdict": row["_id"].get("verdict"), "decision_basis": row["_id"].get("basis"),
          "automation_rule": row["_id"].get("rule"), "code": row["_id"].get("code"), "sessions": int(row["sessions"])}
