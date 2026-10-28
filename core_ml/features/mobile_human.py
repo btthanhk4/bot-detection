@@ -19,11 +19,13 @@ verdict instead of "insufficient evidence". Too few gestures stay insufficient.
 
 import re
 
+from core_ml.features.server_context import server_context_codes
+
 MOBILE_HUMAN_RULE = "mobile_clean_environment_v1"
 MOBILE_RISK_RULE = "mobile_risk_v1"
 # Missing conditions that are evidence against the session, not just absence of data.
 RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
-              "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL")
+              "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY")
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
                    "ios_touch_without_contact"}
 MOBILE_HUMAN_MIN_GESTURES = 3
@@ -84,6 +86,8 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         missing.append("ENVIRONMENT_EVIDENCE")
     if client_flags:
         missing.append("CLIENT_AUTOMATION_SIGNAL")
+    # Policy 24: telemetry without a page the gateway served, a device starting sessions non-stop.
+    missing += server_context_codes(payload)
     return {
         "rule": MOBILE_HUMAN_RULE,
         "device": kind or None,

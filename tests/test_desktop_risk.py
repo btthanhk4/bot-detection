@@ -229,4 +229,4 @@ def test_release_fixtures(production_detector, index):
 def test_release_gate_counts(production_detector):
     gate = validate_desktop_risk_rules(production_detector)
     assert gate == DESKTOP_RISK_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"]) == (11, 12)
+    assert (gate["human_cases"], gate["suspect_cases"]) == (13, 16)

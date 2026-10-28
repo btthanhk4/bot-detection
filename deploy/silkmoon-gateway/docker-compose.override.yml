@@ -1,0 +1,28 @@
+# SilkMoon production overrides (copy to /var/www/silkmoon/docker-compose.override.yml).
+# DATACAT policy 24: the gateway reads the shared secret from a file kept out of git and
+# serves the admin panel over TLS on 5175; the admin container no longer publishes it.
+services:
+  backend:
+    mem_limit: 400m
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=256
+  frontend:
+    mem_limit: 64m
+  gateway:
+    mem_limit: 64m
+    ports:
+      - "443:443"
+      - "5175:5175"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+      - ./nginx/datacat-gateway.conf:/etc/nginx/datacat-gateway.conf:ro
+  admin:
+    mem_limit: 64m
+    ports: !reset []
+  redis:
+    image: redis:7-alpine
+    container_name: silkmoon-redis
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    mem_limit: 96m

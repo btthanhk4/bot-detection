@@ -3397,7 +3397,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const automationEvidence = bd.automation_evidence || {};
   const FAMILY_LABELS = { HEADLESS_ENV: 'môi trường headless', GPU: 'GPU giả lập hoặc không khớp hệ điều hành', PERMISSION: 'quyền trình duyệt mâu thuẫn',
     CONTEXT: 'trang và Worker khác nhau', NATIVE_PATCH: 'hàm trình duyệt bị sửa', CLIENT_HINTS: 'User-Agent và Client Hints mâu thuẫn', HTTP: 'header HTTP bất thường',
-    NETWORK: 'IP thuộc trung tâm dữ liệu cloud' };
+    NETWORK: 'IP thuộc trung tâm dữ liệu cloud', CDP: 'kênh điều khiển CDP đang gắn vào trang' };
   const provenance = bd.input_provenance || {};
   const EMULATION_LABELS = { platform_mismatch: 'hệ điều hành báo về không khớp với điện thoại tự nhận',
     spoofed_platform: 'hệ điều hành bị sửa bằng mã JavaScript (Worker vẫn báo hệ điều hành thật)',
@@ -3412,10 +3412,12 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     TOUCH_FLAGS: 'thao tác cảm ứng bất thường: ' + ((touchInfoForText.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f).join(', ') || '--'),
     EMULATOR: 'chạy trên trình giả lập Android hoặc phần cứng máy tính', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
     HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
-    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
+    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt',
+    UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ', DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
-    CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
+    CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
+    DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
 
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
@@ -3429,7 +3431,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // Verdict reason: one line of facts.
   const pct = (x) => (x * 100).toFixed(1) + '%';
   let explainText = '';
-  if (v === 'BOT') {
+  if (bd.decision_basis === 'non_browser_client') {
+    explainText = 'Công cụ HTTP (không phải trình duyệt) tải trang mà không chạy JavaScript.';
+  } else if (bd.decision_basis === 'declared_crawler') {
+    explainText = 'Crawler hoặc trình xem trước liên kết tự khai, tải trang mà không chạy JavaScript.';
+  } else if (bd.decision_basis === 'no_telemetry') {
+    explainText = 'Trình duyệt tải trang nhưng không chạy collector: tắt JavaScript, chặn script, đóng tab ngay, hoặc script chỉ tải HTML.';
+  } else if (v === 'BOT') {
     if (markerDecision) {
       const MARKER_LABELS = { 'server.declared_headless_ua': 'trình duyệt tự khai HeadlessChrome',
         'server.declared_bot_ua': 'User-Agent của crawler', 'server.signature_agent': 'chữ ký Web Bot Auth',
@@ -3525,7 +3533,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // 4. Detection Reasons (a human verdict needs none; the mouse models do not judge touch)
   const touchOnlySession = Boolean(bd.unsupported_mobile || (bd.mobile_human && bd.mobile_human.device)
     || (Number((bd.touch || {}).gestures) > 0 && !(Number(bd.mouse_points) > 0)));
-  document.getElementById('dModelSection').style.display = touchOnlySession ? 'none' : '';
+  // Page views that never ran the collector have no model scores to show.
+  const noTelemetrySession = Boolean(bd.no_telemetry);
+  document.getElementById('dModelSection').style.display = touchOnlySession || noTelemetrySession ? 'none' : '';
   document.getElementById('dReasonsSection').style.display = v === 'HUMAN' ? 'none' : '';
   const reasonsDiv = document.getElementById('dReasonsList');
   if (reasons.length === 0) {

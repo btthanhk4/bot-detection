@@ -56,4 +56,34 @@ export function bootstrapPilot(Collector) {
   }
 }
 
+/**
+ * Gateway embed (policy 24): <script src="..." data-datacat-embed data-endpoint="/_dc/t">.
+ * The instance lives in this closure only, so page scripts cannot reach it to rewrite
+ * what it measures or sends.
+ */
+export function bootstrapEmbedded(Collector) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  const script = document.currentScript;
+  if (!script || !script.hasAttribute('data-datacat-embed') || script.dataset.datacatStarted) return false;
+  try {
+    script.dataset.datacatStarted = '1';
+    const endpointUrl = new URL(script.getAttribute('data-endpoint') || '/api/v1/telemetry', window.location.href);
+    if (window.location.protocol === 'https:' && endpointUrl.protocol !== 'https:') {
+      throw new Error('Use an HTTPS endpoint on an HTTPS website');
+    }
+    const interval = Number(script.getAttribute('data-interval-ms') || 5000);
+    const collector = new Collector({
+      endpointUrl: endpointUrl.href,
+      autoSendInterval: Number.isInteger(interval) && interval >= 1000 && interval <= 60000 ? interval : 5000,
+      hello: true,
+    });
+    collector.start().catch(() => false);
+    return true;
+  } catch (error) {
+    console.error('[DATACAT] Embed configuration:', error.message);
+    return false;
+  }
+}
+
 bootstrapPilot(BotCollector);
+bootstrapEmbedded(BotCollector);

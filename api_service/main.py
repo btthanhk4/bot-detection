@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import os
+import re
 import secrets
 import threading
 import time
@@ -18,7 +19,7 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager, suppress
 from typing import Optional, Dict, Any, Literal
 from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -26,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from api_service import auth
 from api_service.config import settings
 from api_service.capture import build_capture
-from api_service import geoip
+from api_service import gateway, geoip
 from api_service.spool import TelemetrySpool
 from api_service.research_labels import (
     delete_research_data, enrich_sessions, register_traffic, set_manual_label, traffic_page,
@@ -237,6 +238,7 @@ async def _geoip_update_loop():
 
 async def _maintenance_loop():
     """Retry buffered persistence independently of incoming request traffic."""
+    last_accounting = 0.0
     while True:
         await asyncio.sleep(settings.MAINTENANCE_INTERVAL_SECONDS)
         try:
@@ -245,6 +247,61 @@ async def _maintenance_loop():
             raise
         except Exception:
             logger.exception("Telemetry maintenance iteration failed")
+        if settings.GATEWAY_SECRET and time.monotonic() - last_accounting >= 60:
+            last_accounting = time.monotonic()
+            try:
+                await run_in_threadpool(_account_unmonitored_page_views)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Page-view accounting failed")
+
+
+_gateway_indexes_ready = False
+
+
+def _gateway_db():
+    """The database for gateway bookkeeping, with its indexes (best effort, never gating detection)."""
+    global _gateway_indexes_ready
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None and not _gateway_indexes_ready:
+        _gateway_indexes_ready = gateway.ensure_indexes(db)
+    return db
+
+
+def _account_unmonitored_page_views() -> int:
+    return gateway.account_unmonitored(
+        _gateway_db(), after_seconds=settings.NO_TELEMETRY_AFTER_SECONDS,
+        policy_version=str(DECISION_POLICY_VERSION),
+    )
+
+
+def _request_host(request: Request) -> str:
+    return (request.headers.get("host") or "").split(":")[0].lower()
+
+
+def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
+    """Facts only the server sees: was the page served by the gateway, how busy is this device."""
+    page_view_id = request.cookies.get(gateway.PAGE_VIEW_COOKIE)
+    tracked = bool(settings.PAGEVIEW_HOSTS) and _request_host(request) in settings.PAGEVIEW_HOSTS
+    db = _gateway_db() if (tracked or data.get("visitorId") or gateway.valid_page_view_id(page_view_id)) else None
+    headers = data.setdefault("_server_headers", {})
+    headers["page_view"] = gateway.page_view_state(
+        db, host=_request_host(request), tracked_hosts=settings.PAGEVIEW_HOSTS,
+        page_view_id=page_view_id, session_id=data.get("sessionId"), link=link,
+        user_agent=request.headers.get("user-agent") or "",
+    )
+    # Phones of one model share a fingerprint and carriers share addresses (CGNAT), so many
+    # people would look like one busy device: the count is kept for desktops only.
+    fingerprint = data.get("fingerprint") if isinstance(data.get("fingerprint"), dict) else {}
+    phone = gateway.is_phone_user_agent(fingerprint.get("userAgent") or request.headers.get("user-agent") or "")
+    headers["device_sessions"] = gateway.device_sessions(
+        db, visitor_id=data.get("visitorId"), ip=data.get("client_ip") or get_client_ip(request),
+        session_id=str(data.get("sessionId") or ""),
+    ) if data.get("visitorId") and not phone else None
+    if gateway.valid_page_view_id(page_view_id):
+        data["_page_view_id"] = page_view_id
 
 
 def _purge_session_from_memory(session_id: str) -> bool:
@@ -620,8 +677,9 @@ def _has_read_credentials(request: Request) -> bool:
         return False
 
 
-_MINIMAL_DETECT_FIELDS = ("is_bot", "verdict", "decision_state", "policy_version", "model_bundle_id",
-                          "sessionId", "visitorId")
+# Policy 24: anonymous callers learn that the snapshot was scored, not the verdict, so a bot
+# cannot use /detect to tune itself. Site backends read verdicts with credentials.
+_MINIMAL_DETECT_FIELDS = ("decision_state", "policy_version", "model_bundle_id", "sessionId", "visitorId")
 
 
 def _observed_headers(request: Request) -> dict:
@@ -731,6 +789,7 @@ def health_check():
             "retention_days": settings.CAPTURE_RETENTION_DAYS,
         },
         "geoip": geoip.status(),
+        "gateway": {"configured": bool(settings.GATEWAY_SECRET), "page_view_hosts": settings.PAGEVIEW_HOSTS},
     }
     with _telemetry_buffer_lock:
         content["telemetry_buffer"] = {
@@ -764,6 +823,8 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     data = payload.model_dump()
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
     data["_server_headers"] = _observed_headers(request)
+    data["client_ip"] = client_ip
+    await run_in_threadpool(_attach_server_context, request, data, link=False)
 
     start_t = time.perf_counter()
     try:
@@ -783,6 +844,60 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     if settings.DETECT_RESPONSE == "minimal" and not _has_read_credentials(request):
         return {key: result.get(key) for key in _MINIMAL_DETECT_FIELDS}
     return result
+
+
+def _link_hello(request: Request, data: dict) -> None:
+    gateway.page_view_state(
+        _gateway_db(), host=_request_host(request), tracked_hosts=settings.PAGEVIEW_HOSTS,
+        page_view_id=request.cookies.get(gateway.PAGE_VIEW_COOKIE), session_id=data.get("sessionId"), link=True,
+        user_agent=request.headers.get("user-agent") or "",
+    )
+
+
+def _require_gateway(request: Request) -> None:
+    if not settings.GATEWAY_SECRET:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not gateway.gateway_authorized(request.headers.get("x-datacat-gateway") or "", settings.GATEWAY_SECRET):
+        raise HTTPException(status_code=403, detail="Gateway credentials required")
+
+
+@app.api_route("/api/v1/pageview", methods=["GET", "POST", "HEAD"], include_in_schema=False)
+async def record_page_view(request: Request):
+    """Mirror of an HTML request made by the shop gateway (nginx ``mirror``)."""
+    _require_gateway(request)
+    page_view_id = (request.headers.get("x-datacat-pv") or "").strip()
+    if not gateway.valid_page_view_id(page_view_id):
+        raise HTTPException(status_code=422, detail="X-Datacat-PV must be a 32-character request id")
+    await run_in_threadpool(
+        gateway.record_page_view, _gateway_db(), page_view_id,
+        ip=get_client_ip(request), user_agent=request.headers.get("user-agent") or "",
+        host=_request_host(request), path=request.headers.get("x-original-uri") or "",
+        purpose=request.headers.get("sec-purpose") or request.headers.get("purpose") or "",
+        accept_language=bool((request.headers.get("accept-language") or "").strip()),
+        fetch_dest=request.headers.get("sec-fetch-dest") or "",
+    )
+    return Response(status_code=204)
+
+
+@app.api_route("/api/v1/gate", methods=["GET", "POST"], include_in_schema=False)
+async def gate_request(request: Request):
+    """``auth_request`` target: 204 lets a shop request through, 403 refuses it."""
+    _require_gateway(request)
+    path = request.headers.get("x-original-uri") or ""
+    try:
+        strict = bool(settings.GATE_STRICT_PATHS) and re.search(settings.GATE_STRICT_PATHS, path) is not None
+    except re.error:
+        strict = False
+    allowed, reason = await run_in_threadpool(
+        gateway.gate_decision, _gateway_db(),
+        page_view_id=request.cookies.get(gateway.PAGE_VIEW_COOKIE),
+        method=request.headers.get("x-original-method") or "GET",
+        strict=strict, grace_seconds=settings.GATE_GRACE_SECONDS,
+        user_agent=request.headers.get("user-agent") or "",
+    )
+    if not allowed:
+        logger.info("Gate refused %s %s: %s", request.headers.get("x-original-method"), path[:200], reason)
+    return Response(status_code=204 if allowed else 403, headers={"X-Datacat-Gate": reason})
 
 
 @app.post("/api/v1/telemetry")
@@ -824,6 +939,11 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         raise HTTPException(status_code=422, detail=detail)
     if not data.get("sessionId"):
         raise HTTPException(status_code=422, detail="sessionId is required")
+    if data.get("action") == "hello":
+        # Collector >= 1.10 greets the API as soon as it loads, before fingerprinting,
+        # so the gateway can tell a page that runs it from one that never does.
+        await run_in_threadpool(_link_hello, request, data)
+        return JSONResponse(status_code=202, content={"status": "linked"})
     if not data.get("visitorId"):
         raise HTTPException(status_code=422, detail="visitorId is required")
 
@@ -831,6 +951,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     data["received_at"] = int(time.time() * 1000)
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
     data["_server_headers"] = _observed_headers(request)
+    await run_in_threadpool(_attach_server_context, request, data, link=True)
 
     capture = None
     capture_status = None

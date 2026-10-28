@@ -38,7 +38,7 @@ def test_release_fixtures(detector, index):
 def test_release_gate_counts(detector):
     gate = validate_mobile_rules(detector)
     assert gate == MOBILE_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (7, 10, 5)
+    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (8, 12, 5)
 
 
 def test_phone_human_is_not_locked_and_has_no_mouse_risk(detector):

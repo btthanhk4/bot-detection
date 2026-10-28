@@ -72,6 +72,11 @@ _FAMILIES = {
                                  "inputApiPatched")},
     "CLIENT_HINTS": {"signals": ("uaHintsMismatch", "malformedBrands"), "server": ("http_ua_mismatch",)},
     "HTTP": {"server": ("missing_accept_language", "missing_fetch_metadata")},
+    # Policy 24: a CDP client has Runtime enabled (Puppeteer, Playwright, Selenium; patchright
+    # avoids it). On HTTPS Puppeteer-stealth loses its permission contradiction and kept only
+    # GPU and CONTEXT, two families; this is its third. DevTools open in a person's browser
+    # trips it too, alone, which only withholds a HUMAN verdict (desktop_risk CDP_ATTACHED).
+    "CDP": {"signals": ("cdpRuntime",)},
     # Corroboration only: VPN exits share these ranges, so NETWORK is never an anchor.
     "NETWORK": {"server": ("datacenter_ip",)},
 }

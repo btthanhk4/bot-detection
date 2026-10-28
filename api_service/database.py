@@ -267,7 +267,7 @@ def _ensure_indexes(db):
 
 # Fields refreshed when a later page may not replace the session's verdict.
 _ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at",
-                    "last_action")
+                    "last_action", "page_view_id")
 
 
 def is_session_closed(session_id: str) -> bool:
@@ -527,6 +527,12 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         verdict = str(analysis.get("verdict") or "UNKNOWN")[:32].upper()
         if verdict not in {"HUMAN", "BOT", "SUSPECT"}:
             verdict = "UNKNOWN"
+        # Policy 24: a rule-based BOT locks the session at once; a BOT from the mouse models
+        # locks on its second snapshot. One odd window (Balabit: 1 of 1,676 people, an RDP
+        # recording at 9 Hz) is then replaced by the next verdict instead of sticking.
+        rule_locked = bool((analysis.get("breakdown") or {}).get("verdict_locked", verdict == "BOT"))
+        previous = db["detection_results"].find_one({"sessionId": session_id}, {"bot_strikes": 1}) or {}
+        bot_strikes = int(previous.get("bot_strikes") or 0) + (1 if verdict == "BOT" and not rule_locked else 0)
         doc = {
             "sessionId": session_id,
             "visitorId": telemetry.get("visitorId"),
@@ -541,7 +547,8 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "score_calibrated": analysis.get("score_calibrated") is True,
             "policy_version": str(analysis.get("policy_version") or "")[:32],
             "is_bot": verdict == "BOT",
-            "verdict_locked": bool((analysis.get("breakdown") or {}).get("verdict_locked", verdict == "BOT")),
+            "verdict_locked": rule_locked or (verdict == "BOT" and bot_strikes >= 2),
+            "bot_strikes": bot_strikes,
             "confidence": _safe_probability(analysis.get("confidence")),
             "model_bundle_id": str(analysis.get("model_bundle_id") or "")[:128],
             "breakdown": _sanitize_bson_value(analysis.get("breakdown", {})),
@@ -557,6 +564,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "event_timestamp": normalized_event_timestamp,
             "event_sequence": sequence,
             "updated_at": now,
+            "page_view_id": telemetry.get("_page_view_id"),
         }
 
         visitor_id = telemetry.get("visitorId")

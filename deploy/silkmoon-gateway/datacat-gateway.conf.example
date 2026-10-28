@@ -1,0 +1,6 @@
+# /var/www/silkmoon/nginx/datacat-gateway.conf (not in git). The value must equal
+# BOT_GATEWAY_SECRET in /opt/bot-detection-core/.env. Generate it on the server:
+#   openssl rand -hex 32
+map "" $datacat_gateway_secret {
+    default "REPLACE_WITH_THE_SHARED_SECRET";
+}

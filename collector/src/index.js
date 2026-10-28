@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.9.0';
+export const COLLECTOR_VERSION = '1.10.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -57,6 +57,8 @@ export class BotCollector {
     this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
     this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
+    // Gateway embeds (policy 24) greet the API before fingerprinting; see sendHello().
+    this.helloEnabled = options.hello === true;
   }
 
   restoreSessionId() {
@@ -93,8 +95,30 @@ export class BotCollector {
     if (this.initPromise) return this.initPromise;
     this.destroyed = false;
     const lifecycleVersion = ++this.lifecycleVersion;
+    this.sendHello();
     this.initPromise = this.initialize(lifecycleVersion);
     return this.initPromise;
+  }
+
+  // Greets the API before fingerprinting (which takes a second or more), so a gateway that
+  // gates shop requests on this page can tell that the collector runs. No device data.
+  sendHello() {
+    if (!this.helloEnabled || this.helloSent || typeof fetch !== 'function') return;
+    this.helloSent = true;
+    try {
+      fetch(this.endpointUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: this.sessionId,
+          action: 'hello',
+          timestamp: Date.now(),
+          collector: { schemaVersion: 1, sdkVersion: COLLECTOR_VERSION, pageInstanceId: this.pageInstanceId },
+        }),
+        keepalive: true,
+        credentials: 'same-origin',
+      }).catch(() => {});
+    } catch (e) { /* never break the host page */ }
   }
 
   async initialize(lifecycleVersion) {

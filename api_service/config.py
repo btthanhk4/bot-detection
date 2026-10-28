@@ -99,6 +99,22 @@ class Settings:
     # Phone/tablet gestures kept as weakly labelled training data (geometry and timing only).
     TOUCH_CAPTURE_ENABLED: bool = os.getenv("BOT_TOUCH_CAPTURE", "false").lower() in ("1", "true", "yes")
     TOUCH_RETENTION_DAYS: int = _env_int("BOT_TOUCH_RETENTION_DAYS", 180, 1, 730)
+    # Policy 24: the shop gateway (nginx) mirrors page views to the API, sets the page-view
+    # cookie and asks /api/v1/gate before state-changing requests. Both endpoints need the
+    # shared secret; telemetry from PAGEVIEW_HOSTS must present a page view it served.
+    GATEWAY_SECRET: str = os.getenv("BOT_GATEWAY_SECRET", "").strip()
+    PAGEVIEW_HOSTS: List[str] = [
+        host.strip().lower()
+        for host in os.getenv("BOT_PAGEVIEW_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    # After the collector greeted the API, writes are allowed this long before its first scored
+    # telemetry arrives (it normally follows within seconds).
+    GATE_GRACE_SECONDS: int = _env_int("BOT_GATE_GRACE_SECONDS", 60, 0, 600)
+    # Paths whose writes are also refused to sessions with evidence against them (costly AI features).
+    GATE_STRICT_PATHS: str = os.getenv("BOT_GATE_STRICT_PATHS", r"^/api/v1/(assistant|ar)/").strip()
+    # Page views without telemetry after this long become "no telemetry" sessions.
+    NO_TELEMETRY_AFTER_SECONDS: int = _env_int("BOT_NO_TELEMETRY_AFTER_SECONDS", 120, 30, 3600)
     # Offline IP geolocation (DB-IP Lite). Auto-update downloads the monthly files.
     GEOIP_DIR: str = os.getenv("BOT_GEOIP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "var", "geoip"))
     GEOIP_AUTO_UPDATE: bool = os.getenv("BOT_GEOIP_AUTO_UPDATE", "false").lower() in ("1", "true", "yes")

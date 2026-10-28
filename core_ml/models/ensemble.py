@@ -39,7 +39,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "23"
+DECISION_POLICY_VERSION = "24"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -476,9 +476,10 @@ class EnsembleBotDetector:
                     else "insufficient_evidence" if decision_deferred else "ensemble"
                 ),
                 "automation_rule": automation_rule,
-                # Storage keeps a locked BOT verdict for the whole session; only the
-                # idle-cloud rule may be overturned by later human input.
-                "verdict_locked": verdict == "BOT" and automation_rule != IDLE_CLOUD_BROWSER_RULE,
+                # Storage keeps a locked BOT verdict for the whole session. The idle-cloud
+                # rule may be overturned by later human input; a BOT from the mouse models
+                # locks only when a second snapshot agrees (policy 24, in storage).
+                "verdict_locked": verdict == "BOT" and automation_rule not in (None, IDLE_CLOUD_BROWSER_RULE),
                 "mouse_evidence_deferred": mouse_evidence_deferred,
                 "heuristic_score": round(heuristic_score, 4),
                 "has_enough_mouse_data": has_enough_mouse_data,

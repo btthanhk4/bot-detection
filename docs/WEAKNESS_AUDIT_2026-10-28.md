@@ -35,6 +35,12 @@ hoặc `requestAnimationFrame` không còn là hàm gốc.
 
 ## 3. Còn mở: cần thiết kế hoặc thêm dữ liệu
 
+> Cập nhật policy 24 (gateway SilkMoon, xem [Model release v24](MODEL_RELEASE_V24.md)): mục 2
+> (fail-open) và mục 4 (`/detect` trả kết luận) đã đóng; mục 1 thu hẹp (telemetry phải đến từ
+> đúng trình duyệt đã tải trang, script trên trang không còn chạm được instance collector); mục 3
+> có thêm tần suất phiên theo thiết bị; mục 7 (một cửa sổ BOT khóa phiên) đã sửa; cổng admin 5175
+> qua TLS.
+
 Xếp theo mức nghiêm trọng.
 
 1. **Toàn vẹn phía client (cao).** Collector là JavaScript trên trang và được chèn với biến toàn

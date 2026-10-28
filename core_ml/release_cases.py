@@ -166,6 +166,13 @@ AUTOMATION_EVIDENCE_CASES = (
     ("SUSPECT", None, _automation(renderer="VirtualBox Graphics Adapter", signals={"rttZero": True},
                                   datacenter="digitalocean")),
     ("SUSPECT", None, _automation(renderer="llvmpipe (LLVM 15.0.7, 256 bits)", datacenter="aws")),
+    # Policy 24, measured through the HTTPS gateway (2026-10-28): Puppeteer-stealth has no
+    # permission contradiction in a secure context, so GPU and CONTEXT alone did not convict
+    # it; an enabled CDP Runtime is its third family. DevTools open on its own is not enough.
+    ("BOT", "environment_tampering", _automation(
+        renderer="Intel Iris OpenGL Engine", signals={"gpuOsMismatch": True, "cdpRuntime": True},
+        worker={"rendererMismatch": True, "cpuMismatch": True})),
+    ("SUSPECT", None, _automation(signals={"cdpRuntime": True})),
 )
 
 # Frozen gate of policy 12 so its bundles stay verifiable after the fixtures grew.
@@ -210,6 +217,13 @@ EXPLICIT_AUTOMATION_RULE_GATE_V10 = {
 }
 EXPLICIT_AUTOMATION_RULE_GATE = {
     "rule": "headless_ua_and_framework_v1", "positive_cases": 3, "negative_cases": 4, "passed": 7,
+}
+
+# Frozen gate of policies 20-23.
+AUTOMATION_EVIDENCE_RULE_GATE_V20 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
+    "positive_cases": 11, "negative_cases": 18, "passed": 29,
+    "fixture_fingerprint": "148fa79976767a10794a32ba8a1ec267c9bf4eec0d683d72f58b63880a6622ee",
 }
 
 AUTOMATION_EVIDENCE_RULE_GATE = {
@@ -433,7 +447,22 @@ MOBILE_RULE_CASES = (
                                                 times=[1000 + 500 * i for i in range(9)])),
     ("BOT", "FINAL", "automation_marker", _phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8,
                                                  detectors={"webdriver": True})),
+    # Policy 24: a phone page the gateway served stays human; telemetry without one, or a
+    # device starting sessions non-stop, is judged with evidence against it.
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND,
+                                                          headers={"page_view": "verified", "device_sessions": 2})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND,
+                                               headers={"page_view": "missing"})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _LOW_END_HAND, memory=4, cores=8,
+                                               headers={"page_view": "verified", "device_sessions": 40})),
 )
+
+# Frozen gate of policies 19-23.
+MOBILE_RULE_GATE_V19 = {
+    "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
+    "human_cases": 7, "suspect_cases": 10, "bot_cases": 5, "passed": 22,
+    "fixture_fingerprint": "ab08fe3f334ac3dfa9b1f68431917fee4347a810d1932f4dd7fc1353ff4a8027",
+}
 
 MOBILE_RULE_GATE = {
     "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
@@ -516,7 +545,23 @@ DESKTOP_RISK_CASES = (
     ("SUSPECT", ["NON_BROWSER_REQUEST"], _desktop(accept_language=False)),
     ("SUSPECT", ["NON_BROWSER_REQUEST"], _desktop(headers={"forwarded_proto": "https"})),
     ("HUMAN", [], _desktop(headers={"forwarded_proto": "https", "sec_fetch_site": "same-origin"})),
+    # Policy 24: telemetry from the shop host without the cookie of a page the gateway served,
+    # or with one cookie presented by many sessions; one device starting 45 sessions an hour
+    # on one address. A served page and a person's few tabs stay human.
+    ("SUSPECT", ["UNVERIFIED_PAGE_LOAD"], _desktop(headers={"page_view": "missing"})),
+    ("SUSPECT", ["UNVERIFIED_PAGE_LOAD"], _desktop(headers={"page_view": "reused"})),
+    ("SUSPECT", ["DEVICE_VELOCITY"], _desktop(headers={"page_view": "verified", "device_sessions": 45})),
+    ("HUMAN", [], _desktop(headers={"page_view": "verified", "device_sessions": 4})),
+    ("HUMAN", [], _desktop(headers={"page_view": "untracked"})),
+    # A page with the CDP Runtime enabled and nothing else: a CDP client, or DevTools open.
+    ("SUSPECT", ["CDP_ATTACHED"], _desktop(signals={"cdpRuntime": True})),
 )
+
+# Frozen gate of policy 23.
+DESKTOP_RISK_RULE_GATE_V23 = {
+    "rules": ["desktop_risk_v1"], "human_cases": 11, "suspect_cases": 12, "passed": 23,
+    "fixture_fingerprint": "3c825a230812817f4db3557f5f35b04058f3ebc7529589b4ae516594436ede6c",
+}
 
 # Frozen gate of policies 21-22.
 DESKTOP_RISK_RULE_GATE_V21 = {

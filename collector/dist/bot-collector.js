@@ -1469,7 +1469,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.9.0';
+  const COLLECTOR_VERSION = '1.10.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
 
@@ -1517,6 +1517,8 @@
       this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
       this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
       this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
+      // Gateway embeds (policy 24) greet the API before fingerprinting; see sendHello().
+      this.helloEnabled = options.hello === true;
     }
 
     restoreSessionId() {
@@ -1553,8 +1555,30 @@
       if (this.initPromise) return this.initPromise;
       this.destroyed = false;
       const lifecycleVersion = ++this.lifecycleVersion;
+      this.sendHello();
       this.initPromise = this.initialize(lifecycleVersion);
       return this.initPromise;
+    }
+
+    // Greets the API before fingerprinting (which takes a second or more), so a gateway that
+    // gates shop requests on this page can tell that the collector runs. No device data.
+    sendHello() {
+      if (!this.helloEnabled || this.helloSent || typeof fetch !== 'function') return;
+      this.helloSent = true;
+      try {
+        fetch(this.endpointUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: this.sessionId,
+            action: 'hello',
+            timestamp: Date.now(),
+            collector: { schemaVersion: 1, sdkVersion: COLLECTOR_VERSION, pageInstanceId: this.pageInstanceId },
+          }),
+          keepalive: true,
+          credentials: 'same-origin',
+        }).catch(() => {});
+      } catch (e) { /* never break the host page */ }
     }
 
     async initialize(lifecycleVersion) {
@@ -2014,7 +2038,37 @@
     }
   }
 
+  /**
+   * Gateway embed (policy 24): <script src="..." data-datacat-embed data-endpoint="/_dc/t">.
+   * The instance lives in this closure only, so page scripts cannot reach it to rewrite
+   * what it measures or sends.
+   */
+  function bootstrapEmbedded(Collector) {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+    const script = document.currentScript;
+    if (!script || !script.hasAttribute('data-datacat-embed') || script.dataset.datacatStarted) return false;
+    try {
+      script.dataset.datacatStarted = '1';
+      const endpointUrl = new URL(script.getAttribute('data-endpoint') || '/api/v1/telemetry', window.location.href);
+      if (window.location.protocol === 'https:' && endpointUrl.protocol !== 'https:') {
+        throw new Error('Use an HTTPS endpoint on an HTTPS website');
+      }
+      const interval = Number(script.getAttribute('data-interval-ms') || 5000);
+      const collector = new Collector({
+        endpointUrl: endpointUrl.href,
+        autoSendInterval: Number.isInteger(interval) && interval >= 1000 && interval <= 60000 ? interval : 5000,
+        hello: true,
+      });
+      collector.start().catch(() => false);
+      return true;
+    } catch (error) {
+      console.error('[DATACAT] Embed configuration:', error.message);
+      return false;
+    }
+  }
+
   bootstrapPilot(BotCollector);
+  bootstrapEmbedded(BotCollector);
 
 
   return BotCollector;

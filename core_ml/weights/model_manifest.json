@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "083037f597dd419b8af1627e72e477af",
-  "created_at": "2026-10-28T04:47:51.791942+00:00",
+  "bundle_id": "137c74b45c834a9db7cf1ef4a37cf5fd",
+  "created_at": "2026-10-28T06:46:38.521849+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,10 +62,10 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "148fa79976767a10794a32ba8a1ec267c9bf4eec0d683d72f58b63880a6622ee",
-      "negative_cases": 18,
-      "passed": 29,
-      "positive_cases": 11,
+      "fixture_fingerprint": "6163f4d5aa5216c0b65da60d6a48905a25ebcf032b2a65f0ca52a570a07af0b9",
+      "negative_cases": 19,
+      "passed": 31,
+      "positive_cases": 12,
       "rules": [
         "automation_marker_v1",
         "environment_tampering_v1",
@@ -854,15 +854,15 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "23",
+    "decision_policy_version": "24",
     "desktop_risk_rule_gate": {
-      "fixture_fingerprint": "3c825a230812817f4db3557f5f35b04058f3ebc7529589b4ae516594436ede6c",
-      "human_cases": 11,
-      "passed": 23,
+      "fixture_fingerprint": "b5e1fb254d9e15acc1586a9fcf7525d33f7aab9ed54d3e7f5c42b638cf533dbd",
+      "human_cases": 13,
+      "passed": 29,
       "rules": [
         "desktop_risk_v1"
       ],
-      "suspect_cases": 12
+      "suspect_cases": 16
     },
     "diagnostic_only": false,
     "early_augmentation": true,
@@ -1039,16 +1039,16 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 5,
-      "fixture_fingerprint": "ab08fe3f334ac3dfa9b1f68431917fee4347a810d1932f4dd7fc1353ff4a8027",
-      "human_cases": 7,
-      "passed": 22,
+      "fixture_fingerprint": "ba0e7289d8f4ebb10c1ef52a696599a8dc41a5de765b9ac6ca7b1115deb6031c",
+      "human_cases": 8,
+      "passed": 25,
       "rules": [
         "mobile_clean_environment_v1",
         "mobile_risk_v1",
         "autoclick_taps_v1",
         "mobile_emulation_v1"
       ],
-      "suspect_cases": 10
+      "suspect_cases": 12
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,

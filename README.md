@@ -108,7 +108,17 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v23 (current)
+### Policy v24 (current)
+
+Policy v24 đóng các lỗ "fail-open" bằng gateway nginx của SilkMoon: mọi lượt tải trang được ghi
+nhận kèm cookie HttpOnly, telemetry phải đến từ đúng trình duyệt đã tải trang, các request ghi bị
+lạm dụng (đăng nhập, đăng ký, OTP, đặt hàng, đánh giá, mã giảm giá, AI) phải qua `/api/v1/gate`,
+lượt tải trang không chạy collector hiện trên dashboard. Thêm nhóm bằng chứng CDP (Puppeteer-stealth
+trên HTTPS thành BOT), tần suất phiên theo thiết bị, khóa BOT của mô hình sau 2 lần, `/detect` ẩn
+danh không còn trả kết luận. Xem [Model release v24](docs/MODEL_RELEASE_V24.md) và
+[deploy/silkmoon-gateway](deploy/silkmoon-gateway/README.md).
+
+### Policy v23
 
 Policy v23 vá các cách né luật input của v21 mà rà soát tìm ra: sửa hoặc xóa
 `getCoalescedEvents`, di chuột thưa, và gửi payload giả không qua trình duyệt. Collector 1.9.0

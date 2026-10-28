@@ -1706,10 +1706,10 @@ def test_minimal_detect_response_hides_evidence_from_anonymous_callers(client, m
     monkeypatch.setattr(main.settings, "DETECT_RESPONSE", "minimal")
     body = {"sessionId": "oracle", "visitorId": "v", "botd": {"detectors": {"webdriver": True}}, "mouse": {"records": []}}
     anonymous = client.post("/api/v1/detect", json=body).json()
-    assert anonymous["verdict"] == "BOT"
-    assert set(anonymous) == {"is_bot", "verdict", "decision_state", "policy_version", "model_bundle_id",
-                              "sessionId", "visitorId"}
+    # Policy 24: not even the verdict, so a bot cannot tune itself against the endpoint.
+    assert set(anonymous) == {"decision_state", "policy_version", "model_bundle_id", "sessionId", "visitorId"}
     authorised = client.post("/api/v1/detect", json=body, headers=READ_HEADERS).json()
+    assert authorised["verdict"] == "BOT"
     assert "breakdown" in authorised and "bot_probability" in authorised
 
 

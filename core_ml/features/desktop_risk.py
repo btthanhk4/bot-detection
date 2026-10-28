@@ -32,6 +32,11 @@ verdict. None of them proves a bot on its own, so the verdict is a final SUSPECT
   payload posted by a script, without a browser, was judged HUMAN (2026-10-28) and
   arrived without Accept-Language. None of the stored desktop sessions of people
   lacked either header. A forger can add them; this only removes the cheapest forgery.
+* ``UNVERIFIED_PAGE_LOAD`` and ``DEVICE_VELOCITY`` (policy 24): see
+  ``core_ml.features.server_context``.
+* ``CDP_ATTACHED`` (policy 24): the Chrome DevTools Protocol Runtime is enabled on the page.
+  Automation libraries do it, so does an open DevTools window (which also delivers mouse
+  moves one per frame, as CDP does); patchright does not.
 * ``SUBFRAME_POINTER_BURST``: moves handled within 1 ms of each other at new
   positions. Browsers hand pages one move per frame; firing several CDP moves at
   once to fake coalesced samples produces these (median 0.3 ms). There were none
@@ -49,10 +54,13 @@ training sets were recorded by other tools with other timing.
 
 import re
 
+from core_ml.features.server_context import server_context_codes
+
 DESKTOP_RISK_RULE = "desktop_risk_v1"
 DESKTOP_RISK_VERSION = "desktop_risk_v1"
 RISK_CODES = ("FRAME_LOCKED_POINTER", "UNALIGNED_POINTER", "POINTER_API_TAMPERED", "SUBFRAME_POINTER_BURST",
-              "CLOUD_SOFTWARE_GPU", "NON_BROWSER_REQUEST", "ENVIRONMENT_EVIDENCE")
+              "CLOUD_SOFTWARE_GPU", "NON_BROWSER_REQUEST", "ENVIRONMENT_EVIDENCE", "UNVERIFIED_PAGE_LOAD",
+              "DEVICE_VELOCITY", "CDP_ATTACHED")
 # Same minimum as the mouse models, so a page they judge is judged here too.
 FRAME_LOCK_MIN_MOVES = 25
 # CDP measured 1.000-1.051 samples with up to 4.8% multi-sample moves (a stalled main
@@ -137,6 +145,10 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
     local = [family for family in families if family != "NETWORK"]
     if any(family in _ANCHOR_FAMILIES for family in local) or len(local) >= 2:
         codes.append("ENVIRONMENT_EVIDENCE")
+    if "CDP" in families:
+        codes.append("CDP_ATTACHED")
+    if judged:
+        codes += server_context_codes(payload)
     return {
         "analysis_version": DESKTOP_RISK_VERSION,
         "judged": judged,

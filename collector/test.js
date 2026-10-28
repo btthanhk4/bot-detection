@@ -476,6 +476,29 @@ async function testFrameIntervalIsMeasuredOnce() {
   }
 }
 
+async function testGatewayEmbedGreetsBeforeFingerprinting() {
+  const previousFetch = global.fetch;
+  const bodies = [];
+  global.fetch = async (_url, options) => { bodies.push(JSON.parse(options.body)); return { ok: true, json: async () => ({}) }; };
+  try {
+    const manual = new BotCollector({ autoSendInterval: 0 });
+    manual.sendHello();
+    assert.strictEqual(bodies.length, 0, 'manual integrations keep their old behaviour');
+    manual.destroy();
+    const embedded = new BotCollector({ autoSendInterval: 0, hello: true });
+    embedded.sendHello();
+    embedded.sendHello();
+    assert.strictEqual(bodies.length, 1, 'one greeting per page');
+    assert.strictEqual(bodies[0].action, 'hello');
+    assert.strictEqual(bodies[0].sessionId, embedded.sessionId);
+    assert.strictEqual(bodies[0].visitorId, undefined, 'no device data in the greeting');
+    assert.strictEqual(bodies[0].fingerprint, undefined);
+    embedded.destroy();
+  } finally {
+    global.fetch = previousFetch;
+  }
+}
+
 async function testResizeDoesNotCreateMouseMovement() {
   const previousWindow = global.window;
   global.window = {
@@ -929,6 +952,7 @@ testRestartDuringFingerprinting()
   .then(testPointerStatsCountCoalescedMouseSamples)
   .then(testFrameIntervalIsMeasuredOnce)
   .then(testPatchedCoalescedEventsCannotAddSamples)
+  .then(testGatewayEmbedGreetsBeforeFingerprinting)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)
