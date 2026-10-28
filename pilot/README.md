@@ -24,7 +24,7 @@ Thay `API_HOST` bằng địa chỉ API do người vận hành cung cấp. Dùn
 ID chỉ gồm chữ ASCII, số, dấu `_` hoặc `-`, tối đa 64 ký tự.
 
 ```html
-<script defer src="https://API_HOST/bot-collector.js"
+<script async src="https://API_HOST/bot-collector.js"
         data-datacat
         data-study-id="thesis_pilot_01"
         data-site-id="site_01"></script>
@@ -38,7 +38,7 @@ phiên bản khác trên cùng trang.
 Nếu tự host file SDK trên website, chỉ rõ địa chỉ API:
 
 ```html
-<script defer src="/assets/bot-collector.js"
+<script async src="/assets/bot-collector.js"
         data-datacat data-study-id="thesis_pilot_01" data-site-id="site_01"
         data-endpoint="https://API_HOST/api/v1/telemetry"></script>
 ```

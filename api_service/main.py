@@ -1080,7 +1080,8 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
 
     if persisted:
         background_tasks.add_task(_flush_telemetry_buffer)
-        if settings.TOUCH_CAPTURE_ENABLED:
+        if settings.TOUCH_CAPTURE_ENABLED and (
+                not settings.TOUCH_CAPTURE_SITES or data.get("_site_id") in settings.TOUCH_CAPTURE_SITES):
             background_tasks.add_task(_persist_touch_samples, data, analysis)
 
     # An admin deleted this session while the tab stayed open: tell the collector

@@ -101,6 +101,10 @@ class Settings:
     CAPTURE_RETENTION_DAYS: int = _env_int("BOT_CAPTURE_RETENTION_DAYS", 7, 1, 365)
     # Phone/tablet gestures kept as weakly labelled training data (geometry and timing only).
     TOUCH_CAPTURE_ENABLED: bool = os.getenv("BOT_TOUCH_CAPTURE", "false").lower() in ("1", "true", "yes")
+    # Site ids whose touch gestures are kept (empty: every site). Customer sites stay out of it.
+    TOUCH_CAPTURE_SITES: List[str] = [
+        site.strip() for site in os.getenv("BOT_TOUCH_CAPTURE_SITES", "").split(",") if site.strip()
+    ]
     TOUCH_RETENTION_DAYS: int = _env_int("BOT_TOUCH_RETENTION_DAYS", 180, 1, 730)
     # Policy 24: the shop gateway (nginx) mirrors page views to the API, sets the page-view
     # cookie and asks /api/v1/gate before state-changing requests. Both endpoints need the

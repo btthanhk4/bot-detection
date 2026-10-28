@@ -329,6 +329,14 @@ def test_telemetry_stores_touch_samples_only_when_enabled(client, monkeypatch):
     monkeypatch.setattr(main.settings, "TOUCH_CAPTURE_ENABLED", True)
     assert client.post("/api/v1/telemetry", json=body).status_code == 200
     assert len(stored) == 1 and stored[0]["label_hint"] == "human_candidate"
+    # Limited to listed websites: a customer's visitors (or no attributed site) are not kept.
+    monkeypatch.setattr(main.settings, "TOUCH_CAPTURE_SITES", ["silkmoon"])
+    assert client.post("/api/v1/telemetry", json=body).status_code == 200
+    assert len(stored) == 1
+    monkeypatch.setattr(main.sites.registry, "origin_decision", lambda origin, configured: (True, {"site_id": "silkmoon"}))
+    assert client.post("/api/v1/telemetry", json=body).status_code == 200
+    assert len(stored) == 2
+    monkeypatch.setattr(main.settings, "TOUCH_CAPTURE_SITES", [])
     monkeypatch.setattr(database, "save_touch_samples", lambda samples: 1 / 0)
     assert client.post("/api/v1/telemetry", json=body).status_code == 200, "touch storage is best effort"
 

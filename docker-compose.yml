@@ -21,6 +21,8 @@ services:
       - BOT_CAPTURE_RETENTION_DAYS=${BOT_CAPTURE_RETENTION_DAYS:-7}
       # Phone/tablet gestures (geometry and timing only) kept as training data.
       - BOT_TOUCH_CAPTURE=${BOT_TOUCH_CAPTURE:-true}
+      # Only these websites contribute touch gestures to the training set.
+      - BOT_TOUCH_CAPTURE_SITES=${BOT_TOUCH_CAPTURE_SITES:-silkmoon}
       - BOT_TOUCH_RETENTION_DAYS=${BOT_TOUCH_RETENTION_DAYS:-180}
       # Offline IP geolocation (DB-IP Lite, CC BY 4.0), refreshed monthly into the volume.
       - BOT_GEOIP_DIR=/app/var/geoip

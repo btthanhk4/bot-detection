@@ -362,7 +362,9 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
 
 
 def install_snippet(collector_base: str, site_id: str) -> str:
-    return (f'<script defer src="{collector_base}/bot-collector.js" data-datacat '
+    # async, not defer: deferred scripts run in document order with the site's own deferred and
+    # module scripts, so a DATACAT host that hangs would keep the customer's app from starting.
+    return (f'<script async src="{collector_base}/bot-collector.js" data-datacat '
             f'data-study-id="{STUDY_ID}" data-site-id="{site_id}"></script>')
 
 

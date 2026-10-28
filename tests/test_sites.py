@@ -149,7 +149,7 @@ def test_overview_reports_install_state_and_unregistered_traffic(db):
     assert by_id["blog"]["install_state"] == "quiet"
     assert by_id["paused"]["install_state"] == "paused"
     assert 'data-site-id="shop"' in shop["snippet"]
-    assert shop["snippet"].startswith('<script defer src="https://api.datacat.io.vn/bot-collector.js"')
+    assert shop["snippet"].startswith('<script async src="https://api.datacat.io.vn/bot-collector.js"')
     assert [row["site_id"] for row in view["removed_sites"]] == ["deleted-site"]
     assert view["unassigned"]["sessions"] == 4
     assert view["unregistered_origins"] == [
