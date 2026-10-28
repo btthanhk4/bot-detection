@@ -1172,27 +1172,25 @@ body::before { display: none; }
 .traffic-table th:nth-child(1),
 .traffic-table td:nth-child(1) { width: 66px; }
 .traffic-table th:nth-child(2),
-.traffic-table td:nth-child(2) { width: 96px; }
+.traffic-table td:nth-child(2) { width: 90px; }
 .traffic-table th:nth-child(3),
-.traffic-table td:nth-child(3) { width: 132px; }
+.traffic-table td:nth-child(3) { width: 150px; }
 .traffic-table th:nth-child(4),
-.traffic-table td:nth-child(4) { width: auto; }
+.traffic-table td:nth-child(4) { width: 132px; }
 .traffic-table th:nth-child(5),
-.traffic-table td:nth-child(5) { width: 112px; }
+.traffic-table td:nth-child(5) { width: auto; }
 .traffic-table th:nth-child(6),
-.traffic-table td:nth-child(6) { width: 112px; }
+.traffic-table td:nth-child(6) { width: 120px; }
 .traffic-table th:nth-child(7),
-.traffic-table td:nth-child(7) { width: 72px; }
+.traffic-table td:nth-child(7) { width: 96px; }
 .traffic-table th:nth-child(8),
-.traffic-table td:nth-child(8) { width: 82px; }
+.traffic-table td:nth-child(8) { width: 112px; }
 .traffic-table th:nth-child(9),
-.traffic-table td:nth-child(9) { width: 86px; }
+.traffic-table td:nth-child(9) { width: 190px; }
 .traffic-table th:nth-child(10),
-.traffic-table td:nth-child(10) { width: 100px; }
+.traffic-table td:nth-child(10) { width: 104px; }
 .traffic-table th:nth-child(11),
-.traffic-table td:nth-child(11) { width: 146px; }
-.traffic-table th:nth-child(12),
-.traffic-table td:nth-child(12) { width: 174px; }
+.traffic-table td:nth-child(11) { width: 132px; }
 .traffic-table th:first-child, .traffic-table td:first-child { position: sticky; left: 0; background: var(--bg-card); z-index: 1; }
 .traffic-table th:last-child, .traffic-table td:last-child { position: sticky; right: 0; background: var(--bg-card); z-index: 1; border-left: 1px solid var(--line); }
 .traffic-table thead th:first-child, .traffic-table thead th:last-child { z-index: 3; background: var(--bg-secondary); }
@@ -1811,9 +1809,10 @@ body.read-only .delete-btn, body.read-only .delete-all-btn, body.read-only .labe
 .bottom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .content-grid > div:last-child { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
 .trajectory-canvas-wrapper { height: 300px; min-height: 0; }
-.traffic-table { min-width: 1110px; }
-.traffic-table th:nth-child(11), .traffic-table td:nth-child(11) { display: none; }
-.traffic-table th:nth-child(4), .traffic-table td:nth-child(4) { min-width: 80px; }
+.traffic-table { min-width: 1240px; }
+.traffic-table th:nth-child(5), .traffic-table td:nth-child(5) { min-width: 80px; }
+.traffic-table .cell-main { display: block; overflow: hidden; color: var(--text-primary); white-space: nowrap; text-overflow: ellipsis; }
+.traffic-table .reason-text { display: block; overflow: hidden; font-size: 12px; color: var(--text-secondary); white-space: nowrap; text-overflow: ellipsis; }
 @media (max-width: 1280px) { .content-grid > div:last-child { grid-template-columns: minmax(0, 1fr); } .mid-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1100px) {
   .app-body { margin-left: 0; }
@@ -2380,19 +2379,18 @@ body.read-only .admin-only { display: none !important; }
               <th title="Thứ tự server ghi nhận phiên; gửi tiếp cùng phiên không tăng số">STT</th>
               <th>Thời gian</th>
               <th>IP</th>
+              <th>Thiết bị</th>
               <th>Trang</th>
+              <th title="Kênh đưa khách tới: tham số utm, mã quảng cáo hoặc trang giới thiệu">Nguồn</th>
+              <th title="Từ lần gửi dữ liệu đầu tiên tới lần gần nhất của phiên">Thời lượng</th>
               <th>Kết luận</th>
+              <th>Lý do</th>
               <th>Rủi ro</th>
-              <th>Chuột</th>
-              <th>LSTM</th>
-              <th>Tabular</th>
-              <th>Nhãn dataset</th>
-              <th>Castle</th>
               <th aria-label="Thao tác"></th>
             </tr>
           </thead>
           <tbody id="trafficBody">
-            <tr><td colspan="12" class="empty-state">Chưa có lượt truy cập</td></tr>
+            <tr><td colspan="11" class="empty-state">Chưa có lượt truy cập</td></tr>
           </tbody>
         </table>
       </div>
@@ -3041,11 +3039,6 @@ function referenceView(session) {
     comparison: comparable ? (verdict === session.verdict ? 'Đồng thuận' : 'Bất đồng · cần rà soát') : 'Chưa thể đối chiếu' };
 }
 
-function renderReferenceCell(session) {
-  const ref = referenceView(session);
-  return `<div class="reference-cell"><span class="reference-status ${ref.tone}">${ref.label}</span>${ref.trusted ? `<small>${escapeHtml(ref.verdict)} · ${escapeHtml(ref.score)}</small>` : ''}</div>`;
-}
-
 function renderReferenceDetail(session) {
   const ref = referenceView(session);
   // Only shown for sessions that actually carry a Castle reference.
@@ -3284,6 +3277,95 @@ function formatPageLabel(pageUrl) {
   }
 }
 
+// "Chrome · Windows" from the user agent the browser reported (or the server saw).
+function describeDevice(s) {
+  const ua = String((s.fingerprint || {}).userAgent || s.user_agent || '');
+  if (!ua) return { browser: '--', os: '' };
+  const browsers = [[/coc_coc_browser/i, 'Cốc Cốc'], [/Edg(A|iOS)?\//, 'Edge'], [/OPR\/|Opera/, 'Opera'],
+    [/SamsungBrowser/, 'Samsung Internet'], [/Zalo/i, 'Zalo'], [/FBAN|FBAV|FB_IAB/, 'Facebook'],
+    [/Instagram/, 'Instagram'], [/TikTok|musical_ly|BytedanceWebview/i, 'TikTok'], [/HeadlessChrome/, 'HeadlessChrome'],
+    [/CriOS|Chrome\//, 'Chrome'], [/FxiOS|Firefox\//, 'Firefox'], [/Safari\//, 'Safari'],
+    [/curl|python|wget|okhttp|go-http|java|axios|node-fetch|scrapy/i, 'Công cụ HTTP']];
+  const systems = [[/iPhone/, 'iPhone'], [/iPad/, 'iPad'], [/Android/, 'Android'], [/Windows/, 'Windows'],
+    [/Mac OS X|Macintosh/, 'macOS'], [/CrOS/, 'ChromeOS'], [/Linux/, 'Linux']];
+  const pick = (list) => (list.find(([re]) => re.test(ua)) || [null, ''])[1];
+  return { browser: pick(browsers) || 'Khác', os: pick(systems) };
+}
+
+const SOURCE_NAMES = [[/(^|\.)google\./, 'Google'], [/(^|\.)(facebook|fb)\.com$|^l\.facebook|^lm\.facebook/, 'Facebook'],
+  [/zalo/, 'Zalo'], [/tiktok/, 'TikTok'], [/youtube|youtu\.be/, 'YouTube'], [/instagram/, 'Instagram'],
+  [/bing\./, 'Bing'], [/coccoc\.com/, 'Cốc Cốc'], [/shopee/, 'Shopee'], [/(^|\.)t\.co$|twitter|x\.com$/, 'X']];
+
+// Where the visitor came from: utm/ad click ids first, then the referring site.
+function trafficSource(s) {
+  let page = null;
+  try { page = new URL(s.pageUrl || '', window.location.origin); } catch (e) { page = null; }
+  const params = page ? page.searchParams : new URLSearchParams();
+  const campaign = params.get('utm_campaign') || '';
+  const utm = params.get('utm_source');
+  if (utm) {
+    const known = SOURCE_NAMES.find(([re]) => re.test(utm.toLowerCase() + '.com'));
+    return { label: known ? known[1] : utm, detail: [params.get('utm_medium'), campaign].filter(Boolean).join(' · ') };
+  }
+  if (params.get('gclid') || params.get('gbraid') || params.get('wbraid')) return { label: 'Google Ads', detail: campaign };
+  if (params.get('fbclid')) return { label: 'Facebook', detail: '' };
+  if (params.get('ttclid')) return { label: 'TikTok', detail: '' };
+  let ref = null;
+  try { ref = s.referrer ? new URL(s.referrer) : null; } catch (e) { ref = null; }
+  if (!ref) return { label: 'Trực tiếp', detail: 'gõ địa chỉ, bookmark hoặc ứng dụng không gửi nguồn' };
+  const host = ref.hostname.replace(/^www\./, '');
+  if (page && host === page.hostname.replace(/^www\./, '')) return { label: 'Trong website', detail: 'chuyển từ trang khác của website' };
+  const known = SOURCE_NAMES.find(([re]) => re.test(host));
+  return { label: known ? known[1] : host, detail: '' };
+}
+
+function formatDuration(s) {
+  const ms = Number(s.updated_at) - Number(s.created_at);
+  if (!Number.isFinite(ms) || ms < 1000) return '--';
+  const total = Math.round(ms / 1000);
+  if (total < 60) return total + ' giây';
+  const minutes = Math.floor(total / 60);
+  if (minutes < 10) return minutes + ' phút ' + (total % 60) + 's';
+  if (minutes < 60) return minutes + ' phút';
+  return Math.floor(minutes / 60) + ' giờ ' + (minutes % 60) + ' phút';
+}
+
+const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hình', UNALIGNED_POINTER: 'Sự kiện chuột bất thường',
+  SUBFRAME_POINTER_BURST: 'Sự kiện chuột dồn cục', POINTER_API_TAMPERED: 'API chuột bị sửa', CLOUD_SOFTWARE_GPU: 'Máy chủ cloud',
+  ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
+  CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt' };
+const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
+  CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
+  TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên' };
+const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
+  environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
+  mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
+  non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát' };
+
+// One short phrase for the table; the drawer keeps the full explanation.
+function shortReason(s, deferred) {
+  const bd = s.breakdown || {};
+  const basis = bd.decision_basis;
+  const codes = (list, labels) => {
+    const named = (list || []).map(c => labels[c] || c);
+    return named.length ? named[0] + (named.length > 1 ? ` +${named.length - 1}` : '') : '';
+  };
+  if (basis === 'synthetic_input') {
+    return bd.automation_rule === 'synthetic_typing_v1' ? 'Gõ phím giả lập'
+      : bd.automation_rule === 'synthetic_pointer_v1' ? 'Nhấn chuột giả lập' : 'Click giả lập';
+  }
+  if (SHORT_BASIS[basis]) return SHORT_BASIS[basis];
+  if (basis === 'desktop_risk') return codes((bd.desktop_risk || {}).codes, SHORT_DESKTOP_CODES) || 'Rủi ro trên máy tính';
+  if (basis === 'mobile_risk') return codes((bd.mobile_human || {}).risk, SHORT_MOBILE_CODES) || 'Rủi ro trên điện thoại';
+  if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
+  if (deferred) {
+    if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) return 'Chưa đủ thao tác chạm';
+    return `Mới ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} lần di chuột`;
+  }
+  const v = String(s.verdict || '').toUpperCase();
+  return v === 'HUMAN' ? 'Di chuột tự nhiên' : v === 'BOT' ? 'Di chuột giống bot' : 'Di chuột vùng ranh giới';
+}
+
 function hasApplicableTabularScore(bd) {
   return bd.tabular_score != null && Number.isFinite(Number(bd.tabular_score))
     && bd.tabular_score_in_domain !== false
@@ -3291,9 +3373,12 @@ function hasApplicableTabularScore(bd) {
     && !bd.unsupported_mobile && !bd.legacy_touch_ambiguous;
 }
 
+// Pages fetched without the collector (curl, crawlers) are judged by rule: no risk score.
+const NO_SCORE_BASES = new Set(['non_browser_client', 'declared_crawler', 'no_telemetry']);
+
 function hasApplicableRiskScore(session) {
   const bd = session.breakdown || {};
-  return bd.risk_score_in_domain !== false
+  return bd.risk_score_in_domain !== false && !NO_SCORE_BASES.has(bd.decision_basis)
     && bd.decision_deferred !== true
     && session.decision_state !== 'INSUFFICIENT_EVIDENCE';
 }
@@ -3301,7 +3386,7 @@ function hasApplicableRiskScore(session) {
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12" class="empty-state">Chưa có lượt truy cập</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" class="empty-state">Chưa có lượt truy cập</td></tr>`;
     _lastTableHTML = '';
     return;
   }
@@ -3309,7 +3394,7 @@ function renderTrafficTable() {
   const selectedId = selectedSession ? selectedSession.sessionId : null;
   const visible = allSessions.map((s, idx) => [s, idx]).filter(([s]) => sessionMatches(s, trafficQuery));
   if (visible.length === 0) {
-    const empty = `<tr><td colspan="12" class="empty-state">Không có kết quả cho “${escapeHtml(trafficQuery)}”</td></tr>`;
+    const empty = `<tr><td colspan="11" class="empty-state">Không có kết quả cho “${escapeHtml(trafficQuery)}”</td></tr>`;
     if (empty !== _lastTableHTML) { tbody.innerHTML = empty; _lastTableHTML = empty; }
     return;
   }
@@ -3323,13 +3408,11 @@ function renderTrafficTable() {
     const verdictLabel = deferred ? 'CHƯA ĐỦ DỮ LIỆU' : v;
     const riskAvailable = hasApplicableRiskScore(s);
     const probPct = riskAvailable ? (prob * 100).toFixed(1) : '--';
-    const lstmScore = bd.has_enough_mouse_data === true && bd.behavioral_lstm_score != null
-      && Number.isFinite(Number(bd.behavioral_lstm_score))
-      ? (Number(bd.behavioral_lstm_score) * 100).toFixed(1) : '--';
-    const tabScore = hasApplicableTabularScore(bd) ? (Number(bd.tabular_score) * 100).toFixed(1) : '--';
-    const mousePoints = Number.isFinite(Number(bd.mouse_points))
-      ? Number(bd.mouse_points)
-      : (s.mouse_points_captured || 0);
+    const device = describeDevice(s);
+    const source = trafficSource(s);
+    const reason = shortReason(s, deferred);
+    // Which website, when the table shows all of them.
+    const siteName = !selectedSite && s.site_id ? siteLabel(s.site_id) : '';
 
     let verdictClass = 'verdict-suspect';
     let rowClass = '';
@@ -3353,22 +3436,20 @@ function renderTrafficTable() {
       <td><span class="time-text">${escapeHtml(s.traffic_number ?? '--')}</span></td>
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span>${geoShort ? `<span class="geo-text" title="${escapeHtml(geoTitle)}">${escapeHtml(geoShort)}</span>` : ''}</td>
-      <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span></td>
+      <td><span class="cell-main">${escapeHtml(device.browser)}</span>${device.os ? `<span class="geo-text">${escapeHtml(device.os)}</span>` : ''}</td>
+      <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(page)}</span>${siteName ? `<span class="geo-text">${escapeHtml(siteName)}</span>` : ''}</td>
+      <td><span class="cell-main" title="${escapeHtml(source.detail || '')}">${escapeHtml(source.label)}</span>${source.detail && source.label !== 'Trực tiếp' && source.label !== 'Trong website' ? `<span class="geo-text" title="${escapeHtml(source.detail)}">${escapeHtml(source.detail)}</span>` : ''}</td>
+      <td><span class="time-text">${escapeHtml(formatDuration(s))}</span></td>
       <td><span class="verdict-badge ${verdictClass}" title="${deferred ? 'Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)' : ''}">${verdictLabel}</span></td>
+      <td><span class="reason-text" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span></td>
       <td>
         <div class="risk-bar-container">
            <div class="risk-bar-fill" style="width:${riskAvailable ? probPct : 0}%;background:${barColor}"></div>
         </div>
          <div class="risk-pct" style="color:${barColor}">${riskAvailable ? probPct + '%' : '--'}</div>
       </td>
-      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${mousePoints > 0 ? 'var(--accent-green)' : 'var(--text-muted)'}">${mousePoints}</span></td>
-      <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(lstmScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${lstmScore === '--' ? '--' : lstmScore + '%'}</span></td>
-       <td><span style="font-family:var(--font-mono);font-size:0.72rem;color:${parseFloat(tabScore) > 50 ? 'var(--accent-red)' : 'var(--accent-green)'}">${tabScore === '--' ? '--' : tabScore + '%'}</span></td>
-      <td><span title="${escapeHtml(s.manual_label?.source || '')}">${escapeHtml(s.manual_label?.label || '--')}${s.manual_label && !s.manual_label.confirmed ? ' *' : ''}</span></td>
-      <td>${renderReferenceCell(s)}</td>
       <td>
         <div style="display:flex;gap:4px;align-items:center;">
-          <button class="label-btn" onclick="event.stopPropagation();openLabelDialog(${idx})" title="Gán nhãn dataset" aria-label="Gán nhãn dataset"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg></button>
           <button class="view-btn" onclick="event.stopPropagation();selectSession(${idx}, true);" title="Xem hồ sơ phân tích">Hồ sơ</button>
           <button class="delete-btn" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa"></button>
         </div>
@@ -4440,8 +4521,10 @@ function sessionMatches(s, query) {
   const terms = normalizeText(query).split(/\s+/).filter(Boolean);
   if (!terms.length) return true;
   const geo = s.geo || {};
+  const device = describeDevice(s);
   const haystack = normalizeText([s.traffic_number, s.sessionId, s.client_ip, s.pageUrl, s.verdict,
-    geo.city, geo.region, geo.country, geo.country_code, geo.isp, geo.asn && 'AS' + geo.asn].join(' '));
+    geo.city, geo.region, geo.country, geo.country_code, geo.isp, geo.asn && 'AS' + geo.asn,
+    device.browser, device.os, trafficSource(s).label].join(' '));
   return terms.every(term => haystack.includes(term));
 }
 const globalSearch = document.getElementById('globalSearch');
