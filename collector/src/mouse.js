@@ -4,6 +4,7 @@
  * Captures user mouse/touch trajectories, computes kinematic features (velocity, acceleration, jerk),
  * and prepares sequential chunks (24 points) for LSTM behavioral classification.
  */
+import { withPristineRealm } from './pristine.js';
 
 // Compatibility mouse events follow a touchend within one frame to ~350 ms
 // (legacy tap delay); a real mouse used after the finger arrives later.
@@ -95,6 +96,17 @@ export class MouseRecorder {
 
   startFrameProbe() {
     if (this.frameProbe !== null || this.pointerStats.frames || typeof requestAnimationFrame !== 'function') return;
+    // Chromium: a fresh realm's requestAnimationFrame called on this window, so a page
+    // script that wraps the page's copy can neither break nor fake the frame timing.
+    let schedule = (fn) => requestAnimationFrame(fn);
+    try {
+      const ua = String((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+      const raf = /Chrome\//.test(ua) && !/Firefox\//.test(ua) && typeof document !== 'undefined'
+        ? withPristineRealm(document, (realm) => (realm && typeof realm.requestAnimationFrame === 'function'
+          ? realm.requestAnimationFrame : null))
+        : null;
+      if (raf) schedule = (fn) => raf.call(window, fn);
+    } catch (e) { /* the page's copy */ }
     const deltas = [];
     let last = null;
     const step = (now) => {
@@ -104,14 +116,19 @@ export class MouseRecorder {
       if (last !== null && now - last > 0 && now - last < 100) deltas.push(now - last);
       last = now;
       if (deltas.length < FRAME_PROBE_FRAMES) {
-        this.frameProbe = requestAnimationFrame(step);
+        this.frameProbe = schedule(step);
         return;
       }
       const sorted = deltas.sort((a, b) => a - b);
       this.pointerStats.frameMs = Math.round(sorted[sorted.length >> 2] * 10) / 10;
       this.pointerStats.frames = sorted.length;
     };
-    this.frameProbe = requestAnimationFrame(step);
+    try {
+      this.frameProbe = schedule(step);
+    } catch (e) {
+      schedule = (fn) => requestAnimationFrame(fn);
+      this.frameProbe = schedule(step);
+    }
   }
 
   stop() {

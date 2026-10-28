@@ -536,6 +536,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         doc = {
             "sessionId": session_id,
             "visitorId": telemetry.get("visitorId"),
+            **({"device_token": telemetry["deviceToken"]} if telemetry.get("deviceToken") else {}),
             "client_ip": telemetry.get("client_ip"),
             "pageUrl": telemetry.get("pageUrl"),
             "referrer": telemetry.get("referrer"),

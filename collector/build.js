@@ -13,10 +13,17 @@ if (!fs.existsSync(distDir)) {
   fs.mkdirSync(distDir, { recursive: true });
 }
 
+// Every source module must be listed here; an unlisted one would leave its imports undefined
+// at runtime, where the collector swallows the error.
+const BUNDLED = ['fingerprint.js', 'botd.js', 'profile.js', 'pristine.js', 'automation.js', 'mouse.js', 'index.js', 'pilot.js'];
+const unbundled = fs.readdirSync(srcDir).filter((name) => name.endsWith('.js') && !BUNDLED.includes(name));
+if (unbundled.length) throw new Error(`Add to the bundle: ${unbundled.join(', ')}`);
+
 // Read modules
 let fpCode = fs.readFileSync(path.join(srcDir, 'fingerprint.js'), 'utf-8');
 let botdCode = fs.readFileSync(path.join(srcDir, 'botd.js'), 'utf-8');
 let profileCode = fs.readFileSync(path.join(srcDir, 'profile.js'), 'utf-8');
+let pristineCode = fs.readFileSync(path.join(srcDir, 'pristine.js'), 'utf-8');
 let automationCode = fs.readFileSync(path.join(srcDir, 'automation.js'), 'utf-8');
 let mouseCode = fs.readFileSync(path.join(srcDir, 'mouse.js'), 'utf-8');
 let indexCode = fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8');
@@ -34,6 +41,7 @@ function stripEsModules(code) {
 fpCode = stripEsModules(fpCode);
 botdCode = stripEsModules(botdCode);
 profileCode = stripEsModules(profileCode);
+pristineCode = stripEsModules(pristineCode);
 automationCode = stripEsModules(automationCode);
 mouseCode = stripEsModules(mouseCode);
 indexCode = stripEsModules(indexCode);
@@ -53,6 +61,9 @@ ${botdCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- Passive Browser Profile Observations ---
 ${profileCode.split('\n').map(l => '  ' + l).join('\n')}
+
+  // --- Untouched built-ins from a fresh realm ---
+${pristineCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- Automation and Tampering Probes (BotD v2) ---
 ${automationCode.split('\n').map(l => '  ' + l).join('\n')}

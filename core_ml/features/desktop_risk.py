@@ -27,6 +27,10 @@ verdict. None of them proves a bot on its own, so the verdict is a final SUSPECT
   the event itself and always expose the method in a secure Chromium context, and
   collector 1.9 also reports a non-native ``getCoalescedEvents`` or
   ``requestAnimationFrame``. Privacy extensions spoof navigator and canvas, not these.
+  Policy 25: monitoring libraries (Sentry, New Relic) wrap requestAnimationFrame, so
+  collector 1.11 times frames with a fresh realm's copy instead and reports only
+  ``getCoalescedEvents``. A script that also breaks that copy leaves the frame probe
+  empty; a page moved over 25+ times for 10 s without one measured frame counts too.
 * ``NON_BROWSER_REQUEST`` (policy 23): the telemetry request itself lacks what a
   Chromium page always sends (Accept-Language; Sec-Fetch-* over HTTPS). A human-looking
   payload posted by a script, without a browser, was judged HUMAN (2026-10-28) and
@@ -72,6 +76,8 @@ FRAME_LOCK_MAX_MULTI_SHARE = 0.06
 FRAME_LOCK_MIN_INTERVAL_MS = 12.0
 MIN_MOVE_GAPS = 20
 MIN_FRAMES = 30
+# The frame probe needs 60 frames: 2 s even at Chrome's 30 fps battery saver.
+FRAME_PROBE_STARVED_MS = 10_000
 UNALIGNED_MAX_FRAME_RATIO = 0.4
 UNALIGNED_MAX_COALESCED = 1.5
 BURST_MAX_GAP_MS = 1.0
@@ -94,6 +100,19 @@ def _move_steps(moves):
 def _move_interval(steps):
     gaps = sorted(gap for gap, _ in steps if 0 < gap < 100)
     return gaps[len(gaps) // 2] if len(gaps) >= MIN_MOVE_GAPS else None
+
+
+def _frame_probe_starved(payload, stats) -> bool:
+    """Collector 1.11+ (it reports ``pristineRealm``) measured no frame on a long, moved page."""
+    automation = ((payload.get("botd") or {}).get("automation") or {}) if isinstance(payload.get("botd"), dict) else {}
+    signals = automation.get("signals") if isinstance(automation, dict) else None
+    if not isinstance(signals, dict) or "pristineRealm" not in signals:
+        return False
+    mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
+    age = mouse.get("pageAgeMs")
+    if isinstance(age, bool) or not isinstance(age, (int, float)):
+        return False
+    return age >= FRAME_PROBE_STARVED_MS and not stats.get("frames")
 
 
 def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, pointer_stats, judged: bool) -> dict:
@@ -133,7 +152,8 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
         codes.append("UNALIGNED_POINTER")
     families = (automation_evidence.get("families") or {}) if judged else {}
     if (api_judged and (stats.get("coalesced_self", 0) > 0 or stats.get("coalesced_mean", 0) < 0.5)) or (
-            judged and "signals.inputApiPatched" in families.get("NATIVE_PATCH", [])):
+            judged and "signals.inputApiPatched" in families.get("NATIVE_PATCH", [])) or (
+            api_judged and _frame_probe_starved(payload, stats)):
         codes.append("POINTER_API_TAMPERED")
     burst = sum(1 for gap, moved in steps if 0 <= gap <= BURST_MAX_GAP_MS and moved)
     if burst >= BURST_MIN_MOVES and burst >= BURST_MIN_SHARE * len(steps):

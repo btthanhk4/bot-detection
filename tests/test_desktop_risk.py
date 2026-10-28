@@ -229,4 +229,49 @@ def test_release_fixtures(production_detector, index):
 def test_release_gate_counts(production_detector):
     gate = validate_desktop_risk_rules(production_detector)
     assert gate == DESKTOP_RISK_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"]) == (13, 16)
+    assert (gate["human_cases"], gate["suspect_cases"]) == (15, 18)
+
+
+WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+
+
+def _families(ua=WINDOWS_CHROME, renderer=D3D, signals=None, datacenter=None):
+    from core_ml.features.automation_evidence import analyze_automation_evidence
+    payload = {
+        "_server_user_agent": ua,
+        "_server_headers": {"observed": True, "accept_language": True, **({"datacenter": datacenter} if datacenter else {})},
+        "fingerprint": {"userAgent": ua, "webglRenderer": renderer},
+        "botd": {"automation": {"schema": "automation-v1", "signals": signals or {}, "worker": None,
+                                "notificationPermissionMismatch": None}},
+    }
+    return analyze_automation_evidence(payload)["families"]
+
+
+def test_monitoring_library_patches_are_not_tampering():
+    # Policy 25: Sentry/zone.js patch toString and wrap requestAnimationFrame on real sites.
+    assert _families(signals={"toStringPatched": True, "rafWrapped": True}) == {}
+    assert _families(signals={"inputApiPatched": True}) == {"NATIVE_PATCH": ["signals.inputApiPatched"]}
+
+
+def test_warp_renderer_counts_only_off_windows_or_in_the_cloud():
+    assert _families(renderer=WARP) == {}
+    assert _families(renderer=WARP, ua=MAC_CHROME) == {"GPU": ["server.software_renderer"]}
+    assert _families(renderer=WARP, datacenter="aws") == {"NETWORK": ["server.datacenter_ip", "server.software_renderer"]}
+    assert _families(renderer=SWIFTSHADER) == {"GPU": ["server.software_renderer"]}
+
+
+def test_starved_frame_probe_counts_as_timing_tampering(production_detector):
+    # Policy 25: collector 1.11 times frames with a fresh realm's requestAnimationFrame; a
+    # script that breaks it too leaves the probe empty on a long, moved page.
+    from core_ml.release_cases import _desktop
+    starved = _desktop(signals={"pristineRealm": True}, stats={"frames": 0, "frameMs": None})
+    starved["mouse"]["pageAgeMs"] = 30000
+    result = production_detector.predict(starved)
+    assert "POINTER_API_TAMPERED" in result["breakdown"]["desktop_risk"]["codes"]
+    assert result["verdict"] != "HUMAN"
+    fresh = copy.deepcopy(starved)
+    fresh["mouse"]["pageAgeMs"] = 4000  # probe still running
+    assert "POINTER_API_TAMPERED" not in production_detector.predict(fresh)["breakdown"]["desktop_risk"]["codes"]
+    old = _desktop(stats={"frames": 0, "frameMs": None})  # collector < 1.11: no pristineRealm
+    old["mouse"]["pageAgeMs"] = 30000
+    assert "POINTER_API_TAMPERED" not in production_detector.predict(old)["breakdown"]["desktop_risk"]["codes"]

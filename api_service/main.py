@@ -39,7 +39,7 @@ from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.model_bundle import ModelBundleError, release_evidence_valid, verify_model_bundle
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
-from core_ml.features.network import cloud_provider
+from core_ml.features.network import cloud_provider, crawler_operator
 
 
 logger = logging.getLogger("bot_detection.api")
@@ -335,7 +335,7 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
     phone = gateway.is_phone_user_agent(fingerprint.get("userAgent") or request.headers.get("user-agent") or "")
     headers["device_sessions"] = gateway.device_sessions(
         db, visitor_id=data.get("visitorId"), ip=data.get("client_ip") or get_client_ip(request),
-        session_id=str(data.get("sessionId") or ""),
+        session_id=str(data.get("sessionId") or ""), device_token=data.get("deviceToken"),
     ) if data.get("visitorId") and not phone else None
     if gateway.valid_page_view_id(page_view_id):
         data["_page_view_id"] = page_view_id
@@ -612,6 +612,8 @@ class CollectorMetadata(BaseModel):
 class TelemetryPayload(BaseModel):
     sessionId: Optional[str] = Field(default=None, max_length=128)
     visitorId: Optional[str] = Field(default=None, max_length=128)
+    # Collector 1.11: random id in the site's localStorage, shared by one browser's tabs.
+    deviceToken: Optional[str] = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     action: Optional[str] = Field(default="telemetry", max_length=64)
     timestamp: Optional[int] = None
     sequence: Optional[int] = Field(default=None, ge=0, le=999999)
@@ -735,6 +737,8 @@ def _observed_headers(request: Request) -> dict:
         "forwarded_proto": (request.headers.get("x-forwarded-proto") or request.url.scheme or "")[:8],
         # Published cloud range of the client address (None for residential/mobile).
         "datacenter": cloud_provider(get_client_ip(request)),
+        # Published crawler range of the client address (google, bing, ...), policy 25.
+        "crawler_operator": crawler_operator(get_client_ip(request)),
         # Web Bot Auth (RFC 9421 message signatures for bots): the agent names itself.
         "signature_agent": bool(request.headers.get("signature-agent") or request.headers.get("signature-input")),
     }

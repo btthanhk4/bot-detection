@@ -108,7 +108,16 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v24 (current)
+### Policy v25 (current)
+
+Policy v25 sửa các trường hợp người thật bị bắt nhầm trên site thật: site có Sentry (bọc
+`console`, sửa `toString`), Chrome tắt tăng tốc phần cứng (WARP), người mở nhiều tab. Collector
+1.11 lấy `console`, `toString` và `requestAnimationFrame` từ một realm mới, nên thư viện của trang
+không làm sai đầu dò. Crawler tự khai được xác minh bằng dải IP chính thức của nhà vận hành
+(`python -m core_ml.refresh_crawler_ranges`). Báo cáo đánh dấu IP crawler thật và IP có cả người
+thật, và không đưa chúng vào danh sách IP để chặn. Xem [Model release v25](docs/MODEL_RELEASE_V25.md).
+
+### Policy v24
 
 Policy v24 đóng các lỗ "fail-open" bằng gateway nginx của SilkMoon: mọi lượt tải trang được ghi
 nhận kèm cookie HttpOnly, telemetry phải đến từ đúng trình duyệt đã tải trang, các request ghi bị

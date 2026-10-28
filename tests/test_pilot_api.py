@@ -57,7 +57,11 @@ def test_served_sdk_contains_opt_in_bootstrap_and_version(pilot_client):
     response = pilot_client.get("/bot-collector.js")
     assert response.status_code == 200
     assert "bootstrapPilot" in response.text
-    assert "COLLECTOR_VERSION = '1.10.0'" in response.text
+    assert "COLLECTOR_VERSION = '1.11.0'" in response.text
+    # Every module the probes import is in the bundle (1.11 shipped once without pristine.js,
+    # and the probes failed silently in the browser).
+    assert "function withPristineRealm" in response.text
+    assert "deviceToken: this.deviceToken()" in response.text
     assert response.headers["cache-control"] == "public, no-cache"
 
 

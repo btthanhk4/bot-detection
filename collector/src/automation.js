@@ -5,11 +5,15 @@
  * write-ups on Playwright/CDP artefacts. Each probe is a boolean that is true only
  * when the evidence is present; a probe that cannot run returns false and is
  * listed in `unavailable`. Nothing here changes page state that the site can see.
+ *
+ * Collector 1.11: source checks and the DevTools probe use built-ins from a fresh
+ * realm (see pristine.js), not the page's copies that monitoring libraries wrap.
  */
+import { withPristineRealm } from './pristine.js';
 
-function nativeSource(fn) {
+function nativeSource(fn, toString = Function.prototype.toString) {
   try {
-    return typeof fn === 'function' && /\{\s*\[native code\]\s*\}\s*$/.test(Function.prototype.toString.call(fn));
+    return typeof fn === 'function' && /\{\s*\[native code\]\s*\}\s*$/.test(toString.call(fn));
   } catch (e) {
     return false;
   }
@@ -25,8 +29,17 @@ function getterOf(proto, name) {
 }
 
 export function collectAutomationSignals(nav, win, doc) {
+  if (!doc || typeof doc.createElement !== 'function') return collectSignals(nav, win, doc, null);
+  return withPristineRealm(doc, (realm) => collectSignals(nav, win, doc, realm));
+}
+
+function collectSignals(nav, win, doc, realm) {
   const out = {};
   const unavailable = [];
+  // Function.prototype.toString of an untouched realm sees through a page that patched its own.
+  const realmToString = realm && realm.Function && realm.Function.prototype.toString;
+  const isNative = (fn) => nativeSource(fn, realmToString || Function.prototype.toString);
+  out.pristineRealm = Boolean(realmToString);
   const ua = String((nav && nav.userAgent) || '');
   const chromium = /Chrome\//.test(ua) && !/Firefox\//.test(ua);
   const desktop = !/Android|iPhone|iPad|iPod|Mobile/i.test(ua);
@@ -48,17 +61,20 @@ export function collectAutomationSignals(nav, win, doc) {
     }
   } catch (e) { unavailable.push('playwrightGlobals'); }
 
-  // Research only (not used by any rule): with a DevTools Protocol client attached
-  // (Runtime.enable) console previews read Error#name a second time. Measured on
-  // Chrome/Edge 155-156: genuine 1 read per call, Playwright/Puppeteer/Selenium 2,
-  // Patchright 1. Open DevTools also reads twice, so developers look the same.
+  // With a DevTools Protocol client attached (Runtime.enable) console previews read
+  // Error#name a second time. Measured on Chrome/Edge 155-156: genuine 1 read per
+  // call, Playwright/Puppeteer/Selenium 2, Patchright 1. Open DevTools also reads
+  // twice, so developers look the same. The console comes from the fresh realm: a
+  // page console wrapped by Sentry or LogRocket serialises its arguments and reads
+  // the name itself (2 reads in a genuine browser, 2026-10-29).
   out.cdpRuntime = false;
   try {
-    if (chromium && win.console && typeof win.console.debug === 'function') {
+    const probeConsole = (realm && realm.console) || win.console;
+    if (chromium && probeConsole && typeof probeConsole.debug === 'function') {
       let reads = 0;
       class ProbeError extends Error {}
       Object.defineProperty(ProbeError.prototype, 'name', { configurable: true, get() { reads++; return 'Error'; } });
-      win.console.debug(new ProbeError(''));
+      probeConsole.debug(new ProbeError(''));
       out.cdpRuntime = reads >= 2;
     }
   } catch (e) { unavailable.push('cdpRuntime'); }
@@ -81,7 +97,7 @@ export function collectAutomationSignals(nav, win, doc) {
   out.webdriverPatched = false;
   try {
     out.webdriverPatched = Object.prototype.hasOwnProperty.call(nav, 'webdriver')
-      || (webdriverGetter !== undefined && webdriverGetter !== null && !nativeSource(webdriverGetter));
+      || (webdriverGetter !== undefined && webdriverGetter !== null && !isNative(webdriverGetter));
   } catch (e) { unavailable.push('webdriverPatched'); }
 
   // Non-native navigator getters reveal JS-level spoofing. Privacy extensions can
@@ -91,23 +107,27 @@ export function collectAutomationSignals(nav, win, doc) {
     const names = ['userAgent', 'platform', 'languages', 'plugins', 'hardwareConcurrency', 'deviceMemory', 'vendor'];
     out.navigatorGetterPatched = names.some((name) => {
       const getter = getterOf(navProto, name);
-      return getter !== undefined && getter !== null && !nativeSource(getter);
+      return getter !== undefined && getter !== null && !isNative(getter);
     }) || names.some((name) => Object.prototype.hasOwnProperty.call(nav, name));
   } catch (e) { unavailable.push('navigatorGetterPatched'); }
 
+  // Research only since policy 25: Sentry and zone.js patch toString on ordinary sites.
   out.toStringPatched = false;
   try {
-    out.toStringPatched = !nativeSource(Function.prototype.toString)
+    out.toStringPatched = !isNative(Function.prototype.toString)
       || Function.prototype.toString.call(Function.prototype.toString).indexOf('toString') === -1;
   } catch (e) { out.toStringPatched = true; }
 
-  // The input APIs the API reads pointer timing from (policy 23). Extensions that
-  // spoof fingerprints leave them alone; a script evading the timing checks does not.
+  // The coalesced-sample API the API reads pointer timing from (policy 23). Fingerprint
+  // extensions and monitoring libraries leave it alone; a script evading the timing checks
+  // does not. requestAnimationFrame is wrapped by Sentry and New Relic, so it is only
+  // reported (rafWrapped); the frame probe calls the fresh realm's copy instead.
   out.inputApiPatched = false;
+  out.rafWrapped = false;
   try {
     const coalesced = win.PointerEvent && win.PointerEvent.prototype.getCoalescedEvents;
-    out.inputApiPatched = (typeof coalesced === 'function' && !nativeSource(coalesced))
-      || (typeof win.requestAnimationFrame === 'function' && !nativeSource(win.requestAnimationFrame));
+    out.inputApiPatched = typeof coalesced === 'function' && !isNative(coalesced);
+    out.rafWrapped = typeof win.requestAnimationFrame === 'function' && !isNative(win.requestAnimationFrame);
   } catch (e) { unavailable.push('inputApiPatched'); }
 
   out.missingChromeObject = chromium && desktop && typeof win.chrome === 'undefined';

@@ -9,9 +9,13 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.10.0';
+export const COLLECTOR_VERSION = '1.11.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
+// A random id kept in this site's localStorage (collector 1.11). The API counts how many
+// browsers, not tabs, one device fingerprint starts sessions from on one address: a person's
+// thirty product tabs share it; a farm that wipes storage between runs does not.
+const DEVICE_STORAGE_KEY = 'datacat_device';
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);
@@ -78,6 +82,22 @@ export class BotCollector {
     try {
       window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ id: this.sessionId, seen: Date.now() }));
     } catch (e) { /* optional */ }
+  }
+
+  deviceToken() {
+    if (this.cachedDeviceToken !== undefined) return this.cachedDeviceToken;
+    this.cachedDeviceToken = null;
+    try {
+      let token = window.localStorage.getItem(DEVICE_STORAGE_KEY);
+      if (!token || !/^[a-f0-9]{32}$/.test(token)) {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+        window.localStorage.setItem(DEVICE_STORAGE_KEY, token);
+      }
+      this.cachedDeviceToken = token;
+    } catch (e) { /* storage blocked: every session counts on its own */ }
+    return this.cachedDeviceToken;
   }
 
   generateSessionId() {
@@ -233,6 +253,7 @@ export class BotCollector {
       pageUrl: typeof window !== 'undefined' ? boundedUrl(window.location.href) : '',
       referrer: typeof document !== 'undefined' ? boundedUrl(document.referrer) : '',
       visitorId: this.cachedFingerprint.visitorId,
+      deviceToken: this.deviceToken(),
       fingerprint: this.cachedFingerprint.components,
       botd: this.cachedBotd,
       mouse: mouseData,

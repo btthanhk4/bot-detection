@@ -9,9 +9,10 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   ``untracked`` (no gateway in front of the site), ``gateway_idle`` (the gateway has not
   mirrored a page in ten minutes, so a missing cookie proves nothing) and ``unavailable``
   are not judged.
-* ``device_sessions``: sessions in the last hour from the same device fingerprint on the
-  same address. A person opens a few tabs; a farm that clears storage between runs starts
-  a new session every minute on one machine.
+* ``device_sessions``: browsers that started sessions in the last hour from the same device
+  fingerprint on the same address (policy 25: tabs sharing a storage token count once). A
+  person opens many tabs in one browser; a farm that clears storage between runs starts a
+  new browser every minute on one machine.
 
 Each code only withholds a HUMAN verdict, like the other desktop and phone risk codes.
 """

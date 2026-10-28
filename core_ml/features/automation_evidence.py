@@ -37,13 +37,34 @@ MOBILE_EMULATION_RULE = "mobile_emulation_v1"
 # sent by ChatGPT Agent and verified by Cloudflare/AWS) and published crawler
 # user agents. People never send either; the bot may be welcome, but it is a bot.
 _DECLARED_BOT_UA = re.compile(
-    r"\b(googlebot|google-inspectiontool|googleother|google-extended|storebot-google|bingbot|"
+    r"\b(googlebot|google-inspectiontool|googleother|google-extended|storebot-google|adsbot-google|"
+    r"mediapartners-google|google-read-aloud|feedfetcher-google|bingbot|"
     r"gptbot|chatgpt-user|oai-searchbot|claudebot|claude-user|claude-searchbot|anthropic-ai|"
     r"perplexitybot|perplexity-user|bytespider|amazonbot|applebot|ccbot|meta-externalagent|"
     r"facebookexternalhit|duckduckbot|yandexbot|baiduspider|petalbot|semrushbot|ahrefsbot|"
     r"mj12bot|dotbot|chrome-lighthouse)\b",
     re.I,
 )
+# Policy 25: operators that publish their crawlers' addresses (core_ml/refresh_crawler_ranges).
+# A crawler from its operator's ranges is the real one, which a site should not block; the
+# same name from anywhere else was copied. Either way it is a bot.
+_CRAWLER_OPERATORS = {
+    "google": ("googlebot", "google-inspectiontool", "googleother", "google-extended", "storebot-google",
+               "adsbot-google", "mediapartners-google", "google-read-aloud", "feedfetcher-google", "chrome-lighthouse"),
+    "bing": ("bingbot",),
+    "apple": ("applebot",),
+    "openai": ("gptbot", "chatgpt-user", "oai-searchbot"),
+    "perplexity": ("perplexitybot", "perplexity-user"),
+}
+_CRAWLER_NAMES = {
+    "googlebot": "Googlebot", "google-inspectiontool": "Google-InspectionTool", "googleother": "GoogleOther",
+    "google-extended": "Google-Extended", "storebot-google": "Storebot-Google", "adsbot-google": "AdsBot-Google",
+    "mediapartners-google": "Mediapartners-Google", "google-read-aloud": "Google-Read-Aloud",
+    "feedfetcher-google": "FeedFetcher-Google", "chrome-lighthouse": "Chrome-Lighthouse", "bingbot": "Bingbot",
+    "applebot": "Applebot", "gptbot": "GPTBot", "chatgpt-user": "ChatGPT-User", "oai-searchbot": "OAI-SearchBot",
+    "perplexitybot": "PerplexityBot", "perplexity-user": "Perplexity-User", "claudebot": "ClaudeBot",
+    "bytespider": "Bytespider", "facebookexternalhit": "facebookexternalhit", "meta-externalagent": "Meta-ExternalAgent",
+}
 IDLE_CLOUD_MIN_PAGE_MS = 10_000
 # Evidence that a cloud virtual machine explains on its own.
 _CLOUD_EXPLAINED = {"GPU": "server.software_renderer", "HEADLESS_ENV": "signals.rttZero"}
@@ -68,8 +89,9 @@ _FAMILIES = {
             "server": ("legacy_angle_renderer", "software_renderer")},
     "PERMISSION": {"top": ("notificationPermissionMismatch",)},
     "CONTEXT": {"worker": ("cpuMismatch", "uaMismatch", "platformMismatch")},
-    "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched",
-                                 "inputApiPatched")},
+    # Policy 25: toStringPatched left this family. Sentry and zone.js patch toString on
+    # ordinary sites; collector 1.11 checks sources against a fresh realm's toString.
+    "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "inputApiPatched")},
     "CLIENT_HINTS": {"signals": ("uaHintsMismatch", "malformedBrands"), "server": ("http_ua_mismatch",)},
     "HTTP": {"server": ("missing_accept_language", "missing_fetch_metadata")},
     # Policy 24: a CDP client has Runtime enabled (Puppeteer, Playwright, Selenium; patchright
@@ -86,11 +108,31 @@ _FAMILIES = {
 _DESKTOP_GPU = re.compile(r"Direct3D|D3D11|D3D9|GeForce|Quadro|Radeon|Intel\(R\)|Intel HD|UHD Graphics|Iris|PCIe|SSE2", re.I)
 # Phones and tablets have at most 10 cores; a server or desktop shows through.
 MOBILE_MAX_CORES = 16
-_SOFTWARE_RENDERER = re.compile(r"swiftshader|llvmpipe|softpipe|mesa offscreen|microsoft basic render", re.I)
+_SOFTWARE_RENDERER = re.compile(r"swiftshader|llvmpipe|softpipe|mesa offscreen", re.I)
+# Windows' own CPU renderer (WARP). Chrome uses it with hardware acceleration switched off
+# and on machines without a working GPU driver, so on a Windows user agent it is ordinary
+# (policy 25, measured 2026-10-29). Under another OS, or on a cloud address, it still counts.
+_WARP_RENDERER = re.compile(r"microsoft basic render", re.I)
 
 
 def _mapping(value):
     return value if isinstance(value, dict) else {}
+
+
+def declared_crawler(user_agents, operator=None):
+    """{name, operator, verified} for a crawler named in a User-Agent, else None.
+
+    ``operator`` is whose published crawler ranges hold the client address. ``verified`` is
+    None when the crawler's operator publishes no ranges this service tracks.
+    """
+    for ua in user_agents:
+        match = _DECLARED_BOT_UA.search(str(ua or ""))
+        if match:
+            token = match.group(1).lower()
+            owner = next((name for name, tokens in _CRAWLER_OPERATORS.items() if token in tokens), None)
+            return {"name": _CRAWLER_NAMES.get(token, match.group(1)), "operator": owner,
+                    "verified": (operator == owner) if owner else None}
+    return None
 
 
 def _sources(payload):
@@ -128,7 +170,8 @@ def _sources(payload):
                                       and renderer.startswith("ANGLE (") and ", " not in renderer),
         # CPU rasterisers used when no GPU exists (cloud VMs, containers). Hypervisor
         # adapters (VirtualBox, VMware) are excluded: people do browse from VMs.
-        "software_renderer": bool(_SOFTWARE_RENDERER.search(renderer)),
+        "software_renderer": bool(_SOFTWARE_RENDERER.search(renderer)) or bool(
+            _WARP_RENDERER.search(renderer) and (headers.get("datacenter") or "Windows NT" not in browser_ua)),
         "datacenter_ip": bool(headers.get("datacenter")),
         "signature_agent": headers.get("signature_agent") is True,
         "declared_bot_ua": bool(_DECLARED_BOT_UA.search(http_ua) or _DECLARED_BOT_UA.search(browser_ua)),
@@ -275,10 +318,16 @@ def analyze_automation_evidence(payload: dict) -> dict:
         else IDLE_CLOUD_BROWSER_RULE if idle_cloud
         else None
     )
+    headers = _mapping(payload.get("_server_headers"))
+    crawler = declared_crawler(
+        (payload.get("_server_user_agent"), _mapping(payload.get("fingerprint")).get("userAgent")),
+        headers.get("crawler_operator"),
+    ) if "server.declared_bot_ua" in markers else None
     return {
         "analysis_version": AUTOMATION_EVIDENCE_VERSION,
         "probes_present": has_probes,
         "markers": markers,
+        "crawler": crawler,
         "families": families,
         "family_count": len(families),
         "cloud_vm": cloud and len(families["NETWORK"]) > 1,

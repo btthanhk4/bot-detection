@@ -719,6 +719,7 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 .report-copy { margin-left: auto; }
 .report-ip-scroll { max-height: none; }
 .report-ips td:first-child { font: 12.5px var(--font-mono); color: var(--text); }
+.ip-note { display: block; margin-top: 3px; font: 500 11.5px var(--font-sans); color: var(--warn-text); }
 .report-note { max-width: 100ch; font-size: 12.5px; line-height: 1.65; color: var(--text-3); }
 .report-note b { font-weight: 600; color: var(--text-2); }
 
@@ -2011,9 +2012,18 @@ const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
+// Policy 25: a declared crawler, verified by its operator's published addresses or not.
+function crawlerLabel(crawler) {
+  if (!crawler || !crawler.name) return '';
+  return crawler.verified === true ? `${crawler.name} (đã xác minh)`
+    : crawler.verified === false ? `Giả danh ${crawler.name}` : `Crawler ${crawler.name}`;
+}
+
 function shortReason(s, deferred) {
   const bd = s.breakdown || {};
   const basis = bd.decision_basis;
+  const crawler = crawlerLabel((bd.automation_evidence || {}).crawler);
+  if (crawler && (basis === 'automation_marker' || basis === 'declared_crawler')) return crawler;
   const codes = (list, labels) => {
     const named = (list || []).map(c => labels[c] || c);
     return named.length ? named[0] + (named.length > 1 ? ` +${named.length - 1}` : '') : '';
@@ -2323,6 +2333,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   let explainText = '';
   if (bd.decision_basis === 'non_browser_client') {
     explainText = 'Công cụ HTTP (không phải trình duyệt) tải trang mà không chạy JavaScript.';
+  } else if ((automationEvidence.crawler || {}).verified === true) {
+    explainText = `${escapeHtml(automationEvidence.crawler.name)} thật: IP nằm trong dải địa chỉ mà nhà vận hành công bố cho crawler của họ. Đây là bot tốt (công cụ tìm kiếm, trợ lý AI), không nên chặn.`;
+  } else if ((automationEvidence.crawler || {}).verified === false) {
+    explainText = `Tự xưng là ${escapeHtml(automationEvidence.crawler.name)} nhưng IP không thuộc dải địa chỉ chính thức của nhà vận hành: bot giả danh.`;
   } else if (bd.decision_basis === 'declared_crawler') {
     explainText = 'Crawler hoặc trình xem trước liên kết tự khai, tải trang mà không chạy JavaScript.';
   } else if (bd.decision_basis === 'no_telemetry') {
@@ -4087,8 +4101,9 @@ function renderReport(data) {
   setText('reportSub', `${range} · ${fmtCount(t.sessions)} phiên · DATACAT`);
 
   const flagged = t.bot + t.suspect;
+  const CRAWLER_CODES = { VERIFIED_CRAWLER: 'Bot tìm kiếm/AI đã xác minh (không nên chặn)', SPOOFED_CRAWLER: 'Giả danh bot tìm kiếm' };
   document.getElementById('reportReasons').innerHTML = data.reasons.length ? reportListHTML(data.reasons, flagged, (r, plain) => {
-    const text = shortReason({ verdict: r.verdict, breakdown: { decision_basis: r.decision_basis, automation_rule: r.automation_rule,
+    const text = CRAWLER_CODES[r.code] || shortReason({ verdict: r.verdict, breakdown: { decision_basis: r.decision_basis, automation_rule: r.automation_rule,
       desktop_risk: { codes: r.code ? [r.code] : [] }, mobile_human: { risk: r.code ? [r.code] : [] } } }, false);
     return plain ? text : `<span class="tag ${r.verdict === 'BOT' ? 'bot' : 'suspect'}">${VERDICT_TEXT[r.verdict] || r.verdict}</span>${escapeHtml(text)}`;
   }) : '<li class="live-empty">Không có phiên bị đánh dấu</li>';
@@ -4096,9 +4111,11 @@ function renderReport(data) {
   document.getElementById('reportNetworks').innerHTML = reportListHTML(data.bot_networks, t.bot, r => escapeHtml(shortIsp(r.name)));
 
   setText('reportIpCount', data.bot_ip_count ? fmtCount(data.bot_ip_count) + ' IP' + (data.bot_ip_count_capped ? '+' : '') : '');
-  document.getElementById('reportCopyIps').disabled = !data.bot_ips.length;
+  document.getElementById('reportCopyIps').disabled = !blockableIps(data).length;
   document.getElementById('reportIps').innerHTML = data.bot_ips.length ? data.bot_ips.map(row => `<tr>
-      <td class="site-name">${escapeHtml(row.client_ip)}</td><td data-label="Vị trí">${escapeHtml(formatGeo(row.geo, false) || '--')}</td>
+      <td class="site-name">${escapeHtml(row.client_ip)}${row.verified_crawler
+        ? `<span class="ip-note" title="IP chính thức của ${escapeHtml(row.verified_crawler)}: chặn sẽ ảnh hưởng tới việc lập chỉ mục">${escapeHtml(row.verified_crawler)} thật, không nên chặn</span>`
+        : row.human_sessions ? `<span class="ip-note" title="IP dùng chung (mạng di động, văn phòng): chặn cả IP sẽ chặn cả người thật">Có ${fmtCount(row.human_sessions)} phiên người thật</span>` : ''}</td><td data-label="Vị trí">${escapeHtml(formatGeo(row.geo, false) || '--')}</td>
       <td data-label="Nhà mạng">${escapeHtml(row.geo && row.geo.isp ? shortIsp(row.geo.isp) : '--')}</td>
       <td class="num" data-label="Phiên bot">${fmtCount(row.sessions)}</td><td data-label="Lần cuối">${row.last_seen ? relativeTime(row.last_seen) : '--'}</td></tr>`).join('')
     : '<tr><td colspan="5" class="empty-state">Không có bot trong kỳ</td></tr>';
@@ -4126,12 +4143,19 @@ document.getElementById('reportPeriod').addEventListener('click', (event) => {
   loadReport();
 });
 
+// Addresses safe to block: not a verified search/AI crawler, and no person seen on them.
+function blockableIps(data) {
+  return (data && data.bot_ips || []).filter(row => !row.verified_crawler && !row.human_sessions);
+}
+
 async function copyReportIps() {
-  if (!reportData || !reportData.bot_ips.length) return;
+  const rows = blockableIps(reportData);
+  if (!rows.length) return;
   const label = document.querySelector('#reportCopyIps span');
+  const skipped = reportData.bot_ips.length - rows.length;
   try {
-    await navigator.clipboard.writeText(reportData.bot_ips.map(row => row.client_ip).join('\n'));
-    label.textContent = `Đã sao chép ${reportData.bot_ips.length} IP`;
+    await navigator.clipboard.writeText(rows.map(row => row.client_ip).join('\n'));
+    label.textContent = `Đã sao chép ${rows.length} IP` + (skipped ? ` (bỏ ${skipped} IP không nên chặn)` : '');
   } catch (e) {
     label.textContent = 'Không sao chép được';
   }

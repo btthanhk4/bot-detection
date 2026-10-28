@@ -507,6 +507,8 @@ _WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20
 _APPLE_M2 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
 _MESA = "ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2), OpenGL 4.6)"
 _APPLE_M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+# Chrome with hardware acceleration off on Windows (measured 2026-10-29).
+_WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"
 _COCCOC = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
            "coc_coc_browser/150.0.0 Chrome/144.0.0.0 Safari/537.36")
 
@@ -555,7 +557,21 @@ DESKTOP_RISK_CASES = (
     ("HUMAN", [], _desktop(headers={"page_view": "untracked"})),
     # A page with the CDP Runtime enabled and nothing else: a CDP client, or DevTools open.
     ("SUSPECT", ["CDP_ATTACHED"], _desktop(signals={"cdpRuntime": True})),
+    # Policy 25 (2026-10-29, genuine Chrome moved by OS input): Sentry on the page patches
+    # Function.prototype.toString and wraps requestAnimationFrame; Chrome with hardware
+    # acceleration off renders WebGL through WARP. People, both. WARP under a Mac user agent
+    # or from a cloud address still counts.
+    ("HUMAN", [], _desktop(signals={"toStringPatched": True, "rafWrapped": True})),
+    ("HUMAN", [], _desktop(renderer=_WARP)),
+    ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(coalesced=3.5, multi=0.9, ua=_MAC_CHROME, renderer=_WARP)),
+    ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_WARP, datacenter="aws")),
 )
+
+# Frozen gate of policy 24.
+DESKTOP_RISK_RULE_GATE_V24 = {
+    "rules": ["desktop_risk_v1"], "human_cases": 13, "suspect_cases": 16, "passed": 29,
+    "fixture_fingerprint": "b5e1fb254d9e15acc1586a9fcf7525d33f7aab9ed54d3e7f5c42b638cf533dbd",
+}
 
 # Frozen gate of policy 23.
 DESKTOP_RISK_RULE_GATE_V23 = {

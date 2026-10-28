@@ -21,6 +21,9 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
+from core_ml.features.automation_evidence import declared_crawler
+from core_ml.features.network import crawler_operator
+
 PAGE_VIEW_COOKIE = "__dc_pv"
 _PAGE_VIEW_ID = re.compile(r"^[0-9a-f]{32}$")
 PAGE_VIEW_TTL_SECONDS = 7 * 24 * 3600
@@ -186,8 +189,14 @@ class _VelocityCache:
 _velocity_cache = _VelocityCache()
 
 
-def device_sessions(db, *, visitor_id, ip: str, session_id: str):
-    """Sessions in the last hour from this device fingerprint on this address, this one included."""
+def device_sessions(db, *, visitor_id, ip: str, session_id: str, device_token: str = None):
+    """Browsers that started sessions in the last hour with this device fingerprint on this
+    address, this one included.
+
+    Policy 25: sessions are per tab, so a person opening thirty product tabs used to count as
+    thirty. Sessions sharing a storage token (collector 1.11) count once; a session without
+    one (older collector, storage blocked) counts on its own.
+    """
     if db is None or not visitor_id or not ip:
         return None
     key = (str(visitor_id), str(ip), str(session_id))
@@ -196,12 +205,14 @@ def device_sessions(db, *, visitor_id, ip: str, session_id: str):
         return cached
     try:
         since = datetime.now(timezone.utc) - timedelta(hours=1)
-        others = db["detection_results"].count_documents(
-            {"visitorId": str(visitor_id), "client_ip": str(ip), "updated_at": {"$gte": since},
-             "sessionId": {"$ne": str(session_id)}}, limit=1000)
+        browsers = {row["_id"] for row in db["detection_results"].aggregate([
+            {"$match": {"visitorId": str(visitor_id), "client_ip": str(ip), "updated_at": {"$gte": since},
+                        "sessionId": {"$ne": str(session_id)}}},
+            {"$limit": 1000},
+            {"$group": {"_id": {"$ifNull": ["$device_token", "$sessionId"]}}}])}
     except Exception:
         return None
-    value = int(others) + 1
+    value = len(browsers) + (0 if device_token and device_token in browsers else 1)
     _velocity_cache.put(key, value)
     return value
 
@@ -307,6 +318,14 @@ def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None
         client = classify_client(sample.get("ua"))
         verdict, basis, reason = _no_telemetry_verdict(client)
         ip, ua = group["key"]
+        # Policy 25: which crawler, and is it the real one (address in its operator's ranges).
+        crawler = declared_crawler([ua], crawler_operator(ip)) if client == "declared_bot" else None
+        reasons = [reason]
+        if crawler:
+            reasons.insert(0, f"Declared crawler {crawler['name']}" + (
+                f", address in {crawler['operator']}'s published crawler ranges" if crawler["verified"]
+                else f" from an address outside {crawler['operator']}'s published crawler ranges"
+                if crawler["verified"] is False else ""))
         try:
             previous = detections.find_one(
                 {"no_telemetry_client": {"$exists": True}, "client_ip": ip, "user_agent": ua,
@@ -332,8 +351,9 @@ def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None
                         "mouse_points_captured": 0, "last_action": "no_telemetry",
                         "fingerprint": {"userAgent": sample.get("ua")},
                         "breakdown": {"decision_basis": basis, "no_telemetry": {
-                            "client": client, "accept_language": bool(sample.get("accept_language"))}},
-                        "reasons": [reason],
+                            "client": client, "accept_language": bool(sample.get("accept_language"))},
+                            **({"automation_evidence": {"crawler": crawler}} if crawler else {})},
+                        "reasons": reasons,
                         **({"site_id": site_id} if site_id else {}),
                     },
                     "$max": {"updated_at": group["last"]},

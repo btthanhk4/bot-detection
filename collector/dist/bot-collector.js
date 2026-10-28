@@ -554,6 +554,42 @@
   }
 
 
+  // --- Untouched built-ins from a fresh realm ---
+  /**
+   * Untouched built-ins from a blank same-origin iframe (collector 1.11).
+   *
+   * Monitoring libraries on ordinary sites wrap the page's copies: Sentry wraps every
+   * console method, requestAnimationFrame and Function.prototype.toString; LogRocket,
+   * Bugsnag and in-app browser scripts wrap console too. Probes that used those copies
+   * read a person on such a site as a DevTools client and as a tampered page (measured
+   * 2026-10-29: real Chrome, OS input, Sentry 8 on the page -> SUSPECT). A frame created
+   * here has its own realm, which page scripts have not touched.
+   *
+   * The frame lives only while `use` runs. Plain JavaScript built-ins keep working after
+   * it is removed; `use` gets null when the page cannot create one (sandboxed document).
+   */
+  function withPristineRealm(doc, use) {
+    let frame = null;
+    let realm = null;
+    try {
+      frame = doc.createElement('iframe');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+      frame.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden;pointer-events:none';
+      (doc.body || doc.documentElement).appendChild(frame);
+      const candidate = frame.contentWindow;
+      if (candidate && candidate.Function && candidate.console) realm = candidate;
+    } catch (e) {
+      realm = null;
+    }
+    try {
+      return use(realm);
+    } finally {
+      try { if (frame && frame.parentNode) frame.parentNode.removeChild(frame); } catch (e) { /* already gone */ }
+    }
+  }
+
+
   // --- Automation and Tampering Probes (BotD v2) ---
   /**
    * Automation and tampering probes (BotD v2 layer).
@@ -562,11 +598,15 @@
    * write-ups on Playwright/CDP artefacts. Each probe is a boolean that is true only
    * when the evidence is present; a probe that cannot run returns false and is
    * listed in `unavailable`. Nothing here changes page state that the site can see.
+   *
+   * Collector 1.11: source checks and the DevTools probe use built-ins from a fresh
+   * realm (see pristine.js), not the page's copies that monitoring libraries wrap.
    */
 
-  function nativeSource(fn) {
+
+  function nativeSource(fn, toString = Function.prototype.toString) {
     try {
-      return typeof fn === 'function' && /\{\s*\[native code\]\s*\}\s*$/.test(Function.prototype.toString.call(fn));
+      return typeof fn === 'function' && /\{\s*\[native code\]\s*\}\s*$/.test(toString.call(fn));
     } catch (e) {
       return false;
     }
@@ -582,8 +622,17 @@
   }
 
   function collectAutomationSignals(nav, win, doc) {
+    if (!doc || typeof doc.createElement !== 'function') return collectSignals(nav, win, doc, null);
+    return withPristineRealm(doc, (realm) => collectSignals(nav, win, doc, realm));
+  }
+
+  function collectSignals(nav, win, doc, realm) {
     const out = {};
     const unavailable = [];
+    // Function.prototype.toString of an untouched realm sees through a page that patched its own.
+    const realmToString = realm && realm.Function && realm.Function.prototype.toString;
+    const isNative = (fn) => nativeSource(fn, realmToString || Function.prototype.toString);
+    out.pristineRealm = Boolean(realmToString);
     const ua = String((nav && nav.userAgent) || '');
     const chromium = /Chrome\//.test(ua) && !/Firefox\//.test(ua);
     const desktop = !/Android|iPhone|iPad|iPod|Mobile/i.test(ua);
@@ -605,17 +654,20 @@
       }
     } catch (e) { unavailable.push('playwrightGlobals'); }
 
-    // Research only (not used by any rule): with a DevTools Protocol client attached
-    // (Runtime.enable) console previews read Error#name a second time. Measured on
-    // Chrome/Edge 155-156: genuine 1 read per call, Playwright/Puppeteer/Selenium 2,
-    // Patchright 1. Open DevTools also reads twice, so developers look the same.
+    // With a DevTools Protocol client attached (Runtime.enable) console previews read
+    // Error#name a second time. Measured on Chrome/Edge 155-156: genuine 1 read per
+    // call, Playwright/Puppeteer/Selenium 2, Patchright 1. Open DevTools also reads
+    // twice, so developers look the same. The console comes from the fresh realm: a
+    // page console wrapped by Sentry or LogRocket serialises its arguments and reads
+    // the name itself (2 reads in a genuine browser, 2026-10-29).
     out.cdpRuntime = false;
     try {
-      if (chromium && win.console && typeof win.console.debug === 'function') {
+      const probeConsole = (realm && realm.console) || win.console;
+      if (chromium && probeConsole && typeof probeConsole.debug === 'function') {
         let reads = 0;
         class ProbeError extends Error {}
         Object.defineProperty(ProbeError.prototype, 'name', { configurable: true, get() { reads++; return 'Error'; } });
-        win.console.debug(new ProbeError(''));
+        probeConsole.debug(new ProbeError(''));
         out.cdpRuntime = reads >= 2;
       }
     } catch (e) { unavailable.push('cdpRuntime'); }
@@ -638,7 +690,7 @@
     out.webdriverPatched = false;
     try {
       out.webdriverPatched = Object.prototype.hasOwnProperty.call(nav, 'webdriver')
-        || (webdriverGetter !== undefined && webdriverGetter !== null && !nativeSource(webdriverGetter));
+        || (webdriverGetter !== undefined && webdriverGetter !== null && !isNative(webdriverGetter));
     } catch (e) { unavailable.push('webdriverPatched'); }
 
     // Non-native navigator getters reveal JS-level spoofing. Privacy extensions can
@@ -648,23 +700,27 @@
       const names = ['userAgent', 'platform', 'languages', 'plugins', 'hardwareConcurrency', 'deviceMemory', 'vendor'];
       out.navigatorGetterPatched = names.some((name) => {
         const getter = getterOf(navProto, name);
-        return getter !== undefined && getter !== null && !nativeSource(getter);
+        return getter !== undefined && getter !== null && !isNative(getter);
       }) || names.some((name) => Object.prototype.hasOwnProperty.call(nav, name));
     } catch (e) { unavailable.push('navigatorGetterPatched'); }
 
+    // Research only since policy 25: Sentry and zone.js patch toString on ordinary sites.
     out.toStringPatched = false;
     try {
-      out.toStringPatched = !nativeSource(Function.prototype.toString)
+      out.toStringPatched = !isNative(Function.prototype.toString)
         || Function.prototype.toString.call(Function.prototype.toString).indexOf('toString') === -1;
     } catch (e) { out.toStringPatched = true; }
 
-    // The input APIs the API reads pointer timing from (policy 23). Extensions that
-    // spoof fingerprints leave them alone; a script evading the timing checks does not.
+    // The coalesced-sample API the API reads pointer timing from (policy 23). Fingerprint
+    // extensions and monitoring libraries leave it alone; a script evading the timing checks
+    // does not. requestAnimationFrame is wrapped by Sentry and New Relic, so it is only
+    // reported (rafWrapped); the frame probe calls the fresh realm's copy instead.
     out.inputApiPatched = false;
+    out.rafWrapped = false;
     try {
       const coalesced = win.PointerEvent && win.PointerEvent.prototype.getCoalescedEvents;
-      out.inputApiPatched = (typeof coalesced === 'function' && !nativeSource(coalesced))
-        || (typeof win.requestAnimationFrame === 'function' && !nativeSource(win.requestAnimationFrame));
+      out.inputApiPatched = typeof coalesced === 'function' && !isNative(coalesced);
+      out.rafWrapped = typeof win.requestAnimationFrame === 'function' && !isNative(win.requestAnimationFrame);
     } catch (e) { unavailable.push('inputApiPatched'); }
 
     out.missingChromeObject = chromium && desktop && typeof win.chrome === 'undefined';
@@ -851,6 +907,7 @@
    * and prepares sequential chunks (24 points) for LSTM behavioral classification.
    */
 
+
   // Compatibility mouse events follow a touchend within one frame to ~350 ms
   // (legacy tap delay); a real mouse used after the finger arrives later.
   const TOUCH_COMPAT_WINDOW_MS = 800;
@@ -941,6 +998,17 @@
 
     startFrameProbe() {
       if (this.frameProbe !== null || this.pointerStats.frames || typeof requestAnimationFrame !== 'function') return;
+      // Chromium: a fresh realm's requestAnimationFrame called on this window, so a page
+      // script that wraps the page's copy can neither break nor fake the frame timing.
+      let schedule = (fn) => requestAnimationFrame(fn);
+      try {
+        const ua = String((typeof navigator !== 'undefined' && navigator.userAgent) || '');
+        const raf = /Chrome\//.test(ua) && !/Firefox\//.test(ua) && typeof document !== 'undefined'
+          ? withPristineRealm(document, (realm) => (realm && typeof realm.requestAnimationFrame === 'function'
+            ? realm.requestAnimationFrame : null))
+          : null;
+        if (raf) schedule = (fn) => raf.call(window, fn);
+      } catch (e) { /* the page's copy */ }
       const deltas = [];
       let last = null;
       const step = (now) => {
@@ -950,14 +1018,19 @@
         if (last !== null && now - last > 0 && now - last < 100) deltas.push(now - last);
         last = now;
         if (deltas.length < FRAME_PROBE_FRAMES) {
-          this.frameProbe = requestAnimationFrame(step);
+          this.frameProbe = schedule(step);
           return;
         }
         const sorted = deltas.sort((a, b) => a - b);
         this.pointerStats.frameMs = Math.round(sorted[sorted.length >> 2] * 10) / 10;
         this.pointerStats.frames = sorted.length;
       };
-      this.frameProbe = requestAnimationFrame(step);
+      try {
+        this.frameProbe = schedule(step);
+      } catch (e) {
+        schedule = (fn) => requestAnimationFrame(fn);
+        this.frameProbe = schedule(step);
+      }
     }
 
     stop() {
@@ -1469,9 +1542,13 @@
 
 
 
-  const COLLECTOR_VERSION = '1.10.0';
+  const COLLECTOR_VERSION = '1.11.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
+  // A random id kept in this site's localStorage (collector 1.11). The API counts how many
+  // browsers, not tabs, one device fingerprint starts sessions from on one address: a person's
+  // thirty product tabs share it; a farm that wipes storage between runs does not.
+  const DEVICE_STORAGE_KEY = 'datacat_device';
 
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);
@@ -1538,6 +1615,22 @@
       try {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ id: this.sessionId, seen: Date.now() }));
       } catch (e) { /* optional */ }
+    }
+
+    deviceToken() {
+      if (this.cachedDeviceToken !== undefined) return this.cachedDeviceToken;
+      this.cachedDeviceToken = null;
+      try {
+        let token = window.localStorage.getItem(DEVICE_STORAGE_KEY);
+        if (!token || !/^[a-f0-9]{32}$/.test(token)) {
+          const bytes = new Uint8Array(16);
+          crypto.getRandomValues(bytes);
+          token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+          window.localStorage.setItem(DEVICE_STORAGE_KEY, token);
+        }
+        this.cachedDeviceToken = token;
+      } catch (e) { /* storage blocked: every session counts on its own */ }
+      return this.cachedDeviceToken;
     }
 
     generateSessionId() {
@@ -1693,6 +1786,7 @@
         pageUrl: typeof window !== 'undefined' ? boundedUrl(window.location.href) : '',
         referrer: typeof document !== 'undefined' ? boundedUrl(document.referrer) : '',
         visitorId: this.cachedFingerprint.visitorId,
+        deviceToken: this.deviceToken(),
         fingerprint: this.cachedFingerprint.components,
         botd: this.cachedBotd,
         mouse: mouseData,

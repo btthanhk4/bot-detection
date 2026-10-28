@@ -54,7 +54,7 @@ def test_tampering_needs_three_families_including_an_anchor():
     assert analyze_automation_evidence(two)["rule"] is None
     three = _automation(signals={"gpuOsMismatch": True}, worker={"cpuMismatch": True}, permission=True)
     assert analyze_automation_evidence(three)["rule"] == ENVIRONMENT_TAMPERING_RULE
-    no_anchor = _automation(signals={"uaHintsMismatch": True, "toStringPatched": True},
+    no_anchor = _automation(signals={"uaHintsMismatch": True, "navigatorGetterPatched": True},
                             worker={"uaMismatch": True}, accept_language=False)
     report = analyze_automation_evidence(no_anchor)
     assert report["family_count"] == 4 and report["rule"] is None
@@ -156,7 +156,8 @@ def test_evidence_families_survive_bson_sanitising():
 @pytest.mark.parametrize("renderer, software", [
     ("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)", True),
     ("llvmpipe (LLVM 15.0.7, 256 bits)", True),
-    ("Microsoft Basic Render Driver", True),
+    # Policy 25: WARP under a Windows user agent is Chrome with hardware acceleration off.
+    ("Microsoft Basic Render Driver", False),
     ("VirtualBox Graphics Adapter", False),
     ("ANGLE (VMware, Inc., SVGA3D, D3D11)", False),
     ("ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)", False),
@@ -222,3 +223,20 @@ def test_declared_headless_chrome_is_a_marker_only_when_both_uas_say_so():
     # Mentioning the word elsewhere is not the Chrome headless token.
     plain = "Mozilla/5.0 Chrome/154.0.0.0 Safari/537.36 (HeadlessChromeless)"
     assert "server.declared_headless_ua" not in analyze_automation_evidence(_automation(http_ua=plain, browser_ua=plain))["markers"]
+
+
+def test_declared_crawlers_are_named_and_verified_by_their_operator_ranges():
+    from core_ml.features.automation_evidence import declared_crawler
+    googlebot = ("Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) "
+                 "Chrome/153.0.8010.52 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+    assert declared_crawler([googlebot], "google") == {"name": "Googlebot", "operator": "google", "verified": True}
+    assert declared_crawler([googlebot], None)["verified"] is False
+    assert declared_crawler([googlebot], "bing")["verified"] is False
+    assert declared_crawler(["Mozilla/5.0 (compatible; ClaudeBot/1.0)"], None) == {
+        "name": "ClaudeBot", "operator": None, "verified": None}
+    assert declared_crawler(["Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/155.0.0.0"], "google") is None
+    payload = _automation(browser_ua=googlebot, http_ua=googlebot)
+    payload["_server_headers"]["crawler_operator"] = "google"
+    report = analyze_automation_evidence(payload)
+    assert report["rule"] == "automation_marker_v1" and report["crawler"]["verified"] is True
+    assert analyze_automation_evidence(_automation())["crawler"] is None

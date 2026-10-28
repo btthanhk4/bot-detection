@@ -91,3 +91,25 @@ def test_report_endpoints_need_read_access_and_valid_periods(db, monkeypatch):
     assert client.get("/api/v1/reports/summary", params={"site": "Bad!"}, headers=READ).status_code == 422
     exported = client.get("/api/v1/reports/sessions", params={"days": 30}, headers=READ)
     assert exported.status_code == 200 and [row["sessionId"] for row in exported.json()["sessions"]] == ["b1"]
+
+
+def test_crawlers_and_shared_addresses_are_marked_not_to_block(db):
+    # Policy 25: a verified Googlebot and a carrier address shared with people are flagged.
+    google = {"crawler": {"name": "Googlebot", "operator": "google", "verified": True}}
+    fake = {"crawler": {"name": "Googlebot", "operator": "google", "verified": False}}
+    add(db, "g1", "BOT", decision_basis="automation_marker", ip="198.51.100.7", automation_evidence=google)
+    add(db, "g2", "BOT", decision_basis="automation_marker", ip="198.51.100.7", automation_evidence=google)
+    add(db, "f1", "BOT", decision_basis="automation_marker", ip="192.0.2.9", automation_evidence=fake)
+    add(db, "b1", "BOT", decision_basis="automation_marker", ip="203.0.113.1")
+    add(db, "h1", "HUMAN", ip="203.0.113.1")
+    add(db, "h2", "HUMAN", ip="203.0.113.1")
+    add(db, "d1", "SUSPECT", ip="203.0.113.1", state="INSUFFICIENT_EVIDENCE", decision_deferred=True)
+
+    day = reports.summary(db, site_filter={}, days=1, now=NOW)
+    reasons = {(r["decision_basis"], r["code"]): r["sessions"] for r in day["reasons"]}
+    assert reasons == {("automation_marker", "VERIFIED_CRAWLER"): 2, ("automation_marker", "SPOOFED_CRAWLER"): 1,
+                       ("automation_marker", None): 1}
+    ips = {row["client_ip"]: row for row in day["bot_ips"]}
+    assert ips["198.51.100.7"]["verified_crawler"] == "Googlebot" and ips["198.51.100.7"]["human_sessions"] == 0
+    assert ips["192.0.2.9"]["verified_crawler"] is None
+    assert ips["203.0.113.1"]["human_sessions"] == 2 and ips["203.0.113.1"]["verified_crawler"] is None

@@ -351,3 +351,20 @@ def test_rule_bot_locks_at_once(db, monkeypatch):
         {"verdict": "BOT", "decision_state": "FINAL", "breakdown": {"verdict_locked": True}})
     stored = db["detection_results"].find_one({"sessionId": "s-rule"})
     assert (stored["verdict_locked"], stored["bot_strikes"]) == (True, 0)
+
+
+def test_device_sessions_count_browsers_not_tabs(db):
+    # Policy 25: thirty tabs of one browser share its storage token and count once; a farm
+    # that wipes storage presents a new token each run.
+    for index in range(30):
+        session(db, f"tab-{index}", "HUMAN", visitor="dev-shopper", age=index * 60)
+        db["detection_results"].update_one({"sessionId": f"tab-{index}"}, {"$set": {"device_token": "a" * 32}})
+    assert gateway.device_sessions(db, visitor_id="dev-shopper", ip="203.0.113.7", session_id="tab-new",
+                                   device_token="a" * 32) == 1
+    assert gateway.device_sessions(db, visitor_id="dev-shopper", ip="203.0.113.7", session_id="other",
+                                   device_token="b" * 32) == 2
+    for index in range(30):
+        session(db, f"wipe-{index}", "SUSPECT", visitor="dev-wiper", age=index * 60)
+        db["detection_results"].update_one({"sessionId": f"wipe-{index}"}, {"$set": {"device_token": f"{index:032x}"}})
+    assert gateway.device_sessions(db, visitor_id="dev-wiper", ip="203.0.113.7", session_id="next",
+                                   device_token="f" * 32) == 31

@@ -39,7 +39,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "24"
+DECISION_POLICY_VERSION = "25"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -326,6 +326,16 @@ class EnsembleBotDetector:
             if automation_rule == EXPLICIT_AUTOMATION_RULE:
                 reasons.append("Server-observed HeadlessChrome UA corroborates browser automation markers")
             elif automation_rule == AUTOMATION_MARKER_RULE:
+                crawler = automation_evidence.get("crawler")
+                if crawler:
+                    # Policy 25: say first which crawler this is and whether it is the real one.
+                    reasons.insert(0, (
+                        f"Declared crawler {crawler['name']}, address in {crawler['operator']}'s published crawler ranges"
+                        if crawler["verified"] else
+                        f"Claims to be {crawler['name']}, but the address is not in {crawler['operator']}'s "
+                        "published crawler ranges"
+                        if crawler["verified"] is False else f"Declared crawler {crawler['name']}"
+                    ))
                 reasons.append(
                     "Browser automation framework artefacts: " + ", ".join(automation_evidence["markers"][:6])
                 )

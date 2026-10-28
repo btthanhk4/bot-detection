@@ -56,11 +56,15 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
 
     # Why sessions were judged BOT or SUSPECT: decision basis, rule, and for the risk-based verdicts
     # the first evidence code (a BOT from a rule also carries risk codes; they do not name its reason).
-    first_code = {"$cond": [
-        {"$in": ["$breakdown.decision_basis", ["desktop_risk", "mobile_risk"]]},
-        {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
-                     {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]},
-        None]}
+    # A declared crawler is told apart by whether its address is its operator's (policy 25).
+    crawler = "$breakdown.automation_evidence.crawler"
+    first_code = {"$switch": {"branches": [
+        {"case": {"$in": ["$breakdown.decision_basis", ["desktop_risk", "mobile_risk"]]},
+         "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
+                              {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]}},
+        {"case": {"$eq": [crawler + ".verified", True]}, "then": "VERIFIED_CRAWLER"},
+        {"case": {"$eq": [crawler + ".verified", False]}, "then": "SPOOFED_CRAWLER"},
+    ], "default": None}}
     reasons = [
         {"verdict": row["_id"].get("verdict"), "decision_basis": row["_id"].get("basis"),
          "automation_rule": row["_id"].get("rule"), "code": row["_id"].get("code"), "sessions": int(row["sessions"])}
@@ -76,9 +80,17 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
     # Where bot sessions come from: addresses, then their country and network.
     groups = list(db["detection_results"].aggregate([
         {"$match": {**match, "verdict": "BOT"}},
-        {"$group": {"_id": "$client_ip", "sessions": {"$sum": 1}, "last_seen": {"$max": "$updated_at"}}},
+        {"$group": {"_id": "$client_ip", "sessions": {"$sum": 1}, "last_seen": {"$max": "$updated_at"},
+                    "verified_crawler": {"$sum": {"$cond": [{"$eq": [crawler + ".verified", True]}, 1, 0]}},
+                    "crawler": {"$max": crawler + ".name"}}},
         {"$sort": {"sessions": -1, "_id": 1}},
         {"$limit": _IP_GROUP_LIMIT}]))
+    # An address that also served people (a carrier's shared CGNAT address, an office) must not be
+    # blocked whole; neither should a verified search crawler.
+    top_ips = [row["_id"] for row in groups[:TOP_IPS] if row["_id"]]
+    people = {row["_id"]: int(row["sessions"]) for row in db["detection_results"].aggregate([
+        {"$match": {**match, **_NOT_DEFERRED, "verdict": "HUMAN", "client_ip": {"$in": top_ips}}},
+        {"$group": {"_id": "$client_ip", "sessions": {"$sum": 1}}}])} if top_ips else {}
     countries, networks, country_names = Counter(), Counter(), {}
     bot_ips = []
     for index, row in enumerate(groups):
@@ -90,8 +102,11 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
         countries[code] += row["sessions"]
         networks[geo.get("isp") or "Không rõ"] += row["sessions"]
         if index < TOP_IPS:
+            verified = int(row.get("verified_crawler") or 0) == int(row["sessions"])
             bot_ips.append({"client_ip": row["_id"], "sessions": int(row["sessions"]),
-                            "last_seen": _ms(row.get("last_seen")), "geo": geo})
+                            "last_seen": _ms(row.get("last_seen")), "geo": geo,
+                            "human_sessions": people.get(row["_id"], 0),
+                            "verified_crawler": row.get("crawler") if verified else None})
     return {
         "period": {"days": days, "from": _ms(since), "to": _ms(until)},
         "totals": totals,
