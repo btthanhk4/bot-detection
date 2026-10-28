@@ -277,6 +277,17 @@ SYNTHETIC_DEVICE_CASES = (
         + [dict(s, t=s["t"] + 905) for s in _strokes([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], [1.2] * 8)])),
     ("BOT", "synthetic_typing_v1", _device(
         [dict(s, k="n" if i % 3 == 0 else "c") for i, s in enumerate(_strokes([1.5] * 12, [1.2] * 12))])),
+    # Policy 22, from the Aalto 136M keystrokes (168,593 people): a skilled typist with
+    # an even rhythm but human holds, and a keyboard that reports key-up with key-down,
+    # were both convicted by policy 15-21. Selenium typing one key per fixed sleep
+    # (measured 2026-10-28: holds 0.3 ms, interval CV 0.017) is the script they resemble.
+    ("SUSPECT", None, _device(_strokes(_HUMAN_HOLDS[:12],
+                                       [150, 160, 145, 155, 165, 150, 140, 158, 152, 147, 162, 149]))),
+    ("SUSPECT", None, _device(_strokes([0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 2.0, 0.0],
+                                       _HUMAN_GAPS[:12]))),
+    ("BOT", "synthetic_typing_v1", _device(_strokes(
+        [0.3, 0.4, 0.3, 0.35, 0.3, 0.4, 0.3, 0.3, 0.35, 0.4, 0.3, 0.3],
+        [110.4, 111.2, 109.8, 110.6, 110.9, 110.1, 111.4, 110.2, 110.7, 110.3, 111.0, 110.5]))),
 )
 
 # Frozen gate of policy 15.
@@ -284,6 +295,13 @@ SYNTHETIC_DEVICE_RULE_GATE_V15 = {
     "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
     "positive_cases": 3, "negative_cases": 8, "passed": 11,
     "fixture_fingerprint": "5727b7e21ed1e868cd94b1566219b6632023c45463e021c07bda389e9e867de1",
+}
+
+# Frozen gate of policies 16-21 (typing on interval CV < 0.10 or hold < 12 ms alone).
+SYNTHETIC_DEVICE_RULE_GATE_V16 = {
+    "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
+    "positive_cases": 4, "negative_cases": 9, "passed": 13,
+    "fixture_fingerprint": "47c4086dc5817b2bf0f60d7c5e2bafe77cbc2254ff875f4291272fd3604a1442",
 }
 
 SYNTHETIC_DEVICE_RULE_GATE = {

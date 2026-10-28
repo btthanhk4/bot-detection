@@ -27,6 +27,23 @@ Patchright, Puppeteer against Edge/Chrome 155-156):
   coarse pointers) are excluded: they report press and release together.
 * Pressure. The Pointer Events spec requires a pressed mouse to report
   pressure 0.5; Puppeteer's CDP clicks report 0. Checked on Chromium only.
+
+Policy 22 re-measured the typing rule on the Aalto 136M keystrokes (168,593 people
+typing 15 sentences in a browser; CHI 2018), cut into the collector's 60-key pieces.
+The policy 15 thresholds convicted 4,097 of them on rhythm alone (skilled typists keep
+an 11-key interval CV under 0.10) and 303 on hold alone (some keyboards and drivers
+report key-up with key-down). Scripts give themselves away only by combinations:
+
+* ``TYPING_METRONOME``: interval CV and hold CV both under 0.02 in an 11-key window.
+  ``type(text, {delay})`` of Playwright, Puppeteer and patchright holds and spaces
+  every key by the delay (0.004-0.009); the most regular person is at 0.027.
+* ``TYPING_INSTANT_HOLD``: median hold and median interval both under 12 ms in an
+  8-key window, faster than any hand (scripts without a delay: 0.3-1.9 ms). In Aalto
+  153 participants do this, all with 8 keys inside 0-12 ms: auto-typers on a typing
+  test or logging artefacts, not typing.
+* ``TYPING_INSTANT_METRONOME``: median hold under 12 ms with an 11-key interval CV
+  under 0.05, as Selenium typing one key per fixed sleep does (0.017). Of the 182
+  people with instant holds, the steadiest has 0.090.
 """
 
 import math
@@ -35,7 +52,7 @@ import statistics
 SYNTHETIC_CLICK_RULE = "synthetic_click_v1"
 SYNTHETIC_TYPING_RULE = "synthetic_typing_v1"
 SYNTHETIC_POINTER_RULE = "synthetic_pointer_v1"
-INPUT_PROVENANCE_VERSION = "input_provenance_v2"
+INPUT_PROVENANCE_VERSION = "input_provenance_v3"
 
 MAX_KEYSTROKES = 60
 BURST_GAP_MS = 1500.0
@@ -43,8 +60,12 @@ TYPING_FAST_MIN_KEYS = 8
 # 12 ms (policy 16, was 20): rapid-trigger keyboards release earlier than the
 # CMU keyboards (human floor 30.2 ms); scripts measured at 1.4-3.5 ms.
 TYPING_FAST_MEDIAN_HOLD_MS = 12.0
+# Policy 22: an instant hold convicts only with keys also this close together.
+TYPING_FAST_MEDIAN_INTERVAL_MS = 12.0
 TYPING_RHYTHM_MIN_KEYS = 11
-TYPING_RHYTHM_MAX_CV = 0.10
+# Policy 22: interval and hold CV both below this (was interval CV < 0.10 alone).
+TYPING_RHYTHM_MAX_CV = 0.02
+TYPING_INSTANT_RHYTHM_MAX_CV = 0.05
 ZERO_PRESSURE_MIN_PRESSES = 2
 
 MAX_CLICK_EVENTS = 30
@@ -174,45 +195,73 @@ def _bursts(strokes):
     return bursts
 
 
+def _cv(values):
+    mean = sum(values) / len(values)
+    return statistics.pstdev(values) / mean if mean > 0 else None
+
+
 def analyze_typing(keyboard) -> dict:
     keyboard = keyboard if isinstance(keyboard, dict) else {}
     strokes = sanitize_keystrokes(keyboard.get("keystrokes"))
     coarse = keyboard.get("coarsePointer") is True
-    fastest_median_hold, lowest_interval_cv = None, None
+    # The quickest 8-key window by its slower of median hold and median interval.
+    fastest, lowest_interval_cv, lowest_rhythm_cv, lowest_instant_cv = None, None, None, None
     input_method_bursts = 0
+
+    def lowest(current, value):
+        return value if current is None or (value is not None and value < current) else current
+
     # Sliding windows over runs of consecutive character keys: one typed field can
     # sit next to a pause, a correction or a different field.
-    # CMU benchmark, same windows: lowest 8-key median hold 30.2 ms, lowest 11-key CV 0.139.
     for burst in _bursts(strokes):
         if _input_method_injection(burst):
             input_method_bursts += 1
             continue
         for run in _letter_runs(burst):
-            holds = [s["h"] for s in run if s["h"] is not None]
-            for start in range(len(holds) - TYPING_FAST_MIN_KEYS + 1):
-                median = statistics.median(holds[start:start + TYPING_FAST_MIN_KEYS])
-                fastest_median_hold = median if fastest_median_hold is None else min(fastest_median_hold, median)
+            for start in range(len(run) - TYPING_FAST_MIN_KEYS + 1):
+                window = run[start:start + TYPING_FAST_MIN_KEYS]
+                holds = [s["h"] for s in window if s["h"] is not None]
+                if len(holds) < len(window):
+                    continue
+                hold = statistics.median(holds)
+                interval = statistics.median([b["t"] - a["t"] for a, b in zip(window, window[1:])])
+                if fastest is None or max(hold, interval) < max(fastest):
+                    fastest = (hold, interval)
             for start in range(len(run) - TYPING_RHYTHM_MIN_KEYS + 1):
                 window = run[start:start + TYPING_RHYTHM_MIN_KEYS]
-                intervals = [b["t"] - a["t"] for a, b in zip(window, window[1:])]
-                mean = sum(intervals) / len(intervals)
-                if mean > 0:
-                    cv = statistics.pstdev(intervals) / mean
-                    lowest_interval_cv = cv if lowest_interval_cv is None else min(lowest_interval_cv, cv)
+                interval_cv = _cv([b["t"] - a["t"] for a, b in zip(window, window[1:])])
+                if interval_cv is None:
+                    continue
+                lowest_interval_cv = lowest(lowest_interval_cv, interval_cv)
+                holds = [s["h"] for s in window if s["h"] is not None]
+                if len(holds) < len(window):
+                    continue
+                hold_cv = _cv(holds)
+                if hold_cv is not None:
+                    lowest_rhythm_cv = lowest(lowest_rhythm_cv, max(interval_cv, hold_cv))
+                if statistics.median(holds) < TYPING_FAST_MEDIAN_HOLD_MS:
+                    lowest_instant_cv = lowest(lowest_instant_cv, interval_cv)
     codes = []
-    if not coarse and fastest_median_hold is not None and fastest_median_hold < TYPING_FAST_MEDIAN_HOLD_MS:
+    if not coarse and fastest is not None and (
+            fastest[0] < TYPING_FAST_MEDIAN_HOLD_MS and fastest[1] < TYPING_FAST_MEDIAN_INTERVAL_MS):
         codes.append("TYPING_INSTANT_HOLD")
-    if not coarse and lowest_interval_cv is not None and lowest_interval_cv < TYPING_RHYTHM_MAX_CV:
+    if not coarse and lowest_rhythm_cv is not None and lowest_rhythm_cv < TYPING_RHYTHM_MAX_CV:
         codes.append("TYPING_METRONOME")
+    if not coarse and lowest_instant_cv is not None and lowest_instant_cv < TYPING_INSTANT_RHYTHM_MAX_CV:
+        codes.append("TYPING_INSTANT_METRONOME")
     bulk = _number(keyboard.get("bulkInserts"), 0, 10**6)
     if bulk:
         codes.append("BULK_TEXT_INSERT")  # reported only; autofill and dictation look alike
+    rounded = lambda value, digits: None if value is None else round(value, digits)
     return {
         "keystrokes": len(strokes),
         "coarse_pointer": coarse,
         "input_method_bursts": input_method_bursts,
-        "fastest_median_hold_ms": None if fastest_median_hold is None else round(fastest_median_hold, 1),
-        "lowest_interval_cv": None if lowest_interval_cv is None else round(lowest_interval_cv, 3),
+        "fastest_median_hold_ms": rounded(fastest and fastest[0], 1),
+        "fastest_median_interval_ms": rounded(fastest and fastest[1], 1),
+        "lowest_interval_cv": rounded(lowest_interval_cv, 3),
+        "lowest_rhythm_cv": rounded(lowest_rhythm_cv, 3),
+        "lowest_instant_interval_cv": rounded(lowest_instant_cv, 3),
         "bulk_inserts": int(bulk or 0),
         "codes": codes,
     }
@@ -241,7 +290,7 @@ def analyze_input_provenance(mouse, user_agent: str = "") -> dict:
     )
     holds = sorted(c["hold"] for c in timed)
     typing = analyze_typing(mouse.get("keyboard"))
-    typing_fired = bool({"TYPING_INSTANT_HOLD", "TYPING_METRONOME"} & set(typing["codes"]))
+    typing_fired = bool({"TYPING_INSTANT_HOLD", "TYPING_METRONOME", "TYPING_INSTANT_METRONOME"} & set(typing["codes"]))
     stats = mouse.get("pointerStats") if isinstance(mouse.get("pointerStats"), dict) else {}
     zero_pressure = int(_number(stats.get("zeroPressureDowns"), 0, 10**6) or 0)
     chromium = "chrome/" in str(user_agent).lower() and "firefox/" not in str(user_agent).lower()

@@ -108,7 +108,17 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v21 (current)
+### Policy v22 (current)
+
+Policy v22 sửa luật gõ phím giả sau khi kiểm chứng trên 168.593 người (Aalto 136M): luật cũ
+kết tội 4.097 người chỉ vì gõ đều và 303 người chỉ vì thời gian giữ phím ngắn. Nay cần dấu
+hiệu đi cùng nhau: nhịp và thời gian giữ cùng đều (0 người, mọi script có `delay` đều khớp),
+giữ và khoảng cách cùng dưới 12 ms, hoặc giữ tức thì với nhịp cố định (Selenium). Mô hình
+chuột cũng được kiểm tra trên 1.676 phiên người thật độc lập (Balabit): 98,6% cửa sổ HUMAN.
+Xem [Model release v22](docs/MODEL_RELEASE_V22.md) và
+[kiểm chứng dữ liệu ngoài](docs/EXTERNAL_DATA_VALIDATION_2026-10-28.md).
+
+### Policy v21
 
 Policy v21 chặn bot điều khiển Chrome thật qua CDP với thao tác giống người (patchright,
 phát lại quỹ đạo người thật), loại mà mô hình chuột chấm là người. Phiên máy tính có input

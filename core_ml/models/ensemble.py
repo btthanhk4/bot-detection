@@ -39,7 +39,7 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
 
-DECISION_POLICY_VERSION = "21"
+DECISION_POLICY_VERSION = "22"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
 
@@ -355,12 +355,15 @@ class EnsembleBotDetector:
                 reasons.append(
                     "Synthetic typing: "
                     + ", ".join(filter(None, (
-                        f"median key hold {typing['fastest_median_hold_ms']} ms"
+                        f"keys held {typing['fastest_median_hold_ms']} ms and "
+                        f"{typing['fastest_median_interval_ms']} ms apart"
                         if "TYPING_INSTANT_HOLD" in typing["codes"] else None,
-                        f"keystroke interval CV {typing['lowest_interval_cv']}"
+                        f"key holds and intervals equal to within CV {typing['lowest_rhythm_cv']}"
                         if "TYPING_METRONOME" in typing["codes"] else None,
+                        f"instant key holds at a fixed rhythm (interval CV {typing['lowest_instant_interval_cv']})"
+                        if "TYPING_INSTANT_METRONOME" in typing["codes"] else None,
                     )))
-                    + " (no human typing in the CMU benchmark comes close)"
+                    + " (none of 168,593 people in the Aalto typing data comes close)"
                 )
             elif automation_rule == AUTOCLICK_RULE:
                 reasons.append(

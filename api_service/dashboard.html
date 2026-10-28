@@ -3448,9 +3448,12 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Autoclick: ${Number(touchInfoForText.autoclick_taps) || 0} lần chạm trùng một điểm theo nhịp đều.`;
     } else if (syntheticDecision && bd.automation_rule === 'synthetic_typing_v1') {
       const typing = provenance.typing || {};
-      explainText = (typing.codes || []).includes('TYPING_INSTANT_HOLD')
-        ? `Gõ phím giả lập: mỗi phím chỉ giữ ${typing.fastest_median_hold_ms} ms.`
-        : `Gõ phím giả lập: nhịp gõ đều bất thường (CV ${typing.lowest_interval_cv}).`;
+      const typingCodes = typing.codes || [];
+      explainText = typingCodes.includes('TYPING_INSTANT_HOLD')
+        ? `Gõ phím giả lập: mỗi phím giữ ${typing.fastest_median_hold_ms} ms, cách nhau ${typing.fastest_median_interval_ms} ms.`
+        : typingCodes.includes('TYPING_METRONOME')
+          ? `Gõ phím giả lập: thời gian giữ và nhịp gõ đều như nhau (CV ${typing.lowest_rhythm_cv}).`
+          : `Gõ phím giả lập: phím nhả ngay theo nhịp cố định (CV ${typing.lowest_instant_interval_cv}).`;
     } else if (syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1') {
       explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
     } else if (syntheticDecision) {

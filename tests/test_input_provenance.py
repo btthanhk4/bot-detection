@@ -193,10 +193,30 @@ def test_sliding_windows_find_a_scripted_field_inside_human_typing():
 
 
 def test_thresholds_are_strict_at_the_boundary():
-    at_limit = _strokes([12.0] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
+    at_limit = _strokes([12.0] * 8, [5, 7, 6, 8, 5, 9, 6, 7])
     assert "TYPING_INSTANT_HOLD" not in analyze_typing({"keystrokes": at_limit})["codes"]
-    below = _strokes([11.9] * 8, [150, 210, 180, 250, 160, 300, 190, 220])
+    below = _strokes([11.9] * 8, [5, 7, 6, 8, 5, 9, 6, 7])
     assert "TYPING_INSTANT_HOLD" in analyze_typing({"keystrokes": below})["codes"]
+    spaced = _strokes([2.0] * 8, [12, 13, 12, 14, 12, 13, 12, 12])
+    assert "TYPING_INSTANT_HOLD" not in analyze_typing({"keystrokes": spaced})["codes"]
+
+
+def test_policy_22_needs_combined_evidence():
+    # Instant holds at a human pace: a keyboard that reports key-up with key-down.
+    report = analyze_typing({"keystrokes": _strokes([0.5] * 12, [212, 148, 305, 176, 260, 131, 228, 190, 342, 158, 207, 263])})
+    assert report["codes"] == [] and report["fastest_median_hold_ms"] == 0.5
+    # A skilled typist with an even rhythm (interval CV 0.05) but human holds.
+    steady = _strokes([92, 71, 104, 66, 118, 83, 97, 59, 88, 131, 74, 95],
+                      [150, 160, 145, 155, 165, 150, 140, 158, 152, 147, 162, 149])
+    report = analyze_typing({"keystrokes": steady})
+    assert report["codes"] == [] and report["lowest_interval_cv"] < 0.10 and report["lowest_rhythm_cv"] > 0.1
+    # Scripts measured 2026-10-28.
+    delay = _strokes([104.5, 105.1, 104.8, 105.3, 104.6, 105.0, 104.9, 105.2, 104.7, 105.1, 104.8, 105.0],
+                     [105.9, 106.2, 105.8, 106.1, 106.0, 105.7, 106.3, 105.9, 106.0, 106.1, 105.8, 106.0])
+    assert analyze_typing({"keystrokes": delay})["codes"] == ["TYPING_METRONOME"]
+    selenium = _strokes([0.3, 0.4, 0.3, 0.35, 0.3, 0.4, 0.3, 0.3, 0.35, 0.4, 0.3, 0.3],
+                        [110.4, 111.2, 109.8, 110.6, 110.9, 110.1, 111.4, 110.2, 110.7, 110.3, 111.0, 110.5])
+    assert analyze_typing({"keystrokes": selenium})["codes"] == ["TYPING_INSTANT_METRONOME"]
 
 
 def test_pauses_split_bursts_and_ten_keys_are_not_enough_for_rhythm():
@@ -218,4 +238,4 @@ def test_typing_rule_reports_the_measured_evidence():
     payload = SYNTHETIC_DEVICE_CASES[1][2]
     result = detector().predict(payload)
     assert result["breakdown"]["automation_rule"] == SYNTHETIC_TYPING_RULE
-    assert any("Synthetic typing" in reason and "interval CV" in reason for reason in result["reasons"])
+    assert any("Synthetic typing" in reason and "holds and intervals equal" in reason for reason in result["reasons"])
