@@ -7,15 +7,16 @@
 <title>Sign in · DATACAT</title>
 <link rel="icon" type="image/png" href="/assets/datacat-logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>/* Same saved theme as the dashboard, applied before first paint. */try{var t=localStorage.getItem("datacat-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 <style>
-/* Brand colours come from the DATACAT logo (violet #6C28DE); layout and
-   contrast rules follow design-system/datacat (pages/dashboard.md). */
+/* Brand colours come from the DATACAT logo (violet #6C28DE); type and neutrals
+   (warm greys, IBM Plex Sans) match the dashboard. */
 :root {
   color-scheme: light;
-  --bg-primary: #eef0f6; --bg-card: #ffffff;
-  --text-primary: #0f172a; --text-secondary: #334155; --text-muted: #475569;
+  --bg-primary: #f7f7f5; --bg-card: #ffffff;
+  --text-primary: #1a1917; --text-secondary: #4d4b46; --text-muted: #6f6d66;
   --brand: #6c28de; --brand-hover: #5b1fc4; --brand-deep: #4c1d95; --brand-light: #8b5cf6;
   --on-brand: #ffffff; --ring: #6c28de;
   --input-bg: #f3effd; --input-border: #8b74d9;
@@ -23,13 +24,13 @@
   --danger: #b91c1c; --danger-soft: #fef2f2;
   --hero-text: #ffffff;
   --shadow: 0 30px 70px rgba(76, 29, 149, .18), 0 2px 8px rgba(15, 23, 42, .06);
-  --font-sans: 'Fira Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg-primary: #020617; --bg-card: #0e1223;
-    --text-primary: #f8fafc; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+    --bg-primary: #0f0f0e; --bg-card: #171716;
+    --text-primary: #edece8; --text-secondary: #c4c2bb; --text-muted: #93918a;
     --brand: #a78bfa; --brand-hover: #c4b5fd; --on-brand: #1e1438; --ring: #c4b5fd;
     --input-bg: #1a1630; --input-border: #7c64d6; --decor: rgba(167, 139, 250, .10);
     --danger: #f87171; --danger-soft: rgba(239, 68, 68, .12); --shadow: 0 30px 70px rgba(0, 0, 0, .55);
@@ -37,8 +38,8 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg-primary: #020617; --bg-card: #0e1223;
-  --text-primary: #f8fafc; --text-secondary: #cbd5e1; --text-muted: #94a3b8;
+  --bg-primary: #0f0f0e; --bg-card: #171716;
+  --text-primary: #edece8; --text-secondary: #c4c2bb; --text-muted: #93918a;
   --brand: #a78bfa; --brand-hover: #c4b5fd; --on-brand: #1e1438; --ring: #c4b5fd;
   --input-bg: #1a1630; --input-border: #7c64d6; --decor: rgba(167, 139, 250, .10);
   --danger: #f87171; --danger-soft: rgba(239, 68, 68, .12); --shadow: 0 30px 70px rgba(0, 0, 0, .55);
