@@ -195,6 +195,10 @@ def _bursts(strokes):
     return bursts
 
 
+def _rounded(value, digits):
+    return None if value is None else round(value, digits)
+
+
 def _cv(values):
     mean = sum(values) / len(values)
     return statistics.pstdev(values) / mean if mean > 0 else None
@@ -252,16 +256,15 @@ def analyze_typing(keyboard) -> dict:
     bulk = _number(keyboard.get("bulkInserts"), 0, 10**6)
     if bulk:
         codes.append("BULK_TEXT_INSERT")  # reported only; autofill and dictation look alike
-    rounded = lambda value, digits: None if value is None else round(value, digits)
     return {
         "keystrokes": len(strokes),
         "coarse_pointer": coarse,
         "input_method_bursts": input_method_bursts,
-        "fastest_median_hold_ms": rounded(fastest and fastest[0], 1),
-        "fastest_median_interval_ms": rounded(fastest and fastest[1], 1),
-        "lowest_interval_cv": rounded(lowest_interval_cv, 3),
-        "lowest_rhythm_cv": rounded(lowest_rhythm_cv, 3),
-        "lowest_instant_interval_cv": rounded(lowest_instant_cv, 3),
+        "fastest_median_hold_ms": _rounded(fastest and fastest[0], 1),
+        "fastest_median_interval_ms": _rounded(fastest and fastest[1], 1),
+        "lowest_interval_cv": _rounded(lowest_interval_cv, 3),
+        "lowest_rhythm_cv": _rounded(lowest_rhythm_cv, 3),
+        "lowest_instant_interval_cv": _rounded(lowest_instant_cv, 3),
         "bulk_inserts": int(bulk or 0),
         "codes": codes,
     }
