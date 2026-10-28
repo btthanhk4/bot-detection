@@ -136,6 +136,41 @@ def test_cdp_moves_faster_than_frames_are_unaligned():
     assert "UNALIGNED_POINTER" not in codes(payload(moves(n=90, gap=4.0), stats(coalesced=1.07, frame_ms=None)))
 
 
+def test_tampered_pointer_apis():
+    # getCoalescedEvents patched to hand back the event itself (collector 1.9 counts these).
+    assert codes(payload(pointer={**stats(coalesced=0.0, multi=0.0), "coalescedSelf": 900})) == ["POINTER_API_TAMPERED"]
+    # getCoalescedEvents deleted: no samples at all in a secure Chromium page.
+    assert codes(payload(pointer=stats(coalesced=0.0, multi=0.0))) == ["POINTER_API_TAMPERED"]
+    # The collector saw a non-native getCoalescedEvents or requestAnimationFrame.
+    assert codes(payload(pointer=stats(), signals={"inputApiPatched": True})) == ["POINTER_API_TAMPERED"]
+    # Plain HTTP pages and Firefox have no samples to judge.
+    assert codes(payload(pointer=stats(coalesced=0.0, multi=0.0, secure=False))) == []
+    assert codes(payload(pointer=stats(coalesced=0.0, multi=0.0), ua=WINDOWS_FIREFOX)) == []
+
+
+def test_requests_without_browser_headers():
+    forged = payload(pointer=stats())
+    forged["_server_headers"]["accept_language"] = False
+    assert codes(forged) == ["NON_BROWSER_REQUEST"]
+    https = payload(pointer=stats())
+    https["_server_headers"]["forwarded_proto"] = "https"
+    assert codes(https) == ["NON_BROWSER_REQUEST"]
+    https["_server_headers"]["sec_fetch_site"] = "same-origin"
+    assert codes(https) == []
+
+
+def test_sparse_moves_are_still_frame_locked():
+    # A script stepping every 110-160 ms leaves no move spacing to measure; the measured
+    # frame interval is enough to judge the coalesced samples.
+    body = payload(moves(gap=130.0), stats(coalesced=1.004, multi=0.004))
+    report = predict(body)["breakdown"]["desktop_risk"]
+    assert report["move_interval_ms"] is None and report["codes"] == ["FRAME_LOCKED_POINTER"]
+    # Another run of the same script: a stalled main thread merged a few injected moves.
+    assert codes(payload(moves(gap=130.0), stats(coalesced=1.051, multi=0.048))) == ["FRAME_LOCKED_POINTER"]
+    # A mouse reporting a little faster than the display is not frame-locked.
+    assert codes(payload(pointer=stats(coalesced=1.12, multi=0.11))) == []
+
+
 def test_subframe_burst():
     assert codes(payload(moves(n=40, burst=3), stats(coalesced=3.4, multi=0.8))) == ["SUBFRAME_POINTER_BURST"]
     # A payload without pointer statistics (training sets, other tools) is not timed.
@@ -194,4 +229,4 @@ def test_release_fixtures(production_detector, index):
 def test_release_gate_counts(production_detector):
     gate = validate_desktop_risk_rules(production_detector)
     assert gate == DESKTOP_RISK_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"]) == (8, 6)
+    assert (gate["human_cases"], gate["suspect_cases"]) == (11, 12)

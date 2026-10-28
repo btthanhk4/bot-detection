@@ -68,7 +68,8 @@ _FAMILIES = {
             "server": ("legacy_angle_renderer", "software_renderer")},
     "PERMISSION": {"top": ("notificationPermissionMismatch",)},
     "CONTEXT": {"worker": ("cpuMismatch", "uaMismatch", "platformMismatch")},
-    "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched")},
+    "NATIVE_PATCH": {"signals": ("webdriverDeleted", "webdriverPatched", "navigatorGetterPatched", "toStringPatched",
+                                 "inputApiPatched")},
     "CLIENT_HINTS": {"signals": ("uaHintsMismatch", "malformedBrands"), "server": ("http_ua_mismatch",)},
     "HTTP": {"server": ("missing_accept_language", "missing_fetch_metadata")},
     # Corroboration only: VPN exits share these ranges, so NETWORK is never an anchor.

@@ -130,7 +130,8 @@ def test_pointer_stats_are_reported():
                                  "botd": {"detectors": {}}, "mouse": mouse})
     stats = result["breakdown"]["input_provenance"]["pointer_stats"]
     assert stats == {"pointer_moves": 50, "coalesced_mean": 1.9, "coalesced_max": 3,
-                     "coalesced_multi_share": 0.8, "secure_context": True, "frame_ms": 16.7, "frames": 60}
+                     "coalesced_multi_share": 0.8, "secure_context": True, "frame_ms": 16.7, "frames": 60,
+                     "raw_updates": 0, "coalesced_self": 0, "coalesced_stale": 0}
     assert result["verdict"] == "HUMAN"
 
 

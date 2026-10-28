@@ -123,6 +123,10 @@ def _pointer_stats(raw):
     # Display frame interval measured by collector >= 1.8 over requestAnimationFrame.
     frame_ms = _number(raw.get("frameMs"), 1, 1000)
     frames = _number(raw.get("frames"), 0, 10**6)
+    # Collector >= 1.9: samples that were the event itself or not newer than the last one.
+    self_samples = _number(raw.get("coalescedSelf"), 0, 10**9)
+    stale_samples = _number(raw.get("coalescedStale"), 0, 10**9)
+    raw_updates = _number(raw.get("rawUpdates"), 0, 10**10)
     return {
         "pointer_moves": int(moves),
         "coalesced_mean": round(total / moves, 3),
@@ -131,6 +135,9 @@ def _pointer_stats(raw):
         "secure_context": raw.get("secureContext") is True,
         "frame_ms": frame_ms,
         "frames": int(frames or 0),
+        "raw_updates": int(raw_updates or 0),
+        "coalesced_self": int(self_samples or 0),
+        "coalesced_stale": int(stale_samples or 0),
     }
 
 

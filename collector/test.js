@@ -405,17 +405,41 @@ async function testClickGeometryAndPressTimingAreRecorded() {
 async function testPointerStatsCountCoalescedMouseSamples() {
   const collector = new BotCollector();
   const recorder = collector.mouseRecorder;
-  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: true, getCoalescedEvents: () => [1, 2, 3] });
-  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: true, getCoalescedEvents: () => [1] });
-  recorder.handlePointerMove({ pointerType: 'touch', isTrusted: true, getCoalescedEvents: () => [1, 2] });
-  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: false, getCoalescedEvents: () => [1, 2] });
-  recorder.handlePointerRawUpdate({ pointerType: 'mouse', isTrusted: true });
+  const sample = (timeStamp, isTrusted = true) => ({ timeStamp, isTrusted });
+  const move = (samples, extra = {}) => ({ pointerType: 'mouse', isTrusted: true, getCoalescedEvents: () => samples, ...extra });
+  recorder.handlePointerMove(move([sample(10), sample(11), sample(12)]));
+  recorder.handlePointerMove(move([sample(20)]));
+  recorder.handlePointerMove({ pointerType: 'touch', isTrusted: true, getCoalescedEvents: () => [sample(30), sample(31)] });
+  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: false, getCoalescedEvents: () => [sample(40), sample(41)] });
+  recorder.handlePointerRawUpdate({ pointerType: 'mouse', isTrusted: true, timeStamp: 12 });
   const stats = recorder.exportData().pointerStats;
   assert.strictEqual(stats.pointermove, 2);
   assert.strictEqual(stats.coalescedTotal, 4);
   assert.strictEqual(stats.coalescedMax, 3);
   assert.strictEqual(stats.coalescedMulti, 1);
   assert.strictEqual(stats.rawUpdates, 1);
+  collector.destroy();
+}
+
+async function testPatchedCoalescedEventsCannotAddSamples() {
+  const collector = new BotCollector();
+  const recorder = collector.mouseRecorder;
+  // A patched getCoalescedEvents returning the event itself twice.
+  const event = { pointerType: 'mouse', isTrusted: true, timeStamp: 50 };
+  event.getCoalescedEvents = () => [event, event];
+  recorder.handlePointerMove(event);
+  // Re-used older samples and synthetic (untrusted) ones.
+  recorder.handlePointerMove({ pointerType: 'mouse', isTrusted: true,
+    getCoalescedEvents: () => [{ timeStamp: 60, isTrusted: true }, { timeStamp: 60, isTrusted: true }, { timeStamp: 61, isTrusted: false }] });
+  const stats = recorder.exportData().pointerStats;
+  assert.strictEqual(stats.coalescedTotal, 1, 'only the one new trusted sample counts');
+  assert.strictEqual(stats.coalescedSelf, 2);
+  assert.strictEqual(stats.coalescedStale, 2);
+  // A wrapped listener calling the handler twice with the same raw update.
+  const raw = { pointerType: 'mouse', isTrusted: true, timeStamp: 70 };
+  recorder.handlePointerRawUpdate(raw);
+  recorder.handlePointerRawUpdate(raw);
+  assert.strictEqual(recorder.exportData().pointerStats.rawUpdates, 1);
   collector.destroy();
 }
 
@@ -430,9 +454,10 @@ async function testFrameIntervalIsMeasuredOnce() {
     const recorder = collector.mouseRecorder;
     recorder.start();
     let now = 1000;
-    // 60 Hz frames with one 2 s pause (hidden tab) and some jank.
+    // 60 Hz frames with one 2 s pause (hidden tab) and heavy page-load jank:
+    // a third of the frames take 50 ms, which the 25th percentile ignores.
     for (let i = 0; i < 70; i++) {
-      now += i === 20 ? 2000 : i % 9 === 0 ? 33.4 : 16.7;
+      now += i === 20 ? 2000 : i % 3 === 0 ? 50.1 : 16.7;
       frames.shift()(now);
       if (!frames.length) break;
     }
@@ -903,6 +928,7 @@ testRestartDuringFingerprinting()
   .then(testClickGeometryAndPressTimingAreRecorded)
   .then(testPointerStatsCountCoalescedMouseSamples)
   .then(testFrameIntervalIsMeasuredOnce)
+  .then(testPatchedCoalescedEventsCannotAddSamples)
   .then(testFailedHeartbeatRetriesLatestSnapshot)
   .then(testHeartbeatRecoversAfterRetryBudgetIsExhausted)
   .then(testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded)

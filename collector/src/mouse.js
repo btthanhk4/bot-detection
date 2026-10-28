@@ -10,6 +10,7 @@
 const TOUCH_COMPAT_WINDOW_MS = 800;
 // Real input reaches the page aligned to display frames; the API compares the
 // spacing of pointermoves with the frame interval measured over this many frames.
+// The 25th percentile is reported: page-load jank only lengthens frames.
 const FRAME_PROBE_FRAMES = 60;
 
 export class MouseRecorder {
@@ -35,8 +36,10 @@ export class MouseRecorder {
     this.counters = { mousemove: 0, mousedown: 0, click: 0, wheel: 0 };
     this.pointerStats = {
       pointermove: 0, coalescedTotal: 0, coalescedMax: 0, coalescedMulti: 0, rawUpdates: 0,
-      mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0,
+      mouseDowns: 0, zeroPressureDowns: 0, frameMs: null, frames: 0, coalescedSelf: 0, coalescedStale: 0,
     };
+    this.lastSampleStamp = -1;
+    this.lastRawStamp = -1;
     this.frameProbe = null;
     // Keystroke timing only: no key values, field names or text; password fields are skipped.
     this.keystrokes = [];
@@ -105,7 +108,7 @@ export class MouseRecorder {
         return;
       }
       const sorted = deltas.sort((a, b) => a - b);
-      this.pointerStats.frameMs = Math.round(sorted[sorted.length >> 1] * 10) / 10;
+      this.pointerStats.frameMs = Math.round(sorted[sorted.length >> 2] * 10) / 10;
       this.pointerStats.frames = sorted.length;
     };
     this.frameProbe = requestAnimationFrame(step);
@@ -317,8 +320,16 @@ export class MouseRecorder {
     const stats = this.pointerStats;
     stats.pointermove++;
     if (typeof e.getCoalescedEvents === 'function') {
+      // Browsers return trusted copies, each newer than the last. A patched method can
+      // repeat the event itself or older events, but cannot create new trusted ones.
       let count = 0;
-      try { count = e.getCoalescedEvents().length; } catch (err) { count = 0; }
+      try {
+        for (const sample of e.getCoalescedEvents()) {
+          if (sample === e) stats.coalescedSelf++;
+          else if (!sample || sample.isTrusted !== true || !(sample.timeStamp > this.lastSampleStamp)) stats.coalescedStale++;
+          else { count++; this.lastSampleStamp = sample.timeStamp; }
+        }
+      } catch (err) { count = 0; }
       stats.coalescedTotal += count;
       if (count > stats.coalescedMax) stats.coalescedMax = count;
       if (count > 1) stats.coalescedMulti++;
@@ -326,7 +337,10 @@ export class MouseRecorder {
   }
 
   handlePointerRawUpdate(e) {
-    if (e && e.isTrusted !== false && e.pointerType === 'mouse') this.pointerStats.rawUpdates++;
+    // One count per event: a wrapped listener called twice with the same event adds nothing.
+    if (!e || e.isTrusted === false || e.pointerType !== 'mouse' || !(e.timeStamp > this.lastRawStamp)) return;
+    this.lastRawStamp = e.timeStamp;
+    this.pointerStats.rawUpdates++;
   }
 
   handlePointerDown(e) {

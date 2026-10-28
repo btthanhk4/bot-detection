@@ -101,6 +101,15 @@ export function collectAutomationSignals(nav, win, doc) {
       || Function.prototype.toString.call(Function.prototype.toString).indexOf('toString') === -1;
   } catch (e) { out.toStringPatched = true; }
 
+  // The input APIs the API reads pointer timing from (policy 23). Extensions that
+  // spoof fingerprints leave them alone; a script evading the timing checks does not.
+  out.inputApiPatched = false;
+  try {
+    const coalesced = win.PointerEvent && win.PointerEvent.prototype.getCoalescedEvents;
+    out.inputApiPatched = (typeof coalesced === 'function' && !nativeSource(coalesced))
+      || (typeof win.requestAnimationFrame === 'function' && !nativeSource(win.requestAnimationFrame));
+  } catch (e) { unavailable.push('inputApiPatched'); }
+
   out.missingChromeObject = chromium && desktop && typeof win.chrome === 'undefined';
 
   try {

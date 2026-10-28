@@ -108,7 +108,14 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v22 (current)
+### Policy v23 (current)
+
+Policy v23 vá các cách né luật input của v21 mà rà soát tìm ra: sửa hoặc xóa
+`getCoalescedEvents`, di chuột thưa, và gửi payload giả không qua trình duyệt. Collector 1.9.0
+chỉ đếm mẫu chuột trusted, mới hơn mẫu trước, và báo khi API thời gian bị thay. Xem
+[Model release v23](docs/MODEL_RELEASE_V23.md) và [rà soát điểm yếu](docs/WEAKNESS_AUDIT_2026-10-28.md).
+
+### Policy v22
 
 Policy v22 sửa luật gõ phím giả sau khi kiểm chứng trên 168.593 người (Aalto 136M): luật cũ
 kết tội 4.097 người chỉ vì gõ đều và 303 người chỉ vì thời gian giữ phím ngắn. Nay cần dấu

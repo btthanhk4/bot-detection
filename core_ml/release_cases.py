@@ -461,13 +461,14 @@ def _path(scale=1.0, burst=0):
     return records[-100:]
 
 
-def _desktop(coalesced=1.9, multi=0.8, secure=True, frame_ms=16.7, path=None, ua=None, renderer=_D3D, **kwargs):
+def _desktop(coalesced=1.9, multi=0.8, secure=True, frame_ms=16.7, path=None, ua=None, renderer=_D3D,
+             stats=None, **kwargs):
     payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, **kwargs)
     payload["mouse"]["records"] = path or _path()
     payload["mouse"]["pointerStats"] = {
         "pointermove": 600, "coalescedTotal": round(600 * coalesced), "coalescedMax": 4,
         "coalescedMulti": round(600 * multi), "rawUpdates": round(600 * coalesced), "secureContext": secure,
-        "frameMs": frame_ms, "frames": 60}
+        "frameMs": frame_ms, "frames": 60, **(stats or {})}
     return payload
 
 
@@ -476,6 +477,9 @@ _LINUX_CHROME = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, lik
 _WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
 _APPLE_M2 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
 _MESA = "ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2), OpenGL 4.6)"
+_APPLE_M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+_COCCOC = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+           "coc_coc_browser/150.0.0 Chrome/144.0.0.0 Safari/537.36")
 
 # Policy 21 fixtures: (verdict, risk codes, payload). One human path throughout, so the
 # mouse models call every case human and only the input or environment differs.
@@ -497,7 +501,28 @@ DESKTOP_RISK_CASES = (
     ("SUSPECT", ["SUBFRAME_POINTER_BURST"], _desktop(coalesced=3.4, multi=0.8, path=_path(burst=3))),
     ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_SWIFTSHADER, datacenter="gcp")),
     ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(signals={"headlessScreen": True})),
+    # Policy 23 (2026-10-28): a MacBook M4 on the live site (3.56 samples, Chrome energy
+    # saver at 30 frames per second), Cốc Cốc moved by OS input (2.52); a script that
+    # made getCoalescedEvents return the event itself, one that deleted it, a page that
+    # reports a rewritten timing API, and a script stepping every 130 ms.
+    ("HUMAN", [], _desktop(coalesced=3.56, multi=0.91, frame_ms=33.3, ua=_MAC_CHROME, renderer=_APPLE_M4)),
+    ("HUMAN", [], _desktop(coalesced=2.52, multi=0.75, ua=_COCCOC)),
+    ("SUSPECT", ["POINTER_API_TAMPERED"], _desktop(coalesced=0.002, multi=0.0, stats={"coalescedSelf": 968})),
+    ("SUSPECT", ["POINTER_API_TAMPERED"], _desktop(coalesced=0.0, multi=0.0)),
+    ("SUSPECT", ["POINTER_API_TAMPERED"], _desktop(signals={"inputApiPatched": True})),
+    ("SUSPECT", ["FRAME_LOCKED_POINTER"], _desktop(coalesced=1.004, multi=0.004, path=_path(scale=7.8))),
+    # A human-looking payload posted by a script (no Accept-Language), and one posted
+    # over HTTPS without the Sec-Fetch headers every Chromium request carries.
+    ("SUSPECT", ["NON_BROWSER_REQUEST"], _desktop(accept_language=False)),
+    ("SUSPECT", ["NON_BROWSER_REQUEST"], _desktop(headers={"forwarded_proto": "https"})),
+    ("HUMAN", [], _desktop(headers={"forwarded_proto": "https", "sec_fetch_site": "same-origin"})),
 )
+
+# Frozen gate of policies 21-22.
+DESKTOP_RISK_RULE_GATE_V21 = {
+    "rules": ["desktop_risk_v1"], "human_cases": 8, "suspect_cases": 6, "passed": 14,
+    "fixture_fingerprint": "b58fc60f607a53115701225fd70f8b607b11e5722d69081d7f72bef530782a9a",
+}
 
 DESKTOP_RISK_RULE_GATE = {
     "rules": ["desktop_risk_v1"],

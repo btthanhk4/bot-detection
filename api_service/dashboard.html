@@ -3414,8 +3414,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
     ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
-    UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
-    CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
+    UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
+    CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
 
   // 2. Verdict Hero
   const hero = document.getElementById('dVerdictHero');
