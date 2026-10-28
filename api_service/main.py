@@ -1200,8 +1200,10 @@ def _read_page(name: str) -> str:
         return handle.read()
 
 
+# Login and dashboard are never framed (clickjacking on admin actions).
 _PAGE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-                 "Referrer-Policy": "same-origin"}
+                 "Referrer-Policy": "same-origin", "X-Frame-Options": "DENY",
+                 "Content-Security-Policy": "frame-ancestors 'none'"}
 
 
 def _is_https(request: Request) -> bool:

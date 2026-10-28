@@ -106,7 +106,11 @@ def test_repeated_failures_lock_the_account_for_that_client(client):
 def test_dashboard_redirects_until_signed_in(client):
     res = client.get("/dashboard", follow_redirects=False)
     assert res.status_code == 302 and res.headers["location"] == "/login"
-    assert client.get("/login").status_code == 200
+    login_page = client.get("/login")
+    assert login_page.status_code == 200
+    # The admin pages may not be framed by another site.
+    assert login_page.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in login_page.headers["content-security-policy"]
     login(client)
     assert client.get("/dashboard", follow_redirects=False).status_code == 200
     assert client.get("/login", follow_redirects=False).headers["location"] == "/dashboard"
