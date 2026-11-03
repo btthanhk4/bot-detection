@@ -2096,7 +2096,8 @@ function renderTrafficTable() {
     const device = describeDevice(s);
     const reason = shortReason(s, verdict.deferred);
     // Which website, when the table shows all of them.
-    const siteName = !selectedSite && s.site_id ? siteLabel(s.site_id) : '';
+    const siteName = [!selectedSite && s.site_id ? siteLabel(s.site_id) : '',
+      s.site_id && s.site_unverified ? 'nguồn chưa xác minh' : ''].filter(Boolean).join(' · ');
     const timeStr = s.received_at ? new Date(s.received_at).toLocaleTimeString('vi-VN', {hour12: false}) : '--';
     const ip = s.client_ip || '--';
     const geoShort = [formatGeo(s.geo, false), s.geo && s.geo.isp ? shortIsp(s.geo.isp) : ''].filter(Boolean).join(' · ');
@@ -2258,7 +2259,15 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dVisitorId').textContent = s.visitorId || 'Chưa khởi tạo';
   document.getElementById('dClientIP').textContent = s.client_ip || '--';
   renderGeo(s.geo);
-  document.getElementById('dPageUrl').textContent = s.pageUrl || '--';
+  const pageField = document.getElementById('dPageUrl');
+  pageField.textContent = s.pageUrl || '--';
+  if (s.site_id && s.site_unverified) {
+    const note = document.createElement('span');
+    note.className = 'field-hint';
+    note.style.display = 'block';
+    note.textContent = 'Nguồn chưa xác minh: request không gửi Origin, website được suy ra từ địa chỉ trang.';
+    pageField.appendChild(note);
+  }
 
   const timeVal = s.received_at || s.created_at || s.updated_at;
   document.getElementById('dTime').textContent = timeVal ? new Date(timeVal).toLocaleString('vi-VN') : '--';
@@ -3549,7 +3558,7 @@ function slugPreview(name) {
 }
 
 function siteLabel(siteId) {
-  if (siteId === '_none') return 'Chưa gán website';
+  if (siteId === '_none') return 'Không rõ nguồn';
   const site = sitesData && sitesData.sites.find(s => s.site_id === siteId);
   return site ? site.name : siteId + ' (đã xóa)';
 }
@@ -3562,7 +3571,7 @@ function syncSitePicker() {
   if (sitesData) {
     sitesData.sites.forEach(s => options.push([s.site_id, s.name + (s.status === 'paused' ? ' (tạm dừng)' : '')]));
     sitesData.removed_sites.forEach(s => options.push([s.site_id, s.site_id + ' (đã xóa)']));
-    if (sitesData.sites.length && sitesData.unassigned.sessions > 0) options.push(['_none', 'Chưa gán website']);
+    if (sitesData.sites.length && sitesData.unassigned.sessions > 0) options.push(['_none', 'Không rõ nguồn']);
   }
   if (selectedSite && !options.some(([value]) => value === selectedSite)) options.push([selectedSite, siteLabel(selectedSite)]);
   select.innerHTML = options.map(([value, label]) =>
@@ -3633,7 +3642,7 @@ function renderSites(data) {
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="${escapeHtml(site.site_id)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`));
   // Shown only for current unassigned traffic; with no website registered it would repeat the list below.
   if (sites.length && data.unassigned.sessions_24h > 0) rows.push(`<tr class="site-muted">
-      <td class="site-name"><strong>Chưa gán website</strong></td>
+      <td class="site-name"><strong>Không rõ nguồn</strong><span class="site-sub">Request không cho biết website nào, thường là công cụ HTTP hoặc bot</span></td>
       <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(data.unassigned)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="_none"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`);
   const empty = !rows.length;

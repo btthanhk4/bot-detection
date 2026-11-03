@@ -267,7 +267,7 @@ def _ensure_indexes(db):
 
 # Fields refreshed when a later page may not replace the session's verdict.
 _ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at",
-                    "last_action", "page_view_id", "site_id")
+                    "last_action", "page_view_id", "site_id", "site_unverified")
 
 
 def is_session_closed(session_id: str) -> bool:
@@ -567,10 +567,12 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "updated_at": now,
             "page_view_id": telemetry.get("_page_view_id"),
         }
-        # The website, from the Origin the browser sent (absent: unattributed). Never written
-        # as empty, so a later event cannot erase the attribution.
+        # The website, from the Origin the browser sent, or unverified from a matching Referer
+        # and page (absent: unattributed). Never written as empty, so a later event cannot
+        # erase the attribution.
         if telemetry.get("_site_id"):
             doc["site_id"] = str(telemetry["_site_id"])[:64]
+            doc["site_unverified"] = bool(telemetry.get("_site_unverified"))
 
         visitor_id = telemetry.get("visitorId")
         if normalized_event_timestamp is None:
@@ -665,6 +667,7 @@ def get_recent_results(limit: int = 50, site_filter: Optional[dict] = None) -> O
                 "client_ip": 1,
                 "pageUrl": 1,
                 "site_id": 1,
+                "site_unverified": 1,
                 "verdict": 1,
                 "bot_probability": 1,
                 "decision_state": 1,

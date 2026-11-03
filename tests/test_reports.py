@@ -83,6 +83,9 @@ def test_report_endpoints_need_read_access_and_valid_periods(db, monkeypatch):
     monkeypatch.setattr("api_service.database.get_db", lambda: db)
     monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
     add(db, "b1", "BOT", age_hours=0)
+    # The endpoints read the real clock, not NOW.
+    now = datetime.now(timezone.utc)
+    db["detection_results"].update_one({"sessionId": "b1"}, {"$set": {"created_at": now, "updated_at": now}})
     client = TestClient(main.app)
     assert client.get("/api/v1/reports/summary").status_code == 401
     ok = client.get("/api/v1/reports/summary", params={"days": 1, "site": "shop"}, headers=READ)

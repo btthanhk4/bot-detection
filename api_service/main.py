@@ -98,6 +98,7 @@ class RequestBodyLimitMiddleware:
 async def app_lifespan(_app):
     await run_in_threadpool(_restore_telemetry_spool)
     await run_in_threadpool(_reload_sites)
+    await run_in_threadpool(_repair_site_attribution)
     try:
         await run_in_threadpool(auth.ensure_user_indexes)
     except Exception:
@@ -307,6 +308,18 @@ def _sites_db():
 
 def _reload_sites() -> bool:
     return sites.registry.reload(_sites_db())
+
+
+def _repair_site_attribution() -> None:
+    db = _sites_db()
+    if db is None:
+        return
+    try:
+        moved = sites.attribute_unverified_history(db)
+        if moved:
+            logger.info("Attributed %d sessions without an Origin header to their site", moved)
+    except Exception:
+        logger.warning("Unverified site attribution repair deferred", exc_info=True)
 
 
 def _site_id_for_host(host: str) -> Optional[str]:
@@ -1061,8 +1074,17 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             )
         except (ValueError, OverflowError, RecursionError) as exc:
             raise HTTPException(status_code=422, detail="Telemetry cannot be captured as finite JSON") from exc
+    site_verified = site is not None
+    if site is None and not request.headers.get("origin"):
+        # No Origin: a script, or a browser behind a proxy that strips it. A Referer and page
+        # that agree on a registered site keep the session there, marked unverified.
+        site = sites.registry.for_unverified_page(request.headers.get("referer"), data.get("pageUrl"))
+        if site is not None and site.get("status") != "active":
+            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
     if site is not None:
         data["_site_id"] = site["site_id"]
+        if not site_verified:
+            data["_site_unverified"] = True
     traffic_number = await run_in_threadpool(register_traffic, data)
     if capture is not None:
         capture_status = await run_in_threadpool(_persist_capture, capture)

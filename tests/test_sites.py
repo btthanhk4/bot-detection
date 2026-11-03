@@ -138,6 +138,8 @@ def test_overview_reports_install_state_and_unregistered_traffic(db):
         doc("b1", site="blog", age=2 * 86400),
         doc("gone", site="deleted-site"),
         doc("u1", page="https://unknown.vn/a"), doc("u2", page="https://unknown.vn/b"),
+        # Registered, but posted without an Origin: not a domain to register again.
+        doc("no-origin", page=SHOP + "/cart"),
         # DATACAT's own dashboard and a shop opened by IP are not websites to register.
         doc("own", page="https://www.datacat.io.vn/dashboard"), doc("ip", page="http://152.42.205.62/"),
     ])
@@ -151,12 +153,31 @@ def test_overview_reports_install_state_and_unregistered_traffic(db):
     assert 'data-site-id="shop"' in shop["snippet"]
     assert shop["snippet"].startswith('<script async src="https://api.datacat.io.vn/bot-collector.js"')
     assert [row["site_id"] for row in view["removed_sites"]] == ["deleted-site"]
-    assert view["unassigned"]["sessions"] == 4
+    assert view["unassigned"]["sessions"] == 5
     assert view["unregistered_origins"] == [
         {"origin": "https://unknown.vn", "sessions": 2, "last_seen": view["unregistered_origins"][0]["last_seen"]}]
     empty = sites.create_site(db, name="New", origins=["https://new.vn"])
     assert {s["site_id"]: s for s in sites.overview(db, collector_base="x")["sites"]}[
         empty["site_id"]]["install_state"] == "waiting"
+
+
+def test_sessions_without_origin_after_registration_are_repaired_once(db):
+    sites.create_site(db, name="Shop", origins=[SHOP])
+    db["detection_results"].insert_many([
+        doc("late", page=SHOP + "/"), doc("other", page="https://unknown.vn/"),
+        doc("verified", site="shop"),
+    ])
+    db["research_sessions"].insert_one({"_id": "late", "traffic_number": 1})
+    assert sites.attribute_unverified_history(db) == 1
+    late = db["detection_results"].find_one({"sessionId": "late"})
+    assert (late["site_id"], late["site_unverified"]) == ("shop", True)
+    assert db["research_sessions"].find_one({"_id": "late"})["attributed_site_id"] == "shop"
+    assert db["detection_results"].find_one({"sessionId": "other"}).get("site_id") is None
+    assert "site_unverified" not in db["detection_results"].find_one({"sessionId": "verified"})
+    # Runs once: later sessions without an Origin are judged by the Referer at ingestion.
+    db["detection_results"].insert_one(doc("later", page=SHOP + "/"))
+    assert sites.attribute_unverified_history(db) == 0
+    assert db["detection_results"].find_one({"sessionId": "later"}).get("site_id") is None
 
 
 def test_no_telemetry_sessions_take_the_site_of_their_host(db):
@@ -254,6 +275,31 @@ def test_sessions_are_attributed_by_origin_not_by_the_declared_site(api, db):
     paused = api.post("/api/v1/telemetry", json=telemetry("t-shop-2"), headers={"Origin": SHOP})
     assert paused.status_code == 403
     assert paused.json()["detail"] == "Monitoring is paused for this site"
+
+
+def test_a_request_without_origin_keeps_its_site_when_referer_and_page_agree(api, db):
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
+    assert api.post("/api/v1/telemetry", json=telemetry("r-shop"),
+                    headers={"Referer": SHOP + "/products?a=1"}).status_code == 200
+    # Referer and reported page disagree, or the Referer names no registered site: unattributed.
+    assert api.post("/api/v1/telemetry", json=telemetry("r-mismatch"),
+                    headers={"Referer": BLOG + "/"}).status_code == 200
+    assert api.post("/api/v1/telemetry", json={**telemetry("r-elsewhere"), "pageUrl": BLOG + "/"},
+                    headers={"Referer": BLOG + "/"}).status_code == 200
+    # An Origin, when sent, decides alone: a Referer cannot move it to another site.
+    assert api.post("/api/v1/telemetry", json=telemetry("r-origin"),
+                    headers={"Origin": "https://silkmoon.datacat.io.vn", "Referer": SHOP + "/"}).status_code == 200
+    rows = {row["sessionId"]: row for row in db["detection_results"].find()}
+    assert (rows["r-shop"]["site_id"], rows["r-shop"]["site_unverified"]) == ("shop", True)
+    assert db["research_sessions"].find_one({"_id": "r-shop"})["attributed_site_id"] == "shop"
+    assert {key: rows[key].get("site_id") for key in ("r-mismatch", "r-elsewhere", "r-origin")} == {
+        "r-mismatch": None, "r-elsewhere": None, "r-origin": None}
+    assert api.post("/api/v1/telemetry", json=telemetry("t-verified"), headers={"Origin": SHOP}).status_code == 200
+    assert db["detection_results"].find_one({"sessionId": "t-verified"})["site_unverified"] is False
+
+    api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
+    paused = api.post("/api/v1/telemetry", json=telemetry("r-paused"), headers={"Referer": SHOP + "/"})
+    assert paused.status_code == 403
 
 
 def test_monitoring_endpoints_filter_by_site(api, db, monkeypatch):

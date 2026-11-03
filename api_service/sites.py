@@ -119,6 +119,18 @@ class SiteRegistry:
     def for_host(self, host: str) -> Optional[dict]:
         return self._by_host.get(str(host or "").split(":")[0].lower())
 
+    def for_unverified_page(self, referer, page_url) -> Optional[dict]:
+        """The site of a request without an Origin header whose Referer and reported page name
+        the same registered origin. Any HTTP client can set both, so the attribution is weaker
+        than Origin and callers mark it unverified."""
+        try:
+            origin = normalize_origin(str(referer or "").split("?")[0])
+            if normalize_origin(str(page_url or "").split("?")[0]) != origin:
+                return None
+        except ValueError:
+            return None
+        return self.for_origin(origin)
+
     def allows_cors(self, origin: str) -> bool:
         site = self.for_origin(origin)
         return bool(site) and site.get("status") == "active"
@@ -196,6 +208,36 @@ def attribute_history(db, site_id: str, origins) -> int:
                 {"sessionId": {"$in": chunk}, "site_id": None}, {"$set": {"site_id": site_id}}).modified_count
             db["research_sessions"].update_many(
                 {"_id": {"$in": chunk}, "attributed_site_id": None}, {"$set": {"attributed_site_id": site_id}})
+    return moved
+
+
+UNVERIFIED_BACKFILL = "site_unverified_backfill_v1"
+
+
+def attribute_unverified_history(db) -> int:
+    """One-time repair: sessions recorded after their site was registered but posted without an
+    Origin header kept no site. Give them the site of their page, marked unverified."""
+    counters = db["research_counters"]
+    if counters.find_one({"_id": UNVERIFIED_BACKFILL}):
+        return 0
+    detections = db["detection_results"]
+    moved = 0
+    for site in db["sites"].find({}, {"site_id": 1, "origins": 1, "created_at": 1}):
+        for origin in site.get("origins") or []:
+            query = {"site_id": None, "pageUrl": {"$regex": "^" + re.escape(origin) + r"([/?#]|$)", "$options": "i"}}
+            if site.get("created_at"):
+                query["created_at"] = {"$gte": site["created_at"]}
+            ids = [doc["sessionId"] for doc in detections.find(query, {"sessionId": 1}) if doc.get("sessionId")]
+            for start in range(0, len(ids), _BACKFILL_CHUNK):
+                chunk = ids[start:start + _BACKFILL_CHUNK]
+                moved += detections.update_many(
+                    {"sessionId": {"$in": chunk}, "site_id": None},
+                    {"$set": {"site_id": site["site_id"], "site_unverified": True}}).modified_count
+                db["research_sessions"].update_many(
+                    {"_id": {"$in": chunk}, "attributed_site_id": None},
+                    {"$set": {"attributed_site_id": site["site_id"]}})
+    counters.update_one({"_id": UNVERIFIED_BACKFILL},
+                        {"$set": {"moved": moved, "at": datetime.now(timezone.utc)}}, upsert=True)
     return moved
 
 
@@ -337,10 +379,13 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
     """Origins of recent unattributed sessions: sites sending data that nobody registered.
 
     DATACAT's own hosts (dashboard, collector) and bare IP addresses are left out: that is
-    test traffic, not a customer's website to register.
+    test traffic, not a customer's website to register. So are registered origins: their
+    unattributed sessions came without a usable Origin, and offering to register them again
+    would only fail as a duplicate.
     """
     now = now or datetime.now(timezone.utc)
     ignored = {_bare_host(host) for host in ignore_hosts if host}
+    registered = {origin for row in db["sites"].find({}, {"origins": 1}) for origin in row.get("origins") or []}
     counts = {}
     for doc in db["detection_results"].find(
             {"site_id": None, "updated_at": {"$gte": now - timedelta(days=7)}, "pageUrl": {"$type": "string"}},
@@ -350,7 +395,7 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
         except ValueError:
             continue
         host = origin_host(origin)
-        if _bare_host(host) in ignored or _is_ip(host):
+        if origin in registered or _bare_host(host) in ignored or _is_ip(host):
             continue
         entry = counts.setdefault(origin, {"origin": origin, "sessions": 0, "last_seen": None})
         entry["sessions"] += 1
