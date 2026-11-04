@@ -1,14 +1,14 @@
 """Website registry: the sites DATACAT monitors and the pages they are served from.
 
-An operator registers a site on the dashboard with its entries: a domain ('shop.vn', every
-page) or a page ('shop.vn/page2', that page and the pages under it). Pages of one domain may
-be independent sites, as ad landing pages often are. From then on:
+An operator registers a site on the dashboard with its entries: a page by its full address
+(the default), a group of pages ('shop.vn/blog/*') or a whole domain ('shop.vn'). Pages of one
+domain are independent sites, as ad landing pages and articles are. From then on:
 
 * pages on those origins may post telemetry and pass CORS at once, without editing the
   server's environment (origins in ``BOT_TELEMETRY_ORIGINS`` stay allowed as before);
 * every session is attributed by the browser's ``Origin`` header, which a page cannot set,
   never by the site id the tag declares (a copied tag would claim another site); among the
-  sites of that domain, the page the session landed on picks the longest matching entry;
+  sites of that domain, the page the session landed on picks its entry (see ``match_path``);
 * a paused site's pages are refused, so monitoring stops without touching the customer's code.
 
 Lookups on the request path read an in-memory snapshot. The snapshot is reloaded after every
@@ -73,13 +73,25 @@ def normalize_path(path) -> str:
     return re.sub(r"/{2,}", "/", path).rstrip("/")
 
 
+# Entry suffix for a group of pages: 'shop.vn/blog/*' is /blog and every page under it.
+WILDCARD = "/*"
+
+
 def normalize_scope(value) -> str:
-    """A site's entry: a domain covers all its pages, a domain and path covers that page and
-    the pages under it. 'Shop.vn' -> 'https://shop.vn'; 'shop.vn/Khuyen-mai/?a=1' ->
-    'https://shop.vn/khuyen-mai'."""
+    """A site's entry, one of:
+
+    * a page, the default: 'dantri.com.vn/phap-luat/bai-viet.htm' is that page alone (query
+      and fragment ignored, so ad parameters do not split it);
+    * a group of pages: 'shop.vn/blog/*' is /blog and every page under it;
+    * a domain: 'shop.vn' is every page of the domain.
+    """
     origin = normalize_origin(value)
     text = str(value).strip()
-    return origin + normalize_path(urlsplit(text if "://" in text else "https://" + text).path)
+    path = normalize_path(urlsplit(text if "://" in text else "https://" + text).path)
+    if path == "/*" or path.endswith(WILDCARD):
+        base = path[:-1].rstrip("/")
+        return origin + (base + WILDCARD if base else "")
+    return origin + path
 
 
 def split_scope(scope: str) -> tuple:
@@ -95,13 +107,33 @@ def page_path(page_url) -> str:
 
 
 def match_path(paths, path: str):
-    """The longest entry path that covers ``path`` (segment-wise: '/a' covers '/a/b', not
-    '/ab'); None when no entry does. ``paths`` is an iterable of (entry path, value)."""
-    best = None
+    """The entry that covers ``path``: its exact page first, then the longest group of pages
+    ('/blog/*' covers '/blog' and '/blog/a', not '/blogs'), then the domain (''); None when
+    no entry does. ``paths`` is an iterable of (entry path, value)."""
+    best, best_rank = None, None
     for entry, value in paths:
-        if (not entry or path == entry or path.startswith(entry + "/")) and (best is None or len(entry) > len(best[0])):
-            best = (entry, value)
-    return best[1] if best else None
+        if not entry:
+            rank = (0, 0)
+        elif entry.endswith(WILDCARD):
+            base = entry[:-len(WILDCARD)]
+            if path != base and not path.startswith(base + "/"):
+                continue
+            rank = (1, len(base))
+        elif path == entry:
+            rank = (2, 0)
+        else:
+            continue
+        if best_rank is None or rank > best_rank:
+            best, best_rank = value, rank
+    return best
+
+
+def page_url_pattern(scope: str) -> str:
+    """Regex for the page URLs an entry covers, for back-filling stored sessions."""
+    origin, path = split_scope(scope)
+    if path.endswith(WILDCARD):
+        return "^" + re.escape(origin + path[:-len(WILDCARD)]) + r"([/?#]|$)"
+    return "^" + re.escape(origin + path) + (r"/?([?#]|$)" if path else r"([/?#]|$)")
 
 
 def origin_host(origin: str) -> str:
@@ -125,7 +157,7 @@ class SiteRegistry:
     """Snapshot of the ``sites`` collection: site id -> site, origin -> [(path, site)].
 
     Several sites may share a domain: 'shop.vn/page1' and 'shop.vn/page2' are independent
-    sites, and a page belongs to the entry with the longest path that covers it.
+    sites, and a page belongs to the entry ``match_path`` picks for it.
     """
 
     def __init__(self):
@@ -260,7 +292,7 @@ def attribute_history(db, site_id: str, origins) -> int:
     detections = db["detection_results"]
     moved = 0
     for origin in origins:
-        pattern = "^" + re.escape(origin) + r"([/?#]|$)"
+        pattern = page_url_pattern(origin)
         ids = [doc["sessionId"] for doc in detections.find(
             {"site_id": None, "pageUrl": {"$regex": pattern, "$options": "i"}}, {"sessionId": 1})
             if doc.get("sessionId")]
@@ -286,7 +318,7 @@ def attribute_unverified_history(db) -> int:
     moved = 0
     for site in db["sites"].find({}, {"site_id": 1, "origins": 1, "created_at": 1}):
         for origin in site.get("origins") or []:
-            query = {"site_id": None, "pageUrl": {"$regex": "^" + re.escape(origin) + r"([/?#]|$)", "$options": "i"}}
+            query = {"site_id": None, "pageUrl": {"$regex": page_url_pattern(origin), "$options": "i"}}
             if site.get("created_at"):
                 query["created_at"] = {"$gte": site["created_at"]}
             ids = [doc["sessionId"] for doc in detections.find(query, {"sessionId": 1}) if doc.get("sessionId")]
@@ -444,7 +476,7 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
     test traffic, not a customer's website to register. So are pages a registered entry
     covers: their unattributed sessions came without a usable Origin, and offering to
     register them again would only fail as a duplicate. A domain registered page by page
-    lists its other pages by their first path segment ('shop.vn/page3'), ready to register.
+    lists its other pages one by one, ready to register.
     """
     now = now or datetime.now(timezone.utc)
     ignored = {_bare_host(host) for host in ignore_hosts if host}
@@ -471,8 +503,7 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
             path = page_path(doc["pageUrl"])
             if match_path(registered[origin], path):
                 continue
-            if path:
-                origin += "/" + path.lstrip("/").split("/")[0]
+            origin += path
         entry = counts.setdefault(origin, {"origin": origin, "sessions": 0, "last_seen": None})
         entry["sessions"] += 1
         seen = _as_utc(doc.get("updated_at"))

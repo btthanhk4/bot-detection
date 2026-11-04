@@ -734,7 +734,9 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 .site-name strong { display: block; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .site-sub { display: block; margin-top: 2px; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
 .site-sub code { font-size: 11.5px; }
-.domain-list { display: flex; flex-wrap: wrap; gap: 4px; min-width: 150px; max-width: 320px; }
+.domain-list { display: flex; flex-wrap: wrap; gap: 4px; min-width: 190px; max-width: 240px; }
+/* A full page address wraps inside its chip instead of widening the table. */
+.sites-table .site-domains .domain-chip { display: block; height: auto; padding: 3px 8px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.45; }
 .site-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .unregistered-list { padding: 0 18px 6px; }
 .unregistered-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 0; font-size: 13px; color: var(--text-2); }
@@ -1007,7 +1009,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <a class="nav-item" href="#live" data-view="live"><svg class="ui-icon"><use href="#icon-globe"></use></svg>Live View</a>
     <a class="nav-item" href="#reports" data-view="reports"><svg class="ui-icon"><use href="#icon-file-chart"></use></svg>Báo cáo</a>
     <div class="nav-section">Quản trị</div>
-    <a class="nav-item" href="#sites" data-view="sites"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Website</a>
+    <a class="nav-item" href="#sites" data-view="sites"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Trang theo dõi</a>
     <a class="nav-item admin-only" href="#users" data-view="users"><svg class="ui-icon"><use href="#icon-users"></use></svg>Người dùng</a>
     <a class="nav-item staff-only" href="#system" data-view="system"><svg class="ui-icon"><use href="#icon-server"></use></svg>Hệ thống</a>
     <a class="nav-item" href="#account" data-view="account"><svg class="ui-icon"><use href="#icon-user"></use></svg>Tài khoản</a>
@@ -1056,8 +1058,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <div class="page-heading"><h1 id="pageTitle">Tổng quan</h1><span class="page-sub" id="pageSub"></span></div>
     <label class="site-picker" id="sitePicker" hidden>
       <svg class="ui-icon" aria-hidden="true"><use href="#icon-app-window"></use></svg>
-      <span class="sr-only">Website đang xem</span>
-      <select id="siteFilter" onchange="changeSiteFilter(this.value)"><option value="">Tất cả website</option></select>
+      <span class="sr-only">Trang đang xem</span>
+      <select id="siteFilter" onchange="changeSiteFilter(this.value)"><option value="">Tất cả trang</option></select>
     </label>
   </div>
   <section class="view" id="view-overview" data-title="Tổng quan">
@@ -1256,21 +1258,21 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <p class="report-note"><b>Bot</b>: có bằng chứng tự động hóa rõ ràng. <b>Nghi vấn</b>: có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot, không nên chặn chỉ vì nhãn này. <b>Chưa đủ dữ liệu</b>: khách rời trang trước khi có đủ thao tác để đánh giá. Số liệu tính trên các phiên bắt đầu trong kỳ.</p>
   </section>
 
-  <section class="view" id="view-sites" data-title="Website" hidden>
+  <section class="view" id="view-sites" data-title="Trang theo dõi" hidden>
     <div class="panel">
       <div class="panel-header">
-        <div class="panel-title"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Danh sách website</div>
-        <button class="btn-primary btn-compact admin-only" type="button" onclick="openSiteDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm website</button>
+        <div class="panel-title"><svg class="ui-icon"><use href="#icon-app-window"></use></svg>Trang đang theo dõi</div>
+        <button class="btn-primary btn-compact admin-only" type="button" onclick="openSiteDialog()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Thêm trang</button>
       </div>
       <div class="table-scroll">
         <table class="sites-table" id="sitesTable">
-          <thead><tr><th>Website</th><th>Tên miền / trang</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
+          <thead><tr><th>Trang</th><th>Địa chỉ</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
           <tbody id="sitesBody"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
     </div>
     <div class="panel" id="unregisteredPanel" hidden>
-      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Tên miền và trang chưa đăng ký</div></div>
+      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Trang chưa đăng ký</div></div>
       <ul class="unregistered-list" id="unregisteredList"></ul>
     </div>
   </section>
@@ -1288,7 +1290,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         </table>
       </div>
     </div>
-    <p class="report-note"><b>Khách hàng</b> chỉ xem được Tổng quan, Live View, Báo cáo và Website của các website được giao, không sửa được gì. <b>Nhân viên</b> xem được mọi website. <b>Quản trị viên</b> có toàn quyền. Tài khoản mới dùng mật khẩu tạm và phải đổi ở lần đăng nhập đầu.</p>
+    <p class="report-note"><b>Khách hàng</b> chỉ xem được Tổng quan, Live View, Báo cáo và Trang theo dõi của các trang được giao, không sửa được gì. <b>Nhân viên</b> xem được mọi trang. <b>Quản trị viên</b> có toàn quyền. Tài khoản mới dùng mật khẩu tạm và phải đổi ở lần đăng nhập đầu.</p>
   </section>
 
   <section class="view" id="view-system" data-title="Hệ thống" hidden>
@@ -1474,12 +1476,12 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 
 <dialog id="siteDialog" class="label-dialog" aria-labelledby="siteDialogTitle">
   <form id="siteForm" onsubmit="saveSite(event)" novalidate>
-    <h2 id="siteDialogTitle">Thêm website</h2>
-    <label>Tên website<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Cửa hàng ABC"></label>
-    <label>Mã website<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
+    <h2 id="siteDialogTitle">Thêm trang</h2>
+    <label>Tên trang<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Landing khuyến mãi Tết"></label>
+    <label>Mã trang<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
       <small class="field-hint" id="siteIdHint">Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.</small></label>
-    <label>Tên miền hoặc trang<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="abc.vn&#10;abc.vn/khuyen-mai" aria-describedby="siteOriginsHint"></textarea>
-      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một tên miền hoặc một trang. Tên miền (abc.vn) gồm mọi trang của nó; trang (abc.vn/khuyen-mai) gồm trang đó và các trang con, và được theo dõi riêng như một website độc lập. Ghi cả bản có www nếu website dùng cả hai.</small></label>
+    <label>Địa chỉ trang<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="https://abc.vn/khuyen-mai-tet.html" aria-describedby="siteOriginsHint"></textarea>
+      <small class="field-hint" id="siteOriginsHint">Dán nguyên địa chỉ trang: chỉ đúng trang đó được tính, phần <code>?utm=…</code> và <code>#…</code> được bỏ qua. Mỗi dòng một địa chỉ. Muốn gộp nhiều trang: thêm <code>/*</code> ở cuối (<code>abc.vn/blog/*</code>) hoặc chỉ ghi tên miền (<code>abc.vn</code>) để tính mọi trang.</small></label>
     <label>Cách kết nối<select id="sitePlatform">
         <option value="">Chọn sau</option>
         <option value="gtm">Google Tag Manager</option>
@@ -1524,12 +1526,12 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
       <small class="field-hint" id="userNameHint">3–64 ký tự: chữ, số, . _ - @. Dùng email của khách cho dễ nhớ.</small></label>
     <label>Tên hiển thị<input id="userDisplay" maxlength="80" autocomplete="off" placeholder="vd. Anh Minh – Cửa hàng ABC"></label>
     <label>Vai trò<select id="acctRole">
-        <option value="customer">Khách hàng – chỉ xem website được giao</option>
-        <option value="viewer">Nhân viên – xem mọi website</option>
+        <option value="customer">Khách hàng – chỉ xem các trang được giao</option>
+        <option value="viewer">Nhân viên – xem mọi trang</option>
         <option value="admin">Quản trị viên – toàn quyền</option>
       </select></label>
     <fieldset class="user-sites" id="userSitesField">
-      <legend>Website được xem</legend>
+      <legend>Trang được xem</legend>
       <div id="userSites"></div>
     </fieldset>
     <p id="userError" class="form-msg err" role="alert"></p>
@@ -2273,7 +2275,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     const note = document.createElement('span');
     note.className = 'field-hint';
     note.style.display = 'block';
-    note.textContent = 'Nguồn chưa xác minh: request không gửi Origin, website được suy ra từ địa chỉ trang.';
+    note.textContent = 'Nguồn chưa xác minh: request không gửi Origin, trang được suy ra từ địa chỉ trang tự khai.';
     pageField.appendChild(note);
   }
 
@@ -3575,7 +3577,7 @@ function syncSitePicker() {
   const picker = document.getElementById('sitePicker');
   const select = document.getElementById('siteFilter');
   const view = currentViewFromHash();
-  const options = [['', 'Tất cả website']];
+  const options = [['', 'Tất cả trang']];
   if (sitesData) {
     sitesData.sites.forEach(s => options.push([s.site_id, s.name + (s.status === 'paused' ? ' (tạm dừng)' : '')]));
     sitesData.removed_sites.forEach(s => options.push([s.site_id, s.site_id + ' (đã xóa)']));
@@ -3636,7 +3638,9 @@ function renderSites(data) {
   const sites = data.sites;
   const rows = sites.map(site => {
     const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
-    const domains = site.origins.map(o => `<span class="domain-chip">${escapeHtml(o.replace(/^https:\/\//, ''))}</span>`).join('');
+    // Full page addresses run long: the chip ellipsises, the tooltip keeps the whole address.
+    const domains = site.origins.map(o => `<span class="domain-chip" title="${escapeHtml(o)}">${
+      escapeHtml(o.replace(/^https:\/\//, '')).replace(/([/-])/g, '$1<wbr>')}</span>`).join('');
     return `<tr>
       <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.platform && PLATFORM_GUIDES[site.platform] ? ' · ' + PLATFORM_GUIDES[site.platform].label : ''}</span></td>
       <td class="site-domains"><div class="domain-list">${domains}</div></td>
@@ -3650,13 +3654,13 @@ function renderSites(data) {
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="${escapeHtml(site.site_id)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`));
   // Shown only for current unassigned traffic; with no website registered it would repeat the list below.
   if (sites.length && data.unassigned.sessions_24h > 0) rows.push(`<tr class="site-muted">
-      <td class="site-name"><strong>Không rõ nguồn</strong><span class="site-sub">Request không cho biết website nào, thường là công cụ HTTP hoặc bot</span></td>
+      <td class="site-name"><strong>Không rõ nguồn</strong><span class="site-sub">Request không cho biết trang nào, thường là công cụ HTTP hoặc bot</span></td>
       <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(data.unassigned)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="_none"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`);
   const empty = !rows.length;
   document.getElementById('sitesTable').classList.toggle('is-empty', empty);
   document.getElementById('sitesBody').innerHTML = empty
-    ? '<tr><td colspan="7" class="empty-state">Chưa có website nào</td></tr>' : rows.join('');
+    ? '<tr><td colspan="7" class="empty-state">Chưa có trang nào</td></tr>' : rows.join('');
 
   const unregistered = data.unregistered_origins;
   document.getElementById('unregisteredPanel').hidden = !unregistered.length;
@@ -3672,7 +3676,7 @@ async function loadSites() {
     sitesData = data;
     if (currentViewFromHash() === 'sites') renderSites(data);
   } else if (currentViewFromHash() === 'sites' && !sitesData) {
-    document.getElementById('sitesBody').innerHTML = '<tr><td colspan="7" class="empty-state">Không tải được danh sách website</td></tr>';
+    document.getElementById('sitesBody').innerHTML = '<tr><td colspan="7" class="empty-state">Không tải được danh sách trang</td></tr>';
   }
   syncSitePicker();
 }
@@ -3695,7 +3699,7 @@ function findSite(siteId) {
 
 function openSiteDialog(site = null, origin = '') {
   editingSiteId = site ? site.site_id : null;
-  setText('siteDialogTitle', site ? 'Sửa website' : 'Thêm website');
+  setText('siteDialogTitle', site ? 'Sửa trang' : 'Thêm trang');
   const idInput = document.getElementById('siteIdInput');
   document.getElementById('siteName').value = site ? site.name : (origin ? origin.replace(/^https?:\/\//, '') : '');
   idInput.value = site ? site.site_id : '';
@@ -3720,15 +3724,15 @@ document.getElementById('siteName').addEventListener('input', (event) => {
 
 function siteErrorText(status, detail) {
   if (status === 401 || status === 403) return typeof detail === 'string' && detail.startsWith('Monitoring')
-    ? detail : 'Tài khoản này không có quyền quản trị website';
-  if (typeof detail !== 'string') return 'Thông tin chưa hợp lệ: kiểm tra mã website (chữ thường, số, "-", "_") và tên miền';
+    ? detail : 'Tài khoản này không có quyền quản lý trang theo dõi';
+  if (typeof detail !== 'string') return 'Thông tin chưa hợp lệ: kiểm tra mã trang (chữ thường, số, "-", "_") và địa chỉ';
   let match = detail.match(/^(.*) already belongs to site (.*)$/);
-  if (match) return `${match[1]} đã thuộc website ${match[2]}`;
+  if (match) return `${match[1].replace(/^https:\/\//, '')} đang được theo dõi ở mục ${match[2]}`;
   match = detail.match(/^Site id (.*) is already used$/);
-  if (match) return `Mã website ${match[1]} đã được dùng`;
+  if (match) return `Mã trang ${match[1]} đã được dùng`;
   match = detail.match(/^'?(.*?)'? (is not a valid domain|must be an http\(s\) domain)$/);
-  if (match) return `Tên miền hoặc trang không hợp lệ: ${match[1]}`;
-  if (/1 to \d+ domains/.test(detail)) return 'Mỗi website cần từ 1 đến 20 tên miền';
+  if (match) return `Địa chỉ không hợp lệ: ${match[1]}`;
+  if (/1 to \d+ domains/.test(detail)) return 'Mỗi mục cần từ 1 đến 20 địa chỉ';
   return detail;
 }
 
@@ -3738,10 +3742,10 @@ async function saveSite(event) {
   const name = document.getElementById('siteName').value.trim();
   const siteId = document.getElementById('siteIdInput').value.trim();
   const origins = document.getElementById('siteOrigins').value.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
-  if (!name) { setText('siteError', 'Nhập tên website'); document.getElementById('siteName').focus(); return; }
-  if (!origins.length) { setText('siteError', 'Nhập ít nhất một tên miền hoặc trang'); document.getElementById('siteOrigins').focus(); return; }
+  if (!name) { setText('siteError', 'Nhập tên trang'); document.getElementById('siteName').focus(); return; }
+  if (!origins.length) { setText('siteError', 'Nhập ít nhất một địa chỉ trang'); document.getElementById('siteOrigins').focus(); return; }
   if (!editingSiteId && siteId && !SITE_FILTER_RE.test(siteId)) {
-    setText('siteError', 'Mã website chỉ gồm chữ thường, số, "-" và "_"');
+    setText('siteError', 'Mã trang chỉ gồm chữ thường, số, "-" và "_"');
     document.getElementById('siteIdInput').focus();
     return;
   }
@@ -3901,7 +3905,7 @@ function openSnippet(site) {
     <button type="button" class="connect-option" role="radio" data-platform="${key}">
       <strong>${PLATFORM_GUIDES[key].label}</strong><small>${PLATFORM_GUIDES[key].hint}</small></button>`).join('');
   setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
-    '. Trang ở tên miền khác bị từ chối dù dùng cùng đoạn mã; trang khác cùng tên miền không được tính vào website này.');
+    '. Trang khác, kể cả cùng tên miền, không được tính vào mục này dù dùng cùng đoạn mã.');
   renderConnection(site.platform || 'gtm');
   document.getElementById('snippetDialog').showModal();
   document.querySelector('#connectOptions [aria-checked="true"]').focus();
@@ -3993,12 +3997,12 @@ document.getElementById('sitesBody').addEventListener('click', async (event) => 
     openSiteDialog(site);
   } else if (action === 'toggle' && site) {
     const pause = site.status !== 'paused';
-    if (pause && !confirm(`Tạm dừng giám sát ${site.name}? Trang của website này sẽ không gửi được dữ liệu cho đến khi bật lại.`)) return;
+    if (pause && !confirm(`Tạm dừng giám sát ${site.name}? Các trang của mục này sẽ không gửi được dữ liệu cho đến khi bật lại.`)) return;
     button.disabled = true;
     if (await siteRequest(siteId, 'PATCH', { status: pause ? 'paused' : 'active' })) await loadSites();
     button.disabled = false;
   } else if (action === 'delete' && site) {
-    if (!confirm(`Xóa ${site.name} khỏi danh sách? Phiên đã ghi vẫn được giữ, nhưng trang của website này sẽ không gửi được dữ liệu nữa.`)) return;
+    if (!confirm(`Xóa ${site.name} khỏi danh sách? Phiên đã ghi vẫn được giữ, nhưng các trang của mục này sẽ không gửi được dữ liệu nữa.`)) return;
     button.disabled = true;
     if (await siteRequest(siteId, 'DELETE')) {
       if (selectedSite === siteId) changeSiteFilter('');
@@ -4113,7 +4117,7 @@ function renderReport(data) {
   setText('repPending', fmtCount(t.insufficient)); setText('repPendingPct', percentOf(t.insufficient, t.sessions));
   const range = formatDateTime(data.period.from) + ' – ' + formatDateTime(data.period.to);
   setText('reportRange', range);
-  const scope = selectedSite ? siteLabel(selectedSite) : 'Tất cả website';
+  const scope = selectedSite ? siteLabel(selectedSite) : 'Tất cả trang';
   setText('reportTitle', 'Báo cáo lưu lượng · ' + scope);
   setText('reportSub', `${range} · ${fmtCount(t.sessions)} phiên · DATACAT`);
 
@@ -4192,7 +4196,7 @@ async function exportReportCsv() {
   try {
     const data = await fetchJSON(API_BASE + '/api/v1/reports/sessions?days=' + reportDays + siteParam('&'));
     if (!data || !Array.isArray(data.sessions)) { label.textContent = 'Không tải được'; return; }
-    const header = ['Mã phiên', 'Bắt đầu', 'Lần cuối', 'Thời lượng (giây)', 'Website', 'IP', 'Quốc gia', 'Thành phố', 'Nhà mạng',
+    const header = ['Mã phiên', 'Bắt đầu', 'Lần cuối', 'Thời lượng (giây)', 'Trang', 'IP', 'Quốc gia', 'Thành phố', 'Nhà mạng',
       'Thiết bị', 'Loại thiết bị', 'Trang', 'Kết luận', 'Lý do'];
     const lines = data.sessions.map(row => {
       const bd = row.breakdown || {};
@@ -4243,7 +4247,7 @@ let usersData = [];
 let editingUser = null;
 
 function userSitesText(user) {
-  if (user.role !== 'customer') return '<span class="muted">Mọi website</span>';
+  if (user.role !== 'customer') return '<span class="muted">Mọi trang</span>';
   return (user.sites || []).map(id => `<span class="domain-chip">${escapeHtml(siteLabel(id))}</span>`).join(' ') || '--';
 }
 
@@ -4282,7 +4286,7 @@ async function loadUsers() {
 function renderUserSites(selected) {
   const list = (sitesData && sitesData.sites) || [];
   document.getElementById('userSites').innerHTML = list.length ? list.map(site => `<label><input type="checkbox" value="${escapeHtml(site.site_id)}" ${selected.includes(site.site_id) ? 'checked' : ''}>${escapeHtml(site.name)} <span class="muted">${escapeHtml(site.origins.map(o => o.replace(/^https:\/\//, '')).join(', '))}</span></label>`).join('')
-    : '<small class="field-hint">Chưa có website nào. Thêm website trước ở trang Website.</small>';
+    : '<small class="field-hint">Chưa có trang nào. Thêm trang trước ở mục Trang theo dõi.</small>';
 }
 
 function syncUserSitesField() {
@@ -4350,7 +4354,7 @@ async function saveUser(event) {
   const chosen = [...document.querySelectorAll('#userSites input:checked')].map(box => box.value);
   const username = document.getElementById('userLogin').value.trim();
   if (!editingUser && !/^[A-Za-z0-9_.@-]{3,64}$/.test(username)) { setText('userError', 'Tên đăng nhập gồm 3–64 ký tự: chữ, số, . _ - @'); return; }
-  if (role === 'customer' && !chosen.length) { setText('userError', 'Chọn ít nhất một website cho khách hàng'); return; }
+  if (role === 'customer' && !chosen.length) { setText('userError', 'Chọn ít nhất một trang cho khách hàng'); return; }
   const body = { role, sites: chosen, display_name: document.getElementById('userDisplay').value.trim() };
   const button = document.getElementById('userSave');
   button.disabled = true;
@@ -4450,9 +4454,9 @@ async function loadCurrentUser() {
   setText('accName', user.username);
   setText('accRole', ROLE_LABELS[user.role] || user.role);
   setText('accSession', 'Tự hết hạn sau ' + user.session_hours + ' giờ');
-  setText('accScope', user.role === 'admin' ? 'Toàn quyền: website, tài khoản, xóa phiên'
+  setText('accScope', user.role === 'admin' ? 'Toàn quyền: trang theo dõi, tài khoản, xóa phiên'
     : user.role === 'customer' ? 'Chỉ xem: ' + (user.sites || []).map(site => site.name).join(', ')
-      : 'Xem dữ liệu mọi website');
+      : 'Xem dữ liệu mọi trang');
   document.body.classList.toggle('read-only', user.role !== 'admin');
   document.body.classList.toggle('role-customer', user.role === 'customer');
   document.body.classList.toggle('must-change', Boolean(user.must_change_password));

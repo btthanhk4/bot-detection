@@ -82,6 +82,11 @@ def test_normalize_origin_rejects(value):
     ("uettrk1.com/", "https://uettrk1.com"),
     ("https://UETTRK1.com/Page1/?utm_source=fb#top", "https://uettrk1.com/page1"),
     ("uettrk1.com//page1//sub/", "https://uettrk1.com/page1/sub"),
+    ("https://dantri.com.vn/phap-luat/shark-binh-bi-de-nghi-9-10-nam-tu-20261104090546885.htm",
+     "https://dantri.com.vn/phap-luat/shark-binh-bi-de-nghi-9-10-nam-tu-20261104090546885.htm"),
+    ("shop.vn/Blog/*", "https://shop.vn/blog/*"),
+    ("shop.vn/blog/*/", "https://shop.vn/blog/*"),
+    ("shop.vn/*", "https://shop.vn"),
     ("uettrk1.com/khuyến-mãi", "https://uettrk1.com/khuy%e1%ba%bfn-m%c3%a3i"),
     ("uettrk1.com/khuy%E1%BA%BFn-m%C3%A3i", "https://uettrk1.com/khuy%e1%ba%bfn-m%c3%a3i"),
 ])
@@ -89,14 +94,28 @@ def test_a_site_entry_is_a_domain_or_a_page(value, expected):
     assert sites.normalize_scope(value) == expected
 
 
-def test_a_page_entry_covers_its_subpages_not_its_lookalikes():
-    entries = [("", "domain"), ("/page1", "one"), ("/page1/vip", "vip")]
+def test_a_page_entry_is_that_page_alone_a_group_covers_its_subpages():
+    entries = [("", "domain"), ("/page1", "one"), ("/blog/*", "blog"), ("/blog/vip/*", "vip"), ("/blog/vip/a", "a")]
     assert sites.match_path(entries, "/page1") == "one"
-    assert sites.match_path(entries, "/page1/x") == "one"
-    assert sites.match_path(entries, "/page1/vip/y") == "vip"
-    assert sites.match_path(entries, "/page10") == "domain"
+    assert sites.match_path(entries, "/page1/x") == "domain"
+    assert sites.match_path(entries, "/blog") == "blog"
+    assert sites.match_path(entries, "/blog/post") == "blog"
+    assert sites.match_path(entries, "/blog/vip/b") == "vip"
+    assert sites.match_path(entries, "/blog/vip/a") == "a"
+    assert sites.match_path(entries, "/blogs") == "domain"
     assert sites.match_path(entries[1:], "/page10") is None
     assert sites.match_path(entries[1:], "") is None
+
+
+def test_back_fill_patterns_follow_the_entry_kind():
+    import re
+    page = re.compile(sites.page_url_pattern("https://shop.vn/a.htm"), re.I)
+    assert page.match("https://shop.vn/a.htm?utm=1") and page.match("https://shop.vn/A.htm/")
+    assert not page.match("https://shop.vn/a.html") and not page.match("https://shop.vn/a.htm/b")
+    group = re.compile(sites.page_url_pattern("https://shop.vn/blog/*"), re.I)
+    assert group.match("https://shop.vn/blog") and group.match("https://shop.vn/blog/x")
+    assert not group.match("https://shop.vn/blogs")
+    assert re.match(sites.page_url_pattern("https://shop.vn"), "https://shop.vn/any/page")
 
 
 def test_slug_from_vietnamese_name(db):
@@ -315,15 +334,16 @@ def test_pages_of_one_domain_are_independent_sites(api, db):
     assert api.post("/api/v1/sites", json={"name": "Dup", "origins": ["https://uettrk1.com/Page2/"]},
                     headers=ADMIN).status_code == 409
     origin = {"Origin": TRK}
-    for session_id, page in [("p1", TRK + "/page1?utm_source=fb"), ("p2", TRK + "/PAGE2/step-2"),
-                             ("p10", TRK + "/page10"), ("root", TRK + "/")]:
+    for session_id, page in [("p1", TRK + "/page1?utm_source=fb"), ("p2", TRK + "/PAGE2/#form"),
+                             ("p2-sub", TRK + "/page2/step-2"), ("p10", TRK + "/page10"), ("root", TRK + "/")]:
         assert api.post("/api/v1/telemetry", json=page_telemetry(session_id, page), headers=origin).status_code == 200
     owner = {row["sessionId"]: row.get("site_id") for row in db["detection_results"].find()}
-    assert owner == {"p1": "page-1", "p2": "page-2", "p10": None, "root": None}
+    assert owner == {"p1": "page-1", "p2": "page-2", "p2-sub": None, "p10": None, "root": None}
     assert db["research_sessions"].find_one({"_id": "p2"})["attributed_site_id"] == "page-2"
     # Other pages of the domain are offered for registration, page by page.
     view = sites.overview(db, collector_base="https://api.datacat.io.vn")
-    assert sorted(row["origin"] for row in view["unregistered_origins"]) == [TRK, TRK + "/page10"]
+    assert sorted(row["origin"] for row in view["unregistered_origins"]) == [
+        TRK, TRK + "/page10", TRK + "/page2/step-2"]
 
     # A visitor who follows a link from page 1 to page 2 stays with page 1, where they landed.
     later = page_telemetry("p1", TRK + "/page2", timestamp=1_800_000_060_000)
@@ -345,7 +365,7 @@ def test_pages_of_one_domain_are_independent_sites(api, db):
     assert api.post("/api/v1/telemetry", json=page_telemetry("p1b", TRK + "/page1"),
                     headers=origin).status_code == 200
     # The gateway's no-telemetry sessions resolve by host and path too.
-    assert sites.registry.for_host("uettrk1.com", "/page1/x")["site_id"] == "page-1"
+    assert sites.registry.for_host("uettrk1.com", "/page1/")["site_id"] == "page-1"
     assert sites.registry.for_host("uettrk1.com", "/elsewhere")["site_id"] == "rest"
 
 
