@@ -282,7 +282,7 @@ def _no_telemetry_verdict(client: str):
 def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None, site_for_host=None) -> int:
     """Turn page views that never sent telemetry into sessions; returns page views accounted.
 
-    ``site_for_host`` maps the host the gateway served to a registered site id.
+    ``site_for_host`` maps the host and path the gateway served to a registered site id.
     """
     if db is None:
         return 0
@@ -336,7 +336,7 @@ def account_unmonitored(db, *, after_seconds: int, policy_version: str, now=None
         session_id = previous["sessionId"] if previous else "nojs_" + hashlib.sha256(
             f"{ip}|{ua}|{group['first'].isoformat()}".encode()).hexdigest()[:24]
         paths = sorted({str(v.get("path") or "") for v in group["views"]})[:20]
-        site_id = site_for_host(sample.get("host")) if site_for_host else None
+        site_id = site_for_host(sample.get("host"), paths[0] if paths else "") if site_for_host else None
         try:
             detections.update_one(
                 {"sessionId": session_id},

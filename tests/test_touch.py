@@ -333,7 +333,7 @@ def test_telemetry_stores_touch_samples_only_when_enabled(client, monkeypatch):
     monkeypatch.setattr(main.settings, "TOUCH_CAPTURE_SITES", ["silkmoon"])
     assert client.post("/api/v1/telemetry", json=body).status_code == 200
     assert len(stored) == 1
-    monkeypatch.setattr(main.sites.registry, "origin_decision", lambda origin, configured: (True, {"site_id": "silkmoon"}))
+    monkeypatch.setattr(main.sites.registry, "origin_decision", lambda origin, configured, page_url=None: (True, {"site_id": "silkmoon"}))
     assert client.post("/api/v1/telemetry", json=body).status_code == 200
     assert len(stored) == 2
     monkeypatch.setattr(main.settings, "TOUCH_CAPTURE_SITES", [])

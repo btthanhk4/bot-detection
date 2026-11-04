@@ -267,7 +267,7 @@ def _ensure_indexes(db):
 
 # Fields refreshed when a later page may not replace the session's verdict.
 _ACTIVITY_FIELDS = ("visitorId", "pageUrl", "client_ip", "event_order", "event_timestamp", "event_sequence", "updated_at",
-                    "last_action", "page_view_id", "site_id", "site_unverified")
+                    "last_action", "page_view_id")
 
 
 def is_session_closed(session_id: str) -> bool:
@@ -567,12 +567,14 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "updated_at": now,
             "page_view_id": telemetry.get("_page_view_id"),
         }
-        # The website, from the Origin the browser sent, or unverified from a matching Referer
-        # and page (absent: unattributed). Never written as empty, so a later event cannot
-        # erase the attribution.
+        # The website of the landing page: from the Origin the browser sent (the page URL picks
+        # among sites sharing a domain), or unverified from a matching Referer and page. Written
+        # once, so a visitor who follows a link to another page stays with the page that brought
+        # them, and a later event never erases the attribution.
+        site_fields = {}
         if telemetry.get("_site_id"):
-            doc["site_id"] = str(telemetry["_site_id"])[:64]
-            doc["site_unverified"] = bool(telemetry.get("_site_unverified"))
+            site_fields = {"site_id": str(telemetry["_site_id"])[:64],
+                           "site_unverified": bool(telemetry.get("_site_unverified"))}
 
         visitor_id = telemetry.get("visitorId")
         if normalized_event_timestamp is None:
@@ -624,7 +626,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 upsert=False,
             )
         if result.matched_count == 0:
-            insert_doc = {**doc, "created_at": now}
+            insert_doc = {**doc, **site_fields, "landing_url": doc["pageUrl"], "created_at": now}
             try:
                 collection.insert_one(insert_doc)
             except DuplicateKeyError:
@@ -633,6 +635,11 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 result = collection.update_one(update_filter, {"$set": doc}, upsert=False)
                 if result.matched_count == 0:
                     return None
+        if site_fields:
+            collection.update_one({"sessionId": session_id, "site_id": None}, {"$set": site_fields})
+            if not site_fields["site_unverified"]:
+                collection.update_one({"sessionId": session_id, **site_fields, "site_unverified": True},
+                                      {"$set": {"site_unverified": False}})
 
         # Close the delete/write race: a tombstone created during this write wins.
         try:
@@ -668,6 +675,7 @@ def get_recent_results(limit: int = 50, site_filter: Optional[dict] = None) -> O
                 "pageUrl": 1,
                 "site_id": 1,
                 "site_unverified": 1,
+                "landing_url": 1,
                 "verdict": 1,
                 "bot_probability": 1,
                 "decision_state": 1,

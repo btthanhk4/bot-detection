@@ -1264,13 +1264,13 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
       </div>
       <div class="table-scroll">
         <table class="sites-table" id="sitesTable">
-          <thead><tr><th>Website</th><th>Tên miền</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
+          <thead><tr><th>Website</th><th>Tên miền / trang</th><th>Trạng thái</th><th class="num">Phiên 24 giờ</th><th class="num">Bot 24 giờ</th><th>Hoạt động gần nhất</th><th><span class="sr-only">Thao tác</span></th></tr></thead>
           <tbody id="sitesBody"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
     </div>
     <div class="panel" id="unregisteredPanel" hidden>
-      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Tên miền chưa đăng ký</div></div>
+      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Tên miền và trang chưa đăng ký</div></div>
       <ul class="unregistered-list" id="unregisteredList"></ul>
     </div>
   </section>
@@ -1478,8 +1478,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <label>Tên website<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Cửa hàng ABC"></label>
     <label>Mã website<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
       <small class="field-hint" id="siteIdHint">Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.</small></label>
-    <label>Tên miền<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="abc.vn&#10;www.abc.vn" aria-describedby="siteOriginsHint"></textarea>
-      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một tên miền. Ghi cả bản có www nếu website dùng cả hai.</small></label>
+    <label>Tên miền hoặc trang<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="abc.vn&#10;abc.vn/khuyen-mai" aria-describedby="siteOriginsHint"></textarea>
+      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một tên miền hoặc một trang. Tên miền (abc.vn) gồm mọi trang của nó; trang (abc.vn/khuyen-mai) gồm trang đó và các trang con, và được theo dõi riêng như một website độc lập. Ghi cả bản có www nếu website dùng cả hai.</small></label>
     <label>Cách kết nối<select id="sitePlatform">
         <option value="">Chọn sau</option>
         <option value="gtm">Google Tag Manager</option>
@@ -2261,6 +2261,14 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   renderGeo(s.geo);
   const pageField = document.getElementById('dPageUrl');
   pageField.textContent = s.pageUrl || '--';
+  if (s.landing_url && s.landing_url !== s.pageUrl) {
+    // The session belongs to the website of the page it landed on.
+    const landing = document.createElement('span');
+    landing.className = 'field-hint';
+    landing.style.display = 'block';
+    landing.textContent = 'Trang đích: ' + s.landing_url;
+    pageField.appendChild(landing);
+  }
   if (s.site_id && s.site_unverified) {
     const note = document.createElement('span');
     note.className = 'field-hint';
@@ -3719,7 +3727,7 @@ function siteErrorText(status, detail) {
   match = detail.match(/^Site id (.*) is already used$/);
   if (match) return `Mã website ${match[1]} đã được dùng`;
   match = detail.match(/^'?(.*?)'? (is not a valid domain|must be an http\(s\) domain)$/);
-  if (match) return `Tên miền không hợp lệ: ${match[1]}`;
+  if (match) return `Tên miền hoặc trang không hợp lệ: ${match[1]}`;
   if (/1 to \d+ domains/.test(detail)) return 'Mỗi website cần từ 1 đến 20 tên miền';
   return detail;
 }
@@ -3731,7 +3739,7 @@ async function saveSite(event) {
   const siteId = document.getElementById('siteIdInput').value.trim();
   const origins = document.getElementById('siteOrigins').value.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
   if (!name) { setText('siteError', 'Nhập tên website'); document.getElementById('siteName').focus(); return; }
-  if (!origins.length) { setText('siteError', 'Nhập ít nhất một tên miền'); document.getElementById('siteOrigins').focus(); return; }
+  if (!origins.length) { setText('siteError', 'Nhập ít nhất một tên miền hoặc trang'); document.getElementById('siteOrigins').focus(); return; }
   if (!editingSiteId && siteId && !SITE_FILTER_RE.test(siteId)) {
     setText('siteError', 'Mã website chỉ gồm chữ thường, số, "-" và "_"');
     document.getElementById('siteIdInput').focus();
@@ -3893,7 +3901,7 @@ function openSnippet(site) {
     <button type="button" class="connect-option" role="radio" data-platform="${key}">
       <strong>${PLATFORM_GUIDES[key].label}</strong><small>${PLATFORM_GUIDES[key].hint}</small></button>`).join('');
   setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
-    '. Trang ở tên miền khác sẽ bị từ chối dù dùng cùng đoạn mã.');
+    '. Trang ở tên miền khác bị từ chối dù dùng cùng đoạn mã; trang khác cùng tên miền không được tính vào website này.');
   renderConnection(site.platform || 'gtm');
   document.getElementById('snippetDialog').showModal();
   document.querySelector('#connectOptions [aria-checked="true"]').focus();

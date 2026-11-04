@@ -322,8 +322,8 @@ def _repair_site_attribution() -> None:
         logger.warning("Unverified site attribution repair deferred", exc_info=True)
 
 
-def _site_id_for_host(host: str) -> Optional[str]:
-    site = sites.registry.for_host(host)
+def _site_id_for_host(host: str, path: str = "") -> Optional[str]:
+    site = sites.registry.for_host(host, path)
     return site["site_id"] if site else None
 
 
@@ -713,12 +713,14 @@ def _bearer(request: Request, header: str) -> str:
     return supplied
 
 
-def _require_allowed_origin(request: Request) -> Optional[dict]:
+def _require_allowed_origin(request: Request, page_url=None) -> Optional[dict]:
     """Reject browsers posting from pages that are not monitored; return the page's site.
 
-    The site comes from the Origin header the browser sets, not from the tag's site id.
+    The domain comes from the Origin header the browser sets, never from the tag's site id;
+    the reported page URL only picks among the sites registered on that domain.
     """
-    allowed, site = sites.registry.origin_decision(request.headers.get("origin"), settings.TELEMETRY_ALLOWED_ORIGINS)
+    allowed, site = sites.registry.origin_decision(request.headers.get("origin"), settings.TELEMETRY_ALLOWED_ORIGINS,
+                                                   page_url)
     if not allowed:
         if site is not None:
             raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
@@ -919,7 +921,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
             detail="Rate limit exceeded. Too many requests from this IP.",
             headers={"Retry-After": "60"},
         )
-    _require_allowed_origin(request)
+    _require_allowed_origin(request, payload.pageUrl)
     _require_inference_models()
     data = payload.model_dump()
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
@@ -1019,8 +1021,6 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             detail="Rate limit exceeded.",
             headers={"Retry-After": "60"},
         )
-    site = _require_allowed_origin(request)
-
     # Robust parsing supporting application/json, text/plain (sendBeacon), or raw bytes
     try:
         body_bytes = await request.body()
@@ -1045,6 +1045,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         raise HTTPException(status_code=422, detail=detail)
     if not data.get("sessionId"):
         raise HTTPException(status_code=422, detail="sessionId is required")
+    site = _require_allowed_origin(request, data.get("pageUrl"))
     if data.get("action") == "hello":
         # Collector >= 1.10 greets the API as soon as it loads, before fingerprinting,
         # so the gateway can tell a page that runs it from one that never does.

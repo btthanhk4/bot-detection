@@ -77,6 +77,28 @@ def test_normalize_origin_rejects(value):
         sites.normalize_origin(value)
 
 
+@pytest.mark.parametrize("value, expected", [
+    ("uettrk1.com", "https://uettrk1.com"),
+    ("uettrk1.com/", "https://uettrk1.com"),
+    ("https://UETTRK1.com/Page1/?utm_source=fb#top", "https://uettrk1.com/page1"),
+    ("uettrk1.com//page1//sub/", "https://uettrk1.com/page1/sub"),
+    ("uettrk1.com/khuyến-mãi", "https://uettrk1.com/khuy%e1%ba%bfn-m%c3%a3i"),
+    ("uettrk1.com/khuy%E1%BA%BFn-m%C3%A3i", "https://uettrk1.com/khuy%e1%ba%bfn-m%c3%a3i"),
+])
+def test_a_site_entry_is_a_domain_or_a_page(value, expected):
+    assert sites.normalize_scope(value) == expected
+
+
+def test_a_page_entry_covers_its_subpages_not_its_lookalikes():
+    entries = [("", "domain"), ("/page1", "one"), ("/page1/vip", "vip")]
+    assert sites.match_path(entries, "/page1") == "one"
+    assert sites.match_path(entries, "/page1/x") == "one"
+    assert sites.match_path(entries, "/page1/vip/y") == "vip"
+    assert sites.match_path(entries, "/page10") == "domain"
+    assert sites.match_path(entries[1:], "/page10") is None
+    assert sites.match_path(entries[1:], "") is None
+
+
 def test_slug_from_vietnamese_name(db):
     assert sites.slugify("Cửa hàng Đồ gốm Bát Tràng") == "cua-hang-do-gom-bat-trang"
     sites.create_site(db, name="Cửa hàng", origins=[SHOP])
@@ -185,7 +207,7 @@ def test_no_telemetry_sessions_take_the_site_of_their_host(db):
     gateway.record_page_view(db, "0123456789abcdef0123456789abcdef", ip="203.0.113.9", user_agent="curl/8.5.0",
                              host="shop.example.vn", path="/", purpose="")
     db["page_views"].update_many({}, {"$set": {"ts": datetime.now(timezone.utc) - timedelta(minutes=10)}})
-    resolve = lambda host: (sites.registry.for_host(host) or {}).get("site_id")  # noqa: E731
+    resolve = lambda host, path="": (sites.registry.for_host(host, path) or {}).get("site_id")  # noqa: E731
     assert gateway.account_unmonitored(db, after_seconds=60, policy_version="24", site_for_host=resolve) == 1
     assert db["detection_results"].find_one({"no_telemetry_client": "non_browser"})["site_id"] == "shop"
 
@@ -275,6 +297,63 @@ def test_sessions_are_attributed_by_origin_not_by_the_declared_site(api, db):
     paused = api.post("/api/v1/telemetry", json=telemetry("t-shop-2"), headers={"Origin": SHOP})
     assert paused.status_code == 403
     assert paused.json()["detail"] == "Monitoring is paused for this site"
+
+
+TRK = "https://uettrk1.com"
+
+
+def page_telemetry(session_id, page, **extra):
+    return {**telemetry(session_id), "pageUrl": page, **extra}
+
+
+def test_pages_of_one_domain_are_independent_sites(api, db):
+    assert api.post("/api/v1/sites", json={"name": "Page 1", "origins": ["uettrk1.com/page1"]},
+                    headers=ADMIN).status_code == 201
+    assert api.post("/api/v1/sites", json={"name": "Page 2", "origins": ["uettrk1.com/page2"]},
+                    headers=ADMIN).status_code == 201
+    # The same page cannot belong to two sites; the domain and one of its pages can.
+    assert api.post("/api/v1/sites", json={"name": "Dup", "origins": ["https://uettrk1.com/Page2/"]},
+                    headers=ADMIN).status_code == 409
+    origin = {"Origin": TRK}
+    for session_id, page in [("p1", TRK + "/page1?utm_source=fb"), ("p2", TRK + "/PAGE2/step-2"),
+                             ("p10", TRK + "/page10"), ("root", TRK + "/")]:
+        assert api.post("/api/v1/telemetry", json=page_telemetry(session_id, page), headers=origin).status_code == 200
+    owner = {row["sessionId"]: row.get("site_id") for row in db["detection_results"].find()}
+    assert owner == {"p1": "page-1", "p2": "page-2", "p10": None, "root": None}
+    assert db["research_sessions"].find_one({"_id": "p2"})["attributed_site_id"] == "page-2"
+    # Other pages of the domain are offered for registration, page by page.
+    view = sites.overview(db, collector_base="https://api.datacat.io.vn")
+    assert sorted(row["origin"] for row in view["unregistered_origins"]) == [TRK, TRK + "/page10"]
+
+    # A visitor who follows a link from page 1 to page 2 stays with page 1, where they landed.
+    later = page_telemetry("p1", TRK + "/page2", timestamp=1_800_000_060_000)
+    assert api.post("/api/v1/telemetry", json=later, headers=origin).status_code == 200
+    p1 = db["detection_results"].find_one({"sessionId": "p1"})
+    assert (p1["site_id"], p1["pageUrl"], p1["landing_url"]) == ("page-1", TRK + "/page2", TRK + "/page1?utm_source=fb")
+
+    # A domain-wide site takes the pages no page entry covers.
+    api.post("/api/v1/sites", json={"name": "Rest", "origins": ["uettrk1.com"]}, headers=ADMIN)
+    api.post("/api/v1/telemetry", json=page_telemetry("p3", TRK + "/page3"), headers=origin)
+    api.post("/api/v1/telemetry", json=page_telemetry("p2b", TRK + "/page2"), headers=origin)
+    owner = {row["sessionId"]: row.get("site_id") for row in db["detection_results"].find()}
+    assert (owner["p3"], owner["p2b"]) == ("rest", "page-2")
+
+    # Pausing one page stops that page only.
+    api.patch("/api/v1/sites/page-2", json={"status": "paused"}, headers=ADMIN)
+    assert api.post("/api/v1/telemetry", json=page_telemetry("p2c", TRK + "/page2"),
+                    headers=origin).status_code == 403
+    assert api.post("/api/v1/telemetry", json=page_telemetry("p1b", TRK + "/page1"),
+                    headers=origin).status_code == 200
+    # The gateway's no-telemetry sessions resolve by host and path too.
+    assert sites.registry.for_host("uettrk1.com", "/page1/x")["site_id"] == "page-1"
+    assert sites.registry.for_host("uettrk1.com", "/elsewhere")["site_id"] == "rest"
+
+
+def test_a_domain_registered_page_by_page_passes_cors(api):
+    api.post("/api/v1/sites", json={"name": "Page 1", "origins": ["uettrk1.com/page1"]}, headers=ADMIN)
+    assert sites.registry.allows_cors(TRK)
+    api.patch("/api/v1/sites/page-1", json={"status": "paused"}, headers=ADMIN)
+    assert not sites.registry.allows_cors(TRK)
 
 
 def test_a_request_without_origin_keeps_its_site_when_referer_and_page_agree(api, db):
