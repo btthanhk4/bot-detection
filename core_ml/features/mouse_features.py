@@ -11,9 +11,9 @@ Features:
 """
 
 import math
+
 import numpy as np
 import torch
-
 
 MAX_MOUSE_RECORDS = 100
 MAX_FEATURE_MAGNITUDE = 1_000_000.0

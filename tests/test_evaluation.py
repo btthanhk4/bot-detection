@@ -1,8 +1,8 @@
 import pytest
 
+from core_ml.dataset.loader import RealMouseSession
 from core_ml.evaluate import classification_metrics, prefix_through_moves
 from core_ml.evaluate_robustness import evaluate_robustness
-from core_ml.dataset.loader import RealMouseSession
 
 
 def test_classification_metrics_reports_operational_error_rates():

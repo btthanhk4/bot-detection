@@ -3,6 +3,7 @@ Unit tests for core ML models and multi-modal ensemble.
 """
 
 import math
+
 import joblib
 import numpy as np
 import pytest
@@ -10,11 +11,11 @@ import torch
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
-from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
+from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
+from core_ml.models.tabular_classifier import TabularBotClassifier
 
 
 class TestTabularClassifier:

@@ -7,7 +7,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api_service.touch_samples import build_touch_samples, device_family, label_hint
-from core_ml.features.touch import MODEL_FEATURES, analyze_touch, feature_vector, gesture_features, sanitize_gestures
+from core_ml.features.touch import (
+    MODEL_FEATURES,
+    analyze_touch,
+    feature_vector,
+    gesture_features,
+    sanitize_gestures,
+)
 from core_ml.train_touch import GENERATORS, brainrun_points, synthesize
 
 PIXEL = ("Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) "

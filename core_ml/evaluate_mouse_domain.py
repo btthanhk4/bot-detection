@@ -15,7 +15,6 @@ from core_ml.train import (
     deduplicate_real_sessions,
 )
 
-
 FEATURES = (
     "mean_speed",
     "time_regularity",

@@ -5,7 +5,11 @@ from copy import deepcopy
 
 import pytest
 
-from core_ml.features.interaction_features import _cv, _window_cv, extract_interaction_features
+from core_ml.features.interaction_features import (
+    _cv,
+    _window_cv,
+    extract_interaction_features,
+)
 from core_ml.models.ensemble import EnsembleBotDetector
 
 

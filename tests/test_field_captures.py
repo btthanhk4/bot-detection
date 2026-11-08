@@ -10,9 +10,10 @@ from core_ml.dataset.field_captures import (
     load_bot_captures,
     load_human_captures,
 )
-from core_ml.train import main as train_main, train_lstm, validate_captured_bot_holdout
-from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.train import main as train_main
+from core_ml.train import train_lstm, validate_captured_bot_holdout
 
 
 def _payload(count, action="heartbeat", session_id="sess-1"):

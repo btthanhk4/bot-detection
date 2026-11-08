@@ -23,7 +23,10 @@ from sklearn.metrics import roc_auc_score
 from xgboost import XGBClassifier
 
 from core_ml.features.motor_features import extract_motor_features
-from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES, compute_statistical_features
+from core_ml.features.mouse_features import (
+    STATISTICAL_FEATURE_NAMES,
+    compute_statistical_features,
+)
 
 HUMAN_SOURCES = ("circles_human_pc1", "circles_human_pc2", "circles_human_pc2_pad",
                  "circles_human_vm", "circles_human_fast")

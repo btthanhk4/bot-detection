@@ -12,8 +12,11 @@ from core_ml.collector_windows import rolling_windows
 from core_ml.dataset.loader import load_real_dataset
 from core_ml.evaluate import _load_detector
 from core_ml.features.mouse_features import prefix_through_moves
-from core_ml.train import assign_real_session_splits, deduplicate_real_sessions, records_signature
-
+from core_ml.train import (
+    assign_real_session_splits,
+    deduplicate_real_sessions,
+    records_signature,
+)
 
 DESKTOP_FINGERPRINT = {
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",

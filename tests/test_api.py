@@ -10,6 +10,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+
 from api_service.main import app
 from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
@@ -32,8 +33,8 @@ def isolated_telemetry_spool(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client():
-    from api_service.main import _health_cache, _rate_limit_records
     from api_service.config import settings
+    from api_service.main import _health_cache, _rate_limit_records
     _rate_limit_records.clear()
     _health_cache["checked_at"] = 0.0
     original_read_token = settings.READ_TOKEN
@@ -498,7 +499,7 @@ def test_detect_reports_inference_failure_as_unavailable(client, monkeypatch):
 
 
 def test_telemetry_does_not_buffer_inference_failures(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     def fail_inference(_payload):
         raise RuntimeError("runtime failure")
@@ -819,6 +820,7 @@ def test_rate_limiter_blocks_excessive_traffic(client, monkeypatch):
 
 def test_rate_limiter_does_not_clear_active_clients_at_capacity():
     import time
+
     from api_service.main import _rate_limit_records, check_rate_limit
 
     now = time.monotonic()
@@ -1119,7 +1121,7 @@ def test_chunked_payload_is_limited_before_buffering():
 
 
 def test_rejected_telemetry_is_not_added_to_fallback_buffer(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: True)
@@ -1148,7 +1150,7 @@ def test_deleted_live_session_tells_the_collector_to_rotate(client, monkeypatch)
 
 
 def test_database_outage_uses_fallback_buffer(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
@@ -1173,7 +1175,7 @@ def test_database_outage_uses_fallback_buffer(client, monkeypatch):
 
 def test_admin_ingestion_pause_returns_retry_without_buffering(client, monkeypatch):
     from api_service.database import DatabaseIngestionPaused
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     def paused_write(_data, _analysis):
         raise DatabaseIngestionPaused(5)
@@ -1190,7 +1192,7 @@ def test_admin_ingestion_pause_returns_retry_without_buffering(client, monkeypat
 
 
 def test_database_write_exception_is_buffered_even_when_ping_is_healthy(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     def fail_write(_data, _analysis):
         raise RuntimeError("primary stepped down")
@@ -1487,9 +1489,9 @@ def test_poisoned_replay_does_not_block_later_events(monkeypatch):
 def test_failed_replay_does_not_evict_newer_event_when_buffer_refills():
     from api_service.main import (
         _requeue_buffered_event,
+        _telemetry_buffer_lock,
         _telemetry_buffer_stats,
         telemetry_buffer,
-        _telemetry_buffer_lock,
     )
 
     newer_events = [{"sessionId": f"new-{index}"} for index in range(telemetry_buffer.maxlen)]
@@ -1541,7 +1543,11 @@ def test_replay_reserves_capacity_for_failed_event(monkeypatch):
 
 def test_admin_delete_does_not_requeue_old_replay(monkeypatch):
     from api_service.database import DatabaseIngestionPaused
-    from api_service.main import _flush_telemetry_buffer, _telemetry_buffer_lock, telemetry_buffer
+    from api_service.main import (
+        _flush_telemetry_buffer,
+        _telemetry_buffer_lock,
+        telemetry_buffer,
+    )
 
     with _telemetry_buffer_lock:
         telemetry_buffer.clear()
@@ -1563,9 +1569,9 @@ def test_admin_delete_does_not_requeue_old_replay(monkeypatch):
 def test_full_telemetry_buffer_rejects_new_event_without_eviction():
     from api_service.main import (
         _buffer_telemetry,
+        _telemetry_buffer_lock,
         _telemetry_buffer_stats,
         telemetry_buffer,
-        _telemetry_buffer_lock,
     )
 
     existing = [{"sessionId": f"old-{index}"} for index in range(telemetry_buffer.maxlen)]
@@ -1584,7 +1590,7 @@ def test_full_telemetry_buffer_rejects_new_event_without_eviction():
 
 
 def test_full_telemetry_buffer_returns_retryable_error(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     monkeypatch.setattr("api_service.database.save_detection_result", lambda _data, _analysis: None)
     monkeypatch.setattr("api_service.database.is_database_ready", lambda: False)
@@ -1608,8 +1614,8 @@ def test_full_telemetry_buffer_returns_retryable_error(client, monkeypatch):
 
 
 def test_delete_requires_admin_token(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
     from api_service.config import settings
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
     original_token = settings.ADMIN_TOKEN
     settings.ADMIN_TOKEN = "test-secret"
     monkeypatch.setattr("api_service.database.delete_all_sessions", lambda: 3)
@@ -1628,7 +1634,7 @@ def test_delete_requires_admin_token(client, monkeypatch):
 
 def test_delete_session_purges_in_memory_data(client, monkeypatch):
     from api_service.config import settings
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     original_token = settings.ADMIN_TOKEN
     settings.ADMIN_TOKEN = "test-secret"
@@ -1648,7 +1654,7 @@ def test_delete_session_purges_in_memory_data(client, monkeypatch):
 
 
 def test_raw_endpoint_does_not_resurrect_missing_db_session(client, monkeypatch):
-    from api_service.main import telemetry_buffer, _telemetry_buffer_lock
+    from api_service.main import _telemetry_buffer_lock, telemetry_buffer
 
     class EmptyDetections:
         def find_one(self, _query, _projection):

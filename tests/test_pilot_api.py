@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from api_service import main, database
+from api_service import database, main
 from api_service.spool import TelemetrySpool
 
 

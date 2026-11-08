@@ -7,8 +7,7 @@ from datetime import datetime, timezone
 
 from pymongo import ReturnDocument
 
-from api_service.database import get_db, _writes_are_blocked
-
+from api_service.database import _writes_are_blocked, get_db
 
 logger = logging.getLogger("bot_detection.research")
 _lock = threading.RLock()

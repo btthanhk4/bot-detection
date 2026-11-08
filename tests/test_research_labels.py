@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
-from api_service import main, research_labels as research
+from api_service import main
+from api_service import research_labels as research
 from api_service.capture import build_capture
 
 

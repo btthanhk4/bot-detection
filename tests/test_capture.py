@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import pytest
 from pymongo.errors import DuplicateKeyError
 
-from api_service.capture import build_capture
 from api_service import database
+from api_service.capture import build_capture
 
 
 def snapshot(payload=None, **overrides):

@@ -5,36 +5,38 @@ import pytest
 import torch
 
 from core_ml.dataset.loader import RealMouseSession
-from core_ml.model_bundle import release_evidence_valid
-from core_ml.models.ensemble import EnsembleBotDetector
-from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
-from core_ml.train import (
-    audit_training_dataset,
-    build_tabular_vector,
-    assign_real_session_splits,
-    deduplicate_real_sessions,
-    evaluate_ensemble_for_release,
-    evaluate_rolling_for_release,
-    predict_lstm_sessions,
-    iter_training_prefixes,
-    iter_training_rolling_windows,
-    iter_training_sampled_windows,
-    publish_model_artifacts,
-    resolve_training_device,
-    resolve_training_indices,
-    train_lstm,
-    validate_release_metrics,
-    validate_rolling_release,
-    validate_explicit_automation_rule,
-    validate_known_release_cases,
-    main as train_main,
-)
 from core_ml.experiments.run_all import (
     experiment_inference_latency,
     get_experiment_indices,
     get_fit_validation_indices,
     to_json_safe,
     truncate_moves,
+)
+from core_ml.model_bundle import release_evidence_valid
+from core_ml.models.ensemble import EnsembleBotDetector
+from core_ml.release_cases import KNOWN_FAILURE_WINDOWS, REGRESSION_CASE_FINGERPRINT
+from core_ml.train import (
+    assign_real_session_splits,
+    audit_training_dataset,
+    build_tabular_vector,
+    deduplicate_real_sessions,
+    evaluate_ensemble_for_release,
+    evaluate_rolling_for_release,
+    iter_training_prefixes,
+    iter_training_rolling_windows,
+    iter_training_sampled_windows,
+    predict_lstm_sessions,
+    publish_model_artifacts,
+    resolve_training_device,
+    resolve_training_indices,
+    train_lstm,
+    validate_explicit_automation_rule,
+    validate_known_release_cases,
+    validate_release_metrics,
+    validate_rolling_release,
+)
+from core_ml.train import (
+    main as train_main,
 )
 
 

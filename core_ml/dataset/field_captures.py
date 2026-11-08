@@ -5,8 +5,11 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from core_ml.features.interaction_features import (
+    MAX_SCROLL_EVENTS,
+    sanitize_scroll_events,
+)
 from core_ml.features.mouse_features import sanitize_mouse_records
-from core_ml.features.interaction_features import MAX_SCROLL_EVENTS, sanitize_scroll_events
 
 
 @dataclass(frozen=True)

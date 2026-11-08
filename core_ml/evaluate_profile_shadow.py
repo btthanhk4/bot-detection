@@ -7,7 +7,10 @@ from pathlib import Path
 
 from core_ml.dataset.field_captures import load_bot_captures, load_human_captures
 from core_ml.evaluate import _load_detector
-from core_ml.features.profile_consistency import PROFILE_ANALYSIS_VERSION, analyze_profile_consistency
+from core_ml.features.profile_consistency import (
+    PROFILE_ANALYSIS_VERSION,
+    analyze_profile_consistency,
+)
 from core_ml.train import PRODUCTION_DECISION_THRESHOLD
 
 

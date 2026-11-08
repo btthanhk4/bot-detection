@@ -9,20 +9,22 @@ Dataset Loader & Synthetic Telemetry Generator (Optimized v3)
 - Sliding window chunking for LSTM input preparation
 """
 
+import hashlib
 import json
 import logging
 import math
 import os
 import random
 import re
-import hashlib
 from dataclasses import dataclass
+
+from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, rolling_windows
 from core_ml.features.mouse_features import (
     prefix_through_moves,
+)
+from core_ml.features.mouse_features import (
     records_to_chunks as _canonical_records_to_chunks,
 )
-from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, rolling_windows
-
 
 logger = logging.getLogger("bot_detection.dataset")
 

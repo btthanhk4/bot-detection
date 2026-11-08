@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from core_ml.dataset.export_captures import verify_export
-from core_ml.features.mouse_features import sanitize_mouse_records, records_to_chunks
+from core_ml.features.mouse_features import records_to_chunks, sanitize_mouse_records
 
 
 def load_manual_training_runs(directory, *, allow_weak_labels=False):

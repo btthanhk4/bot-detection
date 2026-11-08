@@ -15,32 +15,45 @@ import re
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
 from contextlib import asynccontextmanager, suppress
-from typing import Optional, Dict, Any, List, Literal
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
-from fastapi import BackgroundTasks, Depends, FastAPI, Request, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
-from api_service import auth
-from api_service.config import settings
+from api_service import auth, gateway, geoip, sites
 from api_service.capture import build_capture
-from api_service import gateway, geoip, sites
-from api_service.spool import TelemetrySpool
+from api_service.config import settings
 from api_service.research_labels import (
-    delete_research_data, enrich_sessions, register_traffic, set_manual_label, traffic_page,
+    delete_research_data,
+    enrich_sessions,
+    register_traffic,
+    set_manual_label,
+    traffic_page,
 )
-from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
-from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
-from core_ml.model_bundle import ModelBundleError, release_evidence_valid, verify_model_bundle
+from api_service.spool import TelemetrySpool
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES
 from core_ml.features.network import cloud_provider, crawler_operator
-
+from core_ml.model_bundle import (
+    ModelBundleError,
+    release_evidence_valid,
+    verify_model_bundle,
+)
+from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
+from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
+from core_ml.models.tabular_classifier import TabularBotClassifier
 
 logger = logging.getLogger("bot_detection.api")
 
@@ -1451,7 +1464,7 @@ def get_raw_telemetry(session_id: str, user=Depends(require_read_access)):
     Returns the raw telemetry data for a specific session, including mouse records.
     """
     _require_session_visible(user, session_id)
-    from api_service.database import get_db, _sanitize_bson_value
+    from api_service.database import _sanitize_bson_value, get_db
     db = get_db()
     if db is not None:
         try:
@@ -1608,7 +1621,7 @@ def get_session_detail(session_id: str, user=Depends(require_read_access)):
     Includes AI breakdown, fingerprint, botd detectors, mouse stats, and reasons.
     """
     _require_session_visible(user, session_id)
-    from api_service.database import get_db, _sanitize_bson_value
+    from api_service.database import _sanitize_bson_value, get_db
     db = get_db()
     if db is None:
         raise HTTPException(status_code=503, detail="Database unavailable")

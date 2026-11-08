@@ -229,6 +229,7 @@ def test_gateway_secret_comparison():
 @pytest.fixture
 def api(db, monkeypatch):
     from fastapi.testclient import TestClient
+
     from api_service import main
     monkeypatch.setattr(main.settings, "GATEWAY_SECRET", "gw-secret")
     monkeypatch.setattr(main.settings, "PAGEVIEW_HOSTS", [SHOP])
@@ -283,6 +284,7 @@ def test_collector_greeting_links_the_page_view(api, db):
 
 def test_server_context_marks_telemetry_without_a_served_page(api, db, monkeypatch):
     from starlette.requests import Request
+
     from api_service import main
 
     def request(cookie=None, host=SHOP):

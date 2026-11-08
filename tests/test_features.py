@@ -9,16 +9,18 @@ import pytest
 import torch
 
 from core_ml.features.env_features import (
-    extract_env_vector,
-    safe_float,
-    safe_bool,
     FEATURE_NAMES as ENV_FEATURE_NAMES,
 )
+from core_ml.features.env_features import (
+    extract_env_vector,
+    safe_bool,
+    safe_float,
+)
 from core_ml.features.mouse_features import (
+    STATISTICAL_FEATURE_NAMES,
     compute_statistical_features,
     extract_mouse_stat_vector,
     extract_sequential_chunks,
-    STATISTICAL_FEATURE_NAMES,
 )
 
 

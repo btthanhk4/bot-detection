@@ -18,11 +18,14 @@ from sklearn.metrics import (
 
 from core_ml.dataset.loader import load_real_dataset
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
-from core_ml.features.mouse_features import STATISTICAL_FEATURE_NAMES, prefix_through_moves
+from core_ml.features.mouse_features import (
+    STATISTICAL_FEATURE_NAMES,
+    prefix_through_moves,
+)
+from core_ml.model_bundle import verify_model_bundle
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.model_bundle import verify_model_bundle
 from core_ml.train import (
     PRODUCTION_DECISION_THRESHOLD,
     assign_real_session_splits,

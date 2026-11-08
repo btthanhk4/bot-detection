@@ -6,8 +6,8 @@ Fully resilient to None/null fields, malformed types, and missing dictionaries.
 """
 
 import math
-import numpy as np
 
+import numpy as np
 
 FEATURE_NAMES = [
     "heuristic_score",

@@ -173,7 +173,9 @@ def test_playwright_style_sessions_always_trigger():
 
 # ---- Policy 15: typing rhythm and press pressure ----
 from core_ml.features.input_provenance import (  # noqa: E402
-    SYNTHETIC_POINTER_RULE, SYNTHETIC_TYPING_RULE, analyze_typing,
+    SYNTHETIC_POINTER_RULE,
+    SYNTHETIC_TYPING_RULE,
+    analyze_typing,
 )
 from core_ml.release_cases import SYNTHETIC_DEVICE_CASES, _strokes  # noqa: E402
 

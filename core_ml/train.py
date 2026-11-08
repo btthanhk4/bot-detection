@@ -11,15 +11,16 @@ Major improvements:
   7. Full metrics: ROC-AUC, F1, Precision, Recall on val/test sets
 """
 
-import os
-import sys
-import random
+import argparse
 import hashlib
 import json
-import argparse
+import os
+import random
+import sys
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
+
 import numpy as np
 
 # Ensure utf-8 encoding for Windows console
@@ -30,46 +31,40 @@ except Exception:
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score, confusion_matrix
+from sklearn.metrics import (
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
 
-from core_ml.dataset.loader import (
-    RealMouseSession,
-    generate_synthetic_telemetry,
-    load_real_dataset,
-    records_to_chunks,
+from core_ml.collector_windows import (
+    TRAIN_FULL_TRAJECTORY_CHECKPOINTS,
+    export_window,
+    rolling_windows,
 )
 from core_ml.dataset.field_captures import (
     capture_training_windows,
     evaluate_bot_captures,
     load_bot_captures,
 )
-from core_ml.dataset.manual_labels import manual_training_samples
-from core_ml.collector_windows import TRAIN_FULL_TRAJECTORY_CHECKPOINTS, export_window, rolling_windows
-from core_ml.release_cases import (
-    KNOWN_FAILURE_WINDOWS,
-    REGRESSION_CASE_FINGERPRINT,
-    AUTOMATION_EVIDENCE_CASES,
-    AUTOMATION_EVIDENCE_RULE_GATE,
-    DESKTOP_RISK_CASES,
-    DESKTOP_RISK_RULE_GATE,
-    SYNTHETIC_DEVICE_CASES,
-    SYNTHETIC_DEVICE_RULE_GATE,
-    MOBILE_RULE_CASES,
-    MOBILE_RULE_GATE,
-    EXPLICIT_AUTOMATION_RULE_GATE,
-    SYNTHETIC_INPUT_CASES,
-    SYNTHETIC_INPUT_RULE_GATE,
+from core_ml.dataset.loader import (
+    RealMouseSession,
+    generate_synthetic_telemetry,
+    load_real_dataset,
+    records_to_chunks,
 )
+from core_ml.dataset.manual_labels import manual_training_samples
 from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
 from core_ml.features.mouse_features import (
-    extract_sequential_chunks,
-    extract_mouse_stat_vector,
-    prefix_through_moves,
     STATISTICAL_FEATURE_NAMES,
+    extract_mouse_stat_vector,
+    extract_sequential_chunks,
+    prefix_through_moves,
 )
-from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.model_bundle import (
     RELEASE_EARLY_MINIMUM_METRICS,
     RELEASE_MAXIMUM_METRICS,
@@ -77,11 +72,27 @@ from core_ml.model_bundle import (
     file_sha256,
     verify_model_bundle,
 )
+from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.ensemble import (
     DECISION_POLICY_VERSION,
     EnsembleBotDetector,
 )
 from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.release_cases import (
+    AUTOMATION_EVIDENCE_CASES,
+    AUTOMATION_EVIDENCE_RULE_GATE,
+    DESKTOP_RISK_CASES,
+    DESKTOP_RISK_RULE_GATE,
+    EXPLICIT_AUTOMATION_RULE_GATE,
+    KNOWN_FAILURE_WINDOWS,
+    MOBILE_RULE_CASES,
+    MOBILE_RULE_GATE,
+    REGRESSION_CASE_FINGERPRINT,
+    SYNTHETIC_DEVICE_CASES,
+    SYNTHETIC_DEVICE_RULE_GATE,
+    SYNTHETIC_INPUT_CASES,
+    SYNTHETIC_INPUT_RULE_GATE,
+)
 
 # Reproducibility
 SEED = 42

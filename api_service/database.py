@@ -10,17 +10,19 @@ Collections:
   - touch_samples: Opt-in phone/tablet gestures with weak labels, for training
 """
 
-import os
 import json
 import logging
 import math
+import os
 import threading
 import time
 import uuid
 from collections import OrderedDict
-from datetime import datetime, timezone, timedelta
-from typing import Optional, List
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
+
 from pymongo.errors import DuplicateKeyError
+
 from api_service.config import settings
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,

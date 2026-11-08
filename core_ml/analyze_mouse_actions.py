@@ -8,10 +8,11 @@ from pathlib import Path
 from statistics import fmean, pstdev
 
 from core_ml.features.interaction_features import (
-    LOCAL_MOVE_MAX_GAP_MS, MAX_SCROLL_EVENTS, sanitize_scroll_events,
+    LOCAL_MOVE_MAX_GAP_MS,
+    MAX_SCROLL_EVENTS,
+    sanitize_scroll_events,
 )
 from core_ml.features.mouse_features import MAX_MOUSE_RECORDS, sanitize_mouse_records
-
 
 ANALYSIS_VERSION = "mouse_actions_v1"
 MAX_INPUT_EVENTS = 10_000

@@ -5,7 +5,6 @@ from statistics import fmean, median, pstdev
 
 from core_ml.features.mouse_features import MAX_EVENT_TIME, sanitize_mouse_records
 
-
 INTERACTION_FEATURE_VERSION = "interaction_window_v2"
 MAX_SCROLL_EVENTS = 50
 MAX_SCROLL_DELTA = 1_000_000.0

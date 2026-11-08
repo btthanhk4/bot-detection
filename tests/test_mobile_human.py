@@ -6,7 +6,10 @@ import copy
 import pytest
 
 from core_ml.features.automation_evidence import mobile_emulation_fires
-from core_ml.features.mobile_human import MOBILE_HUMAN_MIN_GESTURES, analyze_mobile_human
+from core_ml.features.mobile_human import (
+    MOBILE_HUMAN_MIN_GESTURES,
+    analyze_mobile_human,
+)
 from core_ml.release_cases import MOBILE_RULE_CASES, MOBILE_RULE_GATE
 from core_ml.train import validate_mobile_rules
 

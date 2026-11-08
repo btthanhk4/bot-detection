@@ -7,7 +7,9 @@ from copy import deepcopy
 import pytest
 
 from core_ml.analyze_mouse_actions import (
-    MAX_INPUT_EVENTS, analyze_document, analyze_mouse_actions,
+    MAX_INPUT_EVENTS,
+    analyze_document,
+    analyze_mouse_actions,
 )
 
 

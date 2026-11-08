@@ -13,3 +13,8 @@ node_modules/
 tests/
 bot-lab/
 var/
+# Local tool state (never present in the server's clean checkout)
+.ruff_cache
+.gitnexus
+.claude
+.mcp.json

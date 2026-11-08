@@ -7,7 +7,6 @@ from core_ml.evaluate_profile_shadow import evaluate_profile_captures
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.models.ensemble import EnsembleBotDetector
 
-
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/153.0.0.0"
 
 

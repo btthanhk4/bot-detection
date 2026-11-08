@@ -7,9 +7,15 @@ from bson.int64 import Int64
 
 from api_service.capture import build_capture
 from core_ml.dataset.export_captures import (
-    capture_row, export_captures, utc_milliseconds, verify_export,
+    capture_row,
+    export_captures,
+    utc_milliseconds,
+    verify_export,
 )
-from core_ml.dataset.manual_labels import load_manual_training_runs, manual_training_samples
+from core_ml.dataset.manual_labels import (
+    load_manual_training_runs,
+    manual_training_samples,
+)
 
 
 def snapshot(sequence=0, **overrides):

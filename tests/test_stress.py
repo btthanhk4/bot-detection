@@ -14,7 +14,6 @@ from api_service.config import settings
 from api_service.main import app
 from core_ml.dataset.loader import generate_synthetic_telemetry
 
-
 NUM_REQUESTS = 400
 CONCURRENCY = 8
 

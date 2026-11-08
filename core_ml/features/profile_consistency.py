@@ -2,7 +2,6 @@
 
 import re
 
-
 PROFILE_ANALYSIS_VERSION = "profile_consistency_v1"
 
 

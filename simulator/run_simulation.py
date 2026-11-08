@@ -4,10 +4,11 @@ Generates both API-level simulated traffic and real browser Playwright traffic
 to evaluate the multi-modal bot detection model.
 """
 
-import os
 import argparse
+import os
 import sys
 import time
+
 import requests
 
 try:

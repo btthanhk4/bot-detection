@@ -12,7 +12,12 @@ import threading
 
 import numpy as np
 
-from core_ml.features.touch import MODEL_FEATURES, feature_vector, gesture_features, sanitize_gestures
+from core_ml.features.touch import (
+    MODEL_FEATURES,
+    feature_vector,
+    gesture_features,
+    sanitize_gestures,
+)
 
 logger = logging.getLogger(__name__)
 

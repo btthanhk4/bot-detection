@@ -8,11 +8,10 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 SOURCE_DIRS = {"api_service", "core_ml", "collector", "pilot", "tests", "docs", "simulator", ".github"}
 SOURCE_ROOT_FILES = {"README.md", "EXPERIMENT_REPORT.md", "Dockerfile", ".dockerignore", ".gitignore",
                      ".env.example", ".env.pilot.example", "docker-compose.yml", "docker-compose.pilot.yml",
-                     "requirements.txt", "requirements-dev.txt", "requirements-colab.txt", "LICENSE"}
+                     "requirements.txt", "requirements-dev.txt", "requirements-colab.txt", "ruff.toml", "LICENSE"}
 EXCLUDED_PARTS = {"node_modules", "__pycache__", ".git", ".gitnexus", "var", ".pytest_cache", ".ruff_cache"}
 
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from pymongo.errors import DuplicateKeyError
+
 from api_service.database import (
     _ensure_indexes,
     delete_all_sessions,
@@ -208,6 +209,7 @@ def test_delete_all_keeps_fail_closed_block_when_delete_fails(monkeypatch):
 
 def test_save_reports_admin_ingestion_pause_as_retryable(monkeypatch):
     from datetime import datetime, timedelta, timezone
+
     from api_service.database import DatabaseIngestionPaused
 
     blocked_until = datetime.now(timezone.utc) + timedelta(seconds=5)

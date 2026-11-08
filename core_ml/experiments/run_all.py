@@ -13,13 +13,14 @@ Runs all 9 priority experiments from scope analysis:
   E9: Power User Stress Test
 """
 
+import argparse
+import hashlib
+import json
 import os
+import random
 import sys
 import time
-import random
-import json
-import hashlib
-import argparse
+
 import numpy as np
 
 try:
@@ -28,7 +29,13 @@ except Exception:
     pass
 
 import torch
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score, roc_curve
+from sklearn.metrics import (
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+)
 from sklearn.model_selection import train_test_split
 
 from core_ml.dataset.loader import (
@@ -36,15 +43,16 @@ from core_ml.dataset.loader import (
     load_real_dataset,
     records_to_chunks,
 )
-from core_ml.features.env_features import extract_env_vector, FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.env_features import FEATURE_NAMES as ENV_FEATURE_NAMES
+from core_ml.features.env_features import extract_env_vector
 from core_ml.features.mouse_features import (
+    STATISTICAL_FEATURE_NAMES,
     compute_statistical_features,
     extract_mouse_stat_vector,
-    STATISTICAL_FEATURE_NAMES,
 )
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
-from core_ml.train import deduplicate_real_sessions, assign_real_session_splits
+from core_ml.train import assign_real_session_splits, deduplicate_real_sessions
 
 SEED = 42
 random.seed(SEED)

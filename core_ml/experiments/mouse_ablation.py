@@ -16,13 +16,17 @@ from core_ml.evaluate import _load_detector
 from core_ml.features.env_features import FEATURE_NAMES as ENV_NAMES
 from core_ml.features.interaction_features import extract_interaction_features
 from core_ml.features.mouse_features import (
-    STATISTICAL_FEATURE_NAMES, extract_mouse_stat_vector, sanitize_mouse_records,
+    STATISTICAL_FEATURE_NAMES,
+    extract_mouse_stat_vector,
+    sanitize_mouse_records,
 )
 from core_ml.train import (
-    PRODUCTION_DECISION_THRESHOLD, PRODUCTION_SUSPECT_THRESHOLD,
-    assign_real_session_splits, deduplicate_real_sessions, records_signature,
+    PRODUCTION_DECISION_THRESHOLD,
+    PRODUCTION_SUSPECT_THRESHOLD,
+    assign_real_session_splits,
+    deduplicate_real_sessions,
+    records_signature,
 )
-
 
 LOCAL_NAMES = (
     "move_window_speed_cv_min", "move_window_speed_cv_median",

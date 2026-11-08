@@ -11,7 +11,6 @@ from pathlib import Path
 
 from pymongo import MongoClient
 
-
 EXPORT_SCHEMA = "datacat-research-export-v1"
 LABEL_FIELDS = (
     "run_id", "study_id", "site_id", "label",

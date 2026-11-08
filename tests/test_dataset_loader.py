@@ -2,19 +2,21 @@
 Unit tests for real dataset parsers and synthetic generators.
 """
 
-import pytest
 import json
 import shutil
 import subprocess
 from pathlib import Path
+
 import numpy as np
+import pytest
+
 from core_ml.dataset.loader import (
-    parse_movement_notation,
-    parse_phase2_record,
-    records_to_chunks,
     generate_synthetic_telemetry,
     load_phase2_dataset,
     load_real_dataset,
+    parse_movement_notation,
+    parse_phase2_record,
+    records_to_chunks,
 )
 
 
