@@ -713,6 +713,45 @@ def _bearer(request: Request, header: str) -> str:
     return supplied
 
 
+def _session_site(session_id) -> Optional[dict]:
+    """The site a session was attributed to on its landing page, if any."""
+    from api_service.database import get_db
+    db = get_db()
+    if db is None or not session_id:
+        return None
+    try:
+        doc = db["detection_results"].find_one({"sessionId": session_id}, {"site_id": 1})
+    except Exception:
+        return None
+    return sites.registry.get(doc.get("site_id")) if doc and doc.get("site_id") else None
+
+
+def _resolve_telemetry_site(request: Request, data: dict) -> tuple:
+    """(site, verified) for a telemetry request, refusing pages that are not monitored.
+
+    Telemetry is accepted only from registered pages (or the configured allowlist, or any
+    origin on a local run without either). The Origin header decides; without one, or with
+    "null", a matching Referer and page are accepted but marked unverified. A visitor who
+    landed on a monitored page keeps that page's site on other pages of the same website.
+    """
+    origin = (request.headers.get("origin") or "").strip()
+    lookup = lambda: _session_site(data.get("sessionId"))  # noqa: E731
+    if origin and origin.lower() != "null":
+        allowed, site = sites.registry.origin_decision(
+            origin, settings.TELEMETRY_ALLOWED_ORIGINS, data.get("pageUrl"), session_site=lookup)
+        verified = True
+    else:
+        allowed, site = sites.registry.unverified_decision(
+            request.headers.get("referer"), data.get("pageUrl"), settings.TELEMETRY_ALLOWED_ORIGINS,
+            session_site=lookup)
+        verified = False
+    if not allowed:
+        if site is not None:
+            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
+        raise HTTPException(status_code=403, detail="This page is not registered for monitoring")
+    return site, verified and site is not None
+
+
 def _require_allowed_origin(request: Request, page_url=None) -> Optional[dict]:
     """Reject browsers posting from pages that are not monitored; return the page's site.
 
@@ -1045,7 +1084,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         raise HTTPException(status_code=422, detail=detail)
     if not data.get("sessionId"):
         raise HTTPException(status_code=422, detail="sessionId is required")
-    site = _require_allowed_origin(request, data.get("pageUrl"))
+    site, site_verified = _resolve_telemetry_site(request, data)
     if data.get("action") == "hello":
         # Collector >= 1.10 greets the API as soon as it loads, before fingerprinting,
         # so the gateway can tell a page that runs it from one that never does.
@@ -1075,13 +1114,6 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
             )
         except (ValueError, OverflowError, RecursionError) as exc:
             raise HTTPException(status_code=422, detail="Telemetry cannot be captured as finite JSON") from exc
-    site_verified = site is not None
-    if site is None and not request.headers.get("origin"):
-        # No Origin: a script, or a browser behind a proxy that strips it. A Referer and page
-        # that agree on a registered site keep the session there, marked unverified.
-        site = sites.registry.for_unverified_page(request.headers.get("referer"), data.get("pageUrl"))
-        if site is not None and site.get("status") != "active":
-            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
     if site is not None:
         data["_site_id"] = site["site_id"]
         if not site_verified:

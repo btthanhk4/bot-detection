@@ -106,6 +106,25 @@ def page_path(page_url) -> str:
         return ""
 
 
+def origin_key(origin) -> str:
+    """What makes two origins the same website: host and non-default port. The scheme and a
+    leading 'www.' are ignored, so a site registered as 'shop.vn' also matches pages served as
+    http://shop.vn or https://www.shop.vn (a common reason for silently lost telemetry)."""
+    try:
+        parts = urlsplit(normalize_origin(origin))
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").rstrip(".").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host + (f":{parts.port}" if parts.port else "")
+
+
+def scope_key(scope: str) -> str:
+    origin, path = split_scope(scope)
+    return origin_key(origin) + path
+
+
 def match_path(paths, path: str):
     """The entry that covers ``path``: its exact page first, then the longest group of pages
     ('/blog/*' covers '/blog' and '/blog/a', not '/blogs'), then the domain (''); None when
@@ -131,9 +150,10 @@ def match_path(paths, path: str):
 def page_url_pattern(scope: str) -> str:
     """Regex for the page URLs an entry covers, for back-filling stored sessions."""
     origin, path = split_scope(scope)
+    host = r"https?://(www\.)?" + re.escape(origin_key(origin))
     if path.endswith(WILDCARD):
-        return "^" + re.escape(origin + path[:-len(WILDCARD)]) + r"([/?#]|$)"
-    return "^" + re.escape(origin + path) + (r"/?([?#]|$)" if path else r"([/?#]|$)")
+        return "^" + host + re.escape(path[:-len(WILDCARD)]) + r"([/?#]|$)"
+    return "^" + host + re.escape(path) + (r"/?([?#]|$)" if path else r"([/?#]|$)")
 
 
 def origin_host(origin: str) -> str:
@@ -164,7 +184,6 @@ class SiteRegistry:
         self._lock = threading.Lock()
         self._sites = {}
         self._by_origin = {}
-        self._by_host = {}
 
     def reload(self, db) -> bool:
         if db is None:
@@ -175,17 +194,16 @@ class SiteRegistry:
             # Keep serving the last good snapshot through a database hiccup.
             return False
         sites = {row["site_id"]: row for row in rows if row.get("site_id")}
-        by_origin, by_host = {}, {}
+        by_origin = {}
         for row in sites.values():
             for scope in row.get("origins") or []:
                 try:
                     origin, path = split_scope(scope)
                 except ValueError:
                     continue
-                by_origin.setdefault(origin, []).append((path, row))
-                by_host.setdefault(origin_host(origin), []).append((path, row))
+                by_origin.setdefault(origin_key(origin), []).append((path, row))
         with self._lock:
-            self._sites, self._by_origin, self._by_host = sites, by_origin, by_host
+            self._sites, self._by_origin = sites, by_origin
         return True
 
     def sites(self) -> dict:
@@ -195,56 +213,67 @@ class SiteRegistry:
         return self._sites.get(site_id)
 
     def _entries(self, origin) -> list:
-        return self._by_origin.get(str(origin or "").rstrip("/").lower()) or []
+        return self._by_origin.get(origin_key(origin)) or []
 
     def for_page(self, origin: str, page_url=None) -> Optional[dict]:
         """The site of a page on ``origin``. The path comes from the page URL the collector
-        reports, used only when that URL is on the same origin (else: the domain-wide site)."""
+        reports, used only when that URL is on the same website (else: the domain-wide site)."""
         path = ""
-        try:
-            if page_url and normalize_origin(str(page_url).split("?")[0]) == str(origin or "").rstrip("/").lower():
-                path = page_path(page_url)
-        except ValueError:
-            pass
+        if page_url and origin_key(str(page_url).split("?")[0]) == origin_key(origin):
+            path = page_path(page_url)
         return match_path(self._entries(origin), path)
 
     def for_host(self, host: str, path: str = "") -> Optional[dict]:
-        return match_path(self._by_host.get(str(host or "").split(":")[0].lower()) or [], normalize_path(path))
-
-    def for_unverified_page(self, referer, page_url) -> Optional[dict]:
-        """The site of a request without an Origin header whose Referer and reported page name
-        the same registered origin. Any HTTP client can set both, so the attribution is weaker
-        than Origin and callers mark it unverified."""
-        try:
-            origin = normalize_origin(str(referer or "").split("?")[0])
-            if normalize_origin(str(page_url or "").split("?")[0]) != origin:
-                return None
-        except ValueError:
-            return None
-        return self.for_page(origin, page_url)
+        return match_path(self._entries("https://" + str(host or "")), normalize_path(path))
 
     def allows_cors(self, origin: str) -> bool:
         return any(site.get("status") == "active" for _, site in self._entries(origin))
 
-    def origin_decision(self, origin: str, configured, page_url=None) -> tuple:
-        """(allowed, site) for a browser posting telemetry from ``origin``.
+    def _same_website(self, site: Optional[dict], origin) -> bool:
+        key = origin_key(origin)
+        return bool(site) and any(origin_key(scope) == key for scope in site.get("origins") or [])
 
-        No Origin header (a server-side caller) is not judged here. A registered page follows
-        its site's status. Another page of a registered domain is accepted unattributed, so the
-        Websites page can offer it for registration. Otherwise the configured allowlist
-        applies, and with neither an allowlist nor any registered site every origin is
-        accepted (local runs).
+    def origin_decision(self, origin: str, configured, page_url=None, session_site=None) -> tuple:
+        """(allowed, site) for a request from ``origin``; telemetry is accepted only from
+        registered pages.
+
+        * No Origin: not judged here (``/detect`` from a site backend); telemetry goes through
+          ``unverified_decision`` instead.
+        * A registered page follows its site's status (paused: refused).
+        * Another page of a registered website is refused, unless the tab's session already
+          belongs to a site of that website: a visitor who landed on a monitored page and
+          followed a link stays with that page. ``session_site`` is called only then.
+        * Otherwise the configured allowlist applies, and with neither an allowlist nor any
+          registered site every origin is accepted (local runs).
         """
-        origin = str(origin or "").rstrip("/")
+        origin = str(origin or "").strip().rstrip("/")
         if not origin:
             return True, None
-        entries = self._entries(origin)
-        if entries:
+        if self._entries(origin):
             site = self.for_page(origin, page_url)
-            return (site.get("status") == "active", site) if site is not None else (True, None)
+            if site is None:
+                prior = session_site() if callable(session_site) else session_site
+                site = prior if self._same_website(prior, origin) else None
+            if site is not None:
+                return site.get("status") == "active", site
         if origin in (configured or ()):
             return True, None
         return not configured and not self._sites, None
+
+    def unverified_decision(self, referer, page_url, configured, session_site=None) -> tuple:
+        """(allowed, site) for telemetry without a usable Origin (absent, or "null" from a
+        sandboxed or privacy-redirected document). The Referer and the reported page must name
+        the same website, which is then judged like an Origin; any HTTP client can set both, so
+        callers mark the attribution unverified. Neither present or agreeing: refused."""
+        if not configured and not self._sites:
+            return True, None
+        try:
+            origin = normalize_origin(str(referer or "").split("?")[0])
+        except ValueError:
+            return False, None
+        if origin_key(origin) != origin_key(str(page_url or "").split("?")[0]):
+            return False, None
+        return self.origin_decision(origin, configured, page_url, session_site)
 
 
 registry = SiteRegistry()
@@ -267,13 +296,14 @@ def _public(site: dict) -> dict:
 
 
 def _conflicts(db, origins, site_id: Optional[str] = None) -> Optional[tuple]:
-    query = {"origins": {"$in": list(origins)}}
-    if site_id:
-        query["site_id"] = {"$ne": site_id}
-    other = db["sites"].find_one(query, {"site_id": 1, "origins": 1})
-    if other:
-        taken = sorted(set(origins) & set(other.get("origins") or []))
-        return (taken[0] if taken else "", other["site_id"])
+    """(entry, other site id) when an entry is already another site's. Entries compare like
+    traffic is matched: http and https, with and without 'www.', are the same page."""
+    wanted = {scope_key(scope): scope for scope in origins}
+    query = {"site_id": {"$ne": site_id}} if site_id else {}
+    for other in db["sites"].find(query, {"site_id": 1, "origins": 1}):
+        taken = sorted(wanted[key] for key in {scope_key(scope) for scope in other.get("origins") or []} if key in wanted)
+        if taken:
+            return taken[0], other["site_id"]
     return None
 
 
@@ -487,7 +517,7 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
                 origin, path = split_scope(scope)
             except ValueError:
                 continue
-            registered.setdefault(origin, []).append((path, True))
+            registered.setdefault(origin_key(origin), []).append((path, True))
     counts = {}
     for doc in db["detection_results"].find(
             {"site_id": None, "updated_at": {"$gte": now - timedelta(days=7)}, "pageUrl": {"$type": "string"}},
@@ -499,9 +529,9 @@ def unregistered_origins(db, now=None, limit: int = 10, ignore_hosts=()) -> list
         host = origin_host(origin)
         if _bare_host(host) in ignored or _is_ip(host):
             continue
-        if origin in registered:
+        if origin_key(origin) in registered:
             path = page_path(doc["pageUrl"])
-            if match_path(registered[origin], path):
+            if match_path(registered[origin_key(origin)], path):
                 continue
             origin += path
         entry = counts.setdefault(origin, {"origin": origin, "sessions": 0, "last_seen": None})

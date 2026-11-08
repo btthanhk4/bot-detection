@@ -153,6 +153,62 @@ def test_an_origin_belongs_to_one_site(db):
         sites.update_site(db, blog["site_id"], {"origins": [BLOG, SHOP]})
     with pytest.raises(LookupError):
         sites.create_site(db, name="Again", site_id="shop", origins=["https://other.vn"])
+    # http/https and www are the same website, so they are the same page too.
+    sites.create_site(db, name="Page", origins=["uettrk1.com/page1"])
+    for twin in ["http://uettrk1.com/page1", "https://www.uettrk1.com/page1"]:
+        with pytest.raises(LookupError):
+            sites.create_site(db, name="Twin", origins=[twin])
+    sites.create_site(db, name="Other page", origins=["http://www.uettrk1.com/page2"])
+
+
+@pytest.mark.parametrize("origin, page", [
+    ("http://shop.example.vn", "http://shop.example.vn/"),
+    ("https://www.shop.example.vn", "https://www.shop.example.vn/cart"),
+    ("https://shop.example.vn.", "https://shop.example.vn./"),
+    ("https://SHOP.example.vn", "https://SHOP.example.vn/"),
+])
+def test_scheme_www_case_and_trailing_dot_reach_the_same_site(db, origin, page):
+    sites.create_site(db, name="Shop", origins=[SHOP])
+    allowed, site = sites.registry.origin_decision(origin, [], page)
+    assert allowed and site["site_id"] == "shop"
+    assert sites.registry.allows_cors(origin)
+
+
+def test_a_port_is_another_website(db):
+    sites.create_site(db, name="Shop", origins=[SHOP])
+    assert sites.registry.origin_decision("https://shop.example.vn:8443", [], "https://shop.example.vn:8443/") == (False, None)
+
+
+def test_unregistered_pages_continue_the_landing_site_of_the_same_website_only(db):
+    page1 = sites.create_site(db, name="Page 1", origins=["uettrk1.com/page1"])
+    sites.create_site(db, name="Blog", origins=[BLOG])
+    trk = "https://uettrk1.com"
+    # A new visitor on a page nobody registered: refused.
+    assert sites.registry.origin_decision(trk, [], trk + "/cart") == (False, None)
+    # The same session after landing on page 1: kept on page 1.
+    allowed, site = sites.registry.origin_decision(trk, [], trk + "/cart", session_site=page1)
+    assert allowed and site["site_id"] == "page-1"
+    # A session that landed on another website cannot be carried here.
+    blog = sites.registry.get("blog")
+    assert sites.registry.origin_decision(trk, [], trk + "/cart", session_site=lambda: blog) == (False, None)
+    # Paused landing site: refused, and the reason says so.
+    sites.update_site(db, "page-1", {"status": "paused"})
+    allowed, site = sites.registry.origin_decision(trk, [], trk + "/cart", session_site=sites.registry.get("page-1"))
+    assert not allowed and site["site_id"] == "page-1"
+
+
+def test_requests_without_origin(db):
+    # Local runs: nothing registered and nothing configured accepts everything.
+    assert sites.registry.unverified_decision(None, None, []) == (True, None)
+    sites.create_site(db, name="Shop", origins=[SHOP])
+    assert sites.registry.unverified_decision(None, SHOP + "/", []) == (False, None)
+    assert sites.registry.unverified_decision("not a url", SHOP + "/", []) == (False, None)
+    assert sites.registry.unverified_decision(BLOG + "/", SHOP + "/", []) == (False, None)
+    allowed, site = sites.registry.unverified_decision("https://www.shop.example.vn/a?b=1", SHOP + "/x", [])
+    assert allowed and site["site_id"] == "shop"
+    # An allowlisted origin is accepted without a site, as with an Origin header.
+    configured = ["https://silkmoon.datacat.io.vn"]
+    assert sites.registry.unverified_decision(configured[0] + "/", configured[0] + "/", configured) == (True, None)
 
 
 def test_registering_a_site_attributes_its_earlier_sessions(db):
@@ -302,14 +358,16 @@ def test_sessions_are_attributed_by_origin_not_by_the_declared_site(api, db):
     assert api.post("/api/v1/telemetry", json=telemetry("t-shop"), headers={"Origin": SHOP}).status_code == 200
     # Blog's page carrying a tag copied from the shop: still the blog's traffic.
     assert api.post("/api/v1/telemetry", json=telemetry("t-blog"), headers={"Origin": BLOG}).status_code == 200
-    # A configured origin outside the registry, and a server-side caller: unattributed.
+    # A configured origin outside the registry: accepted, unattributed.
     assert api.post("/api/v1/telemetry", json=telemetry("t-silk"),
                     headers={"Origin": "https://silkmoon.datacat.io.vn"}).status_code == 200
-    assert api.post("/api/v1/telemetry", json=telemetry("t-none")).status_code == 200
+    # No Origin and nothing that names a registered page, or a foreign Origin: refused.
+    none = api.post("/api/v1/telemetry", json=telemetry("t-none"))
+    assert (none.status_code, none.json()["detail"]) == (403, "This page is not registered for monitoring")
     rejected = api.post("/api/v1/telemetry", json=telemetry("t-evil"), headers={"Origin": "https://evil.dev"})
     assert rejected.status_code == 403
     owner = {row["sessionId"]: row.get("site_id") for row in db["detection_results"].find()}
-    assert owner == {"t-shop": "shop", "t-blog": "blog", "t-silk": None, "t-none": None}
+    assert owner == {"t-shop": "shop", "t-blog": "blog", "t-silk": None}
     assert db["research_sessions"].find_one({"_id": "t-blog"})["attributed_site_id"] == "blog"
 
     api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
@@ -334,22 +392,26 @@ def test_pages_of_one_domain_are_independent_sites(api, db):
     assert api.post("/api/v1/sites", json={"name": "Dup", "origins": ["https://uettrk1.com/Page2/"]},
                     headers=ADMIN).status_code == 409
     origin = {"Origin": TRK}
-    for session_id, page in [("p1", TRK + "/page1?utm_source=fb"), ("p2", TRK + "/PAGE2/#form"),
-                             ("p2-sub", TRK + "/page2/step-2"), ("p10", TRK + "/page10"), ("root", TRK + "/")]:
+    for session_id, page in [("p1", TRK + "/page1?utm_source=fb"), ("p2", TRK + "/PAGE2/#form")]:
         assert api.post("/api/v1/telemetry", json=page_telemetry(session_id, page), headers=origin).status_code == 200
+    # Pages of the website that are not registered do not send data, the hello included.
+    for session_id, page in [("p2-sub", TRK + "/page2/step-2"), ("p10", TRK + "/page10"), ("root", TRK + "/")]:
+        assert api.post("/api/v1/telemetry", json=page_telemetry(session_id, page), headers=origin).status_code == 403
+    assert api.post("/api/v1/telemetry", json=page_telemetry("p10", TRK + "/page10", action="hello"),
+                    headers=origin).status_code == 403
     owner = {row["sessionId"]: row.get("site_id") for row in db["detection_results"].find()}
-    assert owner == {"p1": "page-1", "p2": "page-2", "p2-sub": None, "p10": None, "root": None}
+    assert owner == {"p1": "page-1", "p2": "page-2"}
     assert db["research_sessions"].find_one({"_id": "p2"})["attributed_site_id"] == "page-2"
-    # Other pages of the domain are offered for registration, page by page.
-    view = sites.overview(db, collector_base="https://api.datacat.io.vn")
-    assert sorted(row["origin"] for row in view["unregistered_origins"]) == [
-        TRK, TRK + "/page10", TRK + "/page2/step-2"]
+    assert sites.overview(db, collector_base="https://api.datacat.io.vn")["unregistered_origins"] == []
 
-    # A visitor who follows a link from page 1 to page 2 stays with page 1, where they landed.
+    # A visitor who follows a link from page 1 to page 2 stays with page 1, where they landed,
+    # and so does one who goes on to a page nobody registered (the cart).
     later = page_telemetry("p1", TRK + "/page2", timestamp=1_800_000_060_000)
     assert api.post("/api/v1/telemetry", json=later, headers=origin).status_code == 200
+    cart = page_telemetry("p1", TRK + "/cart", timestamp=1_800_000_120_000)
+    assert api.post("/api/v1/telemetry", json=cart, headers=origin).status_code == 200
     p1 = db["detection_results"].find_one({"sessionId": "p1"})
-    assert (p1["site_id"], p1["pageUrl"], p1["landing_url"]) == ("page-1", TRK + "/page2", TRK + "/page1?utm_source=fb")
+    assert (p1["site_id"], p1["pageUrl"], p1["landing_url"]) == ("page-1", TRK + "/cart", TRK + "/page1?utm_source=fb")
 
     # A domain-wide site takes the pages no page entry covers.
     api.post("/api/v1/sites", json={"name": "Rest", "origins": ["uettrk1.com"]}, headers=ADMIN)
@@ -380,19 +442,23 @@ def test_a_request_without_origin_keeps_its_site_when_referer_and_page_agree(api
     api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
     assert api.post("/api/v1/telemetry", json=telemetry("r-shop"),
                     headers={"Referer": SHOP + "/products?a=1"}).status_code == 200
-    # Referer and reported page disagree, or the Referer names no registered site: unattributed.
+    # Origin "null" (sandboxed iframe, privacy redirect) is treated like no Origin.
+    assert api.post("/api/v1/telemetry", json=telemetry("r-null"),
+                    headers={"Origin": "null", "Referer": SHOP + "/"}).status_code == 200
+    # Referer and reported page disagree, or name no registered site, or no Referer: refused.
     assert api.post("/api/v1/telemetry", json=telemetry("r-mismatch"),
-                    headers={"Referer": BLOG + "/"}).status_code == 200
+                    headers={"Referer": BLOG + "/"}).status_code == 403
     assert api.post("/api/v1/telemetry", json={**telemetry("r-elsewhere"), "pageUrl": BLOG + "/"},
-                    headers={"Referer": BLOG + "/"}).status_code == 200
+                    headers={"Referer": BLOG + "/"}).status_code == 403
+    assert api.post("/api/v1/telemetry", json=telemetry("r-noref"), headers={"Origin": "null"}).status_code == 403
     # An Origin, when sent, decides alone: a Referer cannot move it to another site.
     assert api.post("/api/v1/telemetry", json=telemetry("r-origin"),
                     headers={"Origin": "https://silkmoon.datacat.io.vn", "Referer": SHOP + "/"}).status_code == 200
     rows = {row["sessionId"]: row for row in db["detection_results"].find()}
     assert (rows["r-shop"]["site_id"], rows["r-shop"]["site_unverified"]) == ("shop", True)
+    assert (rows["r-null"]["site_id"], rows["r-null"]["site_unverified"]) == ("shop", True)
     assert db["research_sessions"].find_one({"_id": "r-shop"})["attributed_site_id"] == "shop"
-    assert {key: rows[key].get("site_id") for key in ("r-mismatch", "r-elsewhere", "r-origin")} == {
-        "r-mismatch": None, "r-elsewhere": None, "r-origin": None}
+    assert set(rows) == {"r-shop", "r-null", "r-origin"} and rows["r-origin"].get("site_id") is None
     assert api.post("/api/v1/telemetry", json=telemetry("t-verified"), headers={"Origin": SHOP}).status_code == 200
     assert db["detection_results"].find_one({"sessionId": "t-verified"})["site_unverified"] is False
 
