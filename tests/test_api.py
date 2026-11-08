@@ -860,7 +860,8 @@ def test_dashboard_uses_only_real_mouse_trajectory(client, monkeypatch):
     assert "!previousBotSessions.has(sessionId)" in res.text
     assert "MAX_TIMELINE_INTERVALS" not in res.text
     assert "suggestedMax: 1" in res.text
-    assert "Không đủ dữ liệu quỹ đạo chuột thô" in res.text
+    # Too few real moves: the trajectory section is left out, nothing is drawn in its place.
+    assert "document.getElementById('dTrajSection').hidden = realRecords.length < 2;" in res.text
     assert "sessionSelectionVersion" in res.text
     assert "models.tabular && models.lstm" in res.text
     assert "Fallback: generate representative trajectory" not in res.text

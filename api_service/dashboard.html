@@ -423,10 +423,13 @@ ol, ul { padding: 0; list-style: none; }
 .label-btn .ui-icon, .view-btn .ui-icon { width: 14px; height: 14px; }
 .label-btn.danger, .delete-btn { color: var(--crit-text); }
 .delete-btn { height: 28px; min-width: 28px; padding: 0 8px; background: transparent; border-color: transparent; border-radius: 6px; }
+.row-actions .delete-btn { color: var(--text-4); }
+.row-actions .delete-btn:hover { color: var(--crit-text); }
+.view-btn.icon-only { padding: 0; width: 28px; justify-content: center; }
 .delete-btn:hover { background: var(--crit-soft); border-color: var(--crit-border); }
 .delete-btn .ui-icon { width: 14px; height: 14px; }
-.delete-all-btn { height: 30px; padding: 0 10px; background: transparent; border-color: transparent; color: var(--crit-text); font-size: 13px; }
-.delete-all-btn:hover { background: var(--crit-soft); border-color: var(--crit-border); }
+.delete-all-btn { height: 30px; padding: 0 10px; background: transparent; border-color: transparent; color: var(--text-3); font-size: 13px; }
+.delete-all-btn:hover { background: var(--crit-soft); border-color: var(--crit-border); color: var(--crit-text); }
 .delete-all-btn .ui-icon { width: 14px; height: 14px; }
 body.read-only .delete-btn, body.read-only .delete-all-btn, body.read-only .admin-only,
 body.read-only .label-btn[onclick*="openLabelDialog"] { display: none !important; }
@@ -510,22 +513,13 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 }
 .alert-icon { display: inline-flex; color: var(--crit-text); }
 .alert-time { margin-left: auto; font: 12.5px var(--font-mono); color: var(--text-3); }
-.mid-grid { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(300px, 1fr); gap: 16px; }
+.mid-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 12.5px; color: var(--text-2); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .chart-legend b { font-weight: 600; color: var(--text); }
 .legend-line { width: 14px; height: 2px; border-radius: 1px; background: var(--key); }
 .legend-square { width: 9px; height: 9px; border-radius: 2px; background: var(--key); }
 .chart-box { position: relative; height: 268px; padding: 14px 16px 12px 8px; }
-.dist { display: flex; flex-direction: column; gap: 16px; padding: 18px 18px 8px; }
-.dist-bar { display: flex; gap: 2px; height: 10px; overflow: hidden; border-radius: 5px; background: var(--surface-active); }
-.dist-bar span { display: block; height: 100%; min-width: 0; background: var(--key); transition: flex-basis 0.3s var(--ease); }
-.dist-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 56px; align-items: center; gap: 10px; padding: 11px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
-.dist-list li:first-child { border-top: 0; }
-.dist-list .name { color: var(--text-2); }
-.dist-list .count { font-weight: 600; color: var(--text); }
-.dist-list .pct { text-align: right; color: var(--text-3); font-size: 12.5px; }
-.dist-foot { padding: 0 18px 16px; font-size: 12px; color: var(--text-3); }
 
 .table-scroll { max-height: 640px; overflow: auto; }
 .traffic-table, .sites-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
@@ -541,7 +535,6 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 .traffic-table tbody tr { cursor: pointer; }
 .traffic-table tbody tr:hover td { background: var(--surface-hover); }
 .traffic-table tbody tr.is-selected td { background: var(--brand-soft); }
-.traffic-table tbody tr.row-bot td:first-child { box-shadow: inset 2px 0 0 var(--v-bot); }
 .traffic-table th:last-child, .traffic-table td:last-child { position: sticky; right: 0; z-index: 1; box-shadow: inset 1px 0 0 var(--border); }
 .traffic-table thead th:last-child { z-index: 3; }
 .traffic-table th:nth-child(1), .traffic-table td:nth-child(1) { width: 64px; }
@@ -720,8 +713,6 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 .report-ip-scroll { max-height: none; }
 .report-ips td:first-child { font: 12.5px var(--font-mono); color: var(--text); }
 .ip-note { display: block; margin-top: 3px; font: 500 11.5px var(--font-sans); color: var(--warn-text); }
-.report-note { max-width: 100ch; font-size: 12.5px; line-height: 1.65; color: var(--text-3); }
-.report-note b { font-weight: 600; color: var(--text-2); }
 
 /* ───────────────────────────── Websites & accounts ───────────────────────────── */
 .sites-table { font-size: 13px; }
@@ -828,7 +819,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 
 /* ───────────────────────────── Responsive ───────────────────────────── */
 @media (max-width: 1280px) {
-  .mid-grid { grid-template-columns: minmax(0, 1fr); }
   .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-grid .panel:first-child { grid-column: 1 / -1; }
 }
@@ -875,7 +865,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface);
   }
   .traffic-table tbody tr:first-child { border-top: 0; }
-  .traffic-table tbody tr.row-bot { box-shadow: inset 3px 0 0 var(--v-bot); }
   .traffic-table tbody tr.is-selected { background: var(--brand-soft); }
   .traffic-table tbody td, .traffic-table tbody tr:hover td, .traffic-table tbody tr.is-selected td {
     display: block; width: auto !important; min-width: 0; padding: 0 !important; border: 0; background: none; box-shadow: none !important;
@@ -1071,7 +1060,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <div class="kpi-card">
       <div class="kpi-label">Tổng phiên</div>
       <div class="kpi-value" id="kpiTotalSessions">0</div>
-      <div class="kpi-extra" id="kpiTotalExtra"></div>
+      <div class="kpi-extra" id="kpiTotalExtra">&nbsp;</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label"><span class="dot human" aria-hidden="true"></span>Người thật</div>
@@ -1079,19 +1068,19 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
       <div class="kpi-extra" id="kpiHumanRate">--</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label"><span class="dot bot" aria-hidden="true"></span>Bot</div>
+      <div class="kpi-label" title="Có bằng chứng tự động hóa rõ ràng"><span class="dot bot" aria-hidden="true"></span>Bot</div>
       <div class="kpi-value" id="kpiBotCount">0</div>
       <div class="kpi-extra" id="kpiBotRate">--</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</div>
+      <div class="kpi-label" title="Có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</div>
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
     </div>
-    <div class="kpi-card staff-only">
-      <div class="kpi-label">Độ trễ suy luận</div>
-      <div class="kpi-value" id="kpiAvgLatency">--</div>
-      <div class="kpi-extra" id="kpiLatencyExtra"></div>
+    <div class="kpi-card">
+      <div class="kpi-label" title="Khách rời trang trước khi có đủ thao tác để đánh giá"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</div>
+      <div class="kpi-value" id="kpiPendingCount">0</div>
+      <div class="kpi-extra" id="kpiPendingRate">--</div>
     </div>
   </div>
 
@@ -1111,16 +1100,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         </div>
       </div>
       <div class="chart-box"><canvas id="timelineChart" role="img" aria-label="Số phiên theo thời gian, chia theo kết luận"></canvas></div>
-    </div>
-    <div class="panel">
-      <div class="panel-header">
-        <div class="panel-title">Phân bố kết luận</div>
-        <span class="panel-meta" id="distTotal"></span>
-      </div>
-      <div class="dist">
-        <div class="dist-bar" id="distBar" role="img" aria-label="Tỉ lệ phiên theo kết luận"></div>
-        <ul class="dist-list" id="distList"></ul>
-      </div>
     </div>
   </div>
 
@@ -1225,11 +1204,11 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     </div>
     <div class="report-print-head"><h2 id="reportTitle">Báo cáo lưu lượng</h2><p id="reportSub"></p></div>
     <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-label">Tổng phiên</div><div class="kpi-value" id="repTotal">--</div><div class="kpi-extra">Phiên bắt đầu trong kỳ</div></div>
+      <div class="kpi-card"><div class="kpi-label">Tổng phiên</div><div class="kpi-value" id="repTotal">--</div><div class="kpi-extra">&nbsp;</div></div>
       <div class="kpi-card"><div class="kpi-label"><span class="dot human" aria-hidden="true"></span>Người thật</div><div class="kpi-value" id="repHuman">--</div><div class="kpi-extra" id="repHumanPct">--</div></div>
-      <div class="kpi-card"><div class="kpi-label"><span class="dot bot" aria-hidden="true"></span>Bot</div><div class="kpi-value" id="repBot">--</div><div class="kpi-extra" id="repBotPct">--</div></div>
-      <div class="kpi-card"><div class="kpi-label"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</div><div class="kpi-value" id="repSuspect">--</div><div class="kpi-extra" id="repSuspectPct">--</div></div>
-      <div class="kpi-card"><div class="kpi-label"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</div><div class="kpi-value" id="repPending">--</div><div class="kpi-extra" id="repPendingPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label" title="Có bằng chứng tự động hóa rõ ràng"><span class="dot bot" aria-hidden="true"></span>Bot</div><div class="kpi-value" id="repBot">--</div><div class="kpi-extra" id="repBotPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label" title="Có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</div><div class="kpi-value" id="repSuspect">--</div><div class="kpi-extra" id="repSuspectPct">--</div></div>
+      <div class="kpi-card"><div class="kpi-label" title="Khách rời trang trước khi có đủ thao tác để đánh giá"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</div><div class="kpi-value" id="repPending">--</div><div class="kpi-extra" id="repPendingPct">--</div></div>
     </div>
     <div class="panel">
       <div class="panel-header"><div class="panel-title"><span id="reportChartTitle">Lưu lượng theo ngày</span></div>
@@ -1253,7 +1232,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         </table>
       </div>
     </div>
-    <p class="report-note"><b>Bot</b>: có bằng chứng tự động hóa rõ ràng. <b>Nghi vấn</b>: có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot, không nên chặn chỉ vì nhãn này. <b>Chưa đủ dữ liệu</b>: khách rời trang trước khi có đủ thao tác để đánh giá. Số liệu tính trên các phiên bắt đầu trong kỳ.</p>
   </section>
 
   <section class="view" id="view-sites" data-title="Trang theo dõi" hidden>
@@ -1284,21 +1262,18 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         </table>
       </div>
     </div>
-    <p class="report-note"><b>Khách hàng</b> chỉ xem được Tổng quan, Live View, Báo cáo và Trang theo dõi của các trang được giao, không sửa được gì. <b>Nhân viên</b> xem được mọi trang. <b>Quản trị viên</b> có toàn quyền. Tài khoản mới dùng mật khẩu tạm và phải đổi ở lần đăng nhập đầu.</p>
   </section>
 
   <section class="view" id="view-system" data-title="Hệ thống" hidden>
     <div class="sys-grid" id="sysGrid">
       <div class="sys-card"><span class="sys-label">Dịch vụ</span><strong id="sysStatus">--</strong><small id="sysStatusNote">--</small></div>
       <div class="sys-card"><span class="sys-label">Cơ sở dữ liệu</span><strong id="sysDb">--</strong><small>MongoDB</small></div>
-      <div class="sys-card"><span class="sys-label">Mô hình suy luận</span><strong id="sysModels">--</strong><small>BiLSTM · XGBoost</small></div>
+      <div class="sys-card"><span class="sys-label">Mô hình suy luận</span><strong id="sysModels">--</strong><small id="sysModelsNote">BiLSTM · XGBoost</small></div>
       <div class="sys-card"><span class="sys-label">Policy quyết định</span><strong id="sysPolicy">--</strong><small id="sysGate">--</small></div>
       <div class="sys-card"><span class="sys-label">Hàng đợi telemetry</span><strong id="sysQueue">--</strong><small id="sysQueueNote">--</small></div>
       <div class="sys-card"><span class="sys-label">Thu thập nghiên cứu</span><strong id="sysCapture">--</strong><small id="sysCaptureNote">--</small></div>
     </div>
-    <div class="panel"><div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-fingerprint"></use></svg>Model bundle</div></div>
-      <div class="sys-detail"><code id="sysBundle">--</code></div></div>
-    <div class="panel"><div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-flag"></use></svg>Đối chiếu độc lập</div></div>
+    <div class="panel" id="referencePanel" hidden><div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-flag"></use></svg>Đối chiếu độc lập</div></div>
       <div class="sys-detail"><div class="reference-strip" aria-label="Đối chiếu Castle">
     <strong>Castle</strong>
     <span id="referenceConnection" class="reference-status" role="status">Chưa cấu hình</span>
@@ -1366,16 +1341,14 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         <div class="verdict-explain" id="dVerdictExplain"></div>
       </div>
 
-      <div class="drawer-section">
+      <div class="drawer-section" id="dTrajSection">
         <div class="drawer-section-title">Quỹ đạo chuột</div>
         <div class="trajectory-canvas-wrapper"><canvas id="trajectoryCanvas" role="img" aria-label="Quỹ đạo chuột của phiên"></canvas></div>
-        <div class="trajectory-info"><span id="trajSession">--</span><span id="trajPoints">--</span></div>
       </div>
 
       <div class="drawer-section">
         <div class="drawer-section-title">Thông tin phiên</div>
         <div class="drawer-grid-2">
-          <div class="drawer-field"><div class="drawer-field-label">Mã phiên</div><div class="drawer-field-value mono" id="dSessionId">--</div></div>
           <div class="drawer-field"><div class="drawer-field-label">Mã khách truy cập</div><div class="drawer-field-value mono" id="dVisitorId">--</div></div>
           <div class="drawer-field"><div class="drawer-field-label">Địa chỉ IP</div><div class="drawer-field-value mono" id="dClientIP">--</div></div>
           <div class="drawer-field"><div class="drawer-field-label">Vị trí</div><div class="drawer-field-value" id="dGeo">--</div></div>
@@ -1403,17 +1376,17 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         <div class="model-detail-card" id="dModelLSTM">
           <div class="model-detail-header"><div class="model-detail-name">BiLSTM · hành vi chuột</div></div>
           <div class="model-detail-bar"><div class="model-detail-track"><div class="model-detail-fill" id="dBarLSTM"></div></div><span class="model-detail-score" id="dScoreLSTM">--</span></div>
-          <div class="model-detail-weight">Trọng số <span id="dWeightLSTM">--</span></div>
+          <div class="model-detail-weight" id="dWeightLSTMRow">Trọng số <span id="dWeightLSTM">--</span></div>
         </div>
         <div class="model-detail-card" id="dModelTab">
           <div class="model-detail-header"><div class="model-detail-name">XGBoost · thống kê chuột</div></div>
           <div class="model-detail-bar"><div class="model-detail-track"><div class="model-detail-fill" id="dBarTab"></div></div><span class="model-detail-score" id="dScoreTab">--</span></div>
-          <div class="model-detail-weight">Trọng số <span id="dWeightTab">--</span></div>
+          <div class="model-detail-weight" id="dWeightTabRow">Trọng số <span id="dWeightTab">--</span></div>
         </div>
         <div class="model-detail-card" id="dModelHeur">
           <div class="model-detail-header"><div class="model-detail-name">Heuristic trình duyệt</div></div>
           <div class="model-detail-bar"><div class="model-detail-track"><div class="model-detail-fill" id="dBarHeur"></div></div><span class="model-detail-score" id="dScoreHeur">--</span></div>
-          <div class="model-detail-weight">Trọng số <span id="dWeightHeur">--</span></div>
+          <div class="model-detail-weight" id="dWeightHeurRow">Trọng số <span id="dWeightHeur">--</span></div>
         </div>
       </div>
 
@@ -1422,7 +1395,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         <div id="dReasonsList" class="drawer-reasons"></div>
       </div>
 
-      <div class="drawer-section">
+      <div class="drawer-section" id="dMouseSection">
         <div class="drawer-section-title" id="dMouseStatsTitle">Chuột</div>
         <div class="drawer-grid-3" id="dMouseStats">
           <div class="drawer-stat-card"><div class="drawer-stat-value" id="dMouseCount">0</div><div class="drawer-stat-label">Điểm chuột</div></div>
@@ -1473,9 +1446,9 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <h2 id="siteDialogTitle">Thêm trang</h2>
     <label>Tên trang<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Landing khuyến mãi Tết"></label>
     <label>Mã trang<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
-      <small class="field-hint" id="siteIdHint">Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.</small></label>
+      <small class="field-hint" id="siteIdHint">Để trống sẽ tự tạo. Không đổi được sau khi tạo.</small></label>
     <label>Địa chỉ trang<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="https://abc.vn/khuyen-mai-tet.html" aria-describedby="siteOriginsHint"></textarea>
-      <small class="field-hint" id="siteOriginsHint">Dán nguyên địa chỉ trang: chỉ đúng trang đó được tính, phần <code>?utm=…</code> và <code>#…</code> được bỏ qua. Mỗi dòng một địa chỉ. Muốn gộp nhiều trang: thêm <code>/*</code> ở cuối (<code>abc.vn/blog/*</code>) hoặc chỉ ghi tên miền (<code>abc.vn</code>) để tính mọi trang.</small></label>
+      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một địa chỉ. Thêm <code>/*</code> để gộp các trang con, hoặc chỉ ghi tên miền để tính cả website.</small></label>
     <label>Cách kết nối<select id="sitePlatform">
         <option value="">Chọn sau</option>
         <option value="gtm">Google Tag Manager</option>
@@ -1496,7 +1469,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 
 <dialog id="snippetDialog" class="label-dialog snippet-dialog" aria-labelledby="snippetTitle">
   <h2 id="snippetTitle">Kết nối website</h2>
-  <p class="connect-lead">Chọn cách website được làm. Mọi cách đều dùng cùng một đoạn mã, chỉ khác chỗ dán.</p>
+  <p class="connect-lead">Website được làm bằng gì?</p>
   <div class="connect-options" id="connectOptions" role="radiogroup" aria-label="Cách kết nối"></div>
   <div class="connect-guide">
     <ol class="install-steps" id="connectSteps"></ol>
@@ -1517,7 +1490,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
   <form id="userForm" onsubmit="saveUser(event)" novalidate>
     <h2 id="userDialogTitle">Thêm tài khoản</h2>
     <label>Tên đăng nhập<input id="userLogin" maxlength="64" autocomplete="off" spellcheck="false" placeholder="vd. ten@congty.vn" aria-describedby="userNameHint">
-      <small class="field-hint" id="userNameHint">3–64 ký tự: chữ, số, . _ - @. Dùng email của khách cho dễ nhớ.</small></label>
+      <small class="field-hint" id="userNameHint">3–64 ký tự: chữ, số, . _ - @</small></label>
     <label>Tên hiển thị<input id="userDisplay" maxlength="80" autocomplete="off" placeholder="vd. Anh Minh – Cửa hàng ABC"></label>
     <label>Vai trò<select id="acctRole">
         <option value="customer">Khách hàng – chỉ xem các trang được giao</option>
@@ -1674,16 +1647,17 @@ function renderSystem(data) {
   const models = (data && data.models_loaded) || {};
   setText('sysModels', data ? (models.lstm && models.tabular ? '2/2 đã nạp' : 'Thiếu mô hình') : '--');
   setText('sysPolicy', data ? 'v' + (data.decision_policy_version || '?') : '--');
-  setText('sysGate', data ? (data.release_gate_evidence_present ? 'Đã kiểm định' : 'Thiếu kiểm định') : '--');
+  setText('sysGate', data ? (data.release_gate_evidence_present ? 'Đã kiểm định' : 'Thiếu kiểm định')
+    + (data.model_bundle_id ? ' · ' + data.model_bundle_id.slice(0, 8) : '') : '--');
+  const gate = document.getElementById('sysGate');
+  if (gate) gate.title = (data && data.model_bundle_id) || '';
   const buffer = (data && data.telemetry_buffer) || null;
   setText('sysQueue', buffer ? buffer.queued + ' / ' + buffer.capacity : '--');
   setText('sysQueueNote', buffer ? 'Đã bỏ: ' + buffer.dropped_total : '--');
   const capture = data && data.research_capture;
   setText('sysCapture', capture ? (capture.enabled ? 'Đang bật' : 'Tắt') : '--');
   setText('sysCaptureNote', capture ? 'Giữ ' + capture.retention_days + ' ngày' : '--');
-  setText('sysBundle', data && data.model_bundle_id ? data.model_bundle_id : '--');
-  setText('sidebarMeta', data ? 'Policy ' + (data.decision_policy_version || '?') + ' · ' +
-    (data.model_bundle_id ? data.model_bundle_id.slice(0, 8) : '--') : 'Không kết nối');
+  setText('sidebarMeta', data ? 'Policy ' + (data.decision_policy_version || '?') : 'Không kết nối');
 }
 
 async function fetchHealth() {
@@ -1756,6 +1730,7 @@ function renderReferenceConnection(integration, failed = false) {
       : integration.mode !== 'live' ? ['Chưa cấu hình', ''] : states[integration.status] || ['Trạng thái không hợp lệ', 'warning'])
     : states.not_configured;
   const el = document.getElementById('referenceConnection');
+  document.getElementById('referencePanel').hidden = !failed && state[0] === 'Chưa cấu hình';
   el.textContent = state[0];
   el.className = 'reference-status ' + state[1];
   document.getElementById('referenceCoverage').textContent = failed ? 'Chưa cập nhật dữ liệu tham chiếu'
@@ -1841,12 +1816,10 @@ function updateLatencyKPI(latency) {
   const avg = Number(latency && latency.avg_ms);
   // No inference since the API started: latency is null, and Number(null) would read as 0 ms.
   if (!latency || !Number.isFinite(avg)) {
-    setText('kpiAvgLatency', '--');
-    setText('kpiLatencyExtra', '');
+    setText('sysModelsNote', 'BiLSTM · XGBoost');
     return;
   }
-  setText('kpiAvgLatency', (avg < 100 ? avg.toFixed(1).replace('.', ',') : Math.round(avg).toLocaleString('vi-VN')) + ' ms');
-  setText('kpiLatencyExtra', `Trung bình · p95 ${Number(latency.p95_ms).toFixed(0)} ms`);
+  setText('sysModelsNote', `BiLSTM · XGBoost · ${avg < 100 ? avg.toFixed(1).replace('.', ',') : Math.round(avg).toLocaleString('vi-VN')} ms`);
 }
 
 function updateClassificationKPIs() {
@@ -1868,21 +1841,23 @@ function updateClassificationKPIs() {
   let total = classificationSummary
     ? classificationSummary.total
     : humans + bots + suspects;
+  // "suspects" from the summary includes the sessions still short of data; they get their own card.
+  let insufficient = classificationSummary ? Math.min(suspects, Number(classificationSummary.insufficient) || 0) : 0;
+  suspects -= insufficient;
   if (classificationSummary && Number.isFinite(registeredTrafficTotal) && registeredTrafficTotal > total) {
-    suspects += registeredTrafficTotal - total;
+    insufficient += registeredTrafficTotal - total;
     total = registeredTrafficTotal;
   }
   const denominator = total || 1;
   animateValue(document.getElementById('kpiTotalSessions'), total);
-  document.getElementById('kpiTotalExtra').textContent = '';
   animateValue(document.getElementById('kpiHumanCount'), humans);
-  document.getElementById('kpiHumanRate').textContent = percentOf(humans, denominator) + ' tổng phiên';
+  setText('kpiHumanRate', percentOf(humans, denominator));
   animateValue(document.getElementById('kpiBotCount'), bots);
-  document.getElementById('kpiBotRate').textContent = percentOf(bots, denominator) + ' tổng phiên';
+  setText('kpiBotRate', percentOf(bots, denominator));
   animateValue(document.getElementById('kpiSuspectCount'), suspects);
-  const insufficient = classificationSummary ? classificationSummary.insufficient || 0 : 0;
-  document.getElementById('kpiSuspectRate').textContent = percentOf(suspects, denominator)
-    + (insufficient > 0 ? ` · ${fmtCount(insufficient)} chưa đủ dữ liệu` : '');
+  setText('kpiSuspectRate', percentOf(suspects, denominator));
+  animateValue(document.getElementById('kpiPendingCount'), insufficient);
+  setText('kpiPendingRate', percentOf(insufficient, denominator));
 }
 
 // ──── Traffic Table (flicker-free) ────
@@ -1970,6 +1945,9 @@ function formatPageLabel(pageUrl) {
 }
 
 // Operating system and kind of device from the user agent the browser reported (or the server saw).
+// "Label: detail." with the detail escaped, or just "Label." when there is none.
+function withDetail(label, detail) { return detail ? `${label}: ${escapeHtml(detail)}.` : label + '.'; }
+
 function describeDevice(s) {
   const ua = String((s.fingerprint || {}).userAgent || s.user_agent || '');
   if (!ua) return { os: '--', kind: '' };
@@ -2101,18 +2079,18 @@ function renderTrafficTable() {
     const rowClass = [verdict.v === 'BOT' && !verdict.deferred ? 'row-bot' : '', s.sessionId === selectedId ? 'is-selected' : '']
       .filter(Boolean).join(' ');
 
-    return `<tr class="${rowClass}" data-idx="${idx}" data-session="${escapeHtml(s.sessionId || '')}" onclick="selectSession(${idx})" title="Bấm để xem chi tiết phiên">
+    return `<tr class="${rowClass}" data-idx="${idx}" data-session="${escapeHtml(s.sessionId || '')}" onclick="selectSession(${idx})">
       <td><span class="num-id">${escapeHtml(s.traffic_number ?? '--')}</span></td>
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span>${geoShort ? `<span class="geo-text" title="${escapeHtml(geoTitle)}">${escapeHtml(geoShort)}</span>` : ''}</td>
-      <td><span class="cell-main">${escapeHtml(device.os)}</span>${device.kind ? `<span class="geo-text">${escapeHtml(device.kind)}</span>` : ''}</td>
+      <td><span class="cell-main"${device.kind ? ` title="${escapeHtml(device.kind)}"` : ''}>${escapeHtml(device.os)}</span>${device.kind === 'Máy tính bảng' && device.os !== 'iPad' ? '<span class="geo-text">Máy tính bảng</span>' : ''}</td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(formatPageLabel(s.pageUrl))}</span>${siteName ? `<span class="geo-text">${escapeHtml(siteName)}</span>` : ''}</td>
       <td><span class="time-text">${escapeHtml(formatDuration(s))}</span></td>
       <td><span class="verdict-badge ${verdict.cls}"${verdict.deferred ? ' title="Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)"' : ''}>${verdict.label}</span></td>
       <td><span class="reason-text" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span></td>
-      <td><div class="risk-cell ${riskLevel}"><span class="risk-meter"><i style="width:${risk == null ? 0 : risk.toFixed(1)}%"></i></span><span class="risk-pct">${risk == null ? '--' : risk.toFixed(1) + '%'}</span></div></td>
+      <td><div class="risk-cell ${riskLevel}"><span class="risk-meter"><i style="width:${risk == null ? 0 : risk.toFixed(1)}%"></i></span><span class="risk-pct">${risk == null ? '--' : fmtPct(risk)}</span></div></td>
       <td><div class="row-actions">
-        <button class="view-btn" type="button" onclick="event.stopPropagation();selectSession(${idx});" title="Xem chi tiết phiên">Chi tiết</button>
+        <button class="view-btn icon-only" type="button" onclick="event.stopPropagation();selectSession(${idx});" title="Xem chi tiết" aria-label="Xem chi tiết phiên"><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button>
         <button class="delete-btn" type="button" onclick="event.stopPropagation();deleteSessionByIndex(${idx})" title="Xóa phiên" aria-label="Xóa phiên"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
       </div></td>
     </tr>`;
@@ -2251,7 +2229,6 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // Traffic numbers count every website: customers see a plain title.
   setText('drawerTitle', s.traffic_number != null && !document.body.classList.contains('role-customer')
     ? 'Phiên #' + s.traffic_number : 'Chi tiết phiên');
-  document.getElementById('dSessionId').textContent = s.sessionId || '--';
   document.getElementById('dVisitorId').textContent = s.visitorId || 'Chưa khởi tạo';
   document.getElementById('dClientIP').textContent = s.client_ip || '--';
   renderGeo(s.geo);
@@ -2337,7 +2314,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const verdictInfo = verdictView({ breakdown: bd, decision_state: dataObj.decision_state, verdict: dataObj.verdict || s.verdict });
   document.getElementById('dVerdictHero').className = 'verdict-hero ' + verdictInfo.hero;
   document.getElementById('dVerdictBadge').textContent = verdictInfo.label;
-  document.getElementById('dBotProb').textContent = riskAvailable ? (prob * 100).toFixed(1) + '%' : '--';
+  document.getElementById('dBotProb').textContent = riskAvailable ? fmtPct(prob * 100) : '--';
   // Phones and rule verdicts have no fused risk score: show the verdict only.
   document.querySelector('#dVerdictHero .verdict-hero-prob').style.display = riskAvailable ? '' : 'none';
 
@@ -2362,13 +2339,13 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
         'detectors.chromeDriverGlobal': 'biến ChromeDriver', 'signals.playwrightGlobals': 'biến Playwright',
         'signals.seleniumGlobals': 'biến Selenium', 'detectors.distinctiveProperties': 'thuộc tính tự động hóa',
         'detectors.documentKeys': 'thuộc tính tự động hóa trên document' };
-      explainText = `Dấu vết tự động hóa: ${escapeHtml([...new Set((automationEvidence.markers || []).map(m => MARKER_LABELS[m] || m))].join(', '))}.`;
+      explainText = withDetail('Dấu vết tự động hóa', [...new Set((automationEvidence.markers || []).map(m => MARKER_LABELS[m] || m))].join(', '));
     } else if (mobileEmulationDecision) {
-      explainText = `Trình duyệt máy tính giả làm điện thoại: ${escapeHtml((automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '))}.`;
+      explainText = withDetail('Trình duyệt máy tính giả làm điện thoại', (automationEvidence.mobile_emulation || []).map(x => EMULATION_LABELS[x] || x).join('; '));
     } else if (idleCloudDecision) {
       explainText = `Trình duyệt trên máy chủ cloud, không có thao tác trong ${Math.round((automationEvidence.idle_page_ms || 0) / 1000)} giây.`;
     } else if (tamperDecision) {
-      explainText = `Môi trường trình duyệt mâu thuẫn: ${escapeHtml(Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '))}.`;
+      explainText = withDetail('Môi trường trình duyệt mâu thuẫn', Object.keys(automationEvidence.families || {}).map(k => FAMILY_LABELS[k] || k).join('; '));
     } else if (bd.decision_basis === 'touch_automation') {
       explainText = `Autoclick: ${Number(touchInfoForText.autoclick_taps) || 0} lần chạm trùng một điểm theo nhịp đều.`;
     } else if (syntheticDecision && bd.automation_rule === 'synthetic_typing_v1') {
@@ -2432,20 +2409,25 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   barL.style.background = lstmScore > 0.5 ? 'var(--fill-bot)' : 'var(--fill-model)';
   document.getElementById('dScoreLSTM').textContent = bd.has_enough_mouse_data === true
     && bd.behavioral_lstm_score != null && Number.isFinite(Number(bd.behavioral_lstm_score))
-    ? (lstmScore * 100).toFixed(1) + '%' : '--';
+    ? fmtPct(lstmScore * 100) : '--';
   document.getElementById('dWeightLSTM').textContent = riskAvailable ? ((weights.w_lstm || 0) * 100).toFixed(0) + '%' : '--';
 
   const barT = document.getElementById('dBarTab');
   barT.style.width = hasApplicableTabularScore(bd) ? (tabScore * 100) + '%' : '0%';
   barT.style.background = tabScore > 0.5 ? 'var(--fill-bot)' : 'var(--fill-model)';
-  document.getElementById('dScoreTab').textContent = hasApplicableTabularScore(bd) ? (tabScore * 100).toFixed(1) + '%' : '--';
+  document.getElementById('dScoreTab').textContent = hasApplicableTabularScore(bd) ? fmtPct(tabScore * 100) : '--';
   document.getElementById('dWeightTab').textContent = riskAvailable && hasApplicableTabularScore(bd) ? ((weights.w_tabular || 0) * 100).toFixed(0) + '%' : '--';
 
   const barH = document.getElementById('dBarHeur');
   barH.style.width = (heurScore * 100) + '%';
   barH.style.background = heurScore > 0.5 ? 'var(--fill-bot)' : 'var(--fill-model)';
-  document.getElementById('dScoreHeur').textContent = (heurScore * 100).toFixed(1) + '%';
+  document.getElementById('dScoreHeur').textContent = fmtPct(heurScore * 100);
   document.getElementById('dWeightHeur').textContent = riskAvailable ? ((weights.w_heuristic || 0) * 100).toFixed(0) + '%' : '--';
+  // A weight that does not apply is left out instead of shown as "--".
+  ['LSTM', 'Tab', 'Heur'].forEach(key => {
+    document.getElementById('dWeight' + key + 'Row').hidden = document.getElementById('dWeight' + key).textContent === '--'
+      || document.getElementById('dScore' + key).textContent === '--';
+  });
 
   // 4. Detection Reasons (a human verdict needs none; the mouse models do not judge touch)
   const touchOnlySession = Boolean(bd.unsupported_mobile || (bd.mobile_human && bd.mobile_human.device)
@@ -2489,6 +2471,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const mousePts = Number.isFinite(Number(bd.mouse_points))
     ? Number(bd.mouse_points)
     : (dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.move_point_count || 0);
+  // No mouse movement at all: "Thao tác" above already says so, the empty cards add nothing.
+  document.getElementById('dMouseSection').hidden = !touchSession && !mousePts;
   if (!touchSession) {
     document.getElementById('dMouseCount').textContent = mousePts;
     const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
@@ -2576,8 +2560,6 @@ function clearTrajectory(message) {
   ctx.font = `13px ${UI_FONT}`;
   ctx.textAlign = 'center';
   ctx.fillText(message, w / 2, h / 2);
-  setText('trajSession', '--');
-  setText('trajPoints', '--');
 }
 
 function drawTrajectory(s, rawMouse) {
@@ -2599,18 +2581,9 @@ function drawTrajectory(s, rawMouse) {
       });
   }
 
-  setText('trajSession', (s.sessionId || '--').substring(0, 28));
-  setText('trajPoints', realRecords.length === mousePoints
-    ? mousePoints + ' điểm di chuyển'
-    : realRecords.length + ' điểm di chuyển / ' + mousePoints + ' sự kiện');
-
-  if (realRecords.length < 2) {
-    ctx.fillStyle = cssVar('--text-muted');
-    ctx.font = `13px ${UI_FONT}`;
-    ctx.textAlign = 'center';
-    ctx.fillText('Không đủ dữ liệu quỹ đạo chuột thô', w / 2, h / 2);
-    return;
-  }
+  // Nothing to draw: leave the section out rather than show an empty grid.
+  document.getElementById('dTrajSection').hidden = realRecords.length < 2;
+  if (realRecords.length < 2) return;
 
   // Draw only the latest stored move records and preserve their geometric proportions.
   const records = realRecords.slice(-120);
@@ -2677,26 +2650,6 @@ function drawTrajectory(s, rawMouse) {
   };
   label('Bắt đầu', start);
   label('Kết thúc', last);
-}
-
-// ──── Verdict distribution: one stacked bar plus the numbers ────
-const DIST_ROWS = [
-  ['humans', 'Người thật', '--fill-human'],
-  ['suspectsOnly', 'Nghi vấn', '--fill-suspect'],
-  ['insufficient', 'Chưa đủ dữ liệu', '--fill-pending'],
-  ['bots', 'Bot', '--fill-bot'],
-];
-function renderDistribution(humans, bots, suspects, insufficient) {
-  const counts = { humans, bots, insufficient, suspectsOnly: Math.max(0, suspects - insufficient) };
-  const total = humans + bots + suspects;
-  setText('distTotal', total ? fmtCount(total) + ' phiên' : '');
-  const bar = document.getElementById('distBar');
-  bar.innerHTML = total ? DIST_ROWS.filter(([key]) => counts[key] > 0)
-    .map(([key, , token]) => `<span style="flex: ${counts[key]} 0 0; --key: var(${token})"></span>`).join('') : '';
-  bar.setAttribute('aria-label', DIST_ROWS.map(([key, label]) => `${label} ${counts[key]}`).join(', '));
-  document.getElementById('distList').innerHTML = DIST_ROWS.map(([key, label, token]) => `<li>
-      <span class="dot" style="--dot: var(${token})" aria-hidden="true"></span><span class="name">${label}</span>
-      <span class="count">${fmtCount(counts[key])}</span><span class="pct">${percentOf(counts[key], total)}</span></li>`).join('');
 }
 
 // Shared tooltip look: dark chip, value first, short line keys instead of boxes.
@@ -2841,7 +2794,6 @@ function updateCharts() {
       else suspects++;
     });
   }
-  renderDistribution(humans, bots, suspects, Number(classificationSummary?.insufficient) || 0);
 
   const buckets = trafficTimeline && Array.isArray(trafficTimeline.buckets)
     ? trafficTimeline.buckets
@@ -3700,8 +3652,7 @@ function openSiteDialog(site = null, origin = '') {
   idInput.value = site ? site.site_id : '';
   idInput.disabled = Boolean(site);
   idInput.placeholder = site ? '' : slugPreview(document.getElementById('siteName').value) || 'tu-tao-tu-ten';
-  setText('siteIdHint', site ? 'Mã nằm trong đoạn mã cài đặt nên không đổi được.'
-    : 'Để trống để tự tạo từ tên. Mã nằm trong đoạn mã cài đặt nên không đổi được sau khi tạo.');
+  setText('siteIdHint', site ? 'Không đổi được sau khi tạo.' : 'Để trống sẽ tự tạo. Không đổi được sau khi tạo.');
   document.getElementById('siteOrigins').value = site ? site.origins.join('\n') : origin;
   document.getElementById('siteContact').value = site ? site.contact || '' : '';
   document.getElementById('siteNotes').value = site ? site.notes || '' : '';
@@ -3899,8 +3850,7 @@ function openSnippet(site) {
   document.getElementById('connectOptions').innerHTML = PLATFORM_ORDER.map(key => `
     <button type="button" class="connect-option" role="radio" data-platform="${key}">
       <strong>${PLATFORM_GUIDES[key].label}</strong><small>${PLATFORM_GUIDES[key].hint}</small></button>`).join('');
-  setText('snippetDomains', 'Chỉ nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', ') +
-    '. Trang khác, kể cả cùng tên miền, không được tính vào mục này dù dùng cùng đoạn mã.');
+  setText('snippetDomains', 'Nhận dữ liệu từ: ' + site.origins.map(o => o.replace(/^https:\/\//, '')).join(', '));
   renderConnection(site.platform || 'gtm');
   document.getElementById('snippetDialog').showModal();
   document.querySelector('#connectOptions [aria-checked="true"]').focus();
@@ -4024,6 +3974,8 @@ function countryName(row) {
 }
 
 function percentOf(part, total) { return total ? (part / total * 100).toFixed(1).replace('.', ',') + '%' : '--'; }
+// Scores read as whole percentages; one decimal only below 10 so 0,4% does not show as 0%.
+function fmtPct(value) { const v = Number(value); return v > 0 && v < 10 ? v.toFixed(1).replace('.', ',') + '%' : Math.round(v) + '%'; }
 
 function formatDateTime(ms) { return ms ? new Date(ms).toLocaleString('vi-VN', { hour12: false }) : '--'; }
 
@@ -4108,7 +4060,9 @@ function renderReport(data) {
   setText('repBot', fmtCount(t.bot)); setText('repBotPct', percentOf(t.bot, t.sessions));
   setText('repSuspect', fmtCount(t.suspect)); setText('repSuspectPct', percentOf(t.suspect, t.sessions));
   setText('repPending', fmtCount(t.insufficient)); setText('repPendingPct', percentOf(t.insufficient, t.sessions));
-  const range = formatDateTime(data.period.from) + ' – ' + formatDateTime(data.period.to);
+  const day = (ms) => new Date(ms).toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric', year: 'numeric' });
+  const range = reportDays === 1 ? formatDateTime(data.period.from) + ' – ' + formatDateTime(data.period.to)
+    : day(data.period.from) + ' – ' + day(data.period.to);
   setText('reportRange', range);
   const scope = selectedSite ? siteLabel(selectedSite) : 'Tất cả trang';
   setText('reportTitle', 'Báo cáo lưu lượng · ' + scope);
