@@ -3548,7 +3548,23 @@ function slugPreview(name) {
 function siteLabel(siteId) {
   if (siteId === '_none') return 'Chưa gán trang';
   const site = sitesData && sitesData.sites.find(s => s.site_id === siteId);
-  return site ? site.name : siteId + ' (đã xóa)';
+  if (site) return site.name;
+  if (sitesData && sitesData.removed_sites.some(s => s.site_id === siteId)) return siteId + ' (đã xóa)';
+  // A page added since this list was loaded (by someone else, or in another tab): fetch it.
+  refreshSitesForUnknown();
+  return siteId;
+}
+
+let sitesRefreshPending = false;
+function refreshSitesForUnknown() {
+  if (sitesRefreshPending) return;
+  sitesRefreshPending = true;
+  loadSites().finally(() => {
+    _lastTableHTML = '';
+    renderTrafficTable();
+    // Retry later rather than on every render if the page is still unknown.
+    setTimeout(() => { sitesRefreshPending = false; }, SITES_POLL_MS);
+  });
 }
 
 function syncSitePicker() {
