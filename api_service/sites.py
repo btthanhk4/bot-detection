@@ -70,7 +70,20 @@ def normalize_path(path) -> str:
     """URL path compared case-insensitively, percent-encoded as browsers send it, without a
     trailing slash ('' for the root)."""
     path = quote(unquote(str(path or "")), safe="/-._~!$&'()*+,;=:@").lower()
-    return re.sub(r"/{2,}", "/", path).rstrip("/")
+    return directory_page(re.sub(r"/{2,}", "/", path).rstrip("/"))
+
+
+# A directory and its index file are one page: ads link to '/lander/' while the page was
+# registered as '/lander/index.html' (or the reverse). The site root keeps '/index.html', so
+# registering a home page this way never widens to the whole domain.
+_DIRECTORY_INDEX = re.compile(r"/(index|default)\.(html?|php|aspx?|jsp)$")
+_DIRECTORY_INDEX_URL = r"(/(index|default)\.(html?|php|aspx?|jsp))?"
+
+
+def directory_page(path: str) -> str:
+    if path.endswith("/*"):
+        return path
+    return _DIRECTORY_INDEX.sub("", path) or path
 
 
 # Entry suffix for a group of pages: 'shop.vn/blog/*' is /blog and every page under it.
@@ -96,7 +109,8 @@ def normalize_scope(value) -> str:
 
 def split_scope(scope: str) -> tuple:
     origin = normalize_origin(scope)
-    return origin, scope[len(origin):]
+    # Entries saved before directory pages were merged may still end in /index.html.
+    return origin, directory_page(scope[len(origin):])
 
 
 def page_path(page_url) -> str:
@@ -153,7 +167,10 @@ def page_url_pattern(scope: str) -> str:
     host = r"https?://(www\.)?" + re.escape(origin_key(origin))
     if path.endswith(WILDCARD):
         return "^" + host + re.escape(path[:-len(WILDCARD)]) + r"([/?#]|$)"
-    return "^" + host + re.escape(path) + (r"/?([?#]|$)" if path else r"([/?#]|$)")
+    if not path:
+        return "^" + host + r"([/?#]|$)"
+    index = "" if _DIRECTORY_INDEX.search(path) else _DIRECTORY_INDEX_URL
+    return "^" + host + re.escape(path) + index + r"/?([?#]|$)"
 
 
 def origin_host(origin: str) -> str:

@@ -761,8 +761,25 @@ def _resolve_telemetry_site(request: Request, data: dict) -> tuple:
     if not allowed:
         if site is not None:
             raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
+        _log_refused_page(origin, data.get("pageUrl"))
         raise HTTPException(status_code=403, detail="This page is not registered for monitoring")
     return site, verified and site is not None
+
+
+_refused_pages: set = set()
+_REFUSED_PAGES_LOGGED = 500
+
+
+def _log_refused_page(origin: str, page_url) -> None:
+    """Log each refused origin + page path once per process, so an operator can see which
+    pages carry the tag without being registered. Query strings are left out."""
+    if len(_refused_pages) >= _REFUSED_PAGES_LOGGED:
+        return
+    key = (origin or "-")[:200], sites.page_path(page_url)[:300]
+    if key in _refused_pages:
+        return
+    _refused_pages.add(key)
+    logger.warning("Telemetry refused for an unregistered page: origin=%s path=%s", *key)
 
 
 def _require_allowed_origin(request: Request, page_url=None) -> Optional[dict]:

@@ -107,6 +107,33 @@ def test_a_page_entry_is_that_page_alone_a_group_covers_its_subpages():
     assert sites.match_path(entries[1:], "") is None
 
 
+@pytest.mark.parametrize("registered", [
+    "https://uettrk1.com/landers/Download/Pinsubmit_BOT/index.html",
+    "https://uettrk1.com/landers/Download/Pinsubmit_BOT/",
+    "uettrk1.com/landers/download/pinsubmit_bot",
+])
+def test_a_directory_and_its_index_file_are_one_page(db, registered):
+    lander = "https://uettrk1.com/landers/Download/Pinsubmit_BOT/"
+    sites.create_site(db, name="Lander", origins=[registered])
+    for page in [lander, lander + "?sub=1", lander + "index.html", lander + "index.htm#x", lander[:-1]]:
+        allowed, site = sites.registry.origin_decision("https://uettrk1.com", [], page)
+        assert allowed and site["site_id"] == "lander", page
+    # Other pages of the folder, and the same folder's sibling, are still separate pages.
+    for page in [lander + "thanks.html", lander + "index.html/x", "https://uettrk1.com/landers/Download/"]:
+        assert sites.registry.origin_decision("https://uettrk1.com", [], page) == (False, None), page
+    with pytest.raises(LookupError):
+        sites.create_site(db, name="Twin", origins=[lander + "index.php"])
+    import re
+    pattern = re.compile(sites.page_url_pattern(sites.normalize_scope(registered)), re.I)
+    assert pattern.match(lander + "index.html?x=1") and pattern.match(lander) and not pattern.match(lander + "a.html")
+
+
+def test_a_site_root_index_file_stays_a_page():
+    assert sites.normalize_scope("shop.vn/index.html") == "https://shop.vn/index.html"
+    assert sites.normalize_scope("shop.vn/blog/index.html") == "https://shop.vn/blog"
+    assert sites.normalize_scope("shop.vn/blog/*") == "https://shop.vn/blog/*"
+
+
 def test_back_fill_patterns_follow_the_entry_kind():
     import re
     page = re.compile(sites.page_url_pattern("https://shop.vn/a.htm"), re.I)
@@ -501,3 +528,17 @@ def test_monitoring_endpoints_filter_by_site(api, db, monkeypatch):
     assert api.get("/api/v1/live", params={"site": "shop"}, headers=READ).status_code == 200
     assert api.get("/api/v1/live/online", params={"site": "shop"}, headers=READ).status_code == 200
     assert api.get("/api/v1/stats/summary", params={"site": "Bad Site!"}, headers=READ).status_code == 422
+
+
+def test_refused_pages_are_logged_once_without_query(api, db, caplog):
+    from api_service import main
+
+    main._refused_pages.clear()
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP + "/sale"]}, headers=ADMIN)
+    body = {**telemetry("log-1"), "pageUrl": SHOP + "/cart?token=secret"}
+    with caplog.at_level("WARNING", logger="bot_detection.api"):
+        for session_id in ("log-1", "log-2"):
+            response = api.post("/api/v1/telemetry", json={**body, "sessionId": session_id}, headers={"Origin": SHOP})
+            assert response.status_code == 403
+    lines = [r.getMessage() for r in caplog.records if "Telemetry refused" in r.getMessage()]
+    assert lines == [f"Telemetry refused for an unregistered page: origin={SHOP} path=/cart"]
