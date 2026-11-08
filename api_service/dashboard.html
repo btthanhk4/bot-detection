@@ -738,10 +738,9 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 /* A full page address wraps inside its chip instead of widening the table. */
 .sites-table .site-domains .domain-chip { display: block; height: auto; padding: 3px 8px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.45; }
 .site-actions { display: flex; justify-content: flex-end; gap: 4px; }
-.unregistered-list { padding: 0 18px 6px; }
-.unregistered-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 11px 0; font-size: 13px; color: var(--text-2); }
-.unregistered-list li + li { border-top: 1px solid var(--border); }
-.unregistered-list strong { font-weight: 550; color: var(--text); overflow-wrap: anywhere; }
+.unassigned-origin { display: flex; align-items: center; gap: 4px; max-width: 100%; }
+.sites-table .site-domains .unassigned-origin .domain-chip { flex: 0 1 auto; min-width: 0; overflow-wrap: break-word; }
+.unassigned-origin .label-btn { flex: 0 0 auto; }
 .must-change-note { padding: 12px 16px; border: 1px solid transparent; border-radius: var(--radius); background: var(--warn-soft); color: var(--text); font-size: 13.5px; font-weight: 500; }
 body.must-change .nav-item:not([data-view="account"]), body.must-change .site-picker, body.must-change .nav-section { display: none !important; }
 .user-sites { margin: 0 0 16px; padding: 10px 12px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
@@ -908,12 +907,11 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
   .sites-table td, .sites-table tr.site-muted td { display: block; padding: 0 !important; border: 0; background: none; }
   .sites-table td.site-name, .sites-table td.site-domains, .sites-table td.site-actions-cell, .sites-table td.empty-state { grid-column: 1 / -1; }
   .sites-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px; font-size: 11.5px; color: var(--text-3); }
-  .sites-table td:empty, .sites-table td.site-domains:has(.muted) { display: none; }
+  .sites-table td:empty, .sites-table td.site-domains:has(.muted),
+  .sites-table tr.site-muted td:empty, .sites-table tr.site-muted td.site-domains:has(.muted) { display: none; }
   .sites-table .num { text-align: left; }
   .site-actions { justify-content: flex-start; flex-wrap: wrap; }
   .domain-list { max-width: none; }
-  .unregistered-list li { grid-template-columns: minmax(0, 1fr) auto; }
-  .unregistered-list li .muted { grid-column: 1 / -1; grid-row: 2; }
   .live-metrics { grid-template-columns: 1fr 1fr; }
   #globeCanvas { height: 380px; }
   .live-map { min-height: 420px; }
@@ -1270,10 +1268,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
           <tbody id="sitesBody"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
-    </div>
-    <div class="panel" id="unregisteredPanel" hidden>
-      <div class="panel-header"><div class="panel-title"><svg class="ui-icon"><use href="#icon-alert"></use></svg>Trang chưa đăng ký</div></div>
-      <ul class="unregistered-list" id="unregisteredList"></ul>
     </div>
   </section>
 
@@ -3534,9 +3528,10 @@ document.getElementById('liveTopLocations').addEventListener('click', (event) =>
 // ──── Websites ────
 // The monitoring views show one website or all; the choice is kept per browser.
 const SITE_STATES = {
-  receiving: ['Đang nhận dữ liệu', 'state-ok'],
-  quiet: ['Không có dữ liệu 24 giờ', 'state-warn'],
-  waiting: ['Chờ cài đặt', 'state-off'],
+  // Three states only: how recent the data is already shows in "Hoạt động gần nhất".
+  receiving: ['Đang hoạt động', 'state-ok'],
+  quiet: ['Đang hoạt động', 'state-ok'],
+  waiting: ['Chưa có dữ liệu', 'state-off'],
   paused: ['Tạm dừng', 'state-off'],
 };
 const SITE_FILTER_RE = /^(_none|[a-z0-9][a-z0-9_-]{0,63})$/;
@@ -3568,7 +3563,7 @@ function slugPreview(name) {
 }
 
 function siteLabel(siteId) {
-  if (siteId === '_none') return 'Không rõ nguồn';
+  if (siteId === '_none') return 'Chưa gán trang';
   const site = sitesData && sitesData.sites.find(s => s.site_id === siteId);
   return site ? site.name : siteId + ' (đã xóa)';
 }
@@ -3581,7 +3576,7 @@ function syncSitePicker() {
   if (sitesData) {
     sitesData.sites.forEach(s => options.push([s.site_id, s.name + (s.status === 'paused' ? ' (tạm dừng)' : '')]));
     sitesData.removed_sites.forEach(s => options.push([s.site_id, s.site_id + ' (đã xóa)']));
-    if (sitesData.sites.length && sitesData.unassigned.sessions > 0) options.push(['_none', 'Không rõ nguồn']);
+    if (sitesData.sites.length && sitesData.unassigned.sessions > 0) options.push(['_none', 'Chưa gán trang']);
   }
   if (selectedSite && !options.some(([value]) => value === selectedSite)) options.push([selectedSite, siteLabel(selectedSite)]);
   select.innerHTML = options.map(([value, label]) =>
@@ -3652,22 +3647,22 @@ function renderSites(data) {
       <td class="site-name"><strong>${escapeHtml(site.site_id)}</strong><span class="site-sub">Đã xóa</span></td>
       <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(site)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="${escapeHtml(site.site_id)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`));
-  // Shown only for current unassigned traffic; with no website registered it would repeat the list below.
-  if (sites.length && data.unassigned.sessions_24h > 0) rows.push(`<tr class="site-muted">
-      <td class="site-name"><strong>Không rõ nguồn</strong><span class="site-sub">Request không cho biết trang nào, thường là công cụ HTTP hoặc bot</span></td>
-      <td class="site-domains"><span class="muted">—</span></td><td></td>${siteStatsCells(data.unassigned)}
+  // One row for every session outside the registered pages, with the addresses they came from
+  // (last 7 days) ready to register, so no session is listed twice on this page.
+  const unregistered = data.unregistered_origins || [];
+  if (data.unassigned.sessions > 0 || unregistered.length) {
+    const addresses = unregistered.map(row => `<span class="unassigned-origin"><span class="domain-chip" title="${escapeHtml(row.origin)} · ${fmtCount(row.sessions)} phiên">${
+      escapeHtml(row.origin.replace(/^https?:\/\//, '')).replace(/([/-])/g, '$1<wbr>')}</span><button class="label-btn admin-only" type="button" data-origin="${escapeHtml(row.origin)}" title="Đăng ký trang này" aria-label="Đăng ký ${escapeHtml(row.origin)}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg></button></span>`).join('');
+    rows.push(`<tr class="site-muted">
+      <td class="site-name"><strong>Chưa gán trang</strong><span class="site-sub">Phiên không thuộc trang nào đã đăng ký</span></td>
+      <td class="site-domains"><div class="domain-list">${addresses || '<span class="muted">—</span>'}</div></td><td></td>${siteStatsCells(data.unassigned)}
       <td class="site-actions-cell"><div class="site-actions"><button class="label-btn" type="button" data-action="traffic" data-site="_none"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button></div></td></tr>`);
+  }
   const empty = !rows.length;
   document.getElementById('sitesTable').classList.toggle('is-empty', empty);
   document.getElementById('sitesBody').innerHTML = empty
     ? '<tr><td colspan="7" class="empty-state">Chưa có trang nào</td></tr>' : rows.join('');
 
-  const unregistered = data.unregistered_origins;
-  document.getElementById('unregisteredPanel').hidden = !unregistered.length;
-  document.getElementById('unregisteredList').innerHTML = unregistered.map(row => `<li>
-      <strong>${escapeHtml(row.origin.replace(/^https:\/\//, ''))}</strong>
-      <span class="muted">${fmtCount(row.sessions)} phiên${row.last_seen ? ' · ' + relativeTime(row.last_seen).toLowerCase() : ''}</span>
-      <button class="label-btn admin-only" type="button" data-origin="${escapeHtml(row.origin)}">Đăng ký</button></li>`).join('');
 }
 
 async function loadSites() {
@@ -3876,7 +3871,7 @@ function connectionSteps(key) {
   const guide = PLATFORM_GUIDES[key];
   const check = guide.check || 'Kiểm tra: mở website, nhấn <b>Ctrl+U</b> và tìm <code>bot-collector.js</code>.';
   return [...guide.steps, check,
-    'Di chuột trên website vài giây. Trạng thái trên DATACAT chuyển sang <b>Đang nhận dữ liệu</b> trong khoảng một phút.'];
+    'Di chuột trên website vài giây. Trạng thái trên DATACAT chuyển sang <b>Đang hoạt động</b> trong khoảng một phút.'];
 }
 
 function renderConnection(key) {
@@ -3983,6 +3978,8 @@ async function siteRequest(siteId, method, body) {
 }
 
 document.getElementById('sitesBody').addEventListener('click', async (event) => {
+  const register = event.target.closest('button[data-origin]');
+  if (register) { openSiteDialog(null, register.dataset.origin); return; }
   const button = event.target.closest('button[data-action]');
   if (!button) return;
   const siteId = button.dataset.site;
@@ -4012,10 +4009,6 @@ document.getElementById('sitesBody').addEventListener('click', async (event) => 
   }
 });
 
-document.getElementById('unregisteredList').addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-origin]');
-  if (button) openSiteDialog(null, button.dataset.origin);
-});
 
 // ──── Reports: one website (or all) over 24 hours, 7 or 30 days ────
 let reportDays = 7;

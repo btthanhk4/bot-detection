@@ -480,8 +480,8 @@ Trang **Website** trên dashboard là nơi đăng ký từng website của khác
 2. Hộp **Kết nối** có 8 cách, mỗi cách kèm các bước riêng: Google Tag Manager, WordPress (plugin
    WPCode), Shopify, Haravan, Sapo, Wix, web tự code (dán trước `</head>` trong file khung chung) và
    máy chủ nginx (`sub_filter` chèn tự động). Cách đã chọn được lưu cho website; nút *Sao chép hướng
-   dẫn để gửi khách* sao chép các bước kèm mã dưới dạng văn bản. Trạng thái chuyển từ *Chờ cài đặt*
-   sang *Đang nhận dữ liệu* khi có phiên đầu tiên.
+   dẫn để gửi khách* sao chép các bước kèm mã dưới dạng văn bản. Trạng thái chuyển từ *Chưa có dữ liệu*
+   sang *Đang hoạt động* khi có phiên đầu tiên.
 3. **Xem traffic** lọc Tổng quan và Live View theo website; bộ chọn website nằm cạnh tiêu đề trang.
 4. Trang **Báo cáo** (24 giờ, 7 hoặc 30 ngày, theo website): tỉ lệ người thật/bot/nghi vấn, biểu đồ theo
    ngày, lý do bị đánh dấu, bot theo quốc gia và nhà mạng, IP bot nhiều nhất (sao chép để chặn), tải CSV
