@@ -621,6 +621,9 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 .model-detail-fill { height: 100%; border-radius: 3px; background: var(--meter); transition: width 0.3s var(--ease); }
 .model-detail-score { width: 56px; text-align: right; font-size: 13.5px; font-weight: 600; color: var(--text); }
 .model-detail-weight { margin-top: 6px; font-size: 12px; color: var(--text-3); }
+.model-detail-card.is-na .model-detail-header { margin-bottom: 0; }
+.model-detail-card.is-na .model-detail-bar { display: none; }
+.model-detail-card.is-na .model-detail-header::after { content: 'Không đủ dữ liệu'; font-size: 12.5px; color: var(--text-3); }
 .drawer-reasons { display: flex; flex-direction: column; }
 .drawer-reason-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--text); }
 .drawer-reason-item:first-child { border-top: 0; padding-top: 0; }
@@ -729,6 +732,9 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 /* A full page address wraps inside its chip instead of widening the table. */
 .sites-table .site-domains .domain-chip { display: block; height: auto; padding: 3px 8px; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.45; }
 .site-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.label-btn.ghost { border-color: transparent; background: transparent; color: var(--text-3); }
+.label-btn.ghost:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.label-btn.ghost.danger:hover:not(:disabled) { background: var(--crit-soft); color: var(--crit-text); }
 .unassigned-origin { display: flex; align-items: center; gap: 4px; max-width: 100%; }
 .sites-table .site-domains .unassigned-origin .domain-chip { flex: 0 1 auto; min-width: 0; overflow-wrap: break-word; }
 .unassigned-origin .label-btn { flex: 0 0 auto; }
@@ -796,6 +802,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .account-card .btn-secondary { width: fit-content; }
 .form-hint { font-size: 12.5px; color: var(--text-3); }
 .form-msg { min-height: 18px; font-size: 13px; }
+.account-card .form-msg:empty { display: none; }
+.account-card .btn-primary { width: fit-content; margin-top: 4px; }
 .form-msg.ok { color: var(--ok-text); }
 .form-msg.err { color: var(--crit-text); }
 
@@ -2445,6 +2453,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   document.getElementById('dWeightHeur').textContent = riskAvailable ? ((weights.w_heuristic || 0) * 100).toFixed(0) + '%' : '--';
   // A weight that does not apply is left out instead of shown as "--".
   ['LSTM', 'Tab', 'Heur'].forEach(key => {
+    document.getElementById('dModel' + key).classList.toggle('is-na', document.getElementById('dScore' + key).textContent === '--');
     document.getElementById('dWeight' + key + 'Row').hidden = document.getElementById('dWeight' + key).textContent === '--'
       || document.getElementById('dScore' + key).textContent === '--';
   });
@@ -2492,7 +2501,9 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     ? Number(bd.mouse_points)
     : (dataObj.mouse_points_captured || s.mouse_points_captured || mouseStats.move_point_count || 0);
   // No mouse movement at all: "Thao tác" above already says so, the empty cards add nothing.
-  document.getElementById('dMouseSection').hidden = !touchSession && !mousePts;
+  const avgSpeed = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
+  const hasShape = avgSpeed || (mouseStats.straightness != null && mousePts >= 2);
+  document.getElementById('dMouseSection').hidden = !touchSession && (!mousePts || !hasShape);
   if (!touchSession) {
     document.getElementById('dMouseCount').textContent = mousePts;
     const avgSpd = mouseStats.mean_speed || mouseStats.avg_speed || mouseStats.avgSpeed || null;
@@ -3583,10 +3594,10 @@ function siteActionButtons(site) {
   const paused = site.status === 'paused';
   return `<div class="site-actions">
     <button class="label-btn" type="button" data-action="traffic" data-site="${id}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>Xem traffic</button>
-    <button class="label-btn" type="button" data-action="snippet" data-site="${id}" title="Cách kết nối" aria-label="Cách kết nối ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg></button>
-    <button class="label-btn admin-only" type="button" data-action="edit" data-site="${id}" title="Sửa" aria-label="Sửa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-pencil"></use></svg></button>
-    <button class="label-btn admin-only" type="button" data-action="toggle" data-site="${id}" title="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'}" aria-label="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'} ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-${paused ? 'play' : 'pause'}"></use></svg></button>
-    <button class="label-btn admin-only danger" type="button" data-action="delete" data-site="${id}" title="Xóa" aria-label="Xóa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
+    <button class="label-btn ghost" type="button" data-action="snippet" data-site="${id}" title="Cách kết nối" aria-label="Cách kết nối ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-code"></use></svg></button>
+    <button class="label-btn ghost admin-only" type="button" data-action="edit" data-site="${id}" title="Sửa" aria-label="Sửa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-pencil"></use></svg></button>
+    <button class="label-btn ghost admin-only" type="button" data-action="toggle" data-site="${id}" title="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'}" aria-label="${paused ? 'Tiếp tục giám sát' : 'Tạm dừng giám sát'} ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-${paused ? 'play' : 'pause'}"></use></svg></button>
+    <button class="label-btn ghost admin-only danger" type="button" data-action="delete" data-site="${id}" title="Xóa" aria-label="Xóa ${name}"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg></button>
   </div>`;
 }
 
