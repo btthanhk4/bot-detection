@@ -811,13 +811,28 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .label-dialog input[type=checkbox] { margin-top: 3px; accent-color: var(--brand); }
 .field-hint { font-size: 12px; font-weight: 400; line-height: 1.45; color: var(--text-3); }
 #labelError, #siteError, #userError { color: var(--crit-text); font-size: 13px; }
+#siteError:empty, #userError:empty { display: none; }
+.label-dialog .field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.label-dialog .field-row label { align-content: start; }
+.label-dialog .optional { margin-left: 4px; font-weight: 400; color: var(--text-4); }
+.form-more { margin: 2px 0 0; }
+.form-more summary { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; font-weight: 500; color: var(--text-2); cursor: pointer; list-style: none; }
+.form-more summary::-webkit-details-marker { display: none; }
+.form-more summary::before { content: ''; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 0.15s var(--ease); }
+.form-more[open] summary::before { transform: rotate(45deg); }
+.form-more summary:hover { color: var(--text); }
+.form-more[open] summary { margin-bottom: 12px; }
 .label-actions {
   display: flex; justify-content: flex-end; gap: 8px; margin: 20px -24px -20px; padding: 14px 24px;
   border-top: 1px solid var(--border); background: var(--surface-2); border-radius: 0 0 12px 12px;
+  position: sticky; bottom: -20px; z-index: 1;
 }
 .label-actions button { height: 34px; }
 
 /* ───────────────────────────── Responsive ───────────────────────────── */
+@media (max-width: 560px) {
+  .label-dialog .field-row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
 @media (max-width: 1280px) {
   .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-grid .panel:first-child { grid-column: 1 / -1; }
@@ -1444,12 +1459,13 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 <dialog id="siteDialog" class="label-dialog" aria-labelledby="siteDialogTitle">
   <form id="siteForm" onsubmit="saveSite(event)" novalidate>
     <h2 id="siteDialogTitle">Thêm trang</h2>
-    <label>Tên trang<input id="siteName" required maxlength="120" autocomplete="off" placeholder="Landing khuyến mãi Tết"></label>
-    <label>Mã trang<input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
-      <small class="field-hint" id="siteIdHint">Để trống sẽ tự tạo. Không đổi được sau khi tạo.</small></label>
-    <label>Địa chỉ trang<textarea id="siteOrigins" required rows="3" spellcheck="false" placeholder="https://abc.vn/khuyen-mai-tet.html" aria-describedby="siteOriginsHint"></textarea>
+    <label>Tên trang<input id="siteName" required maxlength="120" autocomplete="off"></label>
+    <label>Địa chỉ trang<textarea id="siteOrigins" required rows="3" spellcheck="false" aria-describedby="siteOriginsHint"></textarea>
       <small class="field-hint" id="siteOriginsHint">Mỗi dòng một địa chỉ. Thêm <code>/*</code> để gộp các trang con, hoặc chỉ ghi tên miền để tính cả website.</small></label>
-    <label>Cách kết nối<select id="sitePlatform">
+    <div class="field-row">
+    <label><span>Mã trang <span class="optional">tùy chọn</span></span><input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
+      <small class="field-hint" id="siteIdHint">Để trống sẽ tự tạo từ tên.</small></label>
+    <label><span>Cách kết nối</span><select id="sitePlatform">
         <option value="">Chọn sau</option>
         <option value="gtm">Google Tag Manager</option>
         <option value="wordpress">WordPress</option>
@@ -1460,8 +1476,12 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
         <option value="code">Web tự code (HTML, PHP, React…)</option>
         <option value="nginx">Máy chủ nginx (chèn tự động)</option>
       </select></label>
-    <label>Người liên hệ<input id="siteContact" maxlength="200" autocomplete="off" placeholder="Tên, email hoặc số điện thoại"></label>
-    <label>Ghi chú<textarea id="siteNotes" maxlength="2000" rows="2"></textarea></label>
+    </div>
+    <details class="form-more" id="siteMore">
+      <summary>Thông tin thêm</summary>
+      <label>Người liên hệ<input id="siteContact" maxlength="200" autocomplete="off"></label>
+      <label>Ghi chú<textarea id="siteNotes" maxlength="2000" rows="2"></textarea></label>
+    </details>
     <p id="siteError" class="form-msg err" role="alert"></p>
     <div class="label-actions"><button type="button" onclick="document.getElementById('siteDialog').close()">Hủy</button><button type="submit" id="siteSave">Lưu</button></div>
   </form>
@@ -1489,9 +1509,9 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 <dialog id="userDialog" class="label-dialog" aria-labelledby="userDialogTitle">
   <form id="userForm" onsubmit="saveUser(event)" novalidate>
     <h2 id="userDialogTitle">Thêm tài khoản</h2>
-    <label>Tên đăng nhập<input id="userLogin" maxlength="64" autocomplete="off" spellcheck="false" placeholder="vd. ten@congty.vn" aria-describedby="userNameHint">
+    <label>Tên đăng nhập<input id="userLogin" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="userNameHint">
       <small class="field-hint" id="userNameHint">3–64 ký tự: chữ, số, . _ - @</small></label>
-    <label>Tên hiển thị<input id="userDisplay" maxlength="80" autocomplete="off" placeholder="vd. Anh Minh – Cửa hàng ABC"></label>
+    <label>Tên hiển thị<input id="userDisplay" maxlength="80" autocomplete="off"></label>
     <label>Vai trò<select id="acctRole">
         <option value="customer">Khách hàng – chỉ xem các trang được giao</option>
         <option value="viewer">Nhân viên – xem mọi trang</option>
@@ -3651,12 +3671,13 @@ function openSiteDialog(site = null, origin = '') {
   document.getElementById('siteName').value = site ? site.name : (origin ? origin.replace(/^https?:\/\//, '') : '');
   idInput.value = site ? site.site_id : '';
   idInput.disabled = Boolean(site);
-  idInput.placeholder = site ? '' : slugPreview(document.getElementById('siteName').value) || 'tu-tao-tu-ten';
-  setText('siteIdHint', site ? 'Không đổi được sau khi tạo.' : 'Để trống sẽ tự tạo. Không đổi được sau khi tạo.');
+  idInput.placeholder = site ? '' : slugPreview(document.getElementById('siteName').value);
+  setText('siteIdHint', site ? 'Không đổi được sau khi tạo.' : 'Để trống sẽ tự tạo từ tên.');
   document.getElementById('siteOrigins').value = site ? site.origins.join('\n') : origin;
   document.getElementById('siteContact').value = site ? site.contact || '' : '';
   document.getElementById('siteNotes').value = site ? site.notes || '' : '';
   document.getElementById('sitePlatform').value = site ? site.platform || '' : '';
+  document.getElementById('siteMore').open = Boolean(site && (site.contact || site.notes));
   setText('siteError', '');
   document.getElementById('siteSave').disabled = false;
   document.getElementById('siteDialog').showModal();
@@ -3665,7 +3686,8 @@ function openSiteDialog(site = null, origin = '') {
 
 document.getElementById('siteName').addEventListener('input', (event) => {
   const idInput = document.getElementById('siteIdInput');
-  if (!idInput.disabled) idInput.placeholder = slugPreview(event.target.value) || 'tu-tao-tu-ten';
+  // The id that will be generated, shown once there is a name to derive it from.
+  if (!idInput.disabled) idInput.placeholder = slugPreview(event.target.value);
 });
 
 function siteErrorText(status, detail) {
