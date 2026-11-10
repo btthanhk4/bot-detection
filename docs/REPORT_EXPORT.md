@@ -11,18 +11,26 @@ trang đang chọn:
 
 ## Báo cáo PDF
 
-Chỉ có số liệu, thường 2 trang A4. Thứ tự từ trên xuống:
+Mọi thông tin đều ở dạng bảng. Thứ tự từ trên xuống:
 
 1. Logo, tiêu đề, kỳ báo cáo và phạm vi.
 2. Các ô tổng hợp.
 3. So với kỳ trước: kỳ này, kỳ trước, thay đổi. Màu đỏ là thay đổi bất lợi.
 4. Lưu lượng theo ngày (theo giờ với kỳ 24 giờ): biểu đồ cột chồng và bảng.
-5. Nguyên nhân bị đánh dấu.
-6. Nguồn bot: theo quốc gia, theo nhà mạng, theo địa chỉ IP. Cột ghi chú chỉ xuất hiện khi có IP
+5. Theo trang: số phiên theo kết luận của từng trang. Chỉ có khi xem tất cả trang và có từ hai
+   trang trở lên.
+6. Theo thiết bị: số phiên theo kết luận của từng hệ điều hành.
+7. Nguyên nhân bị đánh dấu.
+8. Nguồn bot: theo quốc gia, theo nhà mạng, theo địa chỉ IP. Cột ghi chú chỉ xuất hiện khi có IP
    không nên chặn: crawler đã xác minh, hoặc IP có cả người thật.
-7. Click theo Token 1, khi trang có tham số `clickid` hoặc `t1`.
+9. Click theo Token 1, khi trang có tham số `clickid` hoặc `t1`.
+10. Danh sách click: thời gian, Click ID, Token 1, kết luận, lý do, IP. Mới nhất trước.
+11. Danh sách phiên bot và nghi vấn: thời gian, kết luận, lý do, IP, quốc gia, nhà mạng, thiết bị.
 
-Chân trang chỉ có số trang. Một bảng vừa một trang thì không bị cắt giữa hai trang.
+Hai danh sách cuối in tối đa 1.000 dòng mỗi danh sách. Nếu dài hơn, dòng cuối ghi số dòng còn lại;
+các dòng đó có trong tệp Excel. Danh sách dài được chia sang trang sau và lặp lại dòng tiêu đề.
+
+Chân trang chỉ có số trang.
 
 ## Tệp Excel
 
@@ -30,6 +38,8 @@ Chân trang chỉ có số trang. Một bảng vừa một trang thì không b�
 |---|---|
 | Tóm tắt | Chỉ tiêu kỳ này, kỳ trước, thay đổi |
 | Theo ngày / Theo giờ | Số phiên theo kết luận, dòng Cộng |
+| Theo trang | Số phiên theo kết luận của từng trang (khi xem tất cả trang) |
+| Theo thiết bị | Số phiên theo kết luận của từng hệ điều hành |
 | Nguyên nhân | Nguyên nhân bị đánh dấu, tỉ trọng |
 | IP bot | IP bot nhiều nhất, khuyến nghị; bot theo quốc gia và nhà mạng |
 | Theo Token 1 | Kết luận theo Token 1 (khi có click) |
@@ -42,6 +52,9 @@ Chân trang chỉ có số trang. Một bảng vừa một trang thì không b�
   người xem.
 - Dòng tiêu đề được cố định; bảng dài có bộ lọc.
 - Bảng rộng in ngang trang, vừa một trang chiều ngang. Chân trang có số trang.
+
+PDF và Excel dùng chung danh sách phiên của kỳ (`GET /api/v1/reports/sessions`), chỉ tải một lần
+cho mỗi lần xem báo cáo.
 
 Tệp được tạo ngay trên trình duyệt bằng ExcelJS 4.4.0. Thư viện tải từ jsdelivr ở lần xuất đầu
 tiên, nên server không cần thêm thư viện.

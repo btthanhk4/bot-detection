@@ -1013,7 +1013,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-head-title { text-align: right; }
 .pr-head-title h1 { margin: 0; font-size: 15pt; font-weight: 700; }
 .pr-head-title p { margin: 0.8mm 0 0; color: #4d4b46; font-size: 9pt; }
-.pr-section { margin-top: 7mm; break-inside: avoid; }
+.pr-section { margin-top: 7mm; }
 .pr-section > h2 { margin: 0 0 2.5mm; font-size: 11pt; font-weight: 700; break-after: avoid; }
 .pr-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3mm; margin-top: 6mm; }
 .pr-kpi { padding: 2.5mm 3mm; border: 0.6pt solid #e2e0d9; border-radius: 1.2mm; }
@@ -1040,8 +1040,15 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-legend { display: flex; gap: 5mm; font-size: 8pt; color: #4d4b46; margin-top: 1.5mm; }
 .pr-legend span { display: inline-flex; align-items: center; gap: 1.5mm; }
 .pr-legend i { width: 2.6mm; height: 2.6mm; border-radius: 0.5mm; background: var(--k); display: inline-block; }
-.pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-items: start; margin-bottom: 5mm; }
-.pr-verdict { font-weight: 600; }
+.pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-items: start; margin-bottom: 5mm; break-inside: avoid; }
+.pr-verdict { font-weight: 400; }
+.pr-verdict.bot, .pr-verdict.suspect { font-weight: 600; }
+/* Long lists: smaller type, tighter rows; a long list may span pages (its header repeats). */
+.pr-list { font-size: 7.4pt; break-inside: auto; }
+.pr-list th, .pr-list td { padding: 0.9mm 1.6mm; }
+.pr-list thead th { font-size: 7.2pt; }
+.pr-list .mono { font-size: 7pt; }
+.pr-list td { overflow-wrap: anywhere; }
 .pr-verdict.bot { color: #b42318; } .pr-verdict.suspect { color: #9a6700; }
 
 </style>
@@ -1321,7 +1328,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
       <div class="report-actions">
         <button class="btn-secondary btn-compact" type="button" id="reportXlsx" onclick="exportReportExcel()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>Xuất Excel</span></button>
         <button class="btn-secondary btn-compact" type="button" id="reportCsv" onclick="exportReportCsv()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>Tải CSV</span></button>
-        <button class="btn-primary btn-compact" type="button" onclick="printReport()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-printer"></use></svg>In / Lưu PDF</button>
+        <button class="btn-primary btn-compact" type="button" id="reportPdf" onclick="printReport()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-printer"></use></svg><span>In / Lưu PDF</span></button>
       </div>
     </div>
     <div class="report-print-head"><h2 id="reportTitle">Báo cáo lưu lượng</h2><p id="reportSub"></p></div>
@@ -4684,12 +4691,50 @@ function prChart(timeline, hourly) {
   return svg + '</svg>';
 }
 
-function prTable(head, rows, foot) {
+// Sessions of the period, once per report (the PDF lists and the workbook share them).
+let reportSessionsCache = null;
+async function reportSessions() {
+  const key = [reportDays, selectedSite, reportData && reportData.generated_at].join('|');
+  if (reportSessionsCache && reportSessionsCache.key === key) return reportSessionsCache.data;
+  const data = await fetchJSON(API_BASE + '/api/v1/reports/sessions?days=' + reportDays + siteParam('&'));
+  if (data && Array.isArray(data.sessions)) reportSessionsCache = { key, data };
+  return data;
+}
+
+function prCategory(row) {
+  const bd = row.breakdown || {};
+  if (bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE') return 'insufficient';
+  return { HUMAN: 'human', BOT: 'bot' }[String(row.verdict || '').toUpperCase()] || 'suspect';
+}
+const PR_LABEL = { human: 'Người thật', bot: 'Bot', suspect: 'Nghi vấn', insufficient: 'Chưa đủ dữ liệu' };
+
+// Counts by verdict per group (website, device), largest group first.
+function prGroups(rows, keyOf) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const g = groups.get(key) || { key, sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
+    g.sessions += 1;
+    g[prCategory(row)] += 1;
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.sessions - a.sessions || String(a.key).localeCompare(String(b.key)));
+}
+function prSiteName(row) { return row.site_id ? siteLabel(row.site_id) : 'Chưa gán trang'; }
+function prShortTime(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const two = (n) => String(n).padStart(2, '0');
+  return `${two(d.getDate())}/${two(d.getMonth() + 1)} ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+const PR_LIST_LIMIT = 1000;
+
+function prTable(head, rows, foot, cls = '') {
   const cell = (c, tag) => {
     const [text, cls] = Array.isArray(c) ? c : [c, ''];
     return `<${tag}${cls ? ` class="${cls}"` : ''}>${text}</${tag}>`;
   };
-  return `<table class="pr-table"><thead><tr>${head.map(h => cell(h, 'th')).join('')}</tr></thead>`
+  return `<table class="pr-table${cls ? ' ' + cls : ''}"><thead><tr>${head.map(h => cell(h, 'th')).join('')}</tr></thead>`
     + `<tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => cell(c, 'td')).join('')}</tr>`).join('')
       : `<tr><td colspan="${head.length}" class="muted">Không có dữ liệu</td></tr>`}</tbody>`
     + (foot ? `<tfoot><tr>${foot.map(c => cell(c, 'td')).join('')}</tr></tfoot>` : '') + '</table>';
@@ -4706,7 +4751,7 @@ function prIpTable(rows) {
       ...(withNotes ? [[note(row), 'muted']] : [])]));
 }
 
-function buildPrintReport(data) {
+function buildPrintReport(data, sessions = null) {
   const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
   const hourly = reportDays === 1;
   const flagged = t.bot + t.suspect;
@@ -4738,6 +4783,17 @@ function buildPrintReport(data) {
       ['Cộng', [fmtCount(sum('sessions')), 'n'], [fmtCount(sum('human')), 'n'], [fmtCount(sum('bot')), 'n'], [fmtCount(sum('suspect')), 'n'],
         [fmtCount(sum('insufficient')), 'n'], [prPct(sum('bot'), sum('sessions')), 'n']])}</section>`);
 
+  const rows = sessions && Array.isArray(sessions.sessions) ? sessions.sessions : null;
+  const groupTable = (title, head, groups) => `<section class="pr-section"><h2>${title}</h2>
+    ${prTable([head, ['Phiên', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+      groups.map(g => [escapeHtml(g.key), [fmtCount(g.sessions), 'n'], [fmtCount(g.human), 'n'], [fmtCount(g.bot), 'n'], [fmtCount(g.suspect), 'n'],
+        [fmtCount(g.insufficient), 'n'], [prPct(g.bot, g.sessions), 'n']]))}</section>`;
+  if (rows && !selectedSite) {
+    const bySite = prGroups(rows, prSiteName);
+    if (bySite.length > 1) sections.push(groupTable('Theo trang', 'Trang', bySite));
+  }
+  if (rows && rows.length) sections.push(groupTable('Theo thiết bị', 'Thiết bị', prGroups(rows, r => describeDevice(r).os)));
+
   if ((data.reasons || []).length) {
     const VERDICT = { BOT: ['bot', 'Bot'], SUSPECT: ['suspect', 'Nghi vấn'] };
     sections.push(`<section class="pr-section"><h2>Nguyên nhân bị đánh dấu</h2>
@@ -4768,6 +4824,34 @@ function buildPrintReport(data) {
           [fmtCount(clicks.insufficient), 'n'], [prPct(clicks.bot, clicks.sessions), 'n']])}</section>`);
   }
 
+  if (rows) {
+    const newest = (list) => list.slice().sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+    const more = (list, columns) => (list.length > PR_LIST_LIMIT
+      ? [[`Còn ${fmtCount(list.length - PR_LIST_LIMIT)} dòng trong tệp Excel`, 'muted'], ...Array(columns - 1).fill('')] : null);
+    const verdictCell = (row) => {
+      const kind = prCategory(row);
+      return `<span class="pr-verdict ${kind === 'bot' || kind === 'suspect' ? kind : ''}">${PR_LABEL[kind]}</span>`;
+    };
+    const clickRows = newest(rows.filter(r => r.click_id || r.click_source));
+    if (clickRows.length) {
+      sections.push(`<section class="pr-section"><h2>Danh sách click</h2>
+        ${prTable(['Thời gian', 'Click ID', 'Token 1', 'Kết luận', 'Lý do', 'IP'],
+          clickRows.slice(0, PR_LIST_LIMIT).map(r => [prShortTime(r.created_at), [escapeHtml(r.click_id || ''), 'mono'], [escapeHtml(r.click_source || ''), 'mono'],
+            verdictCell(r), escapeHtml(shortReason(r, prCategory(r) === 'insufficient')), [escapeHtml(r.client_ip || ''), 'mono']]),
+          more(clickRows, 6), 'pr-list')}</section>`);
+    }
+    const flaggedRows = newest(rows.filter(r => ['bot', 'suspect'].includes(prCategory(r))));
+    if (flaggedRows.length) {
+      sections.push(`<section class="pr-section"><h2>Danh sách phiên bot và nghi vấn</h2>
+        ${prTable(['Thời gian', 'Kết luận', 'Lý do', 'IP', 'Quốc gia', 'Nhà mạng', 'Thiết bị'],
+          flaggedRows.slice(0, PR_LIST_LIMIT).map(r => [prShortTime(r.created_at), verdictCell(r), escapeHtml(shortReason(r, false)),
+            [escapeHtml(r.client_ip || ''), 'mono'], escapeHtml(r.geo && (r.geo.country_code || r.geo.country) ? countryName({ code: r.geo.country_code, name: r.geo.country }) : ''),
+            escapeHtml((r.geo || {}).isp ? shortIsp(r.geo.isp) : ''),
+            escapeHtml(describeDevice(r).os)]),
+          more(flaggedRows, 7), 'pr-list')}</section>`);
+    }
+  }
+
   return `<header class="pr-head">
       <div class="pr-brand"><img src="/assets/datacat-logo.png" alt="">DATACAT</div>
       <div class="pr-head-title"><h1>Báo cáo lưu lượng truy cập</h1><p>${period} · ${escapeHtml(prScope())}</p></div>
@@ -4786,9 +4870,20 @@ function prPageCss() {
 }
 
 async function printReport() {
-  if (!reportData) await loadReport();
+  const button = document.getElementById('reportPdf');
+  const label = button.querySelector('span');
+  button.disabled = true;
+  label.textContent = 'Đang chuẩn bị…';
+  let sessions = null;
+  try {
+    if (!reportData) await loadReport();
+    if (reportData) sessions = await reportSessions();
+  } finally {
+    button.disabled = false;
+    label.textContent = 'In / Lưu PDF';
+  }
   if (!reportData) return;
-  document.getElementById('printReport').innerHTML = buildPrintReport(reportData);
+  document.getElementById('printReport').innerHTML = buildPrintReport(reportData, sessions);
   let style = document.getElementById('printPageStyle');
   if (!style) {
     style = document.createElement('style');
@@ -4888,8 +4983,7 @@ async function exportReportExcel() {
   try {
     if (!reportData) await loadReport();
     const data = reportData;
-    const [ExcelJS, sessions] = await Promise.all([loadExcelJs(),
-      fetchJSON(API_BASE + '/api/v1/reports/sessions?days=' + reportDays + siteParam('&'))]);
+    const [ExcelJS, sessions] = await Promise.all([loadExcelJs(), reportSessions()]);
     if (!data || !sessions || !Array.isArray(sessions.sessions)) { label.textContent = 'Không tải được'; return; }
     const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
     const code = prCode(data);
@@ -4921,6 +5015,13 @@ async function exportReportExcel() {
       timeline.map(b => ({ ...b, start: xlDate(b.start), rate: ratio(b.bot, b.sessions) })),
       { total: { sessions: total('sessions'), human: total('human'), bot: total('bot'), suspect: total('suspect'), insufficient: total('insufficient'),
         rate: ratio(total('bot'), total('sessions')) }, filter: false });
+
+    const groupColumns = (head) => [{ key: 'key', header: head, width: 26 }, { key: 'sessions', header: 'Phiên', fmt: 'count' },
+      { key: 'human', header: 'Người thật', fmt: 'count' }, { key: 'bot', header: 'Bot', fmt: 'count' }, { key: 'suspect', header: 'Nghi vấn', fmt: 'count' },
+      { key: 'insufficient', header: 'Chưa đủ dữ liệu', fmt: 'count', width: 16 }, { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }];
+    const withRate = (groups) => groups.map(g => ({ ...g, rate: ratio(g.bot, g.sessions) }));
+    if (!selectedSite) xlSheet(wb, 'Theo trang', 'Số phiên theo trang', meta, groupColumns('Trang'), withRate(prGroups(sessions.sessions, prSiteName)), { filter: false });
+    xlSheet(wb, 'Theo thiết bị', 'Số phiên theo thiết bị', meta, groupColumns('Thiết bị'), withRate(prGroups(sessions.sessions, r => describeDevice(r).os)), { filter: false });
 
     const flagged = t.bot + t.suspect;
     xlSheet(wb, 'Nguyên nhân', 'Nguyên nhân phiên bị đánh dấu', meta,
