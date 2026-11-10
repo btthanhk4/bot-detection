@@ -63,7 +63,8 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
          "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
                               {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]}},
         {"case": {"$eq": ["$breakdown.decision_basis", "client_forgery"]},
-         "then": {"$arrayElemAt": ["$breakdown.client_forgery.codes", 0]}},
+         "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.client_forgery.evidence", 0]},
+                              {"$arrayElemAt": ["$breakdown.client_forgery.codes", 0]}]}},
         {"case": {"$eq": [crawler + ".verified", True]}, "then": "VERIFIED_CRAWLER"},
         {"case": {"$eq": [crawler + ".verified", False]}, "then": "SPOOFED_CRAWLER"},
     ], "default": None}}
@@ -128,7 +129,7 @@ _EXPORT_FIELDS = {
     "created_at": 1, "updated_at": 1, "user_agent": 1, "fingerprint.userAgent": 1,
     "breakdown.decision_basis": 1, "breakdown.automation_rule": 1, "breakdown.decision_deferred": 1,
     "breakdown.desktop_risk.codes": 1, "breakdown.mobile_human.risk": 1, "breakdown.mobile_human.gestures": 1,
-    "breakdown.client_forgery.codes": 1, "breakdown.unsupported_mobile": 1, "breakdown.legacy_touch_ambiguous": 1, "breakdown.touch_records_excluded": 1,
+    "breakdown.client_forgery.codes": 1, "breakdown.client_forgery.evidence": 1, "breakdown.unsupported_mobile": 1, "breakdown.legacy_touch_ambiguous": 1, "breakdown.touch_records_excluded": 1,
     "breakdown.mouse_points": 1, "breakdown.minimum_mouse_points": 1,
 }
 

@@ -124,16 +124,25 @@ def test_human_lookalikes_are_not_flagged(body):
     assert result["verdict"] == "HUMAN"
 
 
-def test_cdp_moves_faster_than_frames_are_unaligned():
-    # CDP moves fired every 2 ms without waiting arrive 4 ms apart on a 60 Hz display.
+def flags(body):
+    return predict(body)["breakdown"]["desktop_risk"]["research_flags"]
+
+
+def test_moves_faster_than_frames_are_only_a_research_flag():
+    # CDP moves fired every 2 ms without waiting arrive 4 ms apart on a 60 Hz display, but so
+    # did a person's moves on one laptop (policy 27): the flag no longer withholds HUMAN.
     body = payload(moves(n=90, gap=4.0), stats(coalesced=1.07, multi=0.07))
-    assert codes(body) == ["UNALIGNED_POINTER"]
+    assert flags(body) == ["UNALIGNED_POINTER"]
+    assert codes(body) == []
+    assert predict(body)["verdict"] == "HUMAN"
+    laptop = payload(moves(n=90, gap=4.0), stats(coalesced=1.33, multi=0.13))
+    assert flags(laptop) == ["UNALIGNED_POINTER"] and predict(laptop)["verdict"] == "HUMAN"
     # A 240 Hz display delivers real moves that often.
-    assert codes(payload(moves(n=90, gap=4.2), stats(coalesced=1.07, multi=0.07, frame_ms=4.2))) == []
+    assert flags(payload(moves(n=90, gap=4.2), stats(coalesced=1.07, multi=0.07, frame_ms=4.2))) == []
     # Chrome's 30 fps battery saver slows input with the frames.
-    assert codes(payload(moves(n=90, gap=33.3), stats(frame_ms=33.3))) == []
+    assert flags(payload(moves(n=90, gap=33.3), stats(frame_ms=33.3))) == []
     # Without a measured frame interval nothing is judged.
-    assert "UNALIGNED_POINTER" not in codes(payload(moves(n=90, gap=4.0), stats(coalesced=1.07, frame_ms=None)))
+    assert flags(payload(moves(n=90, gap=4.0), stats(coalesced=1.07, frame_ms=None))) == []
 
 
 def test_tampered_pointer_apis():
@@ -229,7 +238,7 @@ def test_release_fixtures(production_detector, index):
 def test_release_gate_counts(production_detector):
     gate = validate_desktop_risk_rules(production_detector)
     assert gate == DESKTOP_RISK_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"]) == (18, 24)
+    assert (gate["human_cases"], gate["suspect_cases"]) == (20, 23)
 
 
 WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"

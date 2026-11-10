@@ -2014,7 +2014,8 @@ const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICT
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
-  non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát' };
+  non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
+  forged_browser: 'Trình duyệt giả mạo' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2039,7 +2040,10 @@ function shortReason(s, deferred) {
       : bd.automation_rule === 'synthetic_pointer_path_v1' ? 'Chuột giả nhảy ngẫu nhiên' : 'Click giả lập';
   }
   if (SHORT_BASIS[basis]) return SHORT_BASIS[basis];
-  if (basis === 'client_forgery') return codes((bd.client_forgery || {}).codes, SHORT_DESKTOP_CODES) || 'Trình duyệt mâu thuẫn';
+  if (basis === 'client_forgery') {
+    const cf = bd.client_forgery || {};
+    return codes(cf.evidence || cf.codes, SHORT_DESKTOP_CODES) || 'Trình duyệt mâu thuẫn';
+  }
   if (basis === 'desktop_risk') return codes((bd.desktop_risk || {}).codes, SHORT_DESKTOP_CODES) || 'Rủi ro trên máy tính';
   if (basis === 'mobile_risk') return codes((bd.mobile_human || {}).risk, SHORT_MOBILE_CODES) || 'Rủi ro trên điện thoại';
   if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
@@ -2405,6 +2409,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
     } else if (syntheticDecision) {
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
+    } else if (bd.decision_basis === 'forged_browser') {
+      explainText = `Trình duyệt giả mạo, hai điều trình duyệt thật không làm: ${escapeHtml(((bd.client_forgery || {}).codes || []).map(c => FORGERY_LABELS[c] || c).join('; '))}.`;
     } else if (ruleDecision) {
       explainText = 'Trình duyệt HeadlessChrome có dấu hiệu tự động hóa.';
     } else {
@@ -2436,7 +2442,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   } else if (bd.decision_basis === 'mobile_risk') {
     explainText = `Bất thường: ${escapeHtml(((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'client_forgery') {
-    explainText = `Chưa đủ thao tác để đánh giá hành vi, nhưng trình duyệt mâu thuẫn: ${escapeHtml(((bd.client_forgery || {}).codes || []).map(c => FORGERY_LABELS[c] || c).join('; '))}.`;
+    const cf = bd.client_forgery || {};
+    explainText = `Chưa đủ thao tác để đánh giá mô hình chuột, nhưng có bằng chứng bất lợi: ${escapeHtml((cf.evidence || cf.codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'desktop_risk') {
     explainText = `${((bd.desktop_risk || {}).codes || []).includes('RANDOM_POINTER_JUMPS') ? 'Bất thường' : 'Di chuột giống người, nhưng'}: ${escapeHtml(((bd.desktop_risk || {}).codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
   } else {

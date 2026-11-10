@@ -5,8 +5,8 @@ redirect ad networks): the mouse models called 294 of its sessions HUMAN, and 26
 carried the evidence below.
 
 * ``RANDOM_POINTER_JUMPS``: the pointer does not travel, it lands on random points. In a
-  collector export of 25+ moves, at least 40% of the steps cross more than 15% of the
-  viewport, and of at least 5 pairs of consecutive jumps at least half turn back (the two
+  collector export of 10+ moves (25+ in policy 26), at least 40% of the steps cross more
+  than 15% of the viewport, and of at least 5 pairs of consecutive jumps at least half turn back (the two
   steps more than 90 degrees apart). A hand that moves fast between targets, recorded
   sparsely, still keeps its direction from one step to the next. Balabit (10 people, 1,676
   Remote Desktop sessions sampled at about 10 Hz, replayed as 41,899 collector exports):
@@ -26,6 +26,17 @@ carried the evidence below.
 None of these convicts alone. ``synthetic_pointer_path_v1`` convicts a session whose
 pointer jumps at random and whose browser also contradicts itself (one of the other codes
 or any environment family except a cloud address).
+
+Policy 27 (2026-11-10, measured on 11 sessions of real people moving a mouse on the lander
+and the shop, against 1,358 lander sessions with two contradictions):
+
+* The jump rule is judged from 10 moves. The lander's bots move a median of 20 times, so
+  at 25 most of them were never judged. Balabit replayed as 51,863 exports of 10 moves or
+  more: no export matched. The 11 people: none (largest step share 0.24, turn-back 0.09).
+* ``forged_browser_v1`` convicts a session with two of the browser contradictions. Each
+  comes from a different source (the user agent against the events, the navigator object,
+  the hardware), and a genuine browser produces none of them: no person on the live site
+  carried even one. On the lander, 1,621 sessions carried two.
 """
 
 import math
@@ -34,8 +45,10 @@ import re
 from core_ml.features.mouse_features import normalize_move_coordinates
 
 SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
+FORGED_BROWSER_RULE = "forged_browser_v1"
+FORGED_BROWSER_MIN_CODES = 2
 CLIENT_FORGERY_VERSION = "client_forgery_v1"
-JUMP_MIN_MOVES = 25
+JUMP_MIN_MOVES = 10
 JUMP_STEP = 0.15
 JUMP_MIN_SHARE = 0.40
 JUMP_MIN_PAIRS = 5
@@ -113,3 +126,8 @@ def synthetic_path_fires(jump_profile: dict, forgery: list, automation_evidence:
     return bool(jump_profile.get("random_jumps")) and bool(
         forgery or any(family != "NETWORK" for family in families)
     )
+
+
+def forged_browser_fires(forgery: list) -> bool:
+    """Policy 27: two independent claims no genuine browser makes."""
+    return len(set(forgery or [])) >= FORGED_BROWSER_MIN_CODES

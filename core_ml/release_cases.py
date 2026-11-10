@@ -377,6 +377,8 @@ SYNTHETIC_DEVICE_CASES = (
                                                   multi=0.007, fingerprint={"hardwareConcurrency": 640})),
     ("BOT", "synthetic_pointer_path_v1", _desktop(path=_jumps(seed=5), ua=_SAFARI9, renderer=_APPLE_M2, coalesced=0.0,
                                                   multi=0.0)),
+    # Policy 27: judged from 10 moves (the lander's bots move a median of 20 times).
+    ("BOT", "synthetic_pointer_path_v1", _desktop(path=_jumps(n=15), signals={"webdriverPatched": True})),
 )
 
 # Frozen gate of policy 15.
@@ -391,6 +393,13 @@ SYNTHETIC_DEVICE_RULE_GATE_V16 = {
     "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
     "positive_cases": 4, "negative_cases": 9, "passed": 13,
     "fixture_fingerprint": "47c4086dc5817b2bf0f60d7c5e2bafe77cbc2254ff875f4291272fd3604a1442",
+}
+
+# Frozen gate of policy 26.
+SYNTHETIC_DEVICE_RULE_GATE_V26 = {
+    "rules": ["synthetic_typing_v1", "synthetic_pointer_v1", "synthetic_pointer_path_v1"],
+    "positive_cases": 8, "negative_cases": 11, "passed": 19,
+    "fixture_fingerprint": "dddec32ab87e060040e499bf7106d8b66f600ced05e62561d207ebcedc578d47",
 }
 
 # Frozen gate of policies 22-25.
@@ -587,7 +596,9 @@ DESKTOP_RISK_CASES = (
     ("HUMAN", [], _desktop(signals={"uaHintsMismatch": True})),
     ("SUSPECT", ["FRAME_LOCKED_POINTER"], _desktop(coalesced=1.0, multi=0.002)),
     ("SUSPECT", ["FRAME_LOCKED_POINTER"], _desktop(coalesced=1.0, multi=0.0, ua=_MAC_CHROME)),
-    ("SUSPECT", ["UNALIGNED_POINTER"], _desktop(coalesced=1.07, multi=0.07, path=_path(scale=0.24))),
+    # Policy 27: moves 4 ms apart with one sample each no longer withhold HUMAN. A person's
+    # laptop (AMD Radeon 780M, Chrome on Windows) delivered them so, 1.33 samples per move.
+    ("HUMAN", [], _desktop(coalesced=1.07, multi=0.07, path=_path(scale=0.24))),
     ("SUSPECT", ["SUBFRAME_POINTER_BURST"], _desktop(coalesced=3.4, multi=0.8, path=_path(burst=3))),
     ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_SWIFTSHADER, datacenter="gcp")),
     ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(signals={"headlessScreen": True})),
@@ -624,6 +635,7 @@ DESKTOP_RISK_CASES = (
     ("HUMAN", [], _desktop(renderer=_WARP)),
     ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(coalesced=3.5, multi=0.9, ua=_MAC_CHROME, renderer=_WARP)),
     ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_WARP, datacenter="aws")),
+    ("HUMAN", [], _desktop(coalesced=1.33, multi=0.13, path=_path(scale=0.24))),
     # Policy 26 (the ad lander, 2026-11-10): random jumps, a Safari 9 user agent sending
     # Pointer Events, navigator.webdriver redefined or deleted, a 640-core desktop. Each
     # alone withholds HUMAN. People: a fast hand recorded at ~10 Hz (long steps, one
@@ -639,6 +651,12 @@ DESKTOP_RISK_CASES = (
                                          fingerprint={"hardwareConcurrency": 640})),
     ("HUMAN", [], _desktop(fingerprint={"hardwareConcurrency": 64})),
 )
+
+# Frozen gate of policy 26.
+DESKTOP_RISK_RULE_GATE_V26 = {
+    "rules": ["desktop_risk_v1"], "human_cases": 18, "suspect_cases": 24, "passed": 42,
+    "fixture_fingerprint": "07e45e92be1a6e95b00983c03e9891a7198bbdf68d591e29ef4a15ab42432333",
+}
 
 # Frozen gate of policy 25.
 DESKTOP_RISK_RULE_GATE_V25 = {
@@ -697,10 +715,27 @@ CLIENT_FORGERY_CASES = (
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(fingerprint={"hardwareConcurrency": 64})),
     ("BOT", "FINAL", "automation_marker", _deferred(signals={"webdriverPatched": True},
                                                     detectors={"webdriver": True})),
+    # Policy 27: random jumps over 10-24 moves are evidence on a session too short for the
+    # mouse models; a fast hand recorded sparsely is not. Two contradictions convict.
+    ("SUSPECT", "FINAL", "client_forgery", _desktop(path=_jumps(n=15))),
+    ("SUSPECT", "FINAL", "client_forgery", _desktop(path=_jumps(n=15), datacenter="aws")),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _desktop(path=_sparse_hand()[:15])),
+    ("BOT", "FINAL", "forged_browser", _deferred(coalesced=0.0, multi=0.0, ua=_SAFARI9, renderer=_APPLE_M2,
+                                                 signals={"webdriverPatched": True})),
+    ("BOT", "FINAL", "forged_browser", _desktop(coalesced=0.0, multi=0.0, ua=_SAFARI9, renderer=_APPLE_M2,
+                                                signals={"webdriverPatched": True})),
+    ("BOT", "FINAL", "forged_browser", _deferred(signals={"webdriverDeleted": True},
+                                                 fingerprint={"hardwareConcurrency": 640})),
 )
 
+# Frozen gate of policy 26.
+CLIENT_FORGERY_RULE_GATE_V26 = {
+    "rules": ["client_forgery_v1"], "final_cases": 5, "insufficient_cases": 4, "passed": 9,
+    "fixture_fingerprint": "4674d61153c5788caf80980fa5c3196e3c91b20498a5e122672d5e52f74c48be",
+}
+
 CLIENT_FORGERY_RULE_GATE = {
-    "rules": ["client_forgery_v1"],
+    "rules": ["client_forgery_v1", "forged_browser_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

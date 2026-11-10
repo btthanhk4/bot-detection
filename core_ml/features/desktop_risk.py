@@ -14,13 +14,17 @@ verdict. None of them proves a bot on its own, so the verdict is a final SUSPECT
   three Windows sessions on the live site 1.88-2.29. macOS and X11 coalesce motion
   before Chrome sees it (a Linux user measured 1.02), and on a 120 Hz+ display a
   125 Hz mouse also gives about one sample, so neither is judged.
-* ``UNALIGNED_POINTER``: pointermoves arrive far more often than display frames
+* ``UNALIGNED_POINTER`` (research only since policy 27): pointermoves arrive far more often than display frames
   (median spacing at most 0.4 of the frame interval the collector measures, 1.8+)
   with about one coalesced sample each. Chromium hands a page real mouse input
   once per frame, so on a 60 Hz display moves are about 16.7 ms apart; CDP moves
   fired every 2 ms without waiting are delivered one by one, 4 ms apart (measured
   2026-10-27; 1.07 samples per move). Chrome's 30 fps battery saver halves the
   frame rate of input too, which keeps the ratio at about one.
+  Policy 27 (2026-11-10): the premise failed on a person. One laptop (AMD Radeon 780M, Chrome,
+  Windows) delivered moves 17 ms apart in two sessions and 4 ms apart in a third, while moving
+  freely (1.33 samples per move, 60 Hz frames measured). It was the only session on the live
+  site that ever carried the code, and no bot did. The flag is kept in ``research_flags``.
 * ``POINTER_API_TAMPERED`` (policy 23): the timing APIs were rewritten in the page.
   Three lines of script made ``getCoalescedEvents`` return the event twice, or
   deleted it, and the frame-lock check passed (2026-10-28). Browsers never hand back
@@ -65,7 +69,7 @@ from core_ml.features.server_context import server_context_codes
 
 DESKTOP_RISK_RULE = "desktop_risk_v1"
 DESKTOP_RISK_VERSION = "desktop_risk_v1"
-RISK_CODES = ("FRAME_LOCKED_POINTER", "UNALIGNED_POINTER", "POINTER_API_TAMPERED", "SUBFRAME_POINTER_BURST",
+RISK_CODES = ("FRAME_LOCKED_POINTER", "POINTER_API_TAMPERED", "SUBFRAME_POINTER_BURST",
               "CLOUD_SOFTWARE_GPU", "NON_BROWSER_REQUEST", "ENVIRONMENT_EVIDENCE", "UNVERIFIED_PAGE_LOAD",
               "DEVICE_VELOCITY", "CDP_ATTACHED", "RANDOM_POINTER_JUMPS", "UA_POINTER_MISMATCH",
               "WEBDRIVER_TAMPERED", "SERVER_CPU")
@@ -147,13 +151,14 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
     display_ms = frame_ms if frame_ms is not None else interval
     frame_judged = bool(coalesced and windows and display_ms is not None and display_ms >= FRAME_LOCK_MIN_INTERVAL_MS)
     codes = []
+    research_flags = []
     if (frame_judged and stats["coalesced_mean"] <= FRAME_LOCK_MAX_COALESCED
             and stats.get("coalesced_multi_share", 1) <= FRAME_LOCK_MAX_MULTI_SHARE):
         codes.append("FRAME_LOCKED_POINTER")
     if (coalesced and frame_ms is not None and interval is not None
             and interval <= UNALIGNED_MAX_FRAME_RATIO * frame_ms
             and stats["coalesced_mean"] <= UNALIGNED_MAX_COALESCED):
-        codes.append("UNALIGNED_POINTER")
+        research_flags.append("UNALIGNED_POINTER")
     families = (automation_evidence.get("families") or {}) if judged else {}
     if (api_judged and (stats.get("coalesced_self", 0) > 0 or stats.get("coalesced_mean", 0) < 0.5)) or (
             judged and "signals.inputApiPatched" in families.get("NATIVE_PATCH", [])) or (
@@ -190,4 +195,5 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
         "subframe_moves": burst,
         "jump_profile": jump_profile,
         "codes": codes,
+        "research_flags": research_flags,
     }

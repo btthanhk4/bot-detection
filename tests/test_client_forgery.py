@@ -1,10 +1,11 @@
-"""Policy 26: random pointer jumps and browser claims no genuine browser makes."""
+"""Policies 26-27: random pointer jumps and browser claims no genuine browser makes."""
 
 import copy
 
 import pytest
 
 from core_ml.features.client_forgery import (
+    forged_browser_fires,
     forgery_codes,
     pointer_jump_profile,
     synthetic_path_fires,
@@ -77,9 +78,17 @@ def test_a_human_path_has_no_jumps():
     assert not pointer_jump_profile(_path())["random_jumps"]
 
 
-def test_jumps_are_judged_on_25_moves_or_more():
-    assert not pointer_jump_profile(_jumps(n=24))["random_jumps"]
-    assert pointer_jump_profile(_jumps(n=25))["steps"] == 24
+def test_jumps_are_judged_on_10_moves_or_more():
+    # Policy 27: the lander's bots move a median of 20 times.
+    assert not pointer_jump_profile(_jumps(n=9))["random_jumps"]
+    assert pointer_jump_profile(_jumps(n=10))["steps"] == 9
+    assert pointer_jump_profile(_jumps(n=15))["random_jumps"]
+
+
+def test_a_fast_hand_over_few_moves_is_not_a_jump():
+    for n in (10, 12, 15, 20):
+        assert not pointer_jump_profile(_sparse_hand()[:n])["random_jumps"]
+        assert not pointer_jump_profile(_path()[-n:])["random_jumps"]
 
 
 def test_a_zigzag_without_long_steps_is_not_a_jump():
@@ -173,4 +182,34 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (5, 4)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (10, 5)
+
+
+def test_two_contradictions_convict():
+    assert forged_browser_fires(["UA_POINTER_MISMATCH", "WEBDRIVER_TAMPERED"])
+    assert forged_browser_fires(["WEBDRIVER_TAMPERED", "SERVER_CPU"])
+    assert not forged_browser_fires(["WEBDRIVER_TAMPERED"])
+    assert not forged_browser_fires(["WEBDRIVER_TAMPERED", "WEBDRIVER_TAMPERED"])
+    assert not forged_browser_fires([])
+    assert not forged_browser_fires(None)
+
+
+def test_forged_browser_is_a_bot_even_without_mouse_input():
+    payload = _desktop(coalesced=0.0, multi=0.0, ua=SAFARI9, signals={"webdriverPatched": True})
+    payload["mouse"]["records"] = []
+    result = detector().predict(payload)
+    assert (result["verdict"], result["decision_state"]) == ("BOT", "FINAL")
+    assert result["breakdown"]["automation_rule"] == "forged_browser_v1"
+    assert result["breakdown"]["decision_basis"] == "forged_browser"
+    assert result["breakdown"]["risk_score_in_domain"] is False
+    assert "Forged browser" in " ".join(result["reasons"])
+
+
+def test_random_jumps_on_a_short_session_are_evidence():
+    result = detector().predict(_desktop(path=_jumps(n=15)))
+    assert (result["verdict"], result["decision_state"]) == ("SUSPECT", "FINAL")
+    assert result["breakdown"]["decision_basis"] == "client_forgery"
+    assert result["breakdown"]["client_forgery"]["evidence"] == ["RANDOM_POINTER_JUMPS"]
+    assert result["breakdown"]["client_forgery"]["codes"] == []
+    bot = detector().predict(_desktop(path=_jumps(n=15), signals={"webdriverPatched": True}))
+    assert bot["breakdown"]["automation_rule"] == "synthetic_pointer_path_v1"

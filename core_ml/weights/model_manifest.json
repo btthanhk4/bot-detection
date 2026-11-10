@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "af5221be5dc14e2a836e87c4bd06a62a",
-  "created_at": "2026-11-10T10:31:16.076437+00:00",
+  "bundle_id": "de33b2659f084240ab8707db36346ec8",
+  "created_at": "2026-11-10T12:35:40.415109+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -79,12 +79,13 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 5,
-      "fixture_fingerprint": "4674d61153c5788caf80980fa5c3196e3c91b20498a5e122672d5e52f74c48be",
-      "insufficient_cases": 4,
-      "passed": 9,
+      "final_cases": 10,
+      "fixture_fingerprint": "5855f200440f3f43634a7a418b8723f9583158c93a936040440ac8cae9a7a88d",
+      "insufficient_cases": 5,
+      "passed": 15,
       "rules": [
-        "client_forgery_v1"
+        "client_forgery_v1",
+        "forged_browser_v1"
       ]
     },
     "collector_window_policy": "mouse_export_v1",
@@ -863,15 +864,15 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "26",
+    "decision_policy_version": "27",
     "desktop_risk_rule_gate": {
-      "fixture_fingerprint": "07e45e92be1a6e95b00983c03e9891a7198bbdf68d591e29ef4a15ab42432333",
-      "human_cases": 18,
-      "passed": 42,
+      "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
+      "human_cases": 20,
+      "passed": 43,
       "rules": [
         "desktop_risk_v1"
       ],
-      "suspect_cases": 24
+      "suspect_cases": 23
     },
     "diagnostic_only": false,
     "early_augmentation": true,
@@ -1079,10 +1080,10 @@
     "rolling_full_replay": true,
     "seed": 42,
     "synthetic_device_rule_gate": {
-      "fixture_fingerprint": "dddec32ab87e060040e499bf7106d8b66f600ced05e62561d207ebcedc578d47",
+      "fixture_fingerprint": "e1cedede36e8d36ef0d176bd19c0d85ad69e9d074218ad4b686cdbf264394224",
       "negative_cases": 11,
-      "passed": 19,
-      "positive_cases": 8,
+      "passed": 20,
+      "positive_cases": 9,
       "rules": [
         "synthetic_typing_v1",
         "synthetic_pointer_v1",

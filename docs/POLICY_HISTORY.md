@@ -1,6 +1,16 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v26, mô tả trong [README](../README.md#policy-v26-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v27, mô tả trong [README](../README.md#policy-v27-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v26
+
+Policy v26 bắt loại bot mà mô hình chuột bỏ sót trên trang đích quảng cáo: con trỏ không đi theo
+đường mà nhảy giữa các điểm ngẫu nhiên. Bốn mã mới chặn kết luận HUMAN: `RANDOM_POINTER_JUMPS`,
+`UA_POINTER_MISMATCH` (Safari < 13 mà vẫn gửi Pointer Events), `WEBDRIVER_TAMPERED`, `SERVER_CPU`.
+Con trỏ nhảy ngẫu nhiên cộng với một mâu thuẫn môi trường độc lập thì thành BOT
+(`synthetic_pointer_path_v1`). Phiên chưa đủ thao tác mà trình duyệt tự mâu thuẫn thì thành NGHI
+VẤN có kết luận (`client_forgery`). Luật nhảy con trỏ không khớp lần xuất nào trong 41.899 lần xuất
+phát lại từ Balabit (10 người). Xem [Model release v26](MODEL_RELEASE_V26.md).
 
 ## Policy v25
 
