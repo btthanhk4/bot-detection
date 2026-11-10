@@ -488,6 +488,25 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 .panel-title { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--text); }
 .panel-title > .ui-icon, .panel-title > .dot-live { display: none; }
 .panel-meta { font-size: 12.5px; color: var(--text-3); font-weight: 400; }
+/* Traffic table: one verdict at a time, as the table labels sessions. */
+.verdict-filter {
+  display: inline-flex; gap: 2px; max-width: 100%; overflow-x: auto; padding: 2px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.verdict-filter button {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; height: 28px; padding: 0 10px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-2);
+  font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.verdict-filter button:hover { color: var(--text); }
+.verdict-filter button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-xs); }
+.verdict-filter button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.verdict-filter .dot { width: 7px; height: 7px; }
+.panel-tools { min-width: 0; max-width: 100%; }
+@media (max-width: 640px) {
+  .verdict-filter { display: flex; flex: 1 1 100%; flex-wrap: wrap; overflow: visible; }
+}
 .panel-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .panel-body { padding: 16px 18px; }
 .pager { display: inline-flex; gap: 4px; }
@@ -1130,6 +1149,13 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <div class="panel-header">
       <div class="panel-title">Lượt truy cập <span class="live-pill"><i aria-hidden="true"></i>Trực tiếp</span></div>
       <div class="panel-tools">
+        <div class="verdict-filter" id="verdictFilter" role="group" aria-label="Lọc theo kết luận">
+          <button type="button" data-verdict="" aria-pressed="true">Tất cả</button>
+          <button type="button" data-verdict="bot" aria-pressed="false"><span class="dot bot" aria-hidden="true"></span>Bot</button>
+          <button type="button" data-verdict="suspect" aria-pressed="false"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</button>
+          <button type="button" data-verdict="pending" aria-pressed="false"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</button>
+          <button type="button" data-verdict="human" aria-pressed="false"><span class="dot human" aria-hidden="true"></span>Người thật</button>
+        </div>
         <span class="panel-meta" id="trafficCount">0 phiên</span>
         <button class="delete-all-btn" type="button" onclick="deleteAllSessions()" title="Xóa tất cả phiên"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg>Xóa tất cả</button>
         <div class="pager">
@@ -1568,6 +1594,13 @@ let trafficBefore = null;
 let trafficNextCursor = null;
 let trafficRequestVersion = 0;
 const trafficPageHistory = [];
+const VERDICT_FILTERS = new Set(['bot', 'suspect', 'pending', 'human']);
+let selectedVerdict = '';
+let trafficLoading = false;
+try {
+  const saved = localStorage.getItem('datacat-verdict') || '';
+  selectedVerdict = VERDICT_FILTERS.has(saved) ? saved : '';
+} catch (e) { /* storage unavailable: start unfiltered */ }
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, ch => ({
@@ -1768,7 +1801,8 @@ function renderReferenceConnection(integration, failed = false) {
 async function fetchRecentTelemetry() {
   const requestVersion = ++trafficRequestVersion;
   const data = await fetchJSON(API_BASE + '/api/v1/research/traffic?limit=50' +
-    (trafficBefore == null ? '' : '&before_number=' + trafficBefore) + siteParam('&'));
+    (trafficBefore == null ? '' : '&before_number=' + trafficBefore) + siteParam('&') +
+    (selectedVerdict ? '&verdict=' + selectedVerdict : ''));
   if (requestVersion !== trafficRequestVersion) return;
 
   if (data && data.sessions) {
@@ -1791,9 +1825,14 @@ async function fetchRecentTelemetry() {
       renderTrafficTable();
     }
   }
+  if (trafficLoading) {
+    trafficLoading = false;
+    renderTrafficTable();
+  }
 
   if (data) {
-    registeredTrafficTotal = Number(data.total);
+    // The KPI cards count every session of the site, not just the filtered ones.
+    registeredTrafficTotal = Number(data.all_total ?? data.total);
     trafficNextCursor = data.next_before;
     document.getElementById('trafficCount').textContent = allSessions.length + ' / ' + data.total + ' phiên';
     document.getElementById('trafficOlder').disabled = trafficNextCursor == null;
@@ -1802,6 +1841,38 @@ async function fetchRecentTelemetry() {
   renderReferenceConnection(data?.reference_integration, !data);
   updateClassificationKPIs();
 }
+
+function syncVerdictFilter() {
+  document.querySelectorAll('#verdictFilter button').forEach(btn => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.verdict === selectedVerdict));
+  });
+}
+
+function changeVerdictFilter(value) {
+  const next = VERDICT_FILTERS.has(value) ? value : '';
+  if (next === selectedVerdict) return;
+  selectedVerdict = next;
+  try {
+    if (selectedVerdict) localStorage.setItem('datacat-verdict', selectedVerdict); else localStorage.removeItem('datacat-verdict');
+  } catch (e) { /* storage unavailable: the choice lasts for this page */ }
+  syncVerdictFilter();
+  // A new filter starts from its newest page; the old rows go until the new page arrives.
+  trafficBefore = null;
+  trafficNextCursor = null;
+  trafficPageHistory.length = 0;
+  allSessions = [];
+  trafficLoading = true;
+  renderTrafficTable();
+  document.getElementById('trafficOlder').disabled = true;
+  document.getElementById('trafficNewer').disabled = true;
+  fetchRecentTelemetry();
+}
+
+document.getElementById('verdictFilter').addEventListener('click', event => {
+  const btn = event.target.closest('button[data-verdict]');
+  if (btn) changeVerdictFilter(btn.dataset.verdict);
+});
+syncVerdictFilter();
 
 function changeTrafficPage(older) {
   if (older) {
@@ -2086,7 +2157,8 @@ function verdictView(session) {
 function renderTrafficTable() {
   const tbody = document.getElementById('trafficBody');
   if (allSessions.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">Chưa có lượt truy cập</td></tr>`;
+    const message = trafficLoading ? 'Đang tải…' : selectedVerdict ? 'Không có phiên nào ở mục này' : 'Chưa có lượt truy cập';
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">${message}</td></tr>`;
     _lastTableHTML = '';
     return;
   }
@@ -2410,7 +2482,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     } else if (syntheticDecision) {
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
     } else if (bd.decision_basis === 'forged_browser') {
-      explainText = `Trình duyệt giả mạo, hai điều trình duyệt thật không làm: ${escapeHtml(((bd.client_forgery || {}).codes || []).map(c => FORGERY_LABELS[c] || c).join('; '))}.`;
+      const cf = bd.client_forgery || {};
+      explainText = `Trình duyệt giả mạo, hai điều trình duyệt thật không làm: ${escapeHtml((cf.contradictions || cf.codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
     } else if (ruleDecision) {
       explainText = 'Trình duyệt HeadlessChrome có dấu hiệu tự động hóa.';
     } else {

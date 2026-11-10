@@ -27,6 +27,7 @@ class Collection:
     def matches(self, doc, query):
         return all((doc.get(key, 0) > value["$gt"] if isinstance(value, dict) and "$gt" in value
                     else doc.get(key) in value["$in"] if isinstance(value, dict) and "$in" in value
+                    else doc.get(key) not in value["$nin"] if isinstance(value, dict) and "$nin" in value
                     else doc.get(key) != value["$ne"] if isinstance(value, dict) and "$ne" in value
                     else doc.get(key, 0) < value["$lt"] if isinstance(value, dict) and "$lt" in value
                     else doc.get(key) == value) for key, value in query.items())
@@ -39,6 +40,9 @@ class Collection:
 
     def find_one(self, query, projection=None):
         return next(iter(self.find(query)), None)
+
+    def distinct(self, key, query=None):
+        return sorted({doc.get(key) for doc in self.find(query or {})})
 
     def create_index(self, *args, **kwargs):
         pass
@@ -136,6 +140,30 @@ def test_cursor_pagination_includes_unanalyzed_sessions_and_ignores_heartbeats(d
     assert research.traffic_page(50, 12)["total"] == 61
 
 
+def test_the_verdict_filter_matches_the_table_labels(db):
+    verdicts = {"s1": ("BOT", "FINAL"), "s2": ("SUSPECT", "FINAL"), "s3": ("SUSPECT", "INSUFFICIENT_EVIDENCE"),
+                "s4": ("HUMAN", "FINAL"), "s5": ("BOT", "FINAL")}
+    for number in range(1, 7):
+        research.register_traffic({"sessionId": f"s{number}", "received_at": number * 1000})
+    for sid, (verdict, state) in verdicts.items():
+        db["detection_results"].docs[sid] = {"_id": sid, "sessionId": sid, "verdict": verdict, "decision_state": state}
+
+    def numbers(verdict, before=None, limit=50):
+        page = research.traffic_page(limit, before, verdict=verdict)
+        return [row["traffic_number"] for row in page["sessions"]], page["total"], page["all_total"]
+
+    assert numbers("bot") == ([5, 1], 2, 6)
+    assert numbers("suspect") == ([2], 1, 6)
+    assert numbers("human") == ([4], 1, 6)
+    # A deferred decision, and a session not scored yet (s6), read "not enough data".
+    assert numbers("pending") == ([6, 3], 2, 6)
+    assert numbers(None) == ([6, 5, 4, 3, 2, 1], 6, 6)
+    # Pages of a filter keep the filter.
+    first = research.traffic_page(1, verdict="bot")
+    assert first["next_before"] == 5
+    assert numbers("bot", before=5) == ([1], 2, 6)
+
+
 def test_legacy_backfill_uses_earliest_server_time_not_latest_heartbeat(db):
     db["detection_results"].docs = {
         "b": {"_id": "b", "sessionId": "b", "created_at": 2000, "updated_at": 2100},
@@ -229,3 +257,21 @@ def test_label_write_failure_does_not_acknowledge(db, monkeypatch):
                                        headers={"X-Admin-Token": "local-test-admin"})
     assert response.status_code == 503
     assert db["research_sessions"].docs["a"]["revision"] == 0
+
+
+def test_traffic_endpoint_passes_the_verdict_filter(monkeypatch):
+    monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
+    seen = {}
+
+    def fake_page(limit, before, site_filter=None, verdict=None):
+        seen["verdict"] = verdict
+        return {"sessions": [], "returned": 0, "total": 0, "all_total": 0, "next_before": None}
+
+    monkeypatch.setattr(main, "traffic_page", fake_page)
+    client = TestClient(main.app)
+    headers = {"X-Read-Token": "read-secret"}
+    assert client.get("/api/v1/research/traffic", params={"verdict": "pending"}, headers=headers).status_code == 200
+    assert seen["verdict"] == "pending"
+    assert client.get("/api/v1/research/traffic", headers=headers).status_code == 200
+    assert seen["verdict"] is None
+    assert client.get("/api/v1/research/traffic", params={"verdict": "robot"}, headers=headers).status_code == 422

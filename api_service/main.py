@@ -1673,11 +1673,12 @@ def research_traffic(
     limit: int = Query(default=50, ge=1, le=200),
     before_number: Optional[int] = Query(default=None, ge=1),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    verdict: Optional[Literal["bot", "suspect", "pending", "human"]] = Query(default=None),
     user=Depends(require_read_access),
 ):
     scope = _scope(user, site)
     try:
-        page = traffic_page(limit, before_number, site_filter=scope)
+        page = traffic_page(limit, before_number, site_filter=scope, verdict=verdict)
     except Exception as exc:
         logger.exception("Traffic registry query failed")
         raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc

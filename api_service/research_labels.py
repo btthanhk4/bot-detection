@@ -123,8 +123,22 @@ def enrich_sessions(sessions):
                       if key != "_id"}} for row in sessions]
 
 
-def traffic_page(limit=50, before_number=None, site_filter=None):
-    """``site_filter`` is the dashboard's condition on ``site_id`` (one site, a list, or none)."""
+# The dashboard's verdict filter, as its table labels sessions: a deferred decision reads
+# "not enough data" whatever the verdict, and so does a session the model has not scored yet.
+VERDICT_FILTERS = ("bot", "suspect", "pending", "human")
+_DECIDED = {"decision_state": {"$ne": "INSUFFICIENT_EVIDENCE"}, "breakdown.decision_deferred": {"$ne": True}}
+
+
+def _verdict_condition(db, verdict):
+    if verdict == "pending":
+        return {"sessionId": {"$nin": db["detection_results"].distinct("sessionId", _DECIDED)}}
+    return {"sessionId": {"$in": db["detection_results"].distinct(
+        "sessionId", {**_DECIDED, "verdict": verdict.upper()})}}
+
+
+def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
+    """``site_filter`` is the dashboard's condition on ``site_id`` (one site, a list, or none);
+    ``verdict`` one of ``VERDICT_FILTERS`` or None."""
     db = get_db()
     if db is None:
         raise RuntimeError("Database unavailable")
@@ -133,6 +147,9 @@ def traffic_page(limit=50, before_number=None, site_filter=None):
     query = {"deleted": {"$ne": True}}
     if site_filter:
         query["attributed_site_id"] = site_filter["site_id"]
+    unfiltered = dict(query)
+    if verdict:
+        query.update(_verdict_condition(db, verdict))
     if before_number is not None:
         query["traffic_number"] = {"$lt": before_number}
     rows = list(db["research_sessions"].find(query, {"label_history": 0})
@@ -156,9 +173,11 @@ def traffic_page(limit=50, before_number=None, site_filter=None):
             if isinstance(doc.get(field), datetime):
                 doc[field] = _milliseconds(doc[field])
         sessions.append(doc)
-    return {"sessions": sessions, "returned": len(sessions),
-            "total": db["research_sessions"].count_documents(
-                {key: value for key, value in query.items() if key != "traffic_number"}),
+    total = db["research_sessions"].count_documents(
+        {key: value for key, value in query.items() if key != "traffic_number"})
+    return {"sessions": sessions, "returned": len(sessions), "total": total,
+            # Every session of the site, whatever the filter (the KPI cards count from it).
+            "all_total": db["research_sessions"].count_documents(unfiltered) if verdict else total,
             "next_before": rows[-1]["traffic_number"] if has_more else None}
 
 
