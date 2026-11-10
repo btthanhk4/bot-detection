@@ -997,7 +997,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
   #reportRecentClicksPanel .click-tools .panel-meta { margin-left: 0; }
 }
 
-/* ─────────── Printable report: an A4 management report built from the report data ─────────── */
+/* ─────────── Printable report: the report's figures on A4, nothing more ─────────── */
 .print-report { display: none; }
 @media print {
   body.printing-report > *:not(#printReport) { display: none !important; }
@@ -1006,58 +1006,43 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 }
 .print-report { color: #1a1917; font: 9.5pt/1.45 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; font-variant-numeric: tabular-nums; }
-.pr-head { display: grid; grid-template-columns: 1fr 76mm; gap: 8mm; align-items: start; padding-bottom: 4mm;
-  border-bottom: 2.2pt solid #6c28de; }
-.pr-org { display: flex; align-items: center; gap: 3mm; }
-.pr-org .pr-logo { width: 11mm; height: 11mm; }
-.pr-org strong { display: block; font-size: 15pt; letter-spacing: 0.04em; }
-.pr-org span { display: block; font-size: 8.5pt; color: #4d4b46; }
-.pr-control { width: 100%; border-collapse: collapse; font-size: 7.8pt; }
-.pr-control th, .pr-control td { padding: 1.1mm 2mm; border: 0.6pt solid #d9d6ce; text-align: left; vertical-align: top; }
-.pr-control th { width: 24mm; background: #f4f3ef; color: #4d4b46; font-weight: 500; }
-.pr-control .pr-class { font-weight: 700; letter-spacing: 0.06em; color: #6c28de; }
-.pr-title { margin: 6mm 0 1mm; font-size: 16pt; font-weight: 700; letter-spacing: 0.01em; text-transform: uppercase; }
-.pr-subtitle { margin: 0 0 5mm; color: #4d4b46; font-size: 9.5pt; }
-.pr-section { margin-top: 6mm; }
-.pr-section > h2 { display: flex; gap: 2.5mm; align-items: baseline; margin: 0 0 2.5mm; padding-bottom: 1.2mm;
-  border-bottom: 0.8pt solid #1a1917; font-size: 11.5pt; font-weight: 700; break-after: avoid; }
-.pr-section > h2 b { color: #6c28de; }
-.pr-section h3 { margin: 4mm 0 1.5mm; font-size: 9.5pt; font-weight: 600; break-after: avoid; }
-.pr-kpis { display: grid; grid-template-columns: repeat(5, 1fr); border: 0.6pt solid #d9d6ce; margin-bottom: 4mm; break-inside: avoid; }
-.pr-kpi { padding: 2.4mm 3mm; border-left: 0.6pt solid #d9d6ce; }
-.pr-kpi:first-child { border-left: 0; }
-.pr-kpi span { display: flex; align-items: center; gap: 1.5mm; font-size: 7.8pt; color: #4d4b46; }
+.pr-head { display: flex; align-items: center; justify-content: space-between; gap: 6mm; padding-bottom: 5mm;
+  border-bottom: 0.8pt solid #1a1917; }
+.pr-brand { display: flex; align-items: center; gap: 2.5mm; font-size: 11pt; font-weight: 700; letter-spacing: 0.03em; }
+.pr-brand img { width: 8mm; height: 8mm; }
+.pr-head-title { text-align: right; }
+.pr-head-title h1 { margin: 0; font-size: 15pt; font-weight: 700; }
+.pr-head-title p { margin: 0.8mm 0 0; color: #4d4b46; font-size: 9pt; }
+.pr-section { margin-top: 7mm; break-inside: avoid; }
+.pr-section > h2 { margin: 0 0 2.5mm; font-size: 11pt; font-weight: 700; break-after: avoid; }
+.pr-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3mm; margin-top: 6mm; }
+.pr-kpi { padding: 2.5mm 3mm; border: 0.6pt solid #e2e0d9; border-radius: 1.2mm; }
+.pr-kpi span { display: flex; align-items: center; gap: 1.5mm; font-size: 8pt; color: #4d4b46; }
 .pr-kpi span i { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: var(--k); }
-.pr-kpi strong { display: block; margin-top: 0.8mm; font-size: 15pt; font-weight: 700; }
-.pr-kpi small { display: block; font-size: 7.8pt; color: #6f6d66; }
+.pr-kpi strong { display: block; margin-top: 0.6mm; font-size: 15pt; font-weight: 700; }
+.pr-kpi small { display: block; font-size: 8pt; color: #6f6d66; }
 /* A table that fits a page moves whole to the next page rather than leaving its header behind. */
-.pr-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 1mm; break-inside: avoid; }
-.pr-table caption { caption-side: top; text-align: left; font-weight: 600; font-size: 8.8pt; padding-bottom: 1.2mm; }
-.pr-table caption em { float: right; font-style: normal; font-weight: 400; color: #6f6d66; font-size: 7.8pt; }
-.pr-table th, .pr-table td { padding: 1.3mm 2mm; border-bottom: 0.5pt solid #e2e0d9; text-align: left; vertical-align: top; }
-.pr-table thead th { background: #f0edf8; border-top: 0.8pt solid #1a1917; border-bottom: 0.8pt solid #1a1917; font-weight: 600; font-size: 7.8pt; }
-.pr-table tbody tr:nth-child(even) td { background: #faf9f6; }
+.pr-table { width: 100%; border-collapse: collapse; font-size: 8.6pt; break-inside: avoid; }
+.pr-table th, .pr-table td { padding: 1.4mm 2mm; border-bottom: 0.5pt solid #e9e7e1; text-align: left; vertical-align: top; }
+.pr-table thead th { border-bottom: 0.8pt solid #1a1917; font-weight: 600; font-size: 8pt; color: #4d4b46; }
 /* The total row once, at the end: Chrome repeats a tfoot on every page a table spans. */
 .pr-table tfoot { display: table-row-group; }
-.pr-table tfoot td { font-weight: 700; border-top: 0.8pt solid #1a1917; border-bottom: 0.8pt solid #1a1917; background: #ffffff; }
+.pr-table tfoot td { font-weight: 700; border-top: 0.8pt solid #1a1917; border-bottom: 0; }
 .pr-table .n { text-align: right; white-space: nowrap; }
-.pr-table .c { text-align: center; }
-.pr-table .mono { font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 7.8pt; }
+.pr-table .mono { font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 8pt; }
+.pr-table .muted { color: #6f6d66; }
 .pr-table tr { break-inside: avoid; }
-.pr-up-bad, .pr-down-good { font-weight: 600; }
-.pr-up-bad { color: #b42318; }
-.pr-down-good, .pr-up-good { color: #1f7a3f; }
-.pr-down-bad { color: #b42318; }
+.pr-up-bad, .pr-down-bad { color: #b42318; }
+.pr-up-good, .pr-down-good { color: #1f7a3f; }
 .pr-neutral { color: #4d4b46; }
-.pr-figure { margin: 0 0 2mm; break-inside: avoid; }
-.pr-figure figcaption { font-weight: 600; font-size: 8.8pt; margin-bottom: 1.5mm; }
+.pr-figure { margin: 0 0 4mm; break-inside: avoid; }
 .pr-figure svg { width: 100%; height: auto; display: block; }
-.pr-legend { display: flex; gap: 5mm; font-size: 7.8pt; color: #4d4b46; margin-top: 1mm; }
+.pr-legend { display: flex; gap: 5mm; font-size: 8pt; color: #4d4b46; margin-top: 1.5mm; }
 .pr-legend span { display: inline-flex; align-items: center; gap: 1.5mm; }
-.pr-legend i { width: 3mm; height: 3mm; background: var(--k); display: inline-block; }
-.pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; }
-.pr-badge { display: inline-block; padding: 0.2mm 1.6mm; border-radius: 1mm; font-size: 7.4pt; font-weight: 600; border: 0.5pt solid currentColor; }
-.pr-badge.bot { color: #b42318; } .pr-badge.suspect { color: #9a6700; } .pr-badge.human { color: #1d5fb0; } .pr-badge.insufficient { color: #6f6d66; }
+.pr-legend i { width: 2.6mm; height: 2.6mm; border-radius: 0.5mm; background: var(--k); display: inline-block; }
+.pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-items: start; margin-bottom: 5mm; }
+.pr-verdict { font-weight: 600; }
+.pr-verdict.bot { color: #b42318; } .pr-verdict.suspect { color: #9a6700; }
 
 </style>
 </head>
@@ -4699,129 +4684,104 @@ function prChart(timeline, hourly) {
   return svg + '</svg>';
 }
 
-function prTable(caption, unit, head, rows, foot) {
+function prTable(head, rows, foot) {
   const cell = (c, tag) => {
     const [text, cls] = Array.isArray(c) ? c : [c, ''];
     return `<${tag}${cls ? ` class="${cls}"` : ''}>${text}</${tag}>`;
   };
-  return `<table class="pr-table"><caption>${caption}${unit ? `<em>${unit}</em>` : ''}</caption>`
-    + `<thead><tr>${head.map(h => cell(h, 'th')).join('')}</tr></thead>`
+  return `<table class="pr-table"><thead><tr>${head.map(h => cell(h, 'th')).join('')}</tr></thead>`
     + `<tbody>${rows.length ? rows.map(r => `<tr>${r.map(c => cell(c, 'td')).join('')}</tr>`).join('')
-      : `<tr><td colspan="${head.length}" class="c">Không có dữ liệu trong kỳ</td></tr>`}</tbody>`
+      : `<tr><td colspan="${head.length}" class="muted">Không có dữ liệu</td></tr>`}</tbody>`
     + (foot ? `<tfoot><tr>${foot.map(c => cell(c, 'td')).join('')}</tr></tfoot>` : '') + '</table>';
+}
+
+// Bot addresses; a note column only when some address should not be blocked.
+function prIpTable(rows) {
+  const note = (row) => (row.verified_crawler ? `${escapeHtml(row.verified_crawler)} thật, không chặn`
+    : row.human_sessions ? `Có ${fmtCount(row.human_sessions)} phiên người thật` : '');
+  const withNotes = rows.some(row => note(row));
+  return prTable(['IP', 'Vị trí', 'Nhà mạng', ['Phiên bot', 'n'], ...(withNotes ? ['Ghi chú'] : [])],
+    rows.map(row => [[escapeHtml(row.client_ip), 'mono'], escapeHtml(formatGeo(row.geo, false) || ''),
+      escapeHtml(row.geo && row.geo.isp ? shortIsp(row.geo.isp) : ''), [fmtCount(row.sessions), 'n'],
+      ...(withNotes ? [[note(row), 'muted']] : [])]));
 }
 
 function buildPrintReport(data) {
   const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
-  const code = prCode(data);
   const hourly = reportDays === 1;
-  const generated = data.generated_at ? new Date(data.generated_at).getTime() : Date.now();
   const flagged = t.bot + t.suspect;
-  let tableNo = 0, figureNo = 0;
-  const nextTable = (title) => `Bảng ${++tableNo}. ${title}`;
-  const nextFigure = (title) => `Hình ${++figureNo}. ${title}`;
+  const period = hourly ? `${prDateTime(data.period.from)} – ${prDateTime(data.period.to)}`
+    : `${prDate(data.period.from)} – ${prDate(data.period.to)}`;
   const sections = [];
 
-  // 1. Executive summary.
-  const kpiRows = [['Tổng số phiên', 'sessions', null], ['Người thật', 'human', false], ['Bot', 'bot', true],
+  const kpis = [['Tổng số phiên', t.sessions, '', ''], ...PR_CATEGORIES.map(([k, l, c]) => [l, t[k], c, prPct(t[k], t.sessions)])]
+    .map(([label, value, color, share]) => `<div class="pr-kpi" style="--k:${color}"><span>${color ? '<i></i>' : ''}${label}</span>`
+      + `<strong>${fmtCount(value)}</strong>${share ? `<small>${share}</small>` : ''}</div>`).join('');
+
+  const compare = [['Tổng số phiên', 'sessions', null], ['Người thật', 'human', false], ['Bot', 'bot', true],
     ['Nghi vấn', 'suspect', true], ['Chưa đủ dữ liệu', 'insufficient', null]].map(([label, key, badUp]) => {
     const change = prChange(t[key], p[key], badUp);
-    return [label, [fmtCount(t[key]), 'n'], [key === 'sessions' ? '100%' : prPct(t[key], t.sessions), 'n'],
-      [fmtCount(p[key]), 'n'], [key === 'sessions' ? (p.sessions ? '100%' : '–') : prPct(p[key], p.sessions), 'n'],
-      [`<span class="${change.cls}">${change.text}</span>`, 'n']];
+    return [label, [fmtCount(t[key]), 'n'], [fmtCount(p[key]), 'n'], [`<span class="${change.cls}">${change.text}</span>`, 'n']];
   });
-  sections.push(`<section class="pr-section"><h2><b>1.</b> Chỉ tiêu chính</h2>
-    <div class="pr-kpis">${[['Tổng số phiên', t.sessions, '#1a1917', ''], ...PR_CATEGORIES.map(([k, l, c]) => [l, t[k], c, prPct(t[k], t.sessions)])]
-      .map(([label, value, color, share]) => `<div class="pr-kpi" style="--k:${color}"><span>${label === 'Tổng số phiên' ? '' : '<i></i>'}${label}</span><strong>${fmtCount(value)}</strong><small>${share || prPeriodLabel()}</small></div>`).join('')}</div>
-    ${prTable(nextTable('Chỉ tiêu chính so với kỳ trước'), 'Đơn vị tính: phiên',
-      ['Chỉ tiêu', ['Kỳ này', 'n'], ['Tỉ trọng', 'n'], ['Kỳ trước', 'n'], ['Tỉ trọng', 'n'], ['Thay đổi', 'n']], kpiRows)}
-  </section>`);
+  sections.push(`<section class="pr-section"><h2>So với kỳ trước</h2>
+    ${prTable(['Chỉ tiêu', ['Kỳ này', 'n'], ['Kỳ trước', 'n'], ['Thay đổi', 'n']], compare)}</section>`);
 
-  // 2. Traffic over the period.
   const timeline = data.timeline || [];
   const sum = (key) => timeline.reduce((a, b) => a + (b[key] || 0), 0);
-  sections.push(`<section class="pr-section"><h2><b>2.</b> Diễn biến lưu lượng ${hourly ? 'theo giờ' : 'theo ngày'}</h2>
-    <figure class="pr-figure"><figcaption>${nextFigure('Số phiên ' + (hourly ? 'theo giờ' : 'theo ngày') + ', chia theo kết luận')}</figcaption>
-      ${prChart(timeline, hourly)}
+  sections.push(`<section class="pr-section"><h2>Lưu lượng ${hourly ? 'theo giờ' : 'theo ngày'}</h2>
+    <figure class="pr-figure">${prChart(timeline, hourly)}
       <div class="pr-legend">${PR_CATEGORIES.map(([, l, c]) => `<span><i style="--k:${c}"></i>${l}</span>`).join('')}</div></figure>
-    ${prTable(nextTable('Số phiên ' + (hourly ? 'theo giờ' : 'theo ngày')), 'Đơn vị tính: phiên',
-      [hourly ? 'Giờ' : 'Ngày', ['Tổng', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+    ${prTable([hourly ? 'Giờ' : 'Ngày', ['Tổng', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
       timeline.map(b => [hourly ? new Date(b.start).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' ' + prDate(b.start) : prDate(b.start),
         [fmtCount(b.sessions), 'n'], [fmtCount(b.human), 'n'], [fmtCount(b.bot), 'n'], [fmtCount(b.suspect), 'n'], [fmtCount(b.insufficient), 'n'],
-        [prPct(b.bot, b.sessions), 'n']]),
+        [b.sessions ? prPct(b.bot, b.sessions) : '', 'n']]),
       ['Cộng', [fmtCount(sum('sessions')), 'n'], [fmtCount(sum('human')), 'n'], [fmtCount(sum('bot')), 'n'], [fmtCount(sum('suspect')), 'n'],
-        [fmtCount(sum('insufficient')), 'n'], [prPct(sum('bot'), sum('sessions')), 'n']])}
-  </section>`);
+        [fmtCount(sum('insufficient')), 'n'], [prPct(sum('bot'), sum('sessions')), 'n']])}</section>`);
 
-  // 3. Why sessions were flagged.
-  const BADGE = { BOT: ['bot', 'Bot'], SUSPECT: ['suspect', 'Nghi vấn'] };
-  sections.push(`<section class="pr-section"><h2><b>3.</b> Nguyên nhân phiên bị đánh dấu</h2>
-    ${prTable(nextTable('Nguyên nhân theo số phiên'), `Đơn vị tính: phiên · ${fmtCount(flagged)} phiên bị đánh dấu`,
-      [['STT', 'c'], 'Kết luận', 'Nguyên nhân', ['Số phiên', 'n'], ['Tỉ trọng', 'n']],
-      (data.reasons || []).map((r, i) => {
-        const [cls, label] = BADGE[r.verdict] || ['suspect', r.verdict];
-        return [[String(i + 1), 'c'], `<span class="pr-badge ${cls}">${label}</span>`, escapeHtml(prReason(r)),
-          [fmtCount(r.sessions), 'n'], [prPct(r.sessions, flagged), 'n']];
-      }))}
-  </section>`);
-
-  // 4. Where bots come from.
-  const geoRows = (rows, label) => rows.map((r, i) => [[String(i + 1), 'c'], escapeHtml(label(r)), [fmtCount(r.sessions), 'n'], [prPct(r.sessions, t.bot), 'n']]);
-  sections.push(`<section class="pr-section"><h2><b>4.</b> Nguồn phát sinh bot</h2>
-    <div class="pr-cols">
-      ${prTable(nextTable('Bot theo quốc gia'), 'Đơn vị: phiên bot', [['STT', 'c'], 'Quốc gia', ['Phiên', 'n'], ['Tỉ trọng', 'n']], geoRows(data.bot_countries || [], countryName))}
-      ${prTable(nextTable('Bot theo nhà mạng'), 'Đơn vị: phiên bot', [['STT', 'c'], 'Nhà mạng', ['Phiên', 'n'], ['Tỉ trọng', 'n']], geoRows(data.bot_networks || [], r => shortIsp(r.name)))}
-    </div>
-    ${prTable(nextTable(`Địa chỉ IP phát sinh nhiều bot nhất (${fmtCount(data.bot_ip_count || 0)}${data.bot_ip_count_capped ? '+' : ''} IP trong kỳ)`), 'Đơn vị: phiên bot',
-      [['STT', 'c'], 'Địa chỉ IP', 'Vị trí', 'Nhà mạng', ['Phiên bot', 'n'], 'Khuyến nghị'],
-      (data.bot_ips || []).map((row, i) => [[String(i + 1), 'c'], [escapeHtml(row.client_ip), 'mono'], escapeHtml(formatGeo(row.geo, false) || '–'),
-        escapeHtml(row.geo && row.geo.isp ? shortIsp(row.geo.isp) : '–'), [fmtCount(row.sessions), 'n'],
-        row.verified_crawler ? `Không chặn: ${escapeHtml(row.verified_crawler)} thật`
-          : row.human_sessions ? `Không chặn cả IP: có ${fmtCount(row.human_sessions)} phiên người thật` : 'Có thể chặn']))}
-  </section>`);
-
-  // 5. Ad clicks, when the pages carry them.
-  const clicks = data.clicks || {};
-  if (clicks.sessions) {
-    sections.push(`<section class="pr-section"><h2><b>5.</b> Click quảng cáo theo Token 1</h2>
-      ${prTable(nextTable(`Kết luận theo Token 1 (${fmtCount(clicks.sessions)} phiên đến từ click)`), 'Đơn vị tính: phiên',
-        [['STT', 'c'], 'Token 1', ['Phiên', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Người thật', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
-        (data.click_sources || []).map((r, i) => [[String(i + 1), 'c'], [escapeHtml(r.source || 'Không có Token 1'), 'mono'], [fmtCount(r.sessions), 'n'],
-          [fmtCount(r.bot), 'n'], [fmtCount(r.suspect), 'n'], [fmtCount(r.human), 'n'], [fmtCount(r.insufficient), 'n'], [prPct(r.bot, r.sessions), 'n']]),
-        ['Cộng', '', [fmtCount(clicks.sessions), 'n'], [fmtCount(clicks.bot), 'n'], [fmtCount(clicks.suspect), 'n'], [fmtCount(clicks.human), 'n'],
-          [fmtCount(clicks.insufficient), 'n'], [prPct(clicks.bot, clicks.sessions), 'n']])}
-    </section>`);
+  if ((data.reasons || []).length) {
+    const VERDICT = { BOT: ['bot', 'Bot'], SUSPECT: ['suspect', 'Nghi vấn'] };
+    sections.push(`<section class="pr-section"><h2>Nguyên nhân bị đánh dấu</h2>
+      ${prTable(['Kết luận', 'Nguyên nhân', ['Số phiên', 'n'], ['Tỉ trọng', 'n']],
+        data.reasons.map(r => {
+          const [cls, label] = VERDICT[r.verdict] || ['suspect', r.verdict];
+          return [`<span class="pr-verdict ${cls}">${label}</span>`, escapeHtml(prReason(r)), [fmtCount(r.sessions), 'n'], [prPct(r.sessions, flagged), 'n']];
+        }))}</section>`);
   }
 
+  if (t.bot) {
+    const share = (rows, label) => rows.map(r => [escapeHtml(label(r)), [fmtCount(r.sessions), 'n'], [prPct(r.sessions, t.bot), 'n']]);
+    sections.push(`<section class="pr-section"><h2>Nguồn bot</h2>
+      <div class="pr-cols">
+        <div>${prTable(['Quốc gia', ['Phiên bot', 'n'], ['Tỉ trọng', 'n']], share(data.bot_countries || [], countryName))}</div>
+        <div>${prTable(['Nhà mạng', ['Phiên bot', 'n'], ['Tỉ trọng', 'n']], share(data.bot_networks || [], r => shortIsp(r.name)))}</div>
+      </div>
+      ${prIpTable(data.bot_ips || [])}</section>`);
+  }
+
+  const clicks = data.clicks || {};
+  if (clicks.sessions) {
+    sections.push(`<section class="pr-section"><h2>Click theo Token 1</h2>
+      ${prTable(['Token 1', ['Phiên', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Người thật', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+        (data.click_sources || []).map(r => [[escapeHtml(r.source || '—'), 'mono'], [fmtCount(r.sessions), 'n'], [fmtCount(r.bot), 'n'],
+          [fmtCount(r.suspect), 'n'], [fmtCount(r.human), 'n'], [fmtCount(r.insufficient), 'n'], [prPct(r.bot, r.sessions), 'n']]),
+        ['Cộng', [fmtCount(clicks.sessions), 'n'], [fmtCount(clicks.bot), 'n'], [fmtCount(clicks.suspect), 'n'], [fmtCount(clicks.human), 'n'],
+          [fmtCount(clicks.insufficient), 'n'], [prPct(clicks.bot, clicks.sessions), 'n']])}</section>`);
+  }
 
   return `<header class="pr-head">
-      <div class="pr-org"><img class="pr-logo" src="/assets/datacat-logo.png" alt=""><div><strong>DATACAT</strong><span>Hệ thống giám sát và phát hiện bot</span></div></div>
-      <table class="pr-control"><tbody>
-        <tr><th>Mã báo cáo</th><td>${code}</td></tr>
-        <tr><th>Kỳ báo cáo</th><td>${prDateTime(data.period.from)} – ${prDateTime(data.period.to)}</td></tr>
-        <tr><th>Phạm vi</th><td>${escapeHtml(prScope())}</td></tr>
-        <tr><th>Ngày lập</th><td>${prDateTime(generated)}</td></tr>
-        <tr><th>Mô hình</th><td>Policy ${escapeHtml(String(data.decision_policy_version || '–'))} · ${escapeHtml(String(data.model_bundle_id || '–').slice(0, 8))}</td></tr>
-        <tr><th>Phân loại</th><td class="pr-class">NỘI BỘ</td></tr>
-      </tbody></table>
+      <div class="pr-brand"><img src="/assets/datacat-logo.png" alt="">DATACAT</div>
+      <div class="pr-head-title"><h1>Báo cáo lưu lượng truy cập</h1><p>${period} · ${escapeHtml(prScope())}</p></div>
     </header>
-    <h1 class="pr-title">Báo cáo giám sát lưu lượng truy cập và bot</h1>
-    <p class="pr-subtitle">Kỳ ${prPeriodLabel()}, từ ${prDateTime(data.period.from)} đến ${prDateTime(data.period.to)} · ${escapeHtml(prScope())}</p>
+    <div class="pr-kpis">${kpis}</div>
     ${sections.join('')}`;
 }
 
-function prPageCss(data) {
-  const code = prCode(data).replace(/"/g, '');
-  const stamp = prDateTime(data.generated_at ? new Date(data.generated_at).getTime() : Date.now());
-  const box = "font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif; font-size: 7.5pt; color: #6f6d66;";
+function prPageCss() {
+  const box = "font-family: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif; font-size: 7.5pt; color: #8a8880;";
   return `@media print {
-  @page { size: A4 portrait; margin: 17mm 15mm 18mm 15mm;
-    @top-left { content: "DATACAT · Báo cáo giám sát lưu lượng truy cập và bot"; ${box} }
-    @top-right { content: "${code}"; ${box} }
-    @bottom-left { content: "Tài liệu nội bộ · Lập lúc ${stamp}"; ${box} }
-    @bottom-right { content: "Trang " counter(page) " / " counter(pages); ${box} }
+  @page { size: A4 portrait; margin: 15mm 15mm 16mm 15mm;
+    @bottom-center { content: counter(page) " / " counter(pages); ${box} }
   }
-  @page :first { @top-left { content: none; } @top-right { content: none; } }
 }`;
 }
 
@@ -4835,7 +4795,7 @@ async function printReport() {
     style.id = 'printPageStyle';
     document.head.appendChild(style);
   }
-  style.textContent = prPageCss(reportData);
+  style.textContent = prPageCss();
   document.body.classList.add('printing-report');
   window.print();
 }

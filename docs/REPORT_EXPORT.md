@@ -11,19 +11,18 @@ trang đang chọn:
 
 ## Báo cáo PDF
 
-Chỉ có số liệu, không có phần nhận xét:
+Chỉ có số liệu, thường 2 trang A4. Thứ tự từ trên xuống:
 
-- **Bảng thông tin tài liệu:** mã báo cáo, kỳ báo cáo, phạm vi, ngày lập, phiên bản mô hình, phân loại.
-- **1. Chỉ tiêu chính:** các ô tổng hợp, và Bảng 1 so với kỳ liền trước cùng độ dài. Mũi tên ▲/▼
-  chỉ tăng hay giảm; màu đỏ là thay đổi bất lợi.
-- **2. Diễn biến lưu lượng:** biểu đồ cột chồng, và bảng số phiên theo ngày (theo giờ với kỳ 24 giờ).
-- **3. Nguyên nhân phiên bị đánh dấu.**
-- **4. Nguồn phát sinh bot:** theo quốc gia, theo nhà mạng, và các IP bot nhiều nhất, mỗi IP có
-  khuyến nghị chặn hay không.
-- **5. Click quảng cáo theo Token 1:** chỉ có khi trang mang tham số `clickid`/`t1`.
+1. Logo, tiêu đề, kỳ báo cáo và phạm vi.
+2. Các ô tổng hợp.
+3. So với kỳ trước: kỳ này, kỳ trước, thay đổi. Màu đỏ là thay đổi bất lợi.
+4. Lưu lượng theo ngày (theo giờ với kỳ 24 giờ): biểu đồ cột chồng và bảng.
+5. Nguyên nhân bị đánh dấu.
+6. Nguồn bot: theo quốc gia, theo nhà mạng, theo địa chỉ IP. Cột ghi chú chỉ xuất hiện khi có IP
+   không nên chặn: crawler đã xác minh, hoặc IP có cả người thật.
+7. Click theo Token 1, khi trang có tham số `clickid` hoặc `t1`.
 
-Bảng và hình được đánh số, có đơn vị tính. Một bảng vừa một trang thì không bị cắt giữa hai trang.
-Chân trang có số trang ("Trang X / Y").
+Chân trang chỉ có số trang. Một bảng vừa một trang thì không bị cắt giữa hai trang.
 
 ## Tệp Excel
 
