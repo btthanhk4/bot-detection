@@ -879,6 +879,34 @@ def delete_session(session_id: str) -> Optional[bool]:
         return None
 
 
+def delete_site_sessions(site_filter: dict) -> Optional[List[str]]:
+    """Delete every session of one website (``site_filter`` as ``sites.site_filter`` builds it),
+    tombstoned like a single deletion so their open tabs start new sessions. Returns their ids."""
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        ids = {sid for sid in db["detection_results"].distinct("sessionId", site_filter) if sid}
+        ids |= {doc["sessionId"] for doc in db["research_sessions"].find(
+            {"attributed_site_id": site_filter.get("site_id"), "deleted": {"$ne": True}}, {"sessionId": 1})
+            if doc.get("sessionId")}
+        ids = sorted(ids)
+        expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+        for start in range(0, len(ids), 1000):
+            chunk = ids[start:start + 1000]
+            db["deleted_sessions"].delete_many({"sessionId": {"$in": chunk}})
+            db["deleted_sessions"].insert_many([{"sessionId": sid, "expires_at": expires} for sid in chunk])
+            db["detection_results"].delete_many({"sessionId": {"$in": chunk}})
+            db["telemetry_captures"].delete_many({"sessionId": {"$in": chunk}})
+            db["touch_samples"].delete_many({"sessionId": {"$in": chunk}})
+        with _touch_written_lock:
+            _touch_written.clear()
+        return ids
+    except Exception as e:
+        logger.error(f"[DB] Delete of a site's sessions failed: {e}")
+        return None
+
+
 def delete_all_sessions() -> Optional[int]:
     """Delete all detection results. Returns number of deleted documents."""
     db = get_db()

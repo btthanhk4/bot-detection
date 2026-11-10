@@ -253,6 +253,16 @@ def delete_research_data(session_id=None):
         return _delete_research_data(session_id)
 
 
+def delete_research_sessions(session_ids) -> int:
+    """The research data of many sessions (a website's), in chunks."""
+    ids = list(session_ids)
+    deleted = 0
+    with _lock:
+        for start in range(0, len(ids), 1000):
+            deleted += _delete_research_data({"$in": ids[start:start + 1000]})
+    return deleted
+
+
 def _delete_research_data(session_id=None):
     """Explicit administrative deletion includes retained dataset snapshots/labels."""
     db = get_db()

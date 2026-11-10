@@ -38,6 +38,7 @@ from api_service.capture import build_capture
 from api_service.config import settings
 from api_service.research_labels import (
     delete_research_data,
+    delete_research_sessions,
     enrich_sessions,
     register_traffic,
     set_manual_label,
@@ -377,6 +378,15 @@ def _purge_session_from_memory(session_id: str) -> bool:
         telemetry_buffer.clear()
         telemetry_buffer.extend(retained)
     return removed_from_buffer
+
+
+def _purge_sessions_from_memory(session_ids) -> None:
+    wanted = set(session_ids)
+    with _telemetry_buffer_lock:
+        _spool.delete_sessions(wanted)
+        retained = [event for event in telemetry_buffer if event.get("sessionId") not in wanted]
+        telemetry_buffer.clear()
+        telemetry_buffer.extend(retained)
 
 
 def _clear_in_memory_sessions():
@@ -1536,8 +1546,23 @@ def delete_session(session_id: str, _admin=Depends(require_admin)):
 
 
 @app.delete("/api/v1/sessions")
-def delete_all_sessions(_admin=Depends(require_admin)):
-    """Delete all detection sessions from the database."""
+def delete_all_sessions(
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    _admin=Depends(require_admin),
+):
+    """Delete the sessions of one website (``site``, as the dashboard's website picker names it),
+    or every session when no website is given."""
+    if site:
+        from api_service.database import delete_site_sessions
+        ids = delete_site_sessions(sites.site_filter(site))
+        if ids is None:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+        try:
+            delete_research_sessions(ids)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Dataset deletion incomplete; retry") from exc
+        _purge_sessions_from_memory(ids)
+        return {"status": "deleted", "site": site, "count": len(ids)}
     from api_service.database import delete_all_sessions as db_delete_all
     count = db_delete_all()
     if count is None:

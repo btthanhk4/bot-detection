@@ -85,6 +85,14 @@ class TelemetrySpool:
             connection.execute("DELETE FROM telemetry_spool WHERE session_id = ?", (session_id,))
             connection.commit()
 
+    def delete_sessions(self, session_ids) -> None:
+        ids = list(session_ids)
+        with self._lock, closing(self._connect()) as connection:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                connection.execute(f"DELETE FROM telemetry_spool WHERE session_id IN ({','.join('?' * len(chunk))})", chunk)
+            connection.commit()
+
     def clear(self) -> None:
         with self._lock, closing(self._connect()) as connection:
             connection.execute("DELETE FROM telemetry_spool")

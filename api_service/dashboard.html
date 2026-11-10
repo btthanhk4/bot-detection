@@ -1058,11 +1058,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; }
 .pr-badge { display: inline-block; padding: 0.2mm 1.6mm; border-radius: 1mm; font-size: 7.4pt; font-weight: 600; border: 0.5pt solid currentColor; }
 .pr-badge.bot { color: #b42318; } .pr-badge.suspect { color: #9a6700; } .pr-badge.human { color: #1d5fb0; } .pr-badge.insufficient { color: #6f6d66; }
-.pr-sign { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; margin-top: 10mm; text-align: center; break-inside: avoid; }
-.pr-sign strong { display: block; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.03em; }
-.pr-sign em { display: block; font-size: 7.6pt; color: #6f6d66; font-style: italic; }
-.pr-sign div::after { content: ''; display: block; height: 22mm; }
-.pr-sign-date { margin-top: 8mm; text-align: right; font-style: italic; font-size: 8.5pt; }
 
 </style>
 </head>
@@ -1249,7 +1244,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
           <button type="button" data-verdict="human" aria-pressed="false"><span class="dot human" aria-hidden="true"></span>Người thật</button>
         </div>
         <span class="panel-meta" id="trafficCount">0 phiên</span>
-        <button class="delete-all-btn" type="button" onclick="deleteAllSessions()" title="Xóa tất cả phiên"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg>Xóa tất cả</button>
+        <button class="delete-all-btn" id="deleteAllBtn" type="button" onclick="deleteAllSessions()" title="Xóa tất cả phiên"><svg class="ui-icon" aria-hidden="true"><use href="#icon-trash"></use></svg><span>Xóa tất cả</span></button>
         <div class="pager">
           <button class="label-btn" id="trafficNewer" type="button" onclick="changeTrafficPage(false)" title="Phiên mới hơn" aria-label="Phiên mới hơn" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button>
           <button class="label-btn" id="trafficOlder" type="button" onclick="changeTrafficPage(true)" title="Phiên cũ hơn" aria-label="Phiên cũ hơn" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button>
@@ -3151,13 +3146,42 @@ async function deleteSessionByIndex(idx) {
   if (session) await deleteSession(session.sessionId, idx);
 }
 
+// With a website chosen in the picker, only that website's sessions go.
+function syncDeleteAllButton() {
+  const button = document.getElementById('deleteAllBtn');
+  if (!button) return;
+  const label = selectedSite ? 'Xóa phiên của trang' : 'Xóa tất cả';
+  button.querySelector('span').textContent = label;
+  button.title = selectedSite ? 'Xóa mọi phiên của ' + siteLabel(selectedSite) : 'Xóa phiên của mọi trang';
+}
+
 async function deleteAllSessions() {
-  if (!confirm('Xác nhận xóa TẤT CẢ sessions? Hành động này không thể hoàn tác.')) return;
+  const scoped = Boolean(selectedSite);
+  const question = scoped
+    ? `Xóa mọi phiên của trang "${siteLabel(selectedSite)}"? Phiên của các trang khác giữ nguyên. Không thể hoàn tác.`
+    : 'Xóa TẤT CẢ phiên của MỌI trang? Không thể hoàn tác.';
+  if (!confirm(question)) return;
   try {
-    const res = await fetch(API_BASE + '/api/v1/sessions', {
+    const res = await fetch(API_BASE + '/api/v1/sessions' + siteParam('?'), {
       method: 'DELETE', headers: adminHeaders()
     });
     handleUnauthorized(res);
+    if (res.ok && scoped) {
+      // Other websites keep their sessions: reload this website's numbers from the server.
+      allSessions = [];
+      selectedSession = null;
+      trafficBefore = null;
+      trafficNextCursor = null;
+      trafficPageHistory.length = 0;
+      _lastTableHTML = '';
+      renderTrafficTable();
+      trafficRequestVersion++;
+      timelineRequestVersion++;
+      nextSummaryPollAt = 0;
+      nextTimelinePollAt = 0;
+      Promise.resolve(activePoll).then(() => pollAll());
+      return;
+    }
     if (res.ok) {
       allSessions = [];
       registeredTrafficTotal = 0;
@@ -3806,6 +3830,7 @@ function refreshSitesForUnknown() {
 }
 
 function syncSitePicker() {
+  syncDeleteAllButton();
   const picker = document.getElementById('sitePicker');
   const select = document.getElementById('siteFilter');
   const view = currentViewFromHash();
@@ -4782,14 +4807,7 @@ function buildPrintReport(data) {
     </header>
     <h1 class="pr-title">Báo cáo giám sát lưu lượng truy cập và bot</h1>
     <p class="pr-subtitle">Kỳ ${prPeriodLabel()}, từ ${prDateTime(data.period.from)} đến ${prDateTime(data.period.to)} · ${escapeHtml(prScope())}</p>
-    ${sections.join('')}
-    <p class="pr-sign-date">Ngày ${new Date(generated).getDate()} tháng ${new Date(generated).getMonth() + 1} năm ${new Date(generated).getFullYear()}</p>
-    <div class="pr-sign">
-      <div><strong>Người lập</strong><em>(Ký, ghi rõ họ tên)</em></div>
-      <div><strong>Người kiểm tra</strong><em>(Ký, ghi rõ họ tên)</em></div>
-      <div><strong>Phê duyệt</strong><em>(Ký, ghi rõ họ tên)</em></div>
-    </div>
-`;
+    ${sections.join('')}`;
 }
 
 function prPageCss(data) {

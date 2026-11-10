@@ -562,3 +562,30 @@ def test_a_page_keeps_the_ad_parameters_written_after_it(db):
     assert sites.update_site(db, site["site_id"], {"origins": [page]})["page_queries"] == []
     odd = sites.update_site(db, site["site_id"], {"origins": [page + "?clickid=%7Bclickid%7D&x=<b>&t1={t1}"]})
     assert odd["page_queries"] == [{"scope": page, "query": "clickid={clickid}&t1={t1}"}]
+
+
+def test_delete_all_with_a_site_deletes_only_that_sites_sessions(api, db):
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    for sid, site in (("a1", "shop"), ("a2", "shop"), ("b1", "blog"), ("u1", None)):
+        db["detection_results"].insert_one({"sessionId": sid, "site_id": site, "verdict": "HUMAN", "created_at": now})
+        db["research_sessions"].insert_one({"_id": sid, "sessionId": sid, "attributed_site_id": site,
+                                            "traffic_number": len(sid) + ord(sid[0]), "revision": 0})
+        db["telemetry_captures"].insert_one({"sessionId": sid, "event_id": "e-" + sid})
+    # A shop session the model has not scored yet is in the registry only.
+    db["research_sessions"].insert_one({"_id": "a3", "sessionId": "a3", "attributed_site_id": "shop", "traffic_number": 99,
+                                        "revision": 0})
+
+    body = api.delete("/api/v1/sessions", params={"site": "shop"}, headers=ADMIN).json()
+    assert body == {"status": "deleted", "site": "shop", "count": 3}
+    assert sorted(d["sessionId"] for d in db["detection_results"].find()) == ["b1", "u1"]
+    assert sorted(d["sessionId"] for d in db["telemetry_captures"].find()) == ["b1", "u1"]
+    assert {d["sessionId"] for d in db["research_sessions"].find({"deleted": True})} == {"a1", "a2", "a3"}
+    # Their open tabs are told to start new sessions, as after a single deletion.
+    assert {d["sessionId"] for d in db["deleted_sessions"].find()} == {"a1", "a2", "a3"}
+
+    assert api.delete("/api/v1/sessions", params={"site": "_none"}, headers=ADMIN).json()["count"] == 1
+    assert [d["sessionId"] for d in db["detection_results"].find()] == ["b1"]
+    assert api.delete("/api/v1/sessions", params={"site": "Bad Site!"}, headers=ADMIN).status_code == 422
+    assert api.delete("/api/v1/sessions", params={"site": "blog"}, headers=READ).status_code in (401, 403)
+    assert [d["sessionId"] for d in db["detection_results"].find()] == ["b1"]

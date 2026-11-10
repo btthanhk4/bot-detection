@@ -5,7 +5,7 @@ trang đang chọn:
 
 | Nút | Tệp | Dùng khi |
 |---|---|---|
-| In / Lưu PDF | Báo cáo A4 (chọn "Lưu dưới dạng PDF" trong hộp thoại in) | Gửi khách hàng, trình ký, lưu hồ sơ |
+| In / Lưu PDF | Báo cáo A4 (chọn "Lưu dưới dạng PDF" trong hộp thoại in) | Gửi khách hàng, lưu hồ sơ |
 | Xuất Excel | `DC-BC-<ngày>-<phạm vi>-<kỳ>.xlsx`, nhiều sheet có định dạng | Phân tích, đối chiếu với log của nhà mạng |
 | Tải CSV | Mọi phiên của kỳ, một dòng một phiên | Nạp vào công cụ khác |
 
@@ -21,7 +21,6 @@ Chỉ có số liệu, không có phần nhận xét:
 - **4. Nguồn phát sinh bot:** theo quốc gia, theo nhà mạng, và các IP bot nhiều nhất, mỗi IP có
   khuyến nghị chặn hay không.
 - **5. Click quảng cáo theo Token 1:** chỉ có khi trang mang tham số `clickid`/`t1`.
-- **Khối ký duyệt.**
 
 Bảng và hình được đánh số, có đơn vị tính. Một bảng vừa một trang thì không bị cắt giữa hai trang.
 Chân trang có số trang ("Trang X / Y").
