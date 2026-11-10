@@ -116,3 +116,23 @@ def test_crawlers_and_shared_addresses_are_marked_not_to_block(db):
     assert ips["198.51.100.7"]["verified_crawler"] == "Googlebot" and ips["198.51.100.7"]["human_sessions"] == 0
     assert ips["192.0.2.9"]["verified_crawler"] is None
     assert ips["203.0.113.1"]["human_sessions"] == 2 and ips["203.0.113.1"]["verified_crawler"] is None
+
+
+def test_summary_compares_with_the_period_before_and_counts_by_hour_and_day(db):
+    add(db, "now1", "BOT", age_hours=1)
+    add(db, "now2", "HUMAN", age_hours=2)
+    add(db, "now3", "SUSPECT", age_hours=2, state="INSUFFICIENT_EVIDENCE", decision_deferred=True)
+    add(db, "before1", "BOT", age_hours=30)
+    add(db, "before2", "BOT", age_hours=40)
+    day = reports.summary(db, site_filter={"site_id": "shop"}, days=1, now=NOW, utc_offset_minutes=420)
+    assert day["previous_totals"] == {"sessions": 2, "human": 0, "bot": 2, "suspect": 0, "insufficient": 0}
+    hours = day["timeline"]
+    assert len(hours) == 24 and sum(h["sessions"] for h in hours) == 3
+    # NOW is 12:00 UTC = 19:00 in Vietnam: one hour before is the 18:00 bucket, the last one.
+    assert hours[-1]["bot"] == 1 and hours[-1]["start"] == int((NOW - timedelta(hours=1)).timestamp() * 1000)
+    assert hours[-2]["human"] == 1 and hours[-2]["insufficient"] == 1
+    week = reports.summary(db, site_filter={"site_id": "shop"}, days=7, now=NOW, utc_offset_minutes=420)
+    assert sum(d["sessions"] for d in week["timeline"]) == 5
+    # Local days: the first starts at midnight Vietnam time, before the period begins.
+    first = datetime.fromtimestamp(week["timeline"][0]["start"] / 1000, tz=timezone(timedelta(hours=7)))
+    assert (first.hour, first.minute) == (0, 0) and len(week["timeline"]) == 8

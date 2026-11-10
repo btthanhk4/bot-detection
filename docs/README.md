@@ -6,6 +6,7 @@ Tổng quan hệ thống và cách chạy nằm ở [README](../README.md).
 ## Vận hành và triển khai
 
 - [DEPLOYMENT.md](DEPLOYMENT.md): Triển khai production
+- [REPORT_EXPORT.md](REPORT_EXPORT.md): Xuất báo cáo: PDF A4 kiểu báo cáo quản trị, Excel nhiều sheet, CSV
 - [CLICK_ATTRIBUTION.md](CLICK_ATTRIBUTION.md): Theo dõi click quảng cáo (clickid, t1): báo cáo theo nguồn, CSV click, API tra cứu
 - [PILOT_OPERATOR_GUIDE.md](PILOT_OPERATOR_GUIDE.md): Vận hành bản bàn giao thu traffic thật
 - [PILOT_HANDOFF_REVIEW_2026-10-19.md](PILOT_HANDOFF_REVIEW_2026-10-19.md): Kiểm chứng bản bàn giao thu traffic DATACAT

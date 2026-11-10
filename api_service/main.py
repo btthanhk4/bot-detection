@@ -1829,12 +1829,19 @@ def _report_scope(user: Optional[dict], site: Optional[str], days: int):
 def report_summary(
     days: int = Query(default=7),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    utc_offset_minutes: int = Query(default=420, ge=-720, le=840),
     user=Depends(require_read_access),
 ):
-    """Totals, reasons and bot sources of the sessions that started in the period."""
+    """Totals, reasons and bot sources of the sessions that started in the period, the period
+    before for comparison, and per-day (per-hour) counts in the reader's time zone."""
     reports, db, scope = _report_scope(user, site, days)
     try:
-        return reports.summary(db, site_filter=scope, days=days)
+        report = reports.summary(db, site_filter=scope, days=days, utc_offset_minutes=utc_offset_minutes)
+        # What the report was made with, for its document control block.
+        report["generated_at"] = datetime.now(timezone.utc).isoformat()
+        report["decision_policy_version"] = DECISION_POLICY_VERSION
+        report["model_bundle_id"] = model_bundle_id
+        return report
     except Exception as exc:
         logger.exception("Report summary failed")
         raise HTTPException(status_code=503, detail="Database query failed") from exc

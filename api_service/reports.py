@@ -51,16 +51,16 @@ def _period(days, now=None):
     return now - timedelta(days=days), now
 
 
-def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
-    since, until = _period(days, now)
-    match = {**site_filter, "created_at": {"$gte": since, "$lt": until}}
+_DEFERRED = {"$or": [{"$eq": ["$decision_state", "INSUFFICIENT_EVIDENCE"]},
+                     {"$eq": ["$breakdown.decision_deferred", True]}]}
 
+
+def _totals(db, match) -> dict:
+    """Sessions of ``match`` by verdict, labelled as the traffic table labels them."""
     totals = {"sessions": 0, "human": 0, "bot": 0, "suspect": 0, "insufficient": 0}
-    deferred = {"$or": [{"$eq": ["$decision_state", "INSUFFICIENT_EVIDENCE"]},
-                        {"$eq": ["$breakdown.decision_deferred", True]}]}
     for row in db["detection_results"].aggregate([
             {"$match": match},
-            {"$group": {"_id": {"verdict": "$verdict", "deferred": {"$cond": [deferred, True, False]}},
+            {"$group": {"_id": {"verdict": "$verdict", "deferred": {"$cond": [_DEFERRED, True, False]}},
                         "sessions": {"$sum": 1}}}]):
         verdict = str(row["_id"].get("verdict") or "").upper()
         count = int(row["sessions"])
@@ -73,6 +73,55 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
             totals["bot"] += count
         else:
             totals["suspect"] += count
+    return totals
+
+
+def _category(doc) -> str:
+    deferred = doc.get("decision_state") == "INSUFFICIENT_EVIDENCE" or (doc.get("breakdown") or {}).get("decision_deferred")
+    verdict = str(doc.get("verdict") or "").upper()
+    return "insufficient" if deferred else {"HUMAN": "human", "BOT": "bot"}.get(verdict, "suspect")
+
+
+def _timeline(db, match, since, until, days, offset_minutes) -> list:
+    """Sessions per local day (per hour for a one-day report), every bucket of the period listed
+    so a quiet day reads as zero. Counted in Python from a narrow projection: date arithmetic in
+    the aggregation would differ between MongoDB versions and the test double."""
+    offset = timedelta(minutes=offset_minutes)
+    hourly = days == 1
+    step = timedelta(hours=1) if hourly else timedelta(days=1)
+
+    def bucket_start(moment):
+        local = _as_utc(moment) + offset
+        local = local.replace(minute=0, second=0, microsecond=0) if hourly else local.replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        return local - offset
+
+    buckets = {}
+    start = bucket_start(since)
+    while start < until:
+        buckets[start] = {"start": _ms(start), "sessions": 0, "human": 0, "bot": 0, "suspect": 0, "insufficient": 0}
+        start += step
+    for doc in db["detection_results"].find(
+            match, {"_id": 0, "created_at": 1, "verdict": 1, "decision_state": 1, "breakdown.decision_deferred": 1}
+    ).batch_size(2000):
+        row = buckets.get(bucket_start(doc["created_at"])) if doc.get("created_at") else None
+        if row is not None:
+            row["sessions"] += 1
+            row[_category(doc)] += 1
+    return list(buckets.values())
+
+
+def _as_utc(value):
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def summary(db, *, site_filter: dict, days: int, now=None, utc_offset_minutes: int = 420) -> dict:
+    since, until = _period(days, now)
+    match = {**site_filter, "created_at": {"$gte": since, "$lt": until}}
+    totals = _totals(db, match)
+    # The period just before, of the same length: what the report compares against.
+    previous = _totals(db, {**site_filter, "created_at": {"$gte": since - (until - since), "$lt": since}})
+    deferred = _DEFERRED
 
     # Why sessions were judged BOT or SUSPECT: decision basis, rule, and for the risk-based verdicts
     # the first evidence code (a BOT from a rule also carries risk codes; they do not name its reason).
@@ -123,8 +172,10 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
                             "verified_crawler": row.get("crawler") if verified else None})
     clicks, click_sources, recent_clicks = _click_attribution(db, match, deferred, first_code)
     return {
-        "period": {"days": days, "from": _ms(since), "to": _ms(until)},
+        "period": {"days": days, "from": _ms(since), "to": _ms(until), "utc_offset_minutes": utc_offset_minutes},
         "totals": totals,
+        "previous_totals": previous,
+        "timeline": _timeline(db, match, since, until, days, utc_offset_minutes),
         # Ad clicks (api_service.clicks): their verdicts, by source, and the latest ones.
         "clicks": clicks,
         "click_sources": click_sources,
