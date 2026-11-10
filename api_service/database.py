@@ -23,6 +23,7 @@ from typing import List, Optional
 
 from pymongo.errors import DuplicateKeyError
 
+from api_service import clicks
 from api_service.config import settings
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
@@ -199,6 +200,8 @@ def _ensure_indexes(db):
         # pushed MongoDB over its memory limit (2026-11-10).
         (db["detection_results"], "table_verdict",
          [("verdict", 1), ("decision_state", 1), ("breakdown.decision_deferred", 1), ("sessionId", 1)], {}),
+        # An ad network asks for the verdict of one click (api_service.clicks).
+        (db["detection_results"], "click_id_1", [("click_id", 1)], {"sparse": True}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "sessionId_1_received_at_1", [("sessionId", 1), ("received_at", 1)], {}),
@@ -269,6 +272,8 @@ def _ensure_indexes(db):
         except Exception as e:
             all_ready = False
             logger.warning(f"[DB] Obsolete index cleanup warning for created_at_-1: {e}")
+    if all_ready:
+        clicks.backfill_in_background(db)
     return all_ready
 
 
@@ -633,7 +638,8 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 upsert=False,
             )
         if result.matched_count == 0:
-            insert_doc = {**doc, **site_fields, "landing_url": doc["pageUrl"], "created_at": now}
+            insert_doc = {**doc, **site_fields, **clicks.click_params(doc["pageUrl"]),
+                          "landing_url": doc["pageUrl"], "created_at": now}
             try:
                 collection.insert_one(insert_doc)
             except DuplicateKeyError:
@@ -642,6 +648,8 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 result = collection.update_one(update_filter, {"$set": doc}, upsert=False)
                 if result.matched_count == 0:
                     return None
+        # The ad click that brought the visitor (the first page that names one).
+        clicks.record(collection, session_id, doc["pageUrl"])
         if site_fields:
             collection.update_one({"sessionId": session_id, "site_id": None}, {"$set": site_fields})
             if not site_fields["site_unverified"]:

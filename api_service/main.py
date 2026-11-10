@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlsplit
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
@@ -32,7 +33,7 @@ from fastapi.responses import (
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
-from api_service import auth, gateway, geoip, sites
+from api_service import auth, clicks, gateway, geoip, sites
 from api_service.capture import build_capture
 from api_service.config import settings
 from api_service.research_labels import (
@@ -1852,6 +1853,49 @@ def report_sessions(
     except Exception as exc:
         logger.exception("Report export failed")
         raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
+@app.get("/api/v1/clicks/{click_id}")
+def click_verdict(
+    click_id: str = PathParam(pattern=clicks.CLICK_VALUE_PATTERN),
+    user=Depends(require_read_access),
+):
+    """Person or bot for one ad click (the ``clickid`` of its landing URL), and the source it came from."""
+    from api_service.database import get_db
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    try:
+        rows = list(db["detection_results"].find(
+            {**_scope(user, None), "click_id": click_id},
+            {"_id": 0, "sessionId": 1, "site_id": 1, "click_source": 1, "verdict": 1, "decision_state": 1,
+             "breakdown.decision_deferred": 1, "breakdown.decision_basis": 1, "breakdown.automation_rule": 1,
+             "created_at": 1, "updated_at": 1},
+        ).sort("created_at", -1).limit(20))
+    except Exception as exc:
+        logger.exception("Click lookup failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+    if not rows:
+        raise HTTPException(status_code=404, detail="Click not found")
+
+    def outcome(row):
+        deferred = row.get("decision_state") == "INSUFFICIENT_EVIDENCE" or (row.get("breakdown") or {}).get("decision_deferred")
+        return "INSUFFICIENT_EVIDENCE" if deferred else str(row.get("verdict") or "SUSPECT")
+
+    sessions = [{"sessionId": row.get("sessionId"), "site_id": row.get("site_id"), "verdict": outcome(row),
+                 "decision_basis": (row.get("breakdown") or {}).get("decision_basis"),
+                 "automation_rule": (row.get("breakdown") or {}).get("automation_rule"),
+                 "created_at": _iso(row.get("created_at")), "updated_at": _iso(row.get("updated_at"))} for row in rows]
+    # A click whose page was opened twice is a bot if any of its sessions is.
+    verdicts = {session["verdict"] for session in sessions}
+    verdict = next((v for v in ("BOT", "SUSPECT", "HUMAN") if v in verdicts), "INSUFFICIENT_EVIDENCE")
+    return {"click_id": click_id, "click_source": rows[0].get("click_source"), "verdict": verdict, "sessions": sessions}
+
+
+def _iso(value):
+    if isinstance(value, datetime):
+        return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
+    return None
 
 
 # ---- Accounts: who may sign in to the dashboard, and what they see ----

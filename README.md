@@ -260,6 +260,7 @@ là số khách online (5 phút), số phiên 24 giờ, tỉ lệ phân loại, 
 | `POST` / `PATCH` / `DELETE` | `/api/v1/sites[/{site_id}]` | Thêm, sửa, tạm dừng, xóa website (quyền quản trị) |
 | `GET` | `/api/v1/reports/summary?days=1\|7\|30&site=` | Báo cáo kỳ: tổng theo kết luận, lý do, IP/quốc gia/nhà mạng của bot |
 | `GET` | `/api/v1/reports/sessions?days=&site=` | Phiên trong kỳ để dashboard xuất CSV (tối đa 50.000) |
+| `GET` | `/api/v1/clicks/{clickid}` | Người hay bot cho một click quảng cáo (`?clickid=&t1=` của URL trang đích), xem [Theo dõi click](docs/CLICK_ATTRIBUTION.md) |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/api/v1/users[/{username}]`, `POST /api/v1/users/{username}/reset-password` | Quản lý tài khoản (quyền quản trị) |
 
 Các endpoint giám sát (`stats/summary`, `traffic/timeline`, `telemetry/recent`, `research/traffic`,
