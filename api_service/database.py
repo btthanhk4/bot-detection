@@ -194,6 +194,11 @@ def _ensure_indexes(db):
             {},
         ),
         (db["detection_results"], "updated_at_-1", [("updated_at", -1)], {"expireAfterSeconds": RETENTION_SECONDS}),
+        # The traffic table's verdict filter reads session ids from this index alone; without it
+        # every dashboard poll scanned the whole collection (10 KB a session, with the path) and
+        # pushed MongoDB over its memory limit (2026-11-10).
+        (db["detection_results"], "table_verdict",
+         [("verdict", 1), ("decision_state", 1), ("breakdown.decision_deferred", 1), ("sessionId", 1)], {}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "sessionId_1_received_at_1", [("sessionId", 1), ("received_at", 1)], {}),

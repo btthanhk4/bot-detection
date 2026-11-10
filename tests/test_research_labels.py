@@ -91,6 +91,7 @@ def db(monkeypatch):
         "deleted_sessions", "service_control",
     )}
     monkeypatch.setattr(research, "get_db", lambda: collections)
+    research._verdict_cache.clear()
     return collections
 
 
@@ -162,6 +163,21 @@ def test_the_verdict_filter_matches_the_table_labels(db):
     first = research.traffic_page(1, verdict="bot")
     assert first["next_before"] == 5
     assert numbers("bot", before=5) == ([1], 2, 6)
+
+
+def test_the_verdict_filter_reads_ids_once_per_cache_window(db, monkeypatch):
+    research.register_traffic({"sessionId": "s1", "received_at": 1000})
+    db["detection_results"].docs["s1"] = {"_id": "s1", "sessionId": "s1", "verdict": "BOT", "decision_state": "FINAL"}
+    calls = []
+    original = db["detection_results"].distinct
+    monkeypatch.setattr(db["detection_results"], "distinct", lambda *a, **k: calls.append(a) or original(*a, **k))
+    for _ in range(5):
+        assert research.traffic_page(50, verdict="bot")["total"] == 1
+    assert len(calls) == 1
+    clock = [research.time.monotonic() + research.VERDICT_CACHE_SECONDS + 1]
+    monkeypatch.setattr(research.time, "monotonic", lambda: clock[0])
+    research.traffic_page(50, verdict="bot")
+    assert len(calls) == 2
 
 
 def test_legacy_backfill_uses_earliest_server_time_not_latest_heartbeat(db):

@@ -129,11 +129,32 @@ VERDICT_FILTERS = ("bot", "suspect", "pending", "human")
 _DECIDED = {"decision_state": {"$ne": "INSUFFICIENT_EVIDENCE"}, "breakdown.decision_deferred": {"$ne": True}}
 
 
+# Every open dashboard polls the table every 5 s; the id lists are shared for a few seconds.
+VERDICT_CACHE_SECONDS = 15
+_verdict_cache = {}
+_verdict_cache_lock = threading.Lock()
+
+
+def _decided_ids(db, verdict):
+    """Session ids with a decided verdict (``None``: any), read from the ``table_verdict`` index."""
+    key = (id(db), verdict)
+    now = time.monotonic()
+    with _verdict_cache_lock:
+        cached = _verdict_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+    query = {**_DECIDED, "verdict": verdict} if verdict else {
+        **_DECIDED, "verdict": {"$in": ["BOT", "SUSPECT", "HUMAN"]}}
+    ids = db["detection_results"].distinct("sessionId", query)
+    with _verdict_cache_lock:
+        _verdict_cache[key] = (now + VERDICT_CACHE_SECONDS, ids)
+    return ids
+
+
 def _verdict_condition(db, verdict):
     if verdict == "pending":
-        return {"sessionId": {"$nin": db["detection_results"].distinct("sessionId", _DECIDED)}}
-    return {"sessionId": {"$in": db["detection_results"].distinct(
-        "sessionId", {**_DECIDED, "verdict": verdict.upper()})}}
+        return {"sessionId": {"$nin": _decided_ids(db, None)}}
+    return {"sessionId": {"$in": _decided_ids(db, verdict.upper())}}
 
 
 def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
