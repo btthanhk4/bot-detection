@@ -107,6 +107,37 @@ def normalize_scope(value) -> str:
     return origin + path
 
 
+# URL parameters an ad network appends to a page ('?clickid={clickid}&t1={t1}'): kept as written so
+# the operator sees them, and read by api_service.clicks; traffic still matches the page without them.
+_PARAM_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+_PARAM_VALUE = re.compile(r"^(\{[A-Za-z0-9_.-]{1,40}\}|[A-Za-z0-9._~:@+-]{0,128})$")
+MAX_QUERY_PARAMS = 10
+
+
+def entry_query(value) -> str:
+    """'shop.vn/a.html?clickid={clickid}&t1={t1}' -> 'clickid={clickid}&t1={t1}' ('' when none)."""
+    text = str(value or "").strip()
+    if "?" not in text:
+        return ""
+    pairs = []
+    for part in text.split("?", 1)[1].split("#", 1)[0].split("&"):
+        name, _, raw = part.partition("=")
+        name, raw = unquote(name).strip(), unquote(raw).strip()
+        if part and _PARAM_NAME.match(name) and _PARAM_VALUE.match(raw) and len(pairs) < MAX_QUERY_PARAMS:
+            pairs.append(f"{name}={raw}")
+    return "&".join(pairs)
+
+
+def page_queries(entries) -> list:
+    """[{'scope': normalized entry, 'query': its parameters}] for the entries written with some."""
+    found = {}
+    for entry in entries:
+        query = entry_query(entry)
+        if query:
+            found[normalize_scope(entry)] = query
+    return [{"scope": scope, "query": query} for scope, query in sorted(found.items())]
+
+
 def split_scope(scope: str) -> tuple:
     origin = normalize_origin(scope)
     # Entries saved before directory pages were merged may still end in /index.html.
@@ -308,8 +339,8 @@ def ensure_indexes(db) -> bool:
 
 
 def _public(site: dict) -> dict:
-    return {key: site.get(key) for key in ("site_id", "name", "origins", "status", "platform", "contact", "notes",
-                                          "created_at", "updated_at")}
+    return {key: site.get(key) for key in ("site_id", "name", "origins", "page_queries", "status", "platform",
+                                          "contact", "notes", "created_at", "updated_at")}
 
 
 def _conflicts(db, origins, site_id: Optional[str] = None) -> Optional[tuple]:
@@ -385,7 +416,8 @@ def attribute_unverified_history(db) -> int:
 def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contact: Optional[str] = None,
                 notes: Optional[str] = None, status: str = "active", platform: Optional[str] = None) -> dict:
     """Raises ValueError (bad input) or LookupError (id or origin already taken)."""
-    origins = sorted({normalize_scope(origin) for origin in origins})
+    entries = list(origins)
+    origins = sorted({normalize_scope(origin) for origin in entries})
     if not origins or len(origins) > MAX_ORIGINS:
         raise ValueError(f"A site needs 1 to {MAX_ORIGINS} domains")
     if site_id is not None and not _SITE_ID.match(site_id):
@@ -401,7 +433,8 @@ def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contac
     if db["sites"].find_one({"site_id": site_id}, {"_id": 1}):
         raise LookupError(f"Site id {site_id} is already used")
     now = datetime.now(timezone.utc)
-    site = {"site_id": site_id, "name": name.strip(), "origins": origins, "status": status, "platform": platform,
+    site = {"site_id": site_id, "name": name.strip(), "origins": origins, "page_queries": page_queries(entries),
+            "status": status, "platform": platform,
             "contact": (contact or "").strip() or None, "notes": (notes or "").strip() or None,
             "created_at": now, "updated_at": now}
     db["sites"].insert_one(dict(site))
@@ -425,6 +458,7 @@ def update_site(db, site_id: str, changes: dict) -> dict:
         if conflict:
             raise LookupError(f"{conflict[0]} already belongs to site {conflict[1]}")
         update["origins"] = origins
+        update["page_queries"] = page_queries(changes["origins"])
     if changes.get("status") is not None:
         if changes["status"] not in STATUSES:
             raise ValueError("Unknown status")

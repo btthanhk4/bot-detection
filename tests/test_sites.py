@@ -542,3 +542,23 @@ def test_refused_pages_are_logged_once_without_query(api, db, caplog):
             assert response.status_code == 403
     lines = [r.getMessage() for r in caplog.records if "Telemetry refused" in r.getMessage()]
     assert lines == [f"Telemetry refused for an unregistered page: origin={SHOP} path=/cart"]
+
+
+TEMPLATE = "https://toprewards4u7.online/Download/Downloader/index.html?clickid={clickid}&t1={t1}"
+
+
+def test_a_page_keeps_the_ad_parameters_written_after_it(db):
+    site = sites.create_site(db, name="Downloader", origins=[TEMPLATE, "shop.vn"])
+    page = "https://toprewards4u7.online/download/downloader"
+    assert site["origins"] == ["https://shop.vn", page]
+    assert site["page_queries"] == [{"scope": page, "query": "clickid={clickid}&t1={t1}"}]
+    # Traffic still matches the page whatever values the network fills in.
+    found = sites.registry.for_page("https://toprewards4u7.online",
+                                    "https://toprewards4u7.online/Download/Downloader/index.html?clickid=abc&t1=z9")
+    assert found["site_id"] == site["site_id"]
+    # Saving the address again keeps the parameters; dropping them clears them; junk is not kept.
+    again = sites.update_site(db, site["site_id"], {"origins": [TEMPLATE]})
+    assert again["page_queries"] == [{"scope": page, "query": "clickid={clickid}&t1={t1}"}]
+    assert sites.update_site(db, site["site_id"], {"origins": [page]})["page_queries"] == []
+    odd = sites.update_site(db, site["site_id"], {"origins": [page + "?clickid=%7Bclickid%7D&x=<b>&t1={t1}"]})
+    assert odd["page_queries"] == [{"scope": page, "query": "clickid={clickid}&t1={t1}"}]

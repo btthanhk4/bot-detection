@@ -5,6 +5,7 @@ exact however many sessions there are. Reasons come back as raw decision keys; t
 labels them with the same wording as the traffic table.
 """
 
+import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
@@ -16,8 +17,25 @@ TOP_IPS = 20
 TOP_GROUPS = 6
 TOP_CLICK_SOURCES = 25
 RECENT_CLICKS = 100
+CLICK_PAGE_SIZE = 50
+CLICK_VERDICTS = ("bot", "suspect", "human", "insufficient")
 _IP_GROUP_LIMIT = 5000
 _NOT_DEFERRED = {"decision_state": {"$ne": "INSUFFICIENT_EVIDENCE"}, "breakdown.decision_deferred": {"$ne": True}}
+
+
+# The first evidence code of a risk-based verdict (a BOT from a rule also carries risk codes; they
+# do not name its reason). A declared crawler is told apart by whether its address is its operator's.
+_CRAWLER = "$breakdown.automation_evidence.crawler"
+_FIRST_CODE = {"$switch": {"branches": [
+    {"case": {"$in": ["$breakdown.decision_basis", ["desktop_risk", "mobile_risk"]]},
+     "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
+                          {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]}},
+    {"case": {"$eq": ["$breakdown.decision_basis", "client_forgery"]},
+     "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.client_forgery.evidence", 0]},
+                          {"$arrayElemAt": ["$breakdown.client_forgery.codes", 0]}]}},
+    {"case": {"$eq": [_CRAWLER + ".verified", True]}, "then": "VERIFIED_CRAWLER"},
+    {"case": {"$eq": [_CRAWLER + ".verified", False]}, "then": "SPOOFED_CRAWLER"},
+], "default": None}}
 
 
 def _ms(value):
@@ -59,17 +77,8 @@ def summary(db, *, site_filter: dict, days: int, now=None) -> dict:
     # Why sessions were judged BOT or SUSPECT: decision basis, rule, and for the risk-based verdicts
     # the first evidence code (a BOT from a rule also carries risk codes; they do not name its reason).
     # A declared crawler is told apart by whether its address is its operator's (policy 25).
-    crawler = "$breakdown.automation_evidence.crawler"
-    first_code = {"$switch": {"branches": [
-        {"case": {"$in": ["$breakdown.decision_basis", ["desktop_risk", "mobile_risk"]]},
-         "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.desktop_risk.codes", 0]},
-                              {"$arrayElemAt": ["$breakdown.mobile_human.risk", 0]}]}},
-        {"case": {"$eq": ["$breakdown.decision_basis", "client_forgery"]},
-         "then": {"$ifNull": [{"$arrayElemAt": ["$breakdown.client_forgery.evidence", 0]},
-                              {"$arrayElemAt": ["$breakdown.client_forgery.codes", 0]}]}},
-        {"case": {"$eq": [crawler + ".verified", True]}, "then": "VERIFIED_CRAWLER"},
-        {"case": {"$eq": [crawler + ".verified", False]}, "then": "SPOOFED_CRAWLER"},
-    ], "default": None}}
+    crawler = _CRAWLER
+    first_code = _FIRST_CODE
     reasons = [
         {"verdict": row["_id"].get("verdict"), "decision_basis": row["_id"].get("basis"),
          "automation_rule": row["_id"].get("rule"), "code": row["_id"].get("code"), "sessions": int(row["sessions"])}
@@ -164,6 +173,42 @@ def _click_attribution(db, match, deferred, first_code):
         row["created_at"] = _ms(row.get("created_at"))
         recent.append(row)
     return clicks, ranked[:TOP_CLICK_SOURCES], recent
+
+
+def clicks_page(db, *, site_filter: dict, days: int, verdict=None, query=None, page=1, now=None) -> dict:
+    """Every ad click of the period, newest first, as the network lists its clicks (Click ID, Token 1),
+    with DATACAT's verdict; filtered by verdict and by a Click ID or Token 1 prefix."""
+    since, until = _period(days, now)
+    match = {**site_filter, "created_at": {"$gte": since, "$lt": until}, "click_id": {"$type": "string"}}
+    deferred_query = {"$or": [{"decision_state": "INSUFFICIENT_EVIDENCE"}, {"breakdown.decision_deferred": True}]}
+    if verdict == "insufficient":
+        match = {"$and": [match, deferred_query]}
+    elif verdict in ("bot", "suspect", "human"):
+        match = {**match, **_NOT_DEFERRED, "verdict": verdict.upper()}
+    if query:
+        prefix = {"$regex": "^" + re.escape(query)}
+        match = {"$and": [match, {"$or": [{"click_id": prefix}, {"click_source": prefix}]}]}
+    total = db["detection_results"].count_documents(match)
+    page = max(1, int(page))
+    deferred = {"$or": [{"$eq": ["$decision_state", "INSUFFICIENT_EVIDENCE"]},
+                        {"$eq": ["$breakdown.decision_deferred", True]}]}
+    category = {"$cond": [deferred, "insufficient", {"$switch": {"branches": [
+        {"case": {"$eq": ["$verdict", "HUMAN"]}, "then": "human"},
+        {"case": {"$eq": ["$verdict", "BOT"]}, "then": "bot"}], "default": "suspect"}}]}
+    rows = []
+    for row in db["detection_results"].aggregate([
+            {"$match": match},
+            {"$sort": {"created_at": -1, "sessionId": 1}},
+            {"$skip": (page - 1) * CLICK_PAGE_SIZE},
+            {"$limit": CLICK_PAGE_SIZE},
+            {"$project": {"_id": 0, "click_id": 1, "click_source": 1, "sessionId": 1, "verdict": 1, "client_ip": 1,
+                          "created_at": 1, "category": category, "decision_basis": "$breakdown.decision_basis",
+                          "automation_rule": "$breakdown.automation_rule", "code": _FIRST_CODE}}]):
+        row["created_at"] = _ms(row.get("created_at"))
+        rows.append(row)
+    geoip.attach(rows)
+    return {"period": {"days": days, "from": _ms(since), "to": _ms(until)}, "clicks": rows, "total": total,
+            "page": page, "page_size": CLICK_PAGE_SIZE}
 
 
 _EXPORT_FIELDS = {

@@ -638,7 +638,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 upsert=False,
             )
         if result.matched_count == 0:
-            insert_doc = {**doc, **site_fields, **clicks.click_params(doc["pageUrl"]),
+            insert_doc = {**doc, **site_fields, **clicks.click_params(doc["pageUrl"], telemetry.get("_site_id")),
                           "landing_url": doc["pageUrl"], "created_at": now}
             try:
                 collection.insert_one(insert_doc)
@@ -649,7 +649,7 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
                 if result.matched_count == 0:
                     return None
         # The ad click that brought the visitor (the first page that names one).
-        clicks.record(collection, session_id, doc["pageUrl"])
+        clicks.record(collection, session_id, doc["pageUrl"], telemetry.get("_site_id"))
         if site_fields:
             collection.update_one({"sessionId": session_id, "site_id": None}, {"$set": site_fields})
             if not site_fields["site_unverified"]:

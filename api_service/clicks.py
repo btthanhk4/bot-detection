@@ -18,6 +18,8 @@ import threading
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlsplit
 
+from api_service.sites import registry
+
 logger = logging.getLogger("bot_detection.clicks")
 
 
@@ -32,7 +34,22 @@ _VALUE = re.compile(CLICK_VALUE_PATTERN)
 BACKFILL_MARKER = "click_attribution_backfill_v1"
 
 
-def click_params(url) -> dict:
+def site_params(site) -> tuple:
+    """Parameter names a website's address declares (``cid={clickid}&t1={t1}`` in the site dialog):
+    a parameter whose name or macro is a click id names the click, likewise for the source."""
+    id_names, source_names = [], []
+    for entry in (site or {}).get("page_queries") or []:
+        for part in str(entry.get("query") or "").split("&"):
+            name, _, value = part.partition("=")
+            macro = value[1:-1].lower() if value.startswith("{") and value.endswith("}") else ""
+            if name.lower() in CLICK_ID_PARAMS or macro in CLICK_ID_PARAMS:
+                id_names.append(name.lower())
+            elif name.lower() in CLICK_SOURCE_PARAMS or macro in CLICK_SOURCE_PARAMS:
+                source_names.append(name.lower())
+    return tuple(id_names), tuple(source_names)
+
+
+def click_params(url, site_id=None) -> dict:
     """``{"click_id": ..., "click_source": ...}`` with the values the URL carries (possibly none)."""
     if not isinstance(url, str) or "?" not in url:
         return {}
@@ -42,7 +59,8 @@ def click_params(url) -> dict:
         return {}
     values = {name.lower(): found for name, found in query.items()}
     out = {}
-    for field, names in (("click_id", CLICK_ID_PARAMS), ("click_source", CLICK_SOURCE_PARAMS)):
+    site_ids, site_sources = site_params(registry.get(site_id)) if site_id else ((), ())
+    for field, names in (("click_id", site_ids + CLICK_ID_PARAMS), ("click_source", site_sources + CLICK_SOURCE_PARAMS)):
         for name in names:
             value = (values.get(name) or [""])[0].strip()
             if _VALUE.match(value):
@@ -51,9 +69,9 @@ def click_params(url) -> dict:
     return out
 
 
-def record(collection, session_id, url) -> None:
+def record(collection, session_id, url, site_id=None) -> None:
     """Attribute a session to the click on its page URL, once: a later page never replaces it."""
-    click = click_params(url)
+    click = click_params(url, site_id)
     if click:
         collection.update_one({"sessionId": session_id, "click_id": None, "click_source": None}, {"$set": click})
 

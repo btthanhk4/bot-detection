@@ -16,8 +16,23 @@ https://toprewards4u7.online/Download/Downloader/index.html?clickid={clickid}&t1
 
 | Tham số | Ý nghĩa | Trường lưu trong phiên |
 |---|---|---|
-| `clickid` | Mã nhà mạng gán cho click | `click_id` |
-| `t1` | Nguồn (trang web hoặc zone) mà click đến từ đó | `click_source` |
+| `clickid` | Click ID: mã nhà mạng gán cho click | `click_id` |
+| `t1` | Token 1: nguồn (trang web hoặc zone) mà click đến từ đó, do nhà mạng gửi | `click_source` |
+
+DATACAT không tự tạo hai giá trị này mà chỉ ghi lại nguyên văn từ URL. Token 1 được giữ nguyên chuỗi
+(ví dụ `29098-61365d8f-2d516f78`), không tách thành các phần.
+
+Ghi luôn mẫu tham số vào địa chỉ trang trong hộp "Thêm/Sửa trang" (mục Trang theo dõi), ví dụ
+`https://toprewards4u7.online/Download/Downloader/index.html?clickid={clickid}&t1={t1}`:
+
+- **Mẫu được giữ lại.** Danh sách trang và hộp sửa trang đều hiện địa chỉ kèm mẫu. Việc khớp trang
+  vẫn chỉ theo đường dẫn, nên mọi giá trị nhà mạng điền vào vẫn thuộc cùng một trang.
+- **Mẫu cho biết tham số nào cần ghi.** Tham số tên `clickid`, hoặc có macro `{clickid}`, là Click
+  ID. Tham số tên `t1`, hoặc có macro `{t1}`, là Token 1. Ví dụ với mẫu `?cid={clickid}&src={t1}`,
+  DATACAT đọc `cid` và `src`.
+- **Địa chỉ hiển thị được chuẩn hóa.** Chữ thường, và `index.html` gộp với thư mục của nó, nên thầy
+  sẽ thấy `…/download/downloader?clickid={clickid}&t1={t1}`. Không cần ghi mẫu thì `clickid` và `t1`
+  vẫn được ghi nhận, vì đây là tên mặc định.
 
 Không cần sửa thẻ script, vì collector đã gửi nguyên URL của trang. Server làm phần còn lại:
 
@@ -34,9 +49,13 @@ Không cần sửa thẻ script, vì collector đã gửi nguyên URL của tran
 ## 2. Xem kết quả
 
 **Báo cáo** (dashboard, mục Báo cáo, kỳ 24 giờ, 7 ngày hoặc 30 ngày):
-- **Click quảng cáo theo nguồn (t1):** với mỗi nguồn, số phiên Bot, Nghi vấn, Người thật, Chưa đủ
-  dữ liệu, và tỉ lệ bot. Nguồn nhiều bot nhất xếp đầu.
-- **Click gần đây:** 100 click mới nhất, mỗi dòng gồm clickid, t1, kết luận, lý do, thời gian.
+- **Click theo Token 1 (t1):** với mỗi Token 1, số phiên Bot, Nghi vấn, Người thật, Chưa đủ
+  dữ liệu, và tỉ lệ bot. Token nhiều bot nhất xếp đầu.
+- **Danh sách click:** mọi click trong kỳ, mới nhất trước, 50 dòng một trang. Đây là danh sách
+  giống cách nhà mạng liệt kê click (Click ID, Token 1), thêm kết luận, lý do, IP và thời gian.
+  - Tìm theo phần đầu của Click ID hoặc Token 1.
+  - Lọc theo kết luận: Bot, Nghi vấn, Chưa đủ dữ liệu, Người thật.
+  - Dữ liệu lấy từ `GET /api/v1/reports/clicks?days=&site=&verdict=&q=&page=`.
 - **Tải CSV click:** chỉ các phiên có click. Cột: clickid, t1, kết luận, lý do, thời gian, IP,
   quốc gia, nhà mạng, thiết bị, mã phiên. Nhà mạng dùng file này để đối chiếu với log click của mình.
 

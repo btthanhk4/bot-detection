@@ -1855,6 +1855,24 @@ def report_sessions(
         raise HTTPException(status_code=503, detail="Database query failed") from exc
 
 
+@app.get("/api/v1/reports/clicks")
+def report_clicks(
+    days: int = Query(default=7),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    verdict: Optional[Literal["bot", "suspect", "human", "insufficient"]] = Query(default=None),
+    q: Optional[str] = Query(default=None, pattern=r"^[A-Za-z0-9._~:@+-]{1,128}$"),
+    page: int = Query(default=1, ge=1, le=10000),
+    user=Depends(require_read_access),
+):
+    """Every ad click of the period (Click ID, Token 1) with its verdict, 50 a page."""
+    reports, db, scope = _report_scope(user, site, days)
+    try:
+        return reports.clicks_page(db, site_filter=scope, days=days, verdict=verdict, query=q, page=page)
+    except Exception as exc:
+        logger.exception("Click report failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
 @app.get("/api/v1/clicks/{click_id}")
 def click_verdict(
     click_id: str = PathParam(pattern=clicks.CLICK_VALUE_PATTERN),

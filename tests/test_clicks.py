@@ -130,3 +130,53 @@ def test_click_lookup_endpoint(db, monkeypatch):
     assert client.get("/api/v1/clicks/nope", headers=headers).status_code == 404
     assert client.get("/api/v1/clicks/%7Bclickid%7D", headers=headers).status_code == 422
     assert client.get("/api/v1/clicks/c1").status_code in (401, 403)
+
+
+def test_click_list_pages_filters_and_searches(db, monkeypatch):
+    monkeypatch.setattr(reports.geoip, "lookup", lambda ip: {})
+    monkeypatch.setattr(reports, "CLICK_PAGE_SIZE", 2)
+    add(db, "a", "BOT", click="dbpj6vv9", source="615-447d569f", age_minutes=1)
+    add(db, "b", "HUMAN", click="dbpj6sv9", source="29098-61365d8f-2d516f78", age_minutes=2)
+    add(db, "c", "SUSPECT", click="dbpj6s79", source="28014-b2fef3bz", age_minutes=3)
+    add(db, "d", "SUSPECT", click="xyz", source="28014-b2fef3bz", age_minutes=4, state="INSUFFICIENT_EVIDENCE")
+    add(db, "e", "HUMAN", age_minutes=5)  # no click
+
+    def page(**kw):
+        out = reports.clicks_page(db, site_filter={"site_id": "downloader"}, days=1, now=NOW, **kw)
+        return [row["click_id"] for row in out["clicks"]], out["total"]
+
+    assert page() == (["dbpj6vv9", "dbpj6sv9"], 4)
+    assert page(page=2) == (["dbpj6s79", "xyz"], 4)
+    assert page(verdict="bot") == (["dbpj6vv9"], 1)
+    assert page(verdict="suspect") == (["dbpj6s79"], 1)
+    assert page(verdict="insufficient") == (["xyz"], 1)
+    assert page(query="dbpj6s") == (["dbpj6sv9", "dbpj6s79"], 2)
+    assert page(query="28014-") == (["dbpj6s79", "xyz"], 2)
+    assert page(query="28014", verdict="insufficient") == (["xyz"], 1)
+    first = reports.clicks_page(db, site_filter={"site_id": "downloader"}, days=1, now=NOW)["clicks"][0]
+    assert (first["click_source"], first["category"]) == ("615-447d569f", "bot")
+
+
+def test_click_list_endpoint_validates(db, monkeypatch):
+    monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
+    monkeypatch.setattr(reports.geoip, "lookup", lambda ip: {})
+    add(db, "a", "BOT", click="c1", source="z1")
+    client = TestClient(main.app)
+    headers = {"X-Read-Token": "read-secret"}
+    body = client.get("/api/v1/reports/clicks", params={"days": 1, "verdict": "bot"}, headers=headers).json()
+    assert body["total"] >= 0 and body["page"] == 1
+    assert client.get("/api/v1/reports/clicks", params={"q": "a b"}, headers=headers).status_code == 422
+    assert client.get("/api/v1/reports/clicks", params={"verdict": "robot"}, headers=headers).status_code == 422
+    assert client.get("/api/v1/reports/clicks", params={"days": 3}, headers=headers).status_code == 422
+
+
+def test_a_site_may_name_its_own_click_parameters(db):
+    from api_service import sites
+    site = sites.create_site(db, name="Lander", origins=["https://lander.example/go.html?cid={clickid}&src={t1}"])
+    url = "https://lander.example/go.html?cid=k42&src=zone-9"
+    assert clicks.click_params(url) == {}  # not the default names
+    assert clicks.click_params(url, site["site_id"]) == {"click_id": "k42", "click_source": "zone-9"}
+    # The default names still work on that site.
+    assert clicks.click_params("https://lander.example/go.html?clickid=a1&t1=b2", site["site_id"]) == {
+        "click_id": "a1", "click_source": "b2"}
+    sites.registry.reload(mongomock.MongoClient()["empty"])

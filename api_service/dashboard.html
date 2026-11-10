@@ -744,6 +744,12 @@ body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-t
 .rate-bar i { display: block; height: 100%; border-radius: 3px; background: var(--v-bot); }
 .click-hint { margin: 0; padding: 18px; color: var(--text-3); font-size: 13px; line-height: 1.6; }
 .click-hint code { font: 12px var(--font-mono); color: var(--text-2); }
+.click-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.click-search { position: relative; flex: 0 1 240px; min-width: 160px; }
+.click-search input { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font: 13px var(--font-mono); }
+.click-search input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-ring); }
+@media (max-width: 640px) { .click-search { flex: 1 1 100%; } }
 
 /* ───────────────────────────── Websites & accounts ───────────────────────────── */
 .sites-table { font-size: 13px; }
@@ -1280,24 +1286,41 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     </div>
     <div class="panel" id="reportClicksPanel">
       <div class="panel-header">
-        <div class="panel-title">Click quảng cáo theo nguồn (t1)<span class="panel-badge badge-count" id="reportClickCount"></span></div>
+        <div class="panel-title">Click theo Token 1 (t1)<span class="panel-badge badge-count" id="reportClickCount"></span></div>
         <span class="panel-meta" id="reportClickSummary"></span>
         <button class="btn-secondary btn-compact report-copy" type="button" id="reportClickCsv" onclick="exportClickCsv()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-download"></use></svg><span>Tải CSV click</span></button>
       </div>
       <div class="table-scroll report-ip-scroll" id="reportClickSourcesWrap">
         <table class="sites-table report-clicks">
-          <thead><tr><th>Nguồn (t1)</th><th class="num">Phiên</th><th class="num">Bot</th><th class="num">Nghi vấn</th><th class="num">Người thật</th><th class="num">Chưa đủ dữ liệu</th><th>Tỉ lệ bot</th></tr></thead>
+          <thead><tr><th>Token 1</th><th class="num">Phiên</th><th class="num">Bot</th><th class="num">Nghi vấn</th><th class="num">Người thật</th><th class="num">Chưa đủ dữ liệu</th><th>Tỉ lệ bot</th></tr></thead>
           <tbody id="reportClickSources"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
-      <p class="click-hint" id="reportClickHint" hidden>Chưa có phiên nào mang mã click trong kỳ. Để theo dõi từng click, nhà mạng thêm vào URL trang đích <code>?clickid={clickid}&amp;t1={t1}</code>: <code>clickid</code> là mã của click, <code>t1</code> là nguồn (zone) của click.</p>
+      <p class="click-hint" id="reportClickHint" hidden>Chưa có phiên nào mang mã click trong kỳ. Để theo dõi từng click, nhà mạng thêm vào URL trang đích <code>?clickid={clickid}&amp;t1={t1}</code>: <code>clickid</code> là Click ID, <code>t1</code> là Token 1 của nhà mạng. DATACAT chỉ ghi lại hai giá trị này, không tự tạo.</p>
     </div>
     <div class="panel" id="reportRecentClicksPanel">
-      <div class="panel-header"><div class="panel-title">Click gần đây</div><span class="panel-meta" id="reportRecentMeta"></span></div>
+      <div class="panel-header">
+        <div class="panel-title">Danh sách click<span class="panel-badge badge-count" id="clickListCount"></span></div>
+        <div class="click-tools">
+          <label class="click-search"><span class="sr-only">Tìm Click ID hoặc Token 1</span><input id="clickSearch" type="search" placeholder="Tìm Click ID / Token 1" autocomplete="off" spellcheck="false" maxlength="128"></label>
+          <div class="verdict-filter" id="clickVerdictFilter" role="group" aria-label="Lọc click theo kết luận">
+            <button type="button" data-verdict="" aria-pressed="true">Tất cả</button>
+            <button type="button" data-verdict="bot" aria-pressed="false"><span class="dot bot" aria-hidden="true"></span>Bot</button>
+            <button type="button" data-verdict="suspect" aria-pressed="false"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</button>
+            <button type="button" data-verdict="insufficient" aria-pressed="false"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</button>
+            <button type="button" data-verdict="human" aria-pressed="false"><span class="dot human" aria-hidden="true"></span>Người thật</button>
+          </div>
+          <span class="panel-meta" id="clickListRange"></span>
+          <div class="pager">
+            <button class="label-btn" id="clickPrev" type="button" title="Trang trước" aria-label="Trang trước" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button>
+            <button class="label-btn" id="clickNext" type="button" title="Trang sau" aria-label="Trang sau" disabled><svg class="ui-icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button>
+          </div>
+        </div>
+      </div>
       <div class="table-scroll report-click-scroll">
         <table class="sites-table report-clicks">
-          <thead><tr><th>clickid</th><th>Nguồn (t1)</th><th>Kết luận</th><th>Lý do</th><th>Thời gian</th></tr></thead>
-          <tbody id="reportRecentClicks"><tr><td colspan="5" class="empty-state">Đang tải…</td></tr></tbody>
+          <thead><tr><th>Click ID</th><th>Token 1</th><th>Kết luận</th><th>Lý do</th><th>IP</th><th>Thời gian</th></tr></thead>
+          <tbody id="reportRecentClicks"><tr><td colspan="6" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1528,7 +1551,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
     <h2 id="siteDialogTitle">Thêm trang</h2>
     <label>Tên trang<input id="siteName" required maxlength="120" autocomplete="off"></label>
     <label>Địa chỉ trang<textarea id="siteOrigins" required rows="3" spellcheck="false" aria-describedby="siteOriginsHint"></textarea>
-      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một địa chỉ. Thêm <code>/*</code> để gộp các trang con, hoặc chỉ ghi tên miền để tính cả website.</small></label>
+      <small class="field-hint" id="siteOriginsHint">Mỗi dòng một địa chỉ. Thêm <code>/*</code> để gộp các trang con, hoặc chỉ ghi tên miền để tính cả website. Có thể ghi kèm tham số nhà mạng gắn vào, ví dụ <code>?clickid={clickid}&amp;t1={t1}</code>: DATACAT ghi lại Click ID và Token 1 của từng lượt truy cập.</small></label>
     <div class="field-row">
     <label><span>Mã trang <span class="optional">tùy chọn</span></span><input id="siteIdInput" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="siteIdHint">
       <small class="field-hint" id="siteIdHint">Để trống sẽ tự tạo từ tên.</small></label>
@@ -3764,13 +3787,19 @@ function siteStatsCells(stats) {
     `<td class="num" data-label="Bot 24 giờ">${fmtCount(bots)}${rate}</td><td data-label="Hoạt động gần nhất">${seen}</td>`;
 }
 
+// A site's address as the operator wrote it, with the ad parameters kept beside the page.
+function siteEntry(site, scope) {
+  const entry = (site.page_queries || []).find(item => item.scope === scope);
+  return entry && entry.query ? scope + '?' + entry.query : scope;
+}
+
 function renderSites(data) {
   const sites = data.sites;
   const rows = sites.map(site => {
     const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
     // Full page addresses run long: the chip ellipsises, the tooltip keeps the whole address.
-    const domains = site.origins.map(o => `<span class="domain-chip" title="${escapeHtml(o)}">${
-      escapeHtml(o.replace(/^https:\/\//, '')).replace(/([/-])/g, '$1<wbr>')}</span>`).join('');
+    const domains = site.origins.map(scope => siteEntry(site, scope)).map(o => `<span class="domain-chip" title="${escapeHtml(o)}">${
+      escapeHtml(o.replace(/^https:\/\//, '')).replace(/([/?&-])/g, '$1<wbr>')}</span>`).join('');
     return `<tr>
       <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.platform && PLATFORM_GUIDES[site.platform] ? ' · ' + PLATFORM_GUIDES[site.platform].label : ''}</span></td>
       <td class="site-domains"><div class="domain-list">${domains}</div></td>
@@ -3836,7 +3865,7 @@ function openSiteDialog(site = null, origin = '') {
   idInput.disabled = Boolean(site);
   idInput.placeholder = site ? '' : slugPreview(document.getElementById('siteName').value);
   setText('siteIdHint', site ? 'Không đổi được sau khi tạo.' : 'Để trống sẽ tự tạo từ tên.');
-  document.getElementById('siteOrigins').value = site ? site.origins.join('\n') : origin;
+  document.getElementById('siteOrigins').value = site ? site.origins.map(scope => siteEntry(site, scope)).join('\n') : origin;
   document.getElementById('siteContact').value = site ? site.contact || '' : '';
   document.getElementById('siteNotes').value = site ? site.notes || '' : '';
   document.getElementById('sitePlatform').value = site ? site.platform || '' : '';
@@ -3872,7 +3901,9 @@ async function saveSite(event) {
   const button = document.getElementById('siteSave');
   const name = document.getElementById('siteName').value.trim();
   const siteId = document.getElementById('siteIdInput').value.trim();
-  const origins = document.getElementById('siteOrigins').value.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
+  // An address broken across lines after "?" or "&" is one address.
+  const origins = document.getElementById('siteOrigins').value.replace(/([?&])\s*[\r\n]+\s*/g, '$1')
+    .split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
   if (!name) { setText('siteError', 'Nhập tên trang'); document.getElementById('siteName').focus(); return; }
   if (!origins.length) { setText('siteError', 'Nhập ít nhất một địa chỉ trang'); document.getElementById('siteOrigins').focus(); return; }
   if (!editingSiteId && siteId && !SITE_FILTER_RE.test(siteId)) {
@@ -4289,33 +4320,80 @@ function clickReason(row) {
 function renderReportClicks(data) {
   const c = data.clicks || { sessions: 0 };
   const sources = data.click_sources || [];
-  const recent = data.recent_clicks || [];
   const none = !c.sessions;
   document.getElementById('reportClickSourcesWrap').hidden = none;
   document.getElementById('reportClickHint').hidden = !none;
   document.getElementById('reportRecentClicksPanel').hidden = none;
   document.getElementById('reportClickCsv').disabled = none;
-  setText('reportClickCount', none ? '' : fmtCount(sources.length) + ' nguồn');
+  setText('reportClickCount', none ? '' : fmtCount(sources.length) + ' token');
   setText('reportClickSummary', none ? '' : `${fmtCount(c.sessions)} phiên từ click · Bot ${percentOf(c.bot, c.sessions)} · Người thật ${percentOf(c.human, c.sessions)}`);
   const cell = (n) => n ? fmtCount(n) : '<span class="muted">0</span>';
   document.getElementById('reportClickSources').innerHTML = sources.map(row => {
     const rate = row.sessions ? row.bot / row.sessions : 0;
-    return `<tr><td class="site-name click-source">${row.source ? escapeHtml(row.source) : '<span class="muted">Không có t1</span>'}</td>
+    return `<tr><td class="site-name click-source">${row.source ? escapeHtml(row.source) : '<span class="muted">Không có Token 1</span>'}</td>
       <td class="num" data-label="Phiên">${fmtCount(row.sessions)}</td><td class="num" data-label="Bot">${cell(row.bot)}</td>
       <td class="num" data-label="Nghi vấn">${cell(row.suspect)}</td><td class="num" data-label="Người thật">${cell(row.human)}</td>
       <td class="num" data-label="Chưa đủ dữ liệu">${cell(row.insufficient)}</td>
       <td data-label="Tỉ lệ bot"><span class="rate-cell"><span class="rate-bar"><i style="width:${Math.round(rate * 100)}%"></i></span>${percentOf(row.bot, row.sessions)}</span></td></tr>`;
   }).join('') || '<tr><td colspan="7" class="empty-state">Không có nguồn</td></tr>';
-  setText('reportRecentMeta', recent.length ? `${fmtCount(recent.length)} click mới nhất` : '');
-  document.getElementById('reportRecentClicks').innerHTML = recent.map(row => {
+  if (!none) { clickList.page = 1; loadClickList(); }
+}
+
+// The full click list of the report period, as the network lists its clicks (Click ID, Token 1).
+const clickList = { page: 1, verdict: '', query: '', version: 0, total: 0 };
+
+async function loadClickList() {
+  const version = ++clickList.version;
+  const params = new URLSearchParams({ days: String(reportDays), page: String(clickList.page) });
+  if (clickList.verdict) params.set('verdict', clickList.verdict);
+  if (clickList.query) params.set('q', clickList.query);
+  const data = await fetchJSON(API_BASE + '/api/v1/reports/clicks?' + params + siteParam('&'));
+  if (version !== clickList.version) return;
+  const body = document.getElementById('reportRecentClicks');
+  if (!data || !Array.isArray(data.clicks)) {
+    body.innerHTML = '<tr><td colspan="6" class="empty-state">Không tải được danh sách click</td></tr>';
+    return;
+  }
+  clickList.total = data.total;
+  const first = data.total ? (data.page - 1) * data.page_size + 1 : 0;
+  const last = (data.page - 1) * data.page_size + data.clicks.length;
+  setText('clickListCount', fmtCount(data.total) + ' click');
+  setText('clickListRange', data.total ? `${fmtCount(first)}–${fmtCount(last)} / ${fmtCount(data.total)}` : '');
+  document.getElementById('clickPrev').disabled = data.page <= 1;
+  document.getElementById('clickNext').disabled = last >= data.total;
+  body.innerHTML = data.clicks.map(row => {
     const [cls, label] = CLICK_CATEGORY[row.category] || CLICK_CATEGORY.suspect;
     return `<tr><td class="site-name click-id">${escapeHtml(row.click_id)}</td>
-      <td class="click-source" data-label="Nguồn (t1)">${row.click_source ? escapeHtml(row.click_source) : '--'}</td>
+      <td class="click-source" data-label="Token 1">${row.click_source ? escapeHtml(row.click_source) : '--'}</td>
       <td data-label="Kết luận"><span class="verdict-badge ${cls}">${label}</span></td>
       <td data-label="Lý do">${escapeHtml(clickReason(row))}</td>
+      <td class="click-source" data-label="IP">${escapeHtml(row.client_ip || '--')}</td>
       <td data-label="Thời gian">${row.created_at ? escapeHtml(formatDateTime(row.created_at)) : '--'}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="empty-state">Không có click</td></tr>';
+  }).join('') || `<tr><td colspan="6" class="empty-state">${clickList.query || clickList.verdict ? 'Không có click khớp' : 'Không có click'}</td></tr>`;
 }
+
+document.getElementById('clickVerdictFilter').addEventListener('click', event => {
+  const btn = event.target.closest('button[data-verdict]');
+  if (!btn || btn.dataset.verdict === clickList.verdict) return;
+  clickList.verdict = btn.dataset.verdict;
+  clickList.page = 1;
+  document.querySelectorAll('#clickVerdictFilter button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  loadClickList();
+});
+document.getElementById('clickPrev').addEventListener('click', () => { if (clickList.page > 1) { clickList.page--; loadClickList(); } });
+document.getElementById('clickNext').addEventListener('click', () => { clickList.page++; loadClickList(); });
+let clickSearchTimer = null;
+document.getElementById('clickSearch').addEventListener('input', event => {
+  // Click IDs and tokens are plain tokens: other characters cannot match.
+  const value = event.target.value.trim().replace(/[^A-Za-z0-9._~:@+-]/g, '').slice(0, 128);
+  clearTimeout(clickSearchTimer);
+  clickSearchTimer = setTimeout(() => {
+    if (value === clickList.query) return;
+    clickList.query = value;
+    clickList.page = 1;
+    loadClickList();
+  }, 300);
+});
 
 async function loadReport() {
   const version = ++reportVersion;
@@ -4367,7 +4445,7 @@ async function exportClickCsv() {
   try {
     const data = await fetchJSON(API_BASE + '/api/v1/reports/sessions?days=' + reportDays + siteParam('&'));
     if (!data || !Array.isArray(data.sessions)) { label.textContent = 'Không tải được'; return; }
-    const header = ['clickid', 't1', 'Kết luận', 'Lý do', 'Bắt đầu', 'Lần cuối', 'IP', 'Quốc gia', 'Nhà mạng', 'Thiết bị', 'Mã phiên'];
+    const header = ['Click ID', 'Token 1', 'Kết luận', 'Lý do', 'Bắt đầu', 'Lần cuối', 'IP', 'Quốc gia', 'Nhà mạng', 'Thiết bị', 'Mã phiên'];
     const lines = data.sessions.filter(row => row.click_id || row.click_source).map(row => {
       const bd = row.breakdown || {};
       const deferred = bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE';
