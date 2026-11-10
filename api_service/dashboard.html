@@ -1030,9 +1030,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-kpi span i { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: var(--k); }
 .pr-kpi strong { display: block; margin-top: 0.8mm; font-size: 15pt; font-weight: 700; }
 .pr-kpi small { display: block; font-size: 7.8pt; color: #6f6d66; }
-.pr-findings { margin: 0 0 4mm; padding-left: 5mm; list-style: disc outside; }
-.pr-findings li { margin: 0 0 1.4mm; }
-.pr-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 1mm; }
+/* A table that fits a page moves whole to the next page rather than leaving its header behind. */
+.pr-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin-bottom: 1mm; break-inside: avoid; }
 .pr-table caption { caption-side: top; text-align: left; font-weight: 600; font-size: 8.8pt; padding-bottom: 1.2mm; }
 .pr-table caption em { float: right; font-style: normal; font-weight: 400; color: #6f6d66; font-size: 7.8pt; }
 .pr-table th, .pr-table td { padding: 1.3mm 2mm; border-bottom: 0.5pt solid #e2e0d9; text-align: left; vertical-align: top; }
@@ -1050,7 +1049,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-down-good, .pr-up-good { color: #1f7a3f; }
 .pr-down-bad { color: #b42318; }
 .pr-neutral { color: #4d4b46; }
-.pr-note { margin: 1mm 0 0; font-size: 7.6pt; color: #6f6d66; }
 .pr-figure { margin: 0 0 2mm; break-inside: avoid; }
 .pr-figure figcaption { font-weight: 600; font-size: 8.8pt; margin-bottom: 1.5mm; }
 .pr-figure svg { width: 100%; height: auto; display: block; }
@@ -1060,15 +1058,11 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 .pr-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; }
 .pr-badge { display: inline-block; padding: 0.2mm 1.6mm; border-radius: 1mm; font-size: 7.4pt; font-weight: 600; border: 0.5pt solid currentColor; }
 .pr-badge.bot { color: #b42318; } .pr-badge.suspect { color: #9a6700; } .pr-badge.human { color: #1d5fb0; } .pr-badge.insufficient { color: #6f6d66; }
-.pr-defs { display: grid; grid-template-columns: 34mm 1fr; gap: 1.3mm 4mm; margin: 0; font-size: 8.5pt; }
-.pr-defs dt { font-weight: 600; }
-.pr-defs dd { margin: 0; color: #2f2e2a; }
 .pr-sign { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; margin-top: 10mm; text-align: center; break-inside: avoid; }
 .pr-sign strong { display: block; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.03em; }
 .pr-sign em { display: block; font-size: 7.6pt; color: #6f6d66; font-style: italic; }
 .pr-sign div::after { content: ''; display: block; height: 22mm; }
 .pr-sign-date { margin-top: 8mm; text-align: right; font-style: italic; font-size: 8.5pt; }
-.pr-end { margin-top: 6mm; text-align: center; font-size: 7.6pt; color: #6f6d66; letter-spacing: 0.08em; }
 
 </style>
 </head>
@@ -4638,49 +4632,6 @@ function prChange(current, previous, badUp) {
   const cls = badUp === null ? 'pr-neutral' : up ? (badUp ? 'pr-up-bad' : 'pr-up-good') : (badUp ? 'pr-down-good' : 'pr-down-bad');
   return { text: (up ? '▲ +' : '▼ ') + (ratio * 100).toFixed(1).replace('.', ',') + '%', cls, ratio };
 }
-function prPoints(currentShare, previousShare) {
-  const diff = (currentShare - previousShare) * 100;
-  if (Math.abs(diff) < 0.05) return 'không đổi';
-  return (diff > 0 ? 'tăng ' : 'giảm ') + Math.abs(diff).toFixed(1).replace('.', ',') + ' điểm phần trăm';
-}
-function prBlockable(data) { return (data.bot_ips || []).filter(row => !row.verified_crawler && !row.human_sessions); }
-
-function prFindings(data) {
-  const t = data.totals, p = data.previous_totals || { sessions: 0 };
-  const flagged = t.bot + t.suspect;
-  const out = [];
-  out.push(`Trong kỳ ghi nhận <b>${fmtCount(t.sessions)}</b> phiên truy cập: <b>${fmtCount(t.bot)}</b> phiên bot (${prPct(t.bot, t.sessions)}), `
-    + `${fmtCount(t.suspect)} phiên nghi vấn (${prPct(t.suspect, t.sessions)}), ${fmtCount(t.human)} phiên người thật (${prPct(t.human, t.sessions)}) `
-    + `và ${fmtCount(t.insufficient)} phiên chưa đủ dữ liệu để kết luận.`);
-  if (p.sessions) {
-    const change = prChange(t.sessions, p.sessions, null);
-    out.push(`So với kỳ trước (${fmtCount(p.sessions)} phiên), tổng số phiên ${change.ratio > 0 ? 'tăng' : change.ratio < 0 ? 'giảm' : 'không đổi'}`
-      + `${change.ratio ? ' ' + Math.abs(change.ratio * 100).toFixed(1).replace('.', ',') + '%' : ''}; tỉ lệ bot `
-      + `${prPoints(t.sessions ? t.bot / t.sessions : 0, p.bot / p.sessions)} (từ ${prPct(p.bot, p.sessions)} lên/xuống ${prPct(t.bot, t.sessions)}).`
-        .replace(/từ ([^ ]+) lên\/xuống ([^ )]+)/, (m, a, b) => `từ ${a} ${parseFloat(a.replace(',', '.')) <= parseFloat(b.replace(',', '.')) ? 'lên' : 'xuống'} ${b}`));
-  } else {
-    out.push('Kỳ trước chưa có dữ liệu để so sánh.');
-  }
-  if (data.reasons && data.reasons.length && flagged) {
-    const r = data.reasons[0];
-    out.push(`Nguyên nhân đánh dấu phổ biến nhất: <b>${escapeHtml(prReason(r))}</b> (${fmtCount(r.sessions)} phiên, ${prPct(r.sessions, flagged)} số phiên bị đánh dấu).`);
-  }
-  if (t.bot && data.bot_countries && data.bot_countries.length) {
-    const c = data.bot_countries[0], n = (data.bot_networks || [])[0];
-    out.push(`Bot đến nhiều nhất từ <b>${escapeHtml(countryName(c))}</b> (${prPct(c.sessions, t.bot)} số phiên bot)`
-      + (n ? `, qua nhà mạng <b>${escapeHtml(shortIsp(n.name))}</b> (${prPct(n.sessions, t.bot)}).` : '.'));
-  }
-  const clicks = data.clicks || {};
-  if (clicks.sessions) {
-    const worst = (data.click_sources || [])[0];
-    out.push(`${fmtCount(clicks.sessions)} phiên đến từ click quảng cáo, trong đó ${prPct(clicks.bot, clicks.sessions)} là bot`
-      + (worst && worst.bot ? `; Token 1 có nhiều bot nhất là <b>${escapeHtml(worst.source || 'không có Token 1')}</b> (${fmtCount(worst.bot)}/${fmtCount(worst.sessions)} phiên).` : '.'));
-  }
-  const blockable = prBlockable(data);
-  if (blockable.length) out.push(`${fmtCount(blockable.length)} địa chỉ IP bot có thể chặn ngay (không phải crawler đã xác minh, không có phiên người thật).`);
-  return out;
-}
-
 // A whole step of 1, 2 or 5 times a power of ten giving two to five ticks, and the first tick
 // above the data: every label is a whole number and the bars fill the plot.
 function prAxis(value) {
@@ -4740,8 +4691,6 @@ function buildPrintReport(data) {
   const code = prCode(data);
   const hourly = reportDays === 1;
   const generated = data.generated_at ? new Date(data.generated_at).getTime() : Date.now();
-  const offset = -new Date().getTimezoneOffset();
-  const tz = 'UTC' + (offset >= 0 ? '+' : '−') + String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0') + ':' + String(Math.abs(offset) % 60).padStart(2, '0');
   const flagged = t.bot + t.suspect;
   let tableNo = 0, figureNo = 0;
   const nextTable = (title) => `Bảng ${++tableNo}. ${title}`;
@@ -4756,14 +4705,11 @@ function buildPrintReport(data) {
       [fmtCount(p[key]), 'n'], [key === 'sessions' ? (p.sessions ? '100%' : '–') : prPct(p[key], p.sessions), 'n'],
       [`<span class="${change.cls}">${change.text}</span>`, 'n']];
   });
-  sections.push(`<section class="pr-section"><h2><b>1.</b> Tóm tắt điều hành</h2>
+  sections.push(`<section class="pr-section"><h2><b>1.</b> Chỉ tiêu chính</h2>
     <div class="pr-kpis">${[['Tổng số phiên', t.sessions, '#1a1917', ''], ...PR_CATEGORIES.map(([k, l, c]) => [l, t[k], c, prPct(t[k], t.sessions)])]
       .map(([label, value, color, share]) => `<div class="pr-kpi" style="--k:${color}"><span>${label === 'Tổng số phiên' ? '' : '<i></i>'}${label}</span><strong>${fmtCount(value)}</strong><small>${share || prPeriodLabel()}</small></div>`).join('')}</div>
-    <h3>Nhận định chính</h3>
-    <ul class="pr-findings">${prFindings(data).map(f => `<li>${f}</li>`).join('')}</ul>
     ${prTable(nextTable('Chỉ tiêu chính so với kỳ trước'), 'Đơn vị tính: phiên',
       ['Chỉ tiêu', ['Kỳ này', 'n'], ['Tỉ trọng', 'n'], ['Kỳ trước', 'n'], ['Tỉ trọng', 'n'], ['Thay đổi', 'n']], kpiRows)}
-    <p class="pr-note">Kỳ trước: ${prDateTime(data.period.from - (data.period.to - data.period.from))} – ${prDateTime(data.period.from)}, cùng độ dài với kỳ báo cáo. ▲/▼: tăng/giảm so với kỳ trước; màu đỏ là biến động bất lợi.</p>
   </section>`);
 
   // 2. Traffic over the period.
@@ -4792,7 +4738,6 @@ function buildPrintReport(data) {
         return [[String(i + 1), 'c'], `<span class="pr-badge ${cls}">${label}</span>`, escapeHtml(prReason(r)),
           [fmtCount(r.sessions), 'n'], [prPct(r.sessions, flagged), 'n']];
       }))}
-    <p class="pr-note">Mỗi phiên tính theo nguyên nhân chính. Bot là phiên có bằng chứng tự động hóa đã được kiểm chứng; nghi vấn là phiên có dấu hiệu bất thường nhưng chưa đủ để kết luận.</p>
   </section>`);
 
   // 4. Where bots come from.
@@ -4820,26 +4765,9 @@ function buildPrintReport(data) {
           [fmtCount(r.bot), 'n'], [fmtCount(r.suspect), 'n'], [fmtCount(r.human), 'n'], [fmtCount(r.insufficient), 'n'], [prPct(r.bot, r.sessions), 'n']]),
         ['Cộng', '', [fmtCount(clicks.sessions), 'n'], [fmtCount(clicks.bot), 'n'], [fmtCount(clicks.suspect), 'n'], [fmtCount(clicks.human), 'n'],
           [fmtCount(clicks.insufficient), 'n'], [prPct(clicks.bot, clicks.sessions), 'n']])}
-      <p class="pr-note">Click ID và Token 1 do nhà mạng gửi qua tham số trên địa chỉ trang (clickid, t1); DATACAT ghi lại nguyên văn. Danh sách từng click có trong tệp Excel của báo cáo.</p>
     </section>`);
   }
 
-  // 6. Method, definitions, limits.
-  const n = clicks.sessions ? 6 : 5;
-  sections.push(`<section class="pr-section"><h2><b>${n}.</b> Phương pháp, định nghĩa và giới hạn</h2>
-    <dl class="pr-defs">
-      <dt>Phiên</dt><dd>Một thẻ trình duyệt từ lúc mở trang đến khi ngừng hoạt động 30 phút; đơn vị tính của báo cáo. Một người có thể có nhiều phiên.</dd>
-      <dt>Người thật</dt><dd>Hành vi chuột hoặc chạm tự nhiên và môi trường trình duyệt không có dấu hiệu bất thường.</dd>
-      <dt>Bot</dt><dd>Có bằng chứng tự động hóa: dấu vết công cụ tự động, trình duyệt giả mạo, thao tác giả lập, hoặc mô hình hành vi chuột xác định là bot.</dd>
-      <dt>Nghi vấn</dt><dd>Có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot.</dd>
-      <dt>Chưa đủ dữ liệu</dt><dd>Khách rời trang trước khi có đủ thao tác để đánh giá; không phải người, cũng không phải bot.</dd>
-      <dt>Phương pháp</dt><dd>Luật dấu hiệu trình duyệt đã kiểm chứng trên dữ liệu người thật, kết hợp mô hình hành vi chuột BiLSTM và XGBoost. Phiên bản quyết định: policy ${escapeHtml(String(data.decision_policy_version || '–'))}, bộ mô hình ${escapeHtml(String(data.model_bundle_id || '–').slice(0, 8))}.</dd>
-      <dt>Kỳ so sánh</dt><dd>Kỳ liền trước, cùng độ dài với kỳ báo cáo.</dd>
-      <dt>Thời gian</dt><dd>Theo múi giờ ${tz}; phiên được tính vào kỳ theo thời điểm bắt đầu.</dd>
-      <dt>Giới hạn</dt><dd>Số liệu tính theo phiên, không theo người dùng duy nhất. Một IP dùng chung (mạng di động, văn phòng) có thể vừa có người thật vừa có bot. Vị trí theo IP mang tính tham khảo (DB-IP).</dd>
-      <dt>Nguồn dữ liệu</dt><dd>Hệ thống DATACAT, dữ liệu trích xuất lúc ${prDateTime(generated)}.</dd>
-    </dl>
-  </section>`);
 
   return `<header class="pr-head">
       <div class="pr-org"><img class="pr-logo" src="/assets/datacat-logo.png" alt=""><div><strong>DATACAT</strong><span>Hệ thống giám sát và phát hiện bot</span></div></div>
@@ -4861,7 +4789,7 @@ function buildPrintReport(data) {
       <div><strong>Người kiểm tra</strong><em>(Ký, ghi rõ họ tên)</em></div>
       <div><strong>Phê duyệt</strong><em>(Ký, ghi rõ họ tên)</em></div>
     </div>
-    <p class="pr-end">— HẾT —</p>`;
+`;
 }
 
 function prPageCss(data) {
@@ -5003,16 +4931,7 @@ async function exportReportExcel() {
         { key: 'change', header: 'Thay đổi', fmt: '+0.0%;-0.0%;0.0%' }],
       [['Tổng số phiên', 'sessions'], ['Người thật', 'human'], ['Bot', 'bot'], ['Nghi vấn', 'suspect'], ['Chưa đủ dữ liệu', 'insufficient']].map(([name, key]) => ({
         name, cur: t[key], curShare: ratio(t[key], t.sessions), prev: p[key], prevShare: ratio(p[key], p.sessions), change: change(t[key], p[key]) })),
-      { filter: false, note: 'Đơn vị tính: phiên. Kỳ trước: kỳ liền trước cùng độ dài. Thay đổi: so với kỳ trước.' });
-    summary.addRow([]);
-    const findingsTitle = summary.addRow(['Nhận định chính']);
-    findingsTitle.font = { bold: true, size: 11 };
-    for (const line of prFindings(data)) {
-      const row = summary.addRow(['• ' + line.replace(/<[^>]+>/g, '')]);
-      summary.mergeCells(row.number, 1, row.number, 6);
-      row.alignment = { wrapText: true, vertical: 'top' };
-      row.height = 30;
-    }
+      { filter: false });
 
     const timeline = data.timeline || [];
     const hourly = reportDays === 1;
@@ -5023,14 +4942,14 @@ async function exportReportExcel() {
         { key: 'insufficient', header: 'Chưa đủ dữ liệu', fmt: 'count', width: 16 }, { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }],
       timeline.map(b => ({ ...b, start: xlDate(b.start), rate: ratio(b.bot, b.sessions) })),
       { total: { sessions: total('sessions'), human: total('human'), bot: total('bot'), suspect: total('suspect'), insufficient: total('insufficient'),
-        rate: ratio(total('bot'), total('sessions')) }, filter: false, note: 'Đơn vị tính: phiên. Phiên tính theo thời điểm bắt đầu.' });
+        rate: ratio(total('bot'), total('sessions')) }, filter: false });
 
     const flagged = t.bot + t.suspect;
     xlSheet(wb, 'Nguyên nhân', 'Nguyên nhân phiên bị đánh dấu', meta,
       [{ key: 'no', header: 'STT', width: 6 }, { key: 'verdict', header: 'Kết luận', width: 12 }, { key: 'reason', header: 'Nguyên nhân', width: 46 },
         { key: 'sessions', header: 'Số phiên', fmt: 'count' }, { key: 'share', header: 'Tỉ trọng', fmt: 'pct' }],
       (data.reasons || []).map((r, i) => ({ no: i + 1, verdict: VERDICT_TEXT[r.verdict] || r.verdict, reason: prReason(r), sessions: r.sessions, share: ratio(r.sessions, flagged) })),
-      { note: `Tỉ trọng trên ${fmtCount(flagged)} phiên bị đánh dấu (bot và nghi vấn).` });
+    );
 
     const ipWs = xlSheet(wb, 'IP bot', 'Địa chỉ IP phát sinh nhiều bot nhất', meta,
       [{ key: 'no', header: 'STT', width: 6 }, { key: 'ip', header: 'Địa chỉ IP', width: 18, mono: true }, { key: 'place', header: 'Vị trí', width: 26 },

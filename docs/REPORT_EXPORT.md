@@ -11,32 +11,26 @@ trang đang chọn:
 
 ## Báo cáo PDF
 
-Bố cục theo kiểu báo cáo quản trị (MIS) của ngân hàng và tổ chức lớn:
+Chỉ có số liệu, không có phần nhận xét:
 
-- **Bảng kiểm soát tài liệu.** Mã báo cáo, kỳ báo cáo, phạm vi, ngày lập, phiên bản mô hình
-  (policy và bộ mô hình), phân loại **Nội bộ**.
-- **1. Tóm tắt điều hành.** Các ô chỉ tiêu chính, nhận định chính được viết tự động từ số liệu, và
-  Bảng 1 so sánh với kỳ liền trước cùng độ dài. Mũi tên ▲/▼ cho biết tăng hay giảm, màu đỏ là biến
-  động bất lợi, ví dụ bot tăng.
-- **2. Diễn biến lưu lượng.** Hình 1 (biểu đồ cột chồng, dạng vector) và Bảng 2 số phiên theo ngày,
-  hoặc theo giờ với kỳ 24 giờ. Ngày giờ theo múi giờ của người xem.
+- **Bảng thông tin tài liệu:** mã báo cáo, kỳ báo cáo, phạm vi, ngày lập, phiên bản mô hình, phân loại.
+- **1. Chỉ tiêu chính:** các ô tổng hợp, và Bảng 1 so với kỳ liền trước cùng độ dài. Mũi tên ▲/▼
+  chỉ tăng hay giảm; màu đỏ là thay đổi bất lợi.
+- **2. Diễn biến lưu lượng:** biểu đồ cột chồng, và bảng số phiên theo ngày (theo giờ với kỳ 24 giờ).
 - **3. Nguyên nhân phiên bị đánh dấu.**
-- **4. Nguồn phát sinh bot.** Theo quốc gia, theo nhà mạng, và IP bot nhiều nhất, kèm khuyến nghị
-  chặn hay không chặn. Không chặn khi đó là crawler đã xác minh, hoặc IP dùng chung có người thật.
-- **5. Click quảng cáo theo Token 1.** Chỉ có khi trang mang tham số `clickid`/`t1`.
-- **Phương pháp, định nghĩa và giới hạn.**
-- **Khối ký duyệt.** Người lập, Người kiểm tra, Phê duyệt.
+- **4. Nguồn phát sinh bot:** theo quốc gia, theo nhà mạng, và các IP bot nhiều nhất, mỗi IP có
+  khuyến nghị chặn hay không.
+- **5. Click quảng cáo theo Token 1:** chỉ có khi trang mang tham số `clickid`/`t1`.
+- **Khối ký duyệt.**
 
-**Quy ước chung:**
-- Bảng và hình được đánh số, có đơn vị tính.
-- Đầu trang (từ trang 2) có tên báo cáo và mã báo cáo. Chân trang có "Tài liệu nội bộ", thời điểm
-  lập và "Trang X / Y".
+Bảng và hình được đánh số, có đơn vị tính. Một bảng vừa một trang thì không bị cắt giữa hai trang.
+Chân trang có số trang ("Trang X / Y").
 
 ## Tệp Excel
 
 | Sheet | Nội dung |
 |---|---|
-| Tóm tắt | Chỉ tiêu kỳ này, kỳ trước, thay đổi; nhận định chính |
+| Tóm tắt | Chỉ tiêu kỳ này, kỳ trước, thay đổi |
 | Theo ngày / Theo giờ | Số phiên theo kết luận, dòng Cộng |
 | Nguyên nhân | Nguyên nhân bị đánh dấu, tỉ trọng |
 | IP bot | IP bot nhiều nhất, khuyến nghị; bot theo quốc gia và nhà mạng |
