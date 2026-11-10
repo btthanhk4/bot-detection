@@ -115,17 +115,16 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v27 (current)
+### Policy v28 (current)
 
-Policy v27 được kiểm chứng trên 11 phiên chuột người thật. Chuột thật gửi 60–250 mẫu mỗi giây, mỗi
-bước khoảng 1% màn hình và chỉ đổi hướng vài độ. Bot trên trang đích quảng cáo gửi khoảng 13 điểm
-mỗi giây, mỗi điểm cách điểm trước gần nửa màn hình và gần như quay ngược hướng. Luật con trỏ nhảy
-ngẫu nhiên nay xét từ 10 lần di chuột (Balabit: 0 khớp trong 51.863 lần xuất). Hai mâu thuẫn trình
-duyệt độc lập thì kết luận BOT (`forged_browser_v1`). `UNALIGNED_POINTER` chỉ còn là cờ nghiên cứu,
-vì nó bắt nhầm một laptop thật và chưa từng bắt được bot thật. Xem
-[Model release v27](docs/MODEL_RELEASE_V27.md).
+Policy v28 coi phần cứng máy chủ là thêm một mâu thuẫn. Có 370 phiên trên trang đích quảng cáo báo
+640 nhân CPU và vẽ WebGL bằng SwiftShader (GPU phần mềm) dù đi qua IP gia đình. `forged_browser_v1`
+nay tính nhóm bằng chứng môi trường neo (headless, GPU, quyền thông báo) như một mâu thuẫn độc lập.
+Có nhóm này cộng một mã giả mạo thì kết luận BOT. Không phiên người thật nào mang nhóm môi trường
+hay mã giả mạo nào. Policy v27 trước đó đã xét luật con trỏ nhảy ngẫu nhiên từ 10 lần di chuột.
+Xem [Model release v28](docs/MODEL_RELEASE_V28.md).
 
-Lịch sử policy v7–v26, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+Lịch sử policy v7–v27, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 

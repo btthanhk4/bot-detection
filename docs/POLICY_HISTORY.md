@@ -1,6 +1,16 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v27, mô tả trong [README](../README.md#policy-v27-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v28, mô tả trong [README](../README.md#policy-v28-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v27
+
+Policy v27 được kiểm chứng trên 11 phiên chuột người thật. Chuột thật gửi 60–250 mẫu mỗi giây, mỗi
+bước khoảng 1% màn hình và chỉ đổi hướng vài độ. Bot trên trang đích quảng cáo gửi khoảng 13 điểm
+mỗi giây, mỗi điểm cách điểm trước gần nửa màn hình và gần như quay ngược hướng. Luật con trỏ nhảy
+ngẫu nhiên nay xét từ 10 lần di chuột (Balabit: 0 khớp trong 51.863 lần xuất). Hai mâu thuẫn trình
+duyệt độc lập thì kết luận BOT (`forged_browser_v1`). `UNALIGNED_POINTER` chỉ còn là cờ nghiên cứu,
+vì nó bắt nhầm một laptop thật và chưa từng bắt được bot thật. Xem
+[Model release v27](MODEL_RELEASE_V27.md).
 
 ## Policy v26
 

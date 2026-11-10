@@ -726,7 +726,21 @@ CLIENT_FORGERY_CASES = (
                                                 signals={"webdriverPatched": True})),
     ("BOT", "FINAL", "forged_browser", _deferred(signals={"webdriverDeleted": True},
                                                  fingerprint={"hardwareConcurrency": 640})),
+    # Policy 28: a headless, GPU or permission contradiction is one more. The lander's server
+    # farm: 640 cores rendering with SwiftShader behind home addresses. A Linux desktop without
+    # GPU drivers (SwiftShader, 8 cores) and no input stays insufficient, as since policy 12.
+    ("BOT", "FINAL", "forged_browser", _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
+                                                 fingerprint={"hardwareConcurrency": 640})),
+    ("BOT", "FINAL", "forged_browser", _deferred(signals={"webdriverPatched": True, "headlessScreen": True})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
+                                                         fingerprint={"hardwareConcurrency": 8})),
 )
+
+# Frozen gate of policy 27.
+CLIENT_FORGERY_RULE_GATE_V27 = {
+    "rules": ["client_forgery_v1", "forged_browser_v1"], "final_cases": 10, "insufficient_cases": 5, "passed": 15,
+    "fixture_fingerprint": "5855f200440f3f43634a7a418b8723f9583158c93a936040440ac8cae9a7a88d",
+}
 
 # Frozen gate of policy 26.
 CLIENT_FORGERY_RULE_GATE_V26 = {

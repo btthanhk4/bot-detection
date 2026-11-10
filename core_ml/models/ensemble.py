@@ -20,6 +20,7 @@ from core_ml.features.client_forgery import (
     CLIENT_FORGERY_VERSION,
     FORGED_BROWSER_RULE,
     SYNTHETIC_PATH_RULE,
+    contradictions,
     forged_browser_fires,
     forgery_codes,
     synthetic_path_fires,
@@ -53,7 +54,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "27"
+DECISION_POLICY_VERSION = "28"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -214,6 +215,9 @@ class EnsembleBotDetector:
         # Policy 27: random jumps judged from 10 moves count as evidence on a session too short
         # for the mouse models.
         deferred_evidence = forgery + (["RANDOM_POINTER_JUMPS"] if desktop_risk["jump_profile"]["random_jumps"] else [])
+        # Policy 28: a headless, GPU or permission contradiction counts towards the two that
+        # convict (alone it leaves a session without input insufficient, as since policy 12).
+        browser_contradictions = contradictions(forgery, automation_evidence)
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
@@ -222,7 +226,7 @@ class EnsembleBotDetector:
             automation_rule = input_provenance["synthetic_input_rule"]
         elif synthetic_path:
             automation_rule = SYNTHETIC_PATH_RULE
-        elif forged_browser_fires(forgery):
+        elif forged_browser_fires(forgery, automation_evidence):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
         elif "AUTOCLICK_TAPS" in touch_report["research_flags"]:
@@ -431,7 +435,7 @@ class EnsembleBotDetector:
             elif automation_rule == FORGED_BROWSER_RULE:
                 reasons.append(
                     "Forged browser: two independent claims no genuine browser makes ("
-                    + ", ".join(forgery).lower().replace("_", " ")
+                    + ", ".join(browser_contradictions).lower().replace("_", " ")
                     + "); no person on the live site carried even one"
                 )
             elif automation_rule == SYNTHETIC_POINTER_RULE:
@@ -525,7 +529,7 @@ class EnsembleBotDetector:
                 "mobile_human": mobile_human,
                 "desktop_risk": desktop_risk,
                 "client_forgery": {"analysis_version": CLIENT_FORGERY_VERSION, "codes": forgery,
-                                   "evidence": deferred_evidence},
+                                   "contradictions": browser_contradictions, "evidence": deferred_evidence},
                 "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),

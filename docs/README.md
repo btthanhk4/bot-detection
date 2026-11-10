@@ -18,6 +18,7 @@ Tổng quan hệ thống và cách chạy nằm ở [README](../README.md).
 ## Phát hành mô hình
 
 - [POLICY_HISTORY.md](POLICY_HISTORY.md): Lịch sử policy và kết quả thí nghiệm
+- [MODEL_RELEASE_V28.md](MODEL_RELEASE_V28.md): Model release v28: phần cứng máy chủ là một mâu thuẫn nữa
 - [MODEL_RELEASE_V27.md](MODEL_RELEASE_V27.md): Model release v27: kiểm chứng trên quỹ đạo chuột người thật
 - [MODEL_RELEASE_V26.md](MODEL_RELEASE_V26.md): Model release v26: chuột nhảy ngẫu nhiên và trình duyệt tự mâu thuẫn
 - [MODEL_RELEASE_V25.md](MODEL_RELEASE_V25.md): Model release v25: người thật trên site thật, bot tìm kiếm, IP dùng chung

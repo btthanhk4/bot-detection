@@ -5,6 +5,7 @@ import copy
 import pytest
 
 from core_ml.features.client_forgery import (
+    contradictions,
     forged_browser_fires,
     forgery_codes,
     pointer_jump_profile,
@@ -182,7 +183,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (10, 5)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (12, 6)
 
 
 def test_two_contradictions_convict():
@@ -192,6 +193,17 @@ def test_two_contradictions_convict():
     assert not forged_browser_fires(["WEBDRIVER_TAMPERED", "WEBDRIVER_TAMPERED"])
     assert not forged_browser_fires([])
     assert not forged_browser_fires(None)
+
+
+def test_an_environment_anchor_is_one_more_contradiction():
+    gpu = {"families": {"GPU": ["server.software_renderer"]}}
+    assert contradictions(["SERVER_CPU"], gpu) == ["SERVER_CPU", "ENVIRONMENT_EVIDENCE"]
+    assert forged_browser_fires(["SERVER_CPU"], gpu)
+    assert forged_browser_fires(["WEBDRIVER_TAMPERED"], {"families": {"HEADLESS_ENV": ["signals.headlessScreen"]}})
+    # Alone it is one contradiction; families outside the anchors are not counted.
+    assert not forged_browser_fires([], gpu)
+    assert not forged_browser_fires(["WEBDRIVER_TAMPERED"], {"families": {"HTTP": ["server.missing_fetch_metadata"]}})
+    assert not forged_browser_fires(["WEBDRIVER_TAMPERED"], {"families": {"NATIVE_PATCH": ["signals.webdriverPatched"]}})
 
 
 def test_forged_browser_is_a_bot_even_without_mouse_input():

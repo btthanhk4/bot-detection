@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "de33b2659f084240ab8707db36346ec8",
-  "created_at": "2026-11-10T12:35:40.415109+00:00",
+  "bundle_id": "40823b69b4984e6381d15330d51b0435",
+  "created_at": "2026-11-10T13:53:49.114177+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -79,10 +79,10 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 10,
-      "fixture_fingerprint": "5855f200440f3f43634a7a418b8723f9583158c93a936040440ac8cae9a7a88d",
-      "insufficient_cases": 5,
-      "passed": 15,
+      "final_cases": 12,
+      "fixture_fingerprint": "efb802da11a90ec83aa2da7b41ed7a1c1948d0ffba0d67921d814f5cab0e6b2e",
+      "insufficient_cases": 6,
+      "passed": 18,
       "rules": [
         "client_forgery_v1",
         "forged_browser_v1"
@@ -864,7 +864,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "27",
+    "decision_policy_version": "28",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,

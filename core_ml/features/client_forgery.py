@@ -37,11 +37,19 @@ and the shop, against 1,358 lander sessions with two contradictions):
   comes from a different source (the user agent against the events, the navigator object,
   the hardware), and a genuine browser produces none of them: no person on the live site
   carried even one. On the lander, 1,621 sessions carried two.
+
+Policy 28: a headless, GPU or permission contradiction (the anchor families of
+``environment_tampering_v1``) counts as one more independent contradiction towards the two
+that convict. Alone it changes nothing (since policy 12, environment evidence without input
+leaves a session insufficient). On the lander, 371 sessions
+reported 640 cores and rendered WebGL with SwiftShader behind home addresses: server hardware.
+No person on the live site carried any environment family.
 """
 
 import math
 import re
 
+from core_ml.features.automation_evidence import TAMPERING_ANCHOR_FAMILIES
 from core_ml.features.mouse_features import normalize_move_coordinates
 
 SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
@@ -128,6 +136,19 @@ def synthetic_path_fires(jump_profile: dict, forgery: list, automation_evidence:
     )
 
 
-def forged_browser_fires(forgery: list) -> bool:
-    """Policy 27: two independent claims no genuine browser makes."""
-    return len(set(forgery or [])) >= FORGED_BROWSER_MIN_CODES
+def environment_anchor(automation_evidence: dict) -> bool:
+    """A headless, GPU or permission contradiction (policy 28)."""
+    families = (automation_evidence or {}).get("families") or {}
+    return any(family in families for family in TAMPERING_ANCHOR_FAMILIES)
+
+
+def contradictions(forgery: list, automation_evidence: dict = None) -> list:
+    """Independent contradictions of the browser: the forgery codes and an environment anchor."""
+    found = sorted(set(forgery or []))
+    return found + (["ENVIRONMENT_EVIDENCE"] if environment_anchor(automation_evidence) else [])
+
+
+def forged_browser_fires(forgery: list, automation_evidence: dict = None) -> bool:
+    """Policy 27: two independent claims no genuine browser makes (policy 28: or one and an
+    environment anchor)."""
+    return len(contradictions(forgery, automation_evidence)) >= FORGED_BROWSER_MIN_CODES
