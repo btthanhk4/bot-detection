@@ -24,13 +24,14 @@ class Collection:
         self.docs = {}
         self.lock = threading.RLock()
 
+    OPERATORS = {"$gt": lambda a, b: (a or 0) > b, "$gte": lambda a, b: (a or 0) >= b,
+                 "$lt": lambda a, b: (a or 0) < b, "$lte": lambda a, b: (a or 0) <= b,
+                 "$in": lambda a, b: a in b, "$nin": lambda a, b: a not in b, "$ne": lambda a, b: a != b}
+
     def matches(self, doc, query):
-        return all((doc.get(key, 0) > value["$gt"] if isinstance(value, dict) and "$gt" in value
-                    else doc.get(key) in value["$in"] if isinstance(value, dict) and "$in" in value
-                    else doc.get(key) not in value["$nin"] if isinstance(value, dict) and "$nin" in value
-                    else doc.get(key) != value["$ne"] if isinstance(value, dict) and "$ne" in value
-                    else doc.get(key, 0) < value["$lt"] if isinstance(value, dict) and "$lt" in value
-                    else doc.get(key) == value) for key, value in query.items())
+        return all(all(self.OPERATORS[op](doc.get(key), operand) for op, operand in value.items())
+                   if isinstance(value, dict) and value and all(op in self.OPERATORS for op in value)
+                   else doc.get(key) == value for key, value in query.items())
 
     def find(self, query, projection=None):
         return Cursor(copy.deepcopy(doc) for doc in self.docs.values() if self.matches(doc, query))
@@ -163,6 +164,37 @@ def test_the_verdict_filter_matches_the_table_labels(db):
     first = research.traffic_page(1, verdict="bot")
     assert first["next_before"] == 5
     assert numbers("bot", before=5) == ([1], 2, 6)
+
+
+def test_each_website_numbers_its_sessions_from_one_and_starts_over_after_delete_all(db):
+    for number, site in enumerate(["shop", "blog", "shop", "shop", "blog"], start=1):
+        research.register_traffic({"sessionId": f"s{number}", "received_at": number * 1000, "_site_id": site})
+
+    def stt(site=None, verdict=None, limit=50, before=None):
+        page = research.traffic_page(limit, before, site_filter={"site_id": site} if site else None, verdict=verdict)
+        return [(row["sessionId"], row["display_number"]) for row in page["sessions"]]
+
+    assert stt("shop") == [("s4", 3), ("s3", 2), ("s1", 1)]
+    assert stt("blog") == [("s5", 2), ("s2", 1)]
+    assert stt() == [("s5", 5), ("s4", 4), ("s3", 3), ("s2", 2), ("s1", 1)]
+    # The next page goes on counting down; a verdict filter keeps each session's number.
+    first = research.traffic_page(2, site_filter={"site_id": "shop"})
+    assert stt("shop", limit=2, before=first["next_before"]) == [("s1", 1)]
+    db["detection_results"].docs["s1"] = {"_id": "s1", "sessionId": "s1", "verdict": "BOT", "decision_state": "FINAL"}
+    db["detection_results"].docs["s4"] = {"_id": "s4", "sessionId": "s4", "verdict": "BOT", "decision_state": "FINAL"}
+    assert stt("shop", verdict="bot") == [("s4", 3), ("s1", 1)]
+
+    # "Delete all" of one website: its next session is 1, the other website keeps its numbers.
+    research.delete_research_sessions(["s1", "s3", "s4"])
+    research.register_traffic({"sessionId": "s6", "received_at": 6000, "_site_id": "shop"})
+    assert stt("shop") == [("s6", 1)]
+    assert stt("blog") == [("s5", 2), ("s2", 1)]
+    assert stt() == [("s6", 3), ("s5", 2), ("s2", 1)]
+    # Of every website: everything starts over.
+    research.delete_research_data()
+    research.register_traffic({"sessionId": "s7", "received_at": 7000, "_site_id": "blog"})
+    assert stt("blog") == [("s7", 1)]
+    assert stt() == [("s7", 1)]
 
 
 def test_the_verdict_filter_reads_ids_once_per_cache_window(db, monkeypatch):

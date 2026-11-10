@@ -157,9 +157,28 @@ def _verdict_condition(db, verdict):
     return {"sessionId": {"$in": _decided_ids(db, verdict.upper())}}
 
 
+def _display_numbers(collection, scope, rows, consecutive):
+    """Each row's place among the live sessions of ``scope``, oldest first: the table's STT.
+
+    Every website counts from 1, and so does the view of all websites; deleted sessions do not
+    count, so after "delete all" the next session is 1 again. ``rows`` are newest first;
+    ``consecutive`` when nothing but the scope filtered them (no verdict filter)."""
+    if not rows:
+        return []
+    top = rows[0]["traffic_number"]
+    place = collection.count_documents({**scope, "traffic_number": {"$lte": top}})
+    if consecutive:
+        return [place - index for index in range(len(rows))]
+    # A filtered page skips sessions: count the scope's sessions between its first and last row.
+    span = collection.find({**scope, "traffic_number": {"$gte": rows[-1]["traffic_number"], "$lte": top}},
+                           {"_id": 0, "traffic_number": 1}).sort("traffic_number", -1)
+    offset = {doc["traffic_number"]: index for index, doc in enumerate(span)}
+    return [place - offset.get(row["traffic_number"], 0) for row in rows]
+
+
 def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
     """``site_filter`` is the dashboard's condition on ``site_id`` (one site, a list, or none);
-    ``verdict`` one of ``VERDICT_FILTERS`` or None."""
+    ``verdict`` one of ``VERDICT_FILTERS`` or None. Rows carry ``display_number``, their STT."""
     db = get_db()
     if db is None:
         raise RuntimeError("Database unavailable")
@@ -181,15 +200,16 @@ def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
         {"sessionId": {"$in": [row["sessionId"] for row in rows]}},
         {"_id": 0, "mouse_trajectory": 0},
     )} if rows else {}
+    numbers = _display_numbers(db["research_sessions"], unfiltered, rows, consecutive=not verdict)
     sessions = []
-    for row in rows:
+    for row, number in zip(rows, numbers):
         doc = detections.get(row["sessionId"], {
             "sessionId": row["sessionId"], "verdict": "SUSPECT", "decision_state": "INSUFFICIENT_EVIDENCE",
             "breakdown": {"decision_deferred": True, "has_enough_mouse_data": False},
         })
         doc = {**doc, **{key: row.get(key) for key in (
             "traffic_number", "first_received_at", "revision", "manual_label",
-        )}, "received_at": row["first_received_at"]}
+        )}, "received_at": row["first_received_at"], "display_number": number}
         for field in ("created_at", "updated_at"):
             if isinstance(doc.get(field), datetime):
                 doc[field] = _milliseconds(doc[field])

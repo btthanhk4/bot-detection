@@ -56,6 +56,8 @@
   --warn-soft: rgba(224, 162, 15, 0.12);
   --crit-soft: rgba(208, 59, 59, 0.06);
   --crit-border: rgba(208, 59, 59, 0.28);
+  --danger-bg: #b42318;
+  --danger-hover: #9a1d13;
   --meter: #6f6d66;
   --bar: #a9a7a0;
   --grid: #ecebe6;
@@ -138,6 +140,8 @@
     --warn-soft: rgba(242, 179, 61, 0.12);
     --crit-soft: rgba(224, 82, 82, 0.10);
     --crit-border: rgba(224, 82, 82, 0.36);
+    --danger-bg: #c4352d;
+    --danger-hover: #ad2c25;
     --meter: #a3a19b;
     --bar: #75736d;
     --grid: #262624;
@@ -566,8 +570,6 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 .traffic-table th:nth-child(8), .traffic-table td:nth-child(8) { width: 176px; }
 .traffic-table th:nth-child(9), .traffic-table td:nth-child(9) { width: 108px; }
 .traffic-table th:nth-child(10), .traffic-table td:nth-child(10) { width: 110px; }
-body.role-customer .traffic-table th:first-child, body.role-customer .traffic-table td:first-child { display: none; }
-body.role-customer .traffic-table th:nth-child(2), body.role-customer .traffic-table td:nth-child(2) { padding-left: 18px; }
 .traffic-table .num-id { font-size: 12.5px; color: var(--text-3); }
 .time-text { font-size: 13px; color: var(--text-2); white-space: nowrap; }
 .ip-text { display: block; overflow: hidden; font: 12.5px var(--font-mono); color: var(--text); white-space: nowrap; text-overflow: ellipsis; }
@@ -870,6 +872,18 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
   position: sticky; bottom: -20px; z-index: 1;
 }
 .label-actions button { height: 34px; }
+
+/* Notice: confirmations and errors, in place of the browser's own dialogs. */
+.notice-dialog { width: min(440px, calc(100% - 32px)); padding: 22px 24px 20px; }
+.notice-body { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; align-items: start; }
+.notice-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-hover); color: var(--text-2); }
+.notice-icon .ui-icon { width: 18px; height: 18px; }
+.notice-dialog.is-danger .notice-icon { background: var(--crit-soft); color: var(--crit-text); }
+.notice-dialog h2 { margin: 7px 0 6px; font-size: 15.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.notice-text { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
+.notice-dialog .label-actions { margin-top: 22px; }
+.notice-dialog.is-danger .label-actions button[type=submit] { background: var(--danger-bg); border-color: var(--danger-bg); color: #ffffff; }
+.notice-dialog.is-danger .label-actions button[type=submit]:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
 
 /* ───────────────────────────── Responsive ───────────────────────────── */
 @media (max-width: 560px) {
@@ -1247,7 +1261,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
       <table class="traffic-table">
         <thead>
           <tr>
-            <th title="Thứ tự máy chủ ghi nhận phiên">STT</th>
+            <th title="Thứ tự phiên trong trang đang xem, phiên đầu tiên là 1">STT</th>
             <th>Thời gian</th>
             <th>IP</th>
             <th>Thiết bị</th>
@@ -1691,6 +1705,16 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
   <div class="label-actions"><button type="button" onclick="document.getElementById('credDialog').close()">Đã lưu, đóng</button></div>
 </dialog>
 
+<dialog id="noticeDialog" class="label-dialog notice-dialog" aria-labelledby="noticeTitle" aria-describedby="noticeText">
+  <form method="dialog">
+    <div class="notice-body">
+      <span class="notice-icon" aria-hidden="true"><svg class="ui-icon"><use id="noticeIconUse" href="#icon-alert"></use></svg></span>
+      <div><h2 id="noticeTitle"></h2><p class="notice-text" id="noticeText"></p></div>
+    </div>
+    <div class="label-actions"><button type="button" id="noticeCancel" onclick="document.getElementById('noticeDialog').close('cancel')">Hủy</button><button type="submit" value="ok" id="noticeOk">Đồng ý</button></div>
+  </form>
+</dialog>
+
 <script>
 /* ═══════════════════════════════════════════════════
    REAL-TIME DASHBOARD ENGINE
@@ -1745,7 +1769,7 @@ function sessionRevision(session) {
     breakdown.mouse_points ?? session.mouse_points_captured ?? '',
     breakdown.behavioral_lstm_score ?? '',
     breakdown.tabular_score ?? '',
-    session.traffic_number ?? '', session.revision ?? 0,
+    session.traffic_number ?? '', session.display_number ?? '', session.revision ?? 0,
     JSON.stringify(session.reference ?? null),
   ].join('|');
 }
@@ -2310,7 +2334,7 @@ function renderTrafficTable() {
       .filter(Boolean).join(' ');
 
     return `<tr class="${rowClass}" data-idx="${idx}" data-session="${escapeHtml(s.sessionId || '')}" onclick="selectSession(${idx})">
-      <td><span class="num-id">${escapeHtml(s.traffic_number ?? '--')}</span></td>
+      <td><span class="num-id">${escapeHtml(s.display_number ?? '--')}</span></td>
       <td><span class="time-text">${escapeHtml(timeStr)}</span></td>
       <td><span class="ip-text">${escapeHtml(ip)}</span>${geoShort ? `<span class="geo-text" title="${escapeHtml(geoTitle)}">${escapeHtml(geoShort)}</span>` : ''}</td>
       <td><span class="cell-main"${device.kind ? ` title="${escapeHtml(device.kind)}"` : ''}>${escapeHtml(device.os)}</span>${device.kind === 'Máy tính bảng' && device.os !== 'iPad' ? '<span class="geo-text">Máy tính bảng</span>' : ''}</td>
@@ -2339,7 +2363,7 @@ function openLabelDialog(idx) {
   labelingSession = {sessionId: session.sessionId, revision: session.revision || 0};
   labelDialogVersion++;
   const annotation = session.manual_label || {};
-  document.getElementById('labelTitle').textContent = 'Gán nhãn traffic #' + (session.traffic_number ?? '--');
+  document.getElementById('labelTitle').textContent = 'Gán nhãn phiên #' + (session.display_number ?? '--');
   document.getElementById('labelValue').value = annotation.label || 'BOT';
   document.getElementById('labelSource').value = annotation.source || 'manual_review';
   document.getElementById('labelGroup').value = annotation.group_id || '';
@@ -2436,7 +2460,8 @@ function openDrawer() {
   if (!wasOpen) document.getElementById('drawerTitle').focus({ preventScroll: true });
 }
 
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+// Escape in a dialog closes the dialog only.
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) closeDrawer(); });
 
 async function deleteCurrentDrawerSession() {
   if (!selectedSession) return;
@@ -2456,9 +2481,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
 
   // 1. Overview
   document.getElementById('drawerSessionId').textContent = s.sessionId || '--';
-  // Traffic numbers count every website: customers see a plain title.
-  setText('drawerTitle', s.traffic_number != null && !document.body.classList.contains('role-customer')
-    ? 'Phiên #' + s.traffic_number : 'Chi tiết phiên');
+  setText('drawerTitle', s.display_number != null ? 'Phiên #' + s.display_number : 'Chi tiết phiên');
   document.getElementById('dVisitorId').textContent = s.visitorId || 'Chưa khởi tạo';
   document.getElementById('dClientIP').textContent = s.client_ip || '--';
   renderGeo(s.geo);
@@ -3105,6 +3128,41 @@ function checkAlerts() {
   previousBotSessions = currentBotSessions;
 }
 
+// ──── Notices: confirmations and errors in a dialog of the page ────
+// Resolves true for the confirm button; Escape, Hủy and the backdrop resolve false.
+let noticeResolve = null;
+function showNotice({ title, message = '', confirmLabel = 'Đóng', cancelLabel = null, danger = false, icon = 'icon-alert' }) {
+  const dialog = document.getElementById('noticeDialog');
+  if (noticeResolve) { noticeResolve(false); noticeResolve = null; }
+  if (dialog.open) dialog.close();
+  dialog.classList.toggle('is-danger', danger);
+  document.getElementById('noticeIconUse').setAttribute('href', '#' + icon);
+  document.getElementById('noticeTitle').textContent = title;
+  const text = document.getElementById('noticeText');
+  text.textContent = message;
+  text.hidden = !message;
+  const ok = document.getElementById('noticeOk');
+  const cancel = document.getElementById('noticeCancel');
+  ok.textContent = confirmLabel;
+  cancel.textContent = cancelLabel || '';
+  cancel.hidden = !cancelLabel;
+  dialog.returnValue = '';
+  dialog.showModal();
+  // A destructive action starts on Hủy, so Enter does not confirm it by accident.
+  (danger && cancelLabel ? cancel : ok).focus();
+  return new Promise(resolve => { noticeResolve = resolve; });
+}
+function confirmNotice(options) { return showNotice({ cancelLabel: 'Hủy', confirmLabel: 'Đồng ý', ...options }); }
+function errorNotice(message, title = 'Không thực hiện được') { return showNotice({ title, message, danger: true }); }
+(() => {
+  const dialog = document.getElementById('noticeDialog');
+  dialog.addEventListener('close', () => {
+    if (noticeResolve) { noticeResolve(dialog.returnValue === 'ok'); noticeResolve = null; }
+  });
+  // A click on the backdrop (outside the box) is a cancel.
+  dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close('cancel'); });
+})();
+
 // ──── Delete Session(s) ────
 async function deleteSession(sessionId, idx) {
   try {
@@ -3149,10 +3207,12 @@ function syncDeleteAllButton() {
 
 async function deleteAllSessions() {
   const scoped = Boolean(selectedSite);
-  const question = scoped
-    ? `Xóa mọi phiên của trang "${siteLabel(selectedSite)}"? Phiên của các trang khác giữ nguyên. Không thể hoàn tác.`
-    : 'Xóa TẤT CẢ phiên của MỌI trang? Không thể hoàn tác.';
-  if (!confirm(question)) return;
+  const confirmed = await confirmNotice(scoped
+    ? { title: `Xóa mọi phiên của ${siteLabel(selectedSite)}?`, danger: true, icon: 'icon-trash', confirmLabel: 'Xóa phiên',
+        message: 'Phiên của các trang khác giữ nguyên. Phiên mới của trang này được đánh số lại từ 1. Không thể hoàn tác.' }
+    : { title: 'Xóa phiên của mọi trang?', danger: true, icon: 'icon-trash', confirmLabel: 'Xóa tất cả',
+        message: 'Phiên mới được đánh số lại từ 1. Không thể hoàn tác.' });
+  if (!confirmed) return;
   try {
     const res = await fetch(API_BASE + '/api/v1/sessions' + siteParam('?'), {
       method: 'DELETE', headers: adminHeaders()
@@ -3332,7 +3392,7 @@ function sessionMatches(s, query) {
   if (!terms.length) return true;
   const geo = s.geo || {};
   const device = describeDevice(s);
-  const haystack = normalizeText([s.traffic_number, s.sessionId, s.client_ip, s.pageUrl, s.verdict,
+  const haystack = normalizeText([s.display_number, s.sessionId, s.client_ip, s.pageUrl, s.verdict,
     geo.city, geo.region, geo.country, geo.country_code, geo.isp, geo.asn && 'AS' + geo.asn,
     device.os, device.kind].join(' '));
   return terms.every(term => haystack.includes(term));
@@ -4229,12 +4289,12 @@ async function siteRequest(siteId, method, body) {
     if (handleUnauthorized(res)) return false;
     if (!res.ok) {
       const result = await res.json().catch(() => ({}));
-      alert(siteErrorText(res.status, result.detail));
+      errorNotice(siteErrorText(res.status, result.detail));
       return false;
     }
     return true;
   } catch (e) {
-    alert('Không kết nối được máy chủ');
+    errorNotice('Kiểm tra kết nối mạng rồi thử lại.', 'Không kết nối được máy chủ');
     return false;
   }
 }
@@ -4256,12 +4316,14 @@ document.getElementById('sitesBody').addEventListener('click', async (event) => 
     openSiteDialog(site);
   } else if (action === 'toggle' && site) {
     const pause = site.status !== 'paused';
-    if (pause && !confirm(`Tạm dừng giám sát ${site.name}? Các trang của mục này sẽ không gửi được dữ liệu cho đến khi bật lại.`)) return;
+    if (pause && !await confirmNotice({ title: `Tạm dừng giám sát ${site.name}?`, icon: 'icon-pause', confirmLabel: 'Tạm dừng',
+      message: 'Các trang của mục này sẽ không gửi được dữ liệu cho đến khi bật lại.' })) return;
     button.disabled = true;
     if (await siteRequest(siteId, 'PATCH', { status: pause ? 'paused' : 'active' })) await loadSites();
     button.disabled = false;
   } else if (action === 'delete' && site) {
-    if (!confirm(`Xóa ${site.name} khỏi danh sách? Phiên đã ghi vẫn được giữ, nhưng các trang của mục này sẽ không gửi được dữ liệu nữa.`)) return;
+    if (!await confirmNotice({ title: `Xóa ${site.name} khỏi danh sách?`, danger: true, icon: 'icon-trash', confirmLabel: 'Xóa trang',
+      message: 'Phiên đã ghi vẫn được giữ, nhưng các trang của mục này sẽ không gửi được dữ liệu nữa.' })) return;
     button.disabled = true;
     if (await siteRequest(siteId, 'DELETE')) {
       if (selectedSite === siteId) changeSiteFilter('');
@@ -5262,17 +5324,20 @@ document.getElementById('usersBody').addEventListener('click', async (event) => 
   let result = null;
   if (action === 'edit') return openUserDialog(user);
   if (action === 'reset') {
-    if (!confirm(`Đặt lại mật khẩu cho ${user.username}? Mật khẩu cũ và mọi phiên đăng nhập của tài khoản này hết hiệu lực ngay.`)) return;
+    if (!await confirmNotice({ title: `Đặt lại mật khẩu cho ${user.username}?`, icon: 'icon-key', confirmLabel: 'Đặt lại',
+      message: 'Mật khẩu cũ và mọi phiên đăng nhập của tài khoản này hết hiệu lực ngay.' })) return;
     result = await userRequest(path + '/reset-password', 'POST');
     if (result && !result.error) showCredentials(user.username, result.password, 'Mật khẩu mới của ' + user.username);
   } else if (action === 'toggle') {
-    if (!user.disabled && !confirm(`Khóa ${user.username}? Tài khoản này bị đăng xuất và không đăng nhập được cho đến khi mở khóa.`)) return;
+    if (!user.disabled && !await confirmNotice({ title: `Khóa ${user.username}?`, danger: true, icon: 'icon-user', confirmLabel: 'Khóa tài khoản',
+      message: 'Tài khoản này bị đăng xuất và không đăng nhập được cho đến khi mở khóa.' })) return;
     result = await userRequest(path, 'PATCH', { disabled: !user.disabled });
   } else if (action === 'delete') {
-    if (!confirm(`Xóa tài khoản ${user.username}? Không thể hoàn tác.`)) return;
+    if (!await confirmNotice({ title: `Xóa tài khoản ${user.username}?`, danger: true, icon: 'icon-trash', confirmLabel: 'Xóa tài khoản',
+      message: 'Không thể hoàn tác.' })) return;
     result = await userRequest(path, 'DELETE');
   }
-  if (result && result.error) alert(result.error);
+  if (result && result.error) errorNotice(result.error);
   await loadUsers();
 });
 

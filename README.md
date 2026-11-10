@@ -357,8 +357,8 @@ Trang **Người dùng** (chỉ quản trị viên) tạo và quản lý tài kh
 - Tài khoản mới và tài khoản được đặt lại mật khẩu dùng **mật khẩu tạm** do hệ thống sinh, chỉ hiện một
   lần (kèm nút sao chép để gửi). Chủ tài khoản phải đổi mật khẩu trước khi xem được dữ liệu.
 - Giới hạn website được áp ở máy chủ: mọi endpoint đọc dữ liệu tự lọc theo website của khách; hỏi website
-  khác trả 403, phiên của website khác trả 404. Khách không thấy số thứ tự traffic toàn hệ thống và các
-  thông số nội bộ (độ trễ, policy, mẫu cảm ứng).
+  khác trả 403, phiên của website khác trả 404. STT trên bảng đếm trong website của khách; khách không
+  thấy số traffic toàn hệ thống và các thông số nội bộ (độ trễ, policy, mẫu cảm ứng).
 - Khóa tài khoản hoặc đặt lại mật khẩu sẽ đăng xuất mọi phiên của tài khoản đó trong vòng 10 giây.
 - Không tự hạ quyền, tự khóa hay tự xóa chính mình, và luôn còn ít nhất một quản trị viên đang hoạt động.
 - Quản trị viên đầu tiên vẫn tạo bằng `python -m api_service.manage create-admin --username <tên>`.

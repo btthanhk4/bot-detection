@@ -2,9 +2,20 @@
 
 ## Số thứ tự
 
-Dashboard có STT lưu bền vững trong MongoDB, mỗi `sessionId` một số. Init,
-heartbeat, retry và reload dashboard không tạo thêm số cho cùng session.
-Phiên mới thường được SDK tạo khi tải trang mới; STT không phải số người
+Có hai loại số:
+
+| | Số traffic (`traffic_number`) | STT trên bảng (`display_number`) |
+|---|---|---|
+| Lưu ở | `research_sessions`, cố định | Tính lúc đọc, không lưu |
+| Đếm theo | Toàn hệ thống | Từng trang theo dõi; "Tất cả trang" đếm chung |
+| Sau khi xóa | Không tái sử dụng | Phiên đã xóa không được đếm: xóa hết thì phiên mới là 1 |
+| Dùng cho | Phân trang (cursor), export nhãn | Hiển thị: cột STT, tiêu đề "Phiên #" |
+
+STT của một phiên là vị trí của nó trong các phiên còn lại của trang đang xem, phiên cũ nhất là 1.
+Bộ lọc kết luận không đổi STT. Xóa một phiên cũ thì các phiên mới hơn của trang đó lùi một số.
+
+Số traffic được cấp một lần cho mỗi `sessionId`. Init, heartbeat, retry và reload dashboard không tạo
+thêm số cho cùng session. Phiên mới thường được SDK tạo khi tải trang mới; số không phải số người
 duy nhất, số IP, số request hoặc số click quảng cáo.
 
 Server cấp số trước inference, theo lần đăng ký thành công đầu tiên trong
@@ -14,15 +25,13 @@ Không thể phục dựng phiên đã bị xóa/TTL trước khi triển khai t
 Khi MongoDB lỗi, số có thể chưa có cho đến replay; lúc ấy thứ tự là lúc
 đăng ký sau phục hồi, không cam kết đúng thứ tự truy cập trên mạng.
 
-Số không tái sử dụng sau xóa. Crash giữa cấp counter và ghi session, hoặc
-race giữa các API replica dùng chung DB, có thể để lại khoảng trống; dùng
-tổng phiên trên dashboard để đếm, không dùng STT lớn nhất. Hệ thống hiện
-chỉ hỗ trợ cấu hình một worker. Phân trang bằng cursor STT, không phải offset
-thay đổi theo heartbeat. Thời gian trong bảng là lần đầu server ghi nhận.
+Crash giữa cấp counter và ghi session, hoặc race giữa các API replica dùng chung DB, có thể để lại
+khoảng trống trong số traffic. Hệ thống hiện chỉ hỗ trợ cấu hình một worker. Phân trang bằng cursor
+số traffic, không phải offset thay đổi theo heartbeat. Thời gian trong bảng là lần đầu server ghi nhận.
 
-STT không tự chứng minh traffic thuộc nhà cung cấp nào. Ghi nguồn/lô đã biết
+Số không tự chứng minh traffic thuộc nhà cung cấp nào. Ghi nguồn/lô đã biết
 và đối chiếu thời gian, session, receipt; không mặc định mọi traffic trong
-một khoảng STT đều của nhà cung cấp.
+một khoảng số đều của nhà cung cấp.
 
 ## Gán nhãn
 
@@ -43,7 +52,7 @@ có TTL của raw vận hành. Không ghép hoặc sinh quỹ đạo mới. Snap
 sau không tự động vào bản chọn cũ: đợi hoàn tất run rồi gán hoặc lưu lại
 nhãn để bổ sung snapshot mới. Lịch sử sửa nhãn nằm trong `research_sessions`.
 Hãy quản lý thời hạn lưu dataset/backup riêng; xóa phiên/xóa tất cả trên
-dashboard sẽ xóa cả snapshot dataset và lịch sử nhãn tương ứng. Giữ STT
+dashboard sẽ xóa cả snapshot dataset và lịch sử nhãn tương ứng. Giữ số traffic
 đã cấp để tránh tái sử dụng, không giữ nội dung nhãn sau thao tác xóa.
 
 ## Xuất và kiểm tra
@@ -57,7 +66,7 @@ python -m core_ml.dataset.export_captures --verify C:/datacat-private/export-202
 
 `--labeled-only` đọc snapshot đã giữ. `--include-manual-labels` kèm nhãn khi
 xuất raw vận hành thông thường. Ngoài JSONL raw/manifest/template UNKNOWN,
-export có `manual-labels.jsonl` với run ID, STT, revision, nguồn, ghi chú và
+export có `manual-labels.jsonl` với run ID, số traffic, revision, nguồn, ghi chú và
 trạng thái xác nhận. Giữ template UNKNOWN để không phá format export cũ;
 nhãn đã gán nằm trong file riêng có checksum. Không chỉnh file rồi bỏ qua verify.
 
