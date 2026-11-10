@@ -44,6 +44,13 @@ that convict. Alone it changes nothing (since policy 12, environment evidence wi
 leaves a session insufficient). On the lander, 371 sessions
 reported 640 cores and rendered WebGL with SwiftShader behind home addresses: server hardware.
 No person on the live site carried any environment family.
+
+Policy 29: ``ZERO_TIME_TAPS`` (two or more taps released less than 1 ms after they landed) is
+one more. A finger stays on glass for tens of milliseconds: the user's iPhone, tapping as fast
+as it could, gave 47-80 ms (0 of 20 taps under 1 ms, 2026-11-10), two other iPhones on the shop
+0 of 5; the lander's WebView bots 145 of 237 taps under 1 ms (median 0), Playwright's iPhone 8
+of 8. Screen readers (TalkBack) may synthesize instant taps, so alone it only withholds HUMAN;
+with ``navigator.webdriver`` tampered it convicts.
 """
 
 import math
@@ -142,13 +149,15 @@ def environment_anchor(automation_evidence: dict) -> bool:
     return any(family in families for family in TAMPERING_ANCHOR_FAMILIES)
 
 
-def contradictions(forgery: list, automation_evidence: dict = None) -> list:
-    """Independent contradictions of the browser: the forgery codes and an environment anchor."""
+def contradictions(forgery: list, automation_evidence: dict = None, touch_flags=None) -> list:
+    """Independent contradictions of the browser: the forgery codes, an environment anchor and
+    (policy 29) taps released the moment they landed."""
     found = sorted(set(forgery or []))
-    return found + (["ENVIRONMENT_EVIDENCE"] if environment_anchor(automation_evidence) else [])
+    found += ["ENVIRONMENT_EVIDENCE"] if environment_anchor(automation_evidence) else []
+    return found + (["ZERO_TIME_TAPS"] if "ZERO_TIME_TAPS" in (touch_flags or []) else [])
 
 
-def forged_browser_fires(forgery: list, automation_evidence: dict = None) -> bool:
+def forged_browser_fires(forgery: list, automation_evidence: dict = None, touch_flags=None) -> bool:
     """Policy 27: two independent claims no genuine browser makes (policy 28: or one and an
-    environment anchor)."""
-    return len(contradictions(forgery, automation_evidence)) >= FORGED_BROWSER_MIN_CODES
+    environment anchor; policy 29: or one and taps of 0 ms)."""
+    return len(contradictions(forgery, automation_evidence, touch_flags)) >= FORGED_BROWSER_MIN_CODES

@@ -54,7 +54,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "28"
+DECISION_POLICY_VERSION = "29"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -217,7 +217,7 @@ class EnsembleBotDetector:
         deferred_evidence = forgery + (["RANDOM_POINTER_JUMPS"] if desktop_risk["jump_profile"]["random_jumps"] else [])
         # Policy 28: a headless, GPU or permission contradiction counts towards the two that
         # convict (alone it leaves a session without input insufficient, as since policy 12).
-        browser_contradictions = contradictions(forgery, automation_evidence)
+        browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"])
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
@@ -226,7 +226,7 @@ class EnsembleBotDetector:
             automation_rule = input_provenance["synthetic_input_rule"]
         elif synthetic_path:
             automation_rule = SYNTHETIC_PATH_RULE
-        elif forged_browser_fires(forgery, automation_evidence):
+        elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"]):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
         elif "AUTOCLICK_TAPS" in touch_report["research_flags"]:

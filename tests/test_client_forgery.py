@@ -183,7 +183,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (12, 6)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (15, 6)
 
 
 def test_two_contradictions_convict():
@@ -204,6 +204,15 @@ def test_an_environment_anchor_is_one_more_contradiction():
     assert not forged_browser_fires([], gpu)
     assert not forged_browser_fires(["WEBDRIVER_TAMPERED"], {"families": {"HTTP": ["server.missing_fetch_metadata"]}})
     assert not forged_browser_fires(["WEBDRIVER_TAMPERED"], {"families": {"NATIVE_PATCH": ["signals.webdriverPatched"]}})
+
+
+def test_taps_of_zero_ms_are_one_more_contradiction():
+    zero = ["ZERO_TIME_TAPS"]
+    assert contradictions(["WEBDRIVER_TAMPERED"], {}, zero) == ["WEBDRIVER_TAMPERED", "ZERO_TIME_TAPS"]
+    assert forged_browser_fires(["WEBDRIVER_TAMPERED"], {}, zero)
+    # Alone (a screen reader may tap instantly) it is one contradiction; other touch flags are not.
+    assert not forged_browser_fires([], {}, zero)
+    assert not forged_browser_fires(["WEBDRIVER_TAMPERED"], {}, ["SYNTHETIC_CONTACT", "RULER_SWIPES"])
 
 
 def test_forged_browser_is_a_bot_even_without_mouse_input():

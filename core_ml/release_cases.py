@@ -693,6 +693,9 @@ DESKTOP_RISK_RULE_GATE = {
 }
 
 
+_ZERO_TIME_TAPS = [_tap(150 + 20 * i, 324 + 10 * i, 0.0) for i in range(6)]
+
+
 def _deferred(**kwargs):
     """A desktop collector payload with no mouse move: too little input for the mouse models."""
     payload = _desktop(**kwargs)
@@ -734,7 +737,22 @@ CLIENT_FORGERY_CASES = (
     ("BOT", "FINAL", "forged_browser", _deferred(signals={"webdriverPatched": True, "headlessScreen": True})),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
                                                          fingerprint={"hardwareConcurrency": 8})),
+    # Policy 29: taps released the moment they landed are one more (the lander's WebView bots,
+    # median 0 ms; the user's iPhone tapping as fast as it could, 47-80 ms). Alone, as a screen
+    # reader might make them, or with a single such tap, they only withhold HUMAN.
+    ("BOT", "FINAL", "forged_browser", _phone(_ANDROID10, "Linux armv81", _ADRENO, _ZERO_TIME_TAPS, memory=4,
+                                              signals={"webdriverPatched": True})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _ZERO_TIME_TAPS + _ANDROID_HAND,
+                                               memory=4)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _ZERO_TIME_TAPS[:1] + _ANDROID_HAND,
+                                               memory=4, signals={"webdriverPatched": True})),
 )
+
+# Frozen gate of policy 28.
+CLIENT_FORGERY_RULE_GATE_V28 = {
+    "rules": ["client_forgery_v1", "forged_browser_v1"], "final_cases": 12, "insufficient_cases": 6, "passed": 18,
+    "fixture_fingerprint": "efb802da11a90ec83aa2da7b41ed7a1c1948d0ffba0d67921d814f5cab0e6b2e",
+}
 
 # Frozen gate of policy 27.
 CLIENT_FORGERY_RULE_GATE_V27 = {

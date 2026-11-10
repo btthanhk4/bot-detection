@@ -2484,6 +2484,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
     DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường',
+    ZERO_TIME_TAPS: 'chạm và nhả cùng lúc (0 ms), ngón tay thật chạm màn hình ít nhất vài chục ms',
     RANDOM_POINTER_JUMPS: `con trỏ nhảy giữa các điểm ngẫu nhiên (${Math.round((jumpProfile.jump_share || 0) * 100)}% bước nhảy quá 15% màn hình, ${Math.round((jumpProfile.turn_share || 0) * 100)}% quay ngược hướng)`,
     ...FORGERY_LABELS };
 

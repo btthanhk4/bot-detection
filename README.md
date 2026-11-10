@@ -115,16 +115,16 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v28 (current)
+### Policy v29 (current)
 
-Policy v28 coi phần cứng máy chủ là thêm một mâu thuẫn. Có 370 phiên trên trang đích quảng cáo báo
-640 nhân CPU và vẽ WebGL bằng SwiftShader (GPU phần mềm) dù đi qua IP gia đình. `forged_browser_v1`
-nay tính nhóm bằng chứng môi trường neo (headless, GPU, quyền thông báo) như một mâu thuẫn độc lập.
-Có nhóm này cộng một mã giả mạo thì kết luận BOT. Không phiên người thật nào mang nhóm môi trường
-hay mã giả mạo nào. Policy v27 trước đó đã xét luật con trỏ nhảy ngẫu nhiên từ 10 lần di chuột.
-Xem [Model release v28](docs/MODEL_RELEASE_V28.md).
+Policy v29 coi lần chạm 0 ms là thêm một mâu thuẫn. Ngón tay thật luôn nằm trên mặt kính vài chục
+mili giây: iPhone của người dùng chạm nhanh nhất có thể vẫn mất 47–80 ms, không lần nào dưới 1 ms
+trong 20 lần chạm. Bot WebView trên trang đích quảng cáo có trung vị 0 ms. Chạm 0 ms cộng
+`navigator.webdriver` bị sửa thì kết luận BOT. Đứng một mình, cờ này chỉ chặn kết luận HUMAN, vì
+trình đọc màn hình có thể chạm tức thời. Policy v28 trước đó đã coi phần cứng máy chủ là một mâu
+thuẫn. Xem [Model release v29](docs/MODEL_RELEASE_V29.md).
 
-Lịch sử policy v7–v27, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+Lịch sử policy v7–v28, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 
