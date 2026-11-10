@@ -115,16 +115,17 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v25 (current)
+### Policy v26 (current)
 
-Policy v25 sửa các trường hợp người thật bị bắt nhầm trên site thật: site có Sentry (bọc
-`console`, sửa `toString`), Chrome tắt tăng tốc phần cứng (WARP), người mở nhiều tab. Collector
-1.11 lấy `console`, `toString` và `requestAnimationFrame` từ một realm mới, nên thư viện của trang
-không làm sai đầu dò. Crawler tự khai được xác minh bằng dải IP chính thức của nhà vận hành
-(`python -m core_ml.refresh_crawler_ranges`). Báo cáo đánh dấu IP crawler thật và IP có cả người
-thật, và không đưa chúng vào danh sách IP để chặn. Xem [Model release v25](docs/MODEL_RELEASE_V25.md).
+Policy v26 bắt loại bot mà mô hình chuột bỏ sót trên trang đích quảng cáo: con trỏ không đi theo
+đường mà nhảy giữa các điểm ngẫu nhiên. Bốn mã mới chặn kết luận HUMAN: `RANDOM_POINTER_JUMPS`,
+`UA_POINTER_MISMATCH` (Safari < 13 mà vẫn gửi Pointer Events), `WEBDRIVER_TAMPERED`, `SERVER_CPU`.
+Con trỏ nhảy ngẫu nhiên cộng với một mâu thuẫn môi trường độc lập thì thành BOT
+(`synthetic_pointer_path_v1`). Phiên chưa đủ thao tác mà trình duyệt tự mâu thuẫn thì thành NGHI
+VẤN có kết luận (`client_forgery`). Luật nhảy con trỏ không khớp lần xuất nào trong 41.899 lần xuất
+phát lại từ Balabit (10 người). Xem [Model release v26](docs/MODEL_RELEASE_V26.md).
 
-Lịch sử policy v7–v24, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+Lịch sử policy v7–v25, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 

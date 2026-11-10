@@ -1,6 +1,15 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v25, mô tả trong [README](../README.md#policy-v25-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v26, mô tả trong [README](../README.md#policy-v26-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v25
+
+Policy v25 sửa các trường hợp người thật bị bắt nhầm trên site thật: site có Sentry (bọc
+`console`, sửa `toString`), Chrome tắt tăng tốc phần cứng (WARP), người mở nhiều tab. Collector
+1.11 lấy `console`, `toString` và `requestAnimationFrame` từ một realm mới, nên thư viện của trang
+không làm sai đầu dò. Crawler tự khai được xác minh bằng dải IP chính thức của nhà vận hành
+(`python -m core_ml.refresh_crawler_ranges`). Báo cáo đánh dấu IP crawler thật và IP có cả người
+thật, và không đưa chúng vào danh sách IP để chặn. Xem [Model release v25](MODEL_RELEASE_V25.md).
 
 ## Policy v24
 

@@ -2004,10 +2004,13 @@ function formatDuration(s) {
 const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hình', UNALIGNED_POINTER: 'Sự kiện chuột bất thường',
   SUBFRAME_POINTER_BURST: 'Sự kiện chuột dồn cục', POINTER_API_TAMPERED: 'API chuột bị sửa', CLOUD_SOFTWARE_GPU: 'Máy chủ cloud',
   ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
-  CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt' };
+  CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt',
+  RANDOM_POINTER_JUMPS: 'Con trỏ nhảy ngẫu nhiên', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản',
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ' };
 const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
-  TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên' };
+  TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2032,9 +2035,11 @@ function shortReason(s, deferred) {
   };
   if (basis === 'synthetic_input') {
     return bd.automation_rule === 'synthetic_typing_v1' ? 'Gõ phím giả lập'
-      : bd.automation_rule === 'synthetic_pointer_v1' ? 'Nhấn chuột giả lập' : 'Click giả lập';
+      : bd.automation_rule === 'synthetic_pointer_v1' ? 'Nhấn chuột giả lập'
+      : bd.automation_rule === 'synthetic_pointer_path_v1' ? 'Chuột giả nhảy ngẫu nhiên' : 'Click giả lập';
   }
   if (SHORT_BASIS[basis]) return SHORT_BASIS[basis];
+  if (basis === 'client_forgery') return codes((bd.client_forgery || {}).codes, SHORT_DESKTOP_CODES) || 'Trình duyệt mâu thuẫn';
   if (basis === 'desktop_risk') return codes((bd.desktop_risk || {}).codes, SHORT_DESKTOP_CODES) || 'Rủi ro trên máy tính';
   if (basis === 'mobile_risk') return codes((bd.mobile_human || {}).risk, SHORT_MOBILE_CODES) || 'Rủi ro trên điện thoại';
   if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
@@ -2327,16 +2332,24 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     ZERO_TIME_TAPS: 'chạm và nhả cùng lúc', RULER_SWIPES: 'vuốt thẳng tắp với các bước đều nhau',
     AUTOCLICK_TAPS: 'chạm lặp lại đúng một điểm theo nhịp đều', REPLAYED_SWIPES: 'các lần vuốt giống hệt nhau (macro phát lại)' };
   const touchInfoForText = bd.touch || {};
+  // Policy 26: claims a genuine browser does not make.
+  const FORGERY_LABELS = { UA_POINTER_MISMATCH: 'trình duyệt tự khai là bản cũ không có Pointer Events, nhưng lại gửi sự kiện này',
+    WEBDRIVER_TAMPERED: 'navigator.webdriver bị định nghĩa lại hoặc bị xóa (plugin stealth che dấu tự động hóa)',
+    SERVER_CPU: 'máy báo hơn 64 nhân CPU (máy chủ)' };
+  const jumpProfile = (bd.desktop_risk || {}).jump_profile || {};
   const MOBILE_CODE_LABELS = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
     TOUCH_FLAGS: 'thao tác cảm ứng bất thường: ' + ((touchInfoForText.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f).join(', ') || '--'),
     EMULATOR: 'chạy trên trình giả lập Android hoặc phần cứng máy tính', PLATFORM_CONTRADICTION: 'thông tin thiết bị mâu thuẫn',
     HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
     ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt',
-    UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ', DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ' };
+    UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ', DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ',
+    WEBDRIVER_TAMPERED: FORGERY_LABELS.WEBDRIVER_TAMPERED, UA_POINTER_MISMATCH: FORGERY_LABELS.UA_POINTER_MISMATCH };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
-    DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường' };
+    DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường',
+    RANDOM_POINTER_JUMPS: `con trỏ nhảy giữa các điểm ngẫu nhiên (${Math.round((jumpProfile.jump_share || 0) * 100)}% bước nhảy quá 15% màn hình, ${Math.round((jumpProfile.turn_share || 0) * 100)}% quay ngược hướng)`,
+    ...FORGERY_LABELS };
 
   // 2. Verdict Hero
   const verdictInfo = verdictView({ breakdown: bd, decision_state: dataObj.decision_state, verdict: dataObj.verdict || s.verdict });
@@ -2384,6 +2397,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
         : typingCodes.includes('TYPING_METRONOME')
           ? `Gõ phím giả lập: thời gian giữ và nhịp gõ đều như nhau (CV ${typing.lowest_rhythm_cv}).`
           : `Gõ phím giả lập: phím nhả ngay theo nhịp cố định (CV ${typing.lowest_instant_interval_cv}).`;
+    } else if (syntheticDecision && bd.automation_rule === 'synthetic_pointer_path_v1') {
+      const contradictions = ((bd.client_forgery || {}).codes || []).map(c => FORGERY_LABELS[c] || c);
+      const families = Object.keys(automationEvidence.families || {}).filter(k => k !== 'NETWORK').map(k => FAMILY_LABELS[k] || k);
+      explainText = `Chuột giả: ${Math.round((jumpProfile.jump_share || 0) * 100)}% bước di chuột nhảy quá 15% màn hình, ${Math.round((jumpProfile.turn_share || 0) * 100)}% quay ngược hướng (không người nào trong dữ liệu Balabit di chuột như vậy), và trình duyệt mâu thuẫn: ${escapeHtml((contradictions.length ? contradictions : families).join('; '))}.`;
     } else if (syntheticDecision && bd.automation_rule === 'synthetic_pointer_v1') {
       explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
     } else if (syntheticDecision) {
@@ -2418,8 +2435,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     }
   } else if (bd.decision_basis === 'mobile_risk') {
     explainText = `Bất thường: ${escapeHtml(((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c).join('; '))}.`;
+  } else if (bd.decision_basis === 'client_forgery') {
+    explainText = `Chưa đủ thao tác để đánh giá hành vi, nhưng trình duyệt mâu thuẫn: ${escapeHtml(((bd.client_forgery || {}).codes || []).map(c => FORGERY_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'desktop_risk') {
-    explainText = `Di chuột giống người, nhưng: ${escapeHtml(((bd.desktop_risk || {}).codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
+    explainText = `${((bd.desktop_risk || {}).codes || []).includes('RANDOM_POINTER_JUMPS') ? 'Bất thường' : 'Di chuột giống người, nhưng'}: ${escapeHtml(((bd.desktop_risk || {}).codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;
   } else {
     explainText = 'Điểm rủi ro nằm trong vùng ranh giới.';
   }
@@ -4121,7 +4140,8 @@ function renderReport(data) {
   const CRAWLER_CODES = { VERIFIED_CRAWLER: 'Bot tìm kiếm/AI đã xác minh (không nên chặn)', SPOOFED_CRAWLER: 'Giả danh bot tìm kiếm' };
   document.getElementById('reportReasons').innerHTML = data.reasons.length ? reportListHTML(data.reasons, flagged, (r, plain) => {
     const text = CRAWLER_CODES[r.code] || shortReason({ verdict: r.verdict, breakdown: { decision_basis: r.decision_basis, automation_rule: r.automation_rule,
-      desktop_risk: { codes: r.code ? [r.code] : [] }, mobile_human: { risk: r.code ? [r.code] : [] } } }, false);
+      desktop_risk: { codes: r.code ? [r.code] : [] }, mobile_human: { risk: r.code ? [r.code] : [] },
+      client_forgery: { codes: r.code ? [r.code] : [] } } }, false);
     return plain ? text : `<span class="tag ${r.verdict === 'BOT' ? 'bot' : 'suspect'}">${VERDICT_TEXT[r.verdict] || r.verdict}</span>${escapeHtml(text)}`;
   }) : '<li class="live-empty">Không có phiên bị đánh dấu</li>';
   document.getElementById('reportCountries').innerHTML = reportListHTML(data.bot_countries, t.bot, r => escapeHtml(countryName(r)));

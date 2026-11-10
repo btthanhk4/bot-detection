@@ -81,6 +81,8 @@ from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.release_cases import (
     AUTOMATION_EVIDENCE_CASES,
     AUTOMATION_EVIDENCE_RULE_GATE,
+    CLIENT_FORGERY_CASES,
+    CLIENT_FORGERY_RULE_GATE,
     DESKTOP_RISK_CASES,
     DESKTOP_RISK_RULE_GATE,
     EXPLICIT_AUTOMATION_RULE_GATE,
@@ -804,6 +806,18 @@ def validate_desktop_risk_rules(detector) -> dict:
     return dict(DESKTOP_RISK_RULE_GATE)
 
 
+def validate_client_forgery_rules(detector) -> dict:
+    """Check the policy 26 fixtures: too little input stays insufficient unless the
+    browser contradicts itself, which makes the session a final SUSPECT."""
+    for verdict, state, basis, payload in CLIENT_FORGERY_CASES:
+        result = detector.predict(payload)
+        if result["verdict"] != verdict or result["decision_state"] != state:
+            raise RuntimeError("Client forgery rule release gate failed")
+        if basis and (result["breakdown"]["decision_basis"] != basis or result["breakdown"]["risk_score_in_domain"]):
+            raise RuntimeError("Client forgery rule metadata release gate failed")
+    return dict(CLIENT_FORGERY_RULE_GATE)
+
+
 def validate_automation_evidence_rules(detector) -> dict:
     """Check framework-marker and tampering fixtures before publishing policy 12."""
     for expected, basis, payload in AUTOMATION_EVIDENCE_CASES:
@@ -1418,6 +1432,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     synthetic_device_rule_gate = validate_synthetic_device_rules(production_detector)
     mobile_rule_gate = validate_mobile_rules(production_detector)
     desktop_risk_rule_gate = validate_desktop_risk_rules(production_detector)
+    client_forgery_rule_gate = validate_client_forgery_rules(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1450,6 +1465,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "synthetic_device_rule_gate": synthetic_device_rule_gate,
             "mobile_rule_gate": mobile_rule_gate,
             "desktop_risk_rule_gate": desktop_risk_rule_gate,
+            "client_forgery_rule_gate": client_forgery_rule_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

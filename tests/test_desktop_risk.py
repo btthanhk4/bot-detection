@@ -229,7 +229,7 @@ def test_release_fixtures(production_detector, index):
 def test_release_gate_counts(production_detector):
     gate = validate_desktop_risk_rules(production_detector)
     assert gate == DESKTOP_RISK_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"]) == (15, 18)
+    assert (gate["human_cases"], gate["suspect_cases"]) == (18, 24)
 
 
 WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"

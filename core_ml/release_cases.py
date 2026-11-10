@@ -90,6 +90,73 @@ _HEADLESS_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like
 _SWIFTSHADER = "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
 
 
+with open(os.path.join(os.path.dirname(__file__), "fixtures", "m4d_human_60hz.json"), encoding="utf-8") as _fixture:
+    _M4D_60HZ = json.load(_fixture)["points_t_x_y"]
+
+
+def _path(scale=1.0, burst=0):
+    """A human path (M4D, 60 Hz frames); ``scale`` stretches time, ``burst`` adds moves within 1 ms."""
+    records = []
+    for t, x, y in _M4D_60HZ:
+        records.append({"time": round(t * scale), "x": x, "y": y, "type": "move", "source": "mouse"})
+        records += [{"time": round(t * scale) + k % 2, "x": round(x + 0.4 * (k + 1), 1), "y": y, "type": "move",
+                     "source": "mouse"} for k in range(burst)]
+    return records[-100:]
+
+
+def _desktop(coalesced=1.9, multi=0.8, secure=True, frame_ms=16.7, path=None, ua=None, renderer=_D3D,
+             stats=None, **kwargs):
+    payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, **kwargs)
+    payload["mouse"]["records"] = path or _path()
+    payload["mouse"]["pointerStats"] = {
+        "pointermove": 600, "coalescedTotal": round(600 * coalesced), "coalescedMax": 4,
+        "coalescedMulti": round(600 * multi), "rawUpdates": round(600 * coalesced), "secureContext": secure,
+        "frameMs": frame_ms, "frames": 60, **(stats or {})}
+    return payload
+
+
+_LINUX_CHROME = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                 "Chrome/155.0.0.0 Safari/537.36")
+_WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
+_APPLE_M2 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
+_MESA = "ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2), OpenGL 4.6)"
+_APPLE_M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
+# Chrome with hardware acceleration off on Windows (measured 2026-10-29).
+_WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+_COCCOC = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+           "coc_coc_browser/150.0.0 Chrome/144.0.0.0 Safari/537.36")
+_SAFARI9 = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/601.1.56 (KHTML, like Gecko) "
+            "Version/9.0 Safari/601.1.56")
+_SAFARI17 = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+             "Version/17.6 Safari/605.1.15")
+
+
+def _jumps(n=40, dt=80, seed=11):
+    """Policy 26: a pointer landing on random points every ``dt`` ms, as on the ad lander."""
+    out, state = [], seed
+    for i in range(n):
+        state = (state * 1103515245 + 12345) % 2 ** 31
+        x = 0.05 + 0.9 * (state % 1000) / 1000
+        state = (state * 1103515245 + 12345) % 2 ** 31
+        y = 0.05 + 0.9 * (state % 1000) / 1000
+        out.append({"time": 1000 + i * dt, "x": round(x, 3), "y": round(y, 3), "type": "move", "source": "mouse"})
+    return out
+
+
+def _sparse_hand(dt=100):
+    """A hand moving fast between targets, sampled at ~10 Hz (Balabit-like): long steps
+    that keep their direction within a stroke."""
+    out, t, x, y = [], 1000, 0.1, 0.2
+    strokes = [(0.19, 0.05), (-0.04, 0.18), (-0.18, -0.06), (0.17, 0.02), (0.03, -0.17), (0.18, 0.08)]
+    for dx, dy in strokes * 2:
+        for f in (1.0, 1.1, 0.9, 0.35):
+            x = min(0.98, max(0.02, x + dx * f))
+            y = min(0.98, max(0.02, y + dy * f))
+            t += dt
+            out.append({"time": t, "x": round(x, 3), "y": round(y, 3), "type": "move", "source": "mouse"})
+    return out
+
+
 # Zero-mouse fixtures for policy 12. Positives: framework artefacts and the
 # Puppeteer-stealth profile measured on 2026-10-26. Negatives: a clean browser,
 # a UA-switcher extension (client hints + worker UA + patched getter), two
@@ -301,6 +368,15 @@ SYNTHETIC_DEVICE_CASES = (
     ("BOT", "synthetic_typing_v1", _device(_strokes(
         [0.3, 0.4, 0.3, 0.35, 0.3, 0.4, 0.3, 0.3, 0.35, 0.4, 0.3, 0.3],
         [110.4, 111.2, 109.8, 110.6, 110.9, 110.1, 111.4, 110.2, 110.7, 110.3, 111.0, 110.5]))),
+    # Policy 26, the ad lander (2026-11-10): a pointer landing on random points, from a
+    # browser that also contradicts itself (webdriver redefined, a 640-core Linux, Safari 9
+    # sending Pointer Events). Random jumps alone, or with a cloud address only, stay
+    # SUSPECT (DESKTOP_RISK_CASES).
+    ("BOT", "synthetic_pointer_path_v1", _desktop(path=_jumps(), signals={"webdriverPatched": True})),
+    ("BOT", "synthetic_pointer_path_v1", _desktop(path=_jumps(), ua=_LINUX_CHROME, renderer=_MESA, coalesced=1.02,
+                                                  multi=0.007, fingerprint={"hardwareConcurrency": 640})),
+    ("BOT", "synthetic_pointer_path_v1", _desktop(path=_jumps(seed=5), ua=_SAFARI9, renderer=_APPLE_M2, coalesced=0.0,
+                                                  multi=0.0)),
 )
 
 # Frozen gate of policy 15.
@@ -317,8 +393,15 @@ SYNTHETIC_DEVICE_RULE_GATE_V16 = {
     "fixture_fingerprint": "47c4086dc5817b2bf0f60d7c5e2bafe77cbc2254ff875f4291272fd3604a1442",
 }
 
-SYNTHETIC_DEVICE_RULE_GATE = {
+# Frozen gate of policies 22-25.
+SYNTHETIC_DEVICE_RULE_GATE_V22 = {
     "rules": ["synthetic_typing_v1", "synthetic_pointer_v1"],
+    "positive_cases": 5, "negative_cases": 11, "passed": 16,
+    "fixture_fingerprint": "de55096d15e0da6cb404b0630db77af1623ebb7978e91adecd4e52bfa873e646",
+}
+
+SYNTHETIC_DEVICE_RULE_GATE = {
+    "rules": ["synthetic_typing_v1", "synthetic_pointer_v1", "synthetic_pointer_path_v1"],
     "positive_cases": sum(expected == "BOT" for expected, _, _ in SYNTHETIC_DEVICE_CASES),
     "negative_cases": sum(expected != "BOT" for expected, _, _ in SYNTHETIC_DEVICE_CASES),
     "passed": len(SYNTHETIC_DEVICE_CASES),
@@ -454,6 +537,12 @@ MOBILE_RULE_CASES = (
                                                headers={"page_view": "missing"})),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _LOW_END_HAND, memory=4, cores=8,
                                                headers={"page_view": "verified", "device_sessions": 40})),
+    # Policy 26: navigator.webdriver redefined withholds a HUMAN verdict from a phone, and
+    # makes a phone with too little input to judge a final SUSPECT.
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND,
+                                               signals={"webdriverPatched": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND[:2],
+                                                  signals={"webdriverPatched": True})),
 )
 
 # Frozen gate of policies 19-23.
@@ -461,6 +550,13 @@ MOBILE_RULE_GATE_V19 = {
     "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
     "human_cases": 7, "suspect_cases": 10, "bot_cases": 5, "passed": 22,
     "fixture_fingerprint": "ab08fe3f334ac3dfa9b1f68431917fee4347a810d1932f4dd7fc1353ff4a8027",
+}
+
+# Frozen gate of policies 24-25.
+MOBILE_RULE_GATE_V24 = {
+    "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
+    "human_cases": 8, "suspect_cases": 12, "bot_cases": 5, "passed": 25,
+    "fixture_fingerprint": "ba0e7289d8f4ebb10c1ef52a696599a8dc41a5de765b9ac6ca7b1115deb6031c",
 }
 
 MOBILE_RULE_GATE = {
@@ -474,42 +570,6 @@ MOBILE_RULE_GATE = {
     ).hexdigest(),
 }
 
-
-with open(os.path.join(os.path.dirname(__file__), "fixtures", "m4d_human_60hz.json"), encoding="utf-8") as _fixture:
-    _M4D_60HZ = json.load(_fixture)["points_t_x_y"]
-
-
-def _path(scale=1.0, burst=0):
-    """A human path (M4D, 60 Hz frames); ``scale`` stretches time, ``burst`` adds moves within 1 ms."""
-    records = []
-    for t, x, y in _M4D_60HZ:
-        records.append({"time": round(t * scale), "x": x, "y": y, "type": "move", "source": "mouse"})
-        records += [{"time": round(t * scale) + k % 2, "x": round(x + 0.4 * (k + 1), 1), "y": y, "type": "move",
-                     "source": "mouse"} for k in range(burst)]
-    return records[-100:]
-
-
-def _desktop(coalesced=1.9, multi=0.8, secure=True, frame_ms=16.7, path=None, ua=None, renderer=_D3D,
-             stats=None, **kwargs):
-    payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, **kwargs)
-    payload["mouse"]["records"] = path or _path()
-    payload["mouse"]["pointerStats"] = {
-        "pointermove": 600, "coalescedTotal": round(600 * coalesced), "coalescedMax": 4,
-        "coalescedMulti": round(600 * multi), "rawUpdates": round(600 * coalesced), "secureContext": secure,
-        "frameMs": frame_ms, "frames": 60, **(stats or {})}
-    return payload
-
-
-_LINUX_CHROME = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                 "Chrome/155.0.0.0 Safari/537.36")
-_WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
-_APPLE_M2 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
-_MESA = "ANGLE (Intel, Mesa Intel(R) Iris(R) Xe Graphics (ADL GT2), OpenGL 4.6)"
-_APPLE_M4 = "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)"
-# Chrome with hardware acceleration off on Windows (measured 2026-10-29).
-_WARP = "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)"
-_COCCOC = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-           "coc_coc_browser/150.0.0 Chrome/144.0.0.0 Safari/537.36")
 
 # Policy 21 fixtures: (verdict, risk codes, payload). One human path throughout, so the
 # mouse models call every case human and only the input or environment differs.
@@ -564,7 +624,27 @@ DESKTOP_RISK_CASES = (
     ("HUMAN", [], _desktop(renderer=_WARP)),
     ("SUSPECT", ["ENVIRONMENT_EVIDENCE"], _desktop(coalesced=3.5, multi=0.9, ua=_MAC_CHROME, renderer=_WARP)),
     ("SUSPECT", ["CLOUD_SOFTWARE_GPU"], _desktop(renderer=_WARP, datacenter="aws")),
+    # Policy 26 (the ad lander, 2026-11-10): random jumps, a Safari 9 user agent sending
+    # Pointer Events, navigator.webdriver redefined or deleted, a 640-core desktop. Each
+    # alone withholds HUMAN. People: a fast hand recorded at ~10 Hz (long steps, one
+    # direction per stroke, as in Balabit), Safari 17, a 64-thread workstation.
+    ("SUSPECT", ["RANDOM_POINTER_JUMPS"], _desktop(path=_jumps())),
+    ("SUSPECT", ["RANDOM_POINTER_JUMPS"], _desktop(path=_jumps(), datacenter="aws")),
+    ("HUMAN", [], _desktop(path=_sparse_hand())),
+    ("SUSPECT", ["UA_POINTER_MISMATCH"], _desktop(coalesced=0.0, multi=0.0, ua=_SAFARI9, renderer=_APPLE_M2)),
+    ("HUMAN", [], _desktop(coalesced=0.0, multi=0.0, ua=_SAFARI17, renderer=_APPLE_M2)),
+    ("SUSPECT", ["WEBDRIVER_TAMPERED"], _desktop(signals={"webdriverPatched": True})),
+    ("SUSPECT", ["WEBDRIVER_TAMPERED"], _desktop(signals={"webdriverDeleted": True})),
+    ("SUSPECT", ["SERVER_CPU"], _desktop(coalesced=1.02, multi=0.007, ua=_LINUX_CHROME, renderer=_MESA,
+                                         fingerprint={"hardwareConcurrency": 640})),
+    ("HUMAN", [], _desktop(fingerprint={"hardwareConcurrency": 64})),
 )
+
+# Frozen gate of policy 25.
+DESKTOP_RISK_RULE_GATE_V25 = {
+    "rules": ["desktop_risk_v1"], "human_cases": 15, "suspect_cases": 18, "passed": 33,
+    "fixture_fingerprint": "464c7d46390ebc61195164930dc39b0669327f545f148dea53188af4eb4186fc",
+}
 
 # Frozen gate of policy 24.
 DESKTOP_RISK_RULE_GATE_V24 = {
@@ -591,5 +671,40 @@ DESKTOP_RISK_RULE_GATE = {
     "passed": len(DESKTOP_RISK_CASES),
     "fixture_fingerprint": hashlib.sha256(
         json.dumps(DESKTOP_RISK_CASES, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest(),
+}
+
+
+def _deferred(**kwargs):
+    """A desktop collector payload with no mouse move: too little input for the mouse models."""
+    payload = _desktop(**kwargs)
+    payload["mouse"]["records"] = []
+    return payload
+
+
+# Policy 26 fixtures: (verdict, decision state, decision basis, payload). A session with
+# too little input stays insufficient, unless the browser contradicts itself: then it is
+# a final SUSPECT. A cloud address alone is not a contradiction.
+CLIENT_FORGERY_CASES = (
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(signals={"webdriverPatched": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(signals={"webdriverDeleted": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(coalesced=0.0, multi=0.0, ua=_SAFARI9, renderer=_APPLE_M2)),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(ua=_LINUX_CHROME, renderer=_MESA,
+                                                     fingerprint={"hardwareConcurrency": 640})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred()),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(datacenter="aws")),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(coalesced=0.0, multi=0.0, ua=_SAFARI17, renderer=_APPLE_M2)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(fingerprint={"hardwareConcurrency": 64})),
+    ("BOT", "FINAL", "automation_marker", _deferred(signals={"webdriverPatched": True},
+                                                    detectors={"webdriver": True})),
+)
+
+CLIENT_FORGERY_RULE_GATE = {
+    "rules": ["client_forgery_v1"],
+    "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
+    "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
+    "passed": len(CLIENT_FORGERY_CASES),
+    "fixture_fingerprint": hashlib.sha256(
+        json.dumps(CLIENT_FORGERY_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }

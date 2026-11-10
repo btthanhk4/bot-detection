@@ -262,7 +262,7 @@ def gate_decision(db, *, page_view_id, method: str, strict: bool, grace_seconds:
         return False, "forged"
     if strict and any(
         s.get("verdict") == "SUSPECT" and s.get("decision_state") == "FINAL"
-        and (s.get("breakdown") or {}).get("decision_basis") in ("desktop_risk", "mobile_risk")
+        and (s.get("breakdown") or {}).get("decision_basis") in ("desktop_risk", "mobile_risk", "client_forgery")
         for s in sessions
     ):
         return False, "risk"

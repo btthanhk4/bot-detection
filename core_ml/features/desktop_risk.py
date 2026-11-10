@@ -51,6 +51,8 @@ verdict. None of them proves a bot on its own, so the verdict is a final SUSPECT
 * ``ENVIRONMENT_EVIDENCE``: a headless, GPU or permission contradiction, or two
   independent families. Fewer than three do not convict (``environment_tampering_v1``);
   no desktop session of a person on the live site had any.
+* ``RANDOM_POINTER_JUMPS``, ``UA_POINTER_MISMATCH``, ``WEBDRIVER_TAMPERED``, ``SERVER_CPU``
+  (policy 26): see ``core_ml.features.client_forgery``.
 
 Pointer timing is judged only on collector payloads (``pointerStats`` present): the
 training sets were recorded by other tools with other timing.
@@ -58,13 +60,15 @@ training sets were recorded by other tools with other timing.
 
 import re
 
+from core_ml.features.client_forgery import forgery_codes, pointer_jump_profile
 from core_ml.features.server_context import server_context_codes
 
 DESKTOP_RISK_RULE = "desktop_risk_v1"
 DESKTOP_RISK_VERSION = "desktop_risk_v1"
 RISK_CODES = ("FRAME_LOCKED_POINTER", "UNALIGNED_POINTER", "POINTER_API_TAMPERED", "SUBFRAME_POINTER_BURST",
               "CLOUD_SOFTWARE_GPU", "NON_BROWSER_REQUEST", "ENVIRONMENT_EVIDENCE", "UNVERIFIED_PAGE_LOAD",
-              "DEVICE_VELOCITY", "CDP_ATTACHED")
+              "DEVICE_VELOCITY", "CDP_ATTACHED", "RANDOM_POINTER_JUMPS", "UA_POINTER_MISMATCH",
+              "WEBDRIVER_TAMPERED", "SERVER_CPU")
 # Same minimum as the mouse models, so a page they judge is judged here too.
 FRAME_LOCK_MIN_MOVES = 25
 # CDP measured 1.000-1.051 samples with up to 4.8% multi-sample moves (a stalled main
@@ -169,6 +173,13 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
         codes.append("CDP_ATTACHED")
     if judged:
         codes += server_context_codes(payload)
+    # Policy 26: a path of random jumps (judged on any export, like the mouse models), and claims
+    # a genuine browser cannot make.
+    jump_profile = pointer_jump_profile(moves) if judged else pointer_jump_profile([])
+    if jump_profile["random_jumps"]:
+        codes.append("RANDOM_POINTER_JUMPS")
+    if judged:
+        codes += forgery_codes(payload, automation_evidence, desktop=True)
     return {
         "analysis_version": DESKTOP_RISK_VERSION,
         "judged": judged,
@@ -177,5 +188,6 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
         "move_interval_ms": interval,
         "frame_ms": frame_ms,
         "subframe_moves": burst,
+        "jump_profile": jump_profile,
         "codes": codes,
     }

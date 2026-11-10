@@ -18,6 +18,7 @@ Tổng quan hệ thống và cách chạy nằm ở [README](../README.md).
 ## Phát hành mô hình
 
 - [POLICY_HISTORY.md](POLICY_HISTORY.md): Lịch sử policy và kết quả thí nghiệm
+- [MODEL_RELEASE_V26.md](MODEL_RELEASE_V26.md): Model release v26: chuột nhảy ngẫu nhiên và trình duyệt tự mâu thuẫn
 - [MODEL_RELEASE_V25.md](MODEL_RELEASE_V25.md): Model release v25: người thật trên site thật, bot tìm kiếm, IP dùng chung
 - [MODEL_RELEASE_V24.md](MODEL_RELEASE_V24.md): Model release v24 — đóng các lỗ "fail-open" bằng gateway của shop
 - [MODEL_RELEASE_V23.md](MODEL_RELEASE_V23.md): Model release v23 — vá các cách né luật input của policy 21

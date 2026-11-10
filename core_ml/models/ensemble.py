@@ -16,6 +16,12 @@ from core_ml.features.automation_evidence import (
     MOBILE_EMULATION_RULE,
     analyze_automation_evidence,
 )
+from core_ml.features.client_forgery import (
+    CLIENT_FORGERY_VERSION,
+    SYNTHETIC_PATH_RULE,
+    forgery_codes,
+    synthetic_path_fires,
+)
 from core_ml.features.desktop_risk import analyze_desktop_risk
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
 from core_ml.features.input_provenance import (
@@ -45,9 +51,9 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "25"
+DECISION_POLICY_VERSION = "26"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
-SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE)
+SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
 
 class EnsembleBotDetector:
@@ -198,12 +204,19 @@ class EnsembleBotDetector:
             payload, automation_evidence, valid_moves, input_provenance["pointer_stats"],
             judged=not unsupported_mobile and not legacy_touch_ambiguous,
         )
+        # Policy 26: contradictions a genuine browser does not produce, and a pointer that jumps
+        # between random points; together they convict, alone they withhold HUMAN.
+        forgery = forgery_codes(payload, automation_evidence, desktop=not unsupported_mobile)
+        synthetic_path = bool(desktop_risk["judged"]) and synthetic_path_fires(
+            desktop_risk["jump_profile"], forgery, automation_evidence)
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
             automation_rule = automation_evidence["rule"]
         elif input_provenance["synthetic_input_rule"]:
             automation_rule = input_provenance["synthetic_input_rule"]
+        elif synthetic_path:
+            automation_rule = SYNTHETIC_PATH_RULE
         elif "AUTOCLICK_TAPS" in touch_report["research_flags"]:
             # Policy 19: one point, metronomic taps; no human device in BrainRun does this.
             automation_rule = AUTOCLICK_RULE
@@ -289,9 +302,14 @@ class EnsembleBotDetector:
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
             and bool(mobile_human["risk"]) and self.lstm_available and self.tabular_available
         )
+        # Policy 26: too little input to judge, but the browser contradicts itself: a final SUSPECT.
+        forgery_decision = (
+            mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+            and not mobile_risk_decision and bool(forgery) and self.lstm_available and self.tabular_available
+        )
         decision_deferred = (
             mouse_evidence_deferred and not explicit_automation
-            and not mobile_human_decision and not mobile_risk_decision
+            and not mobile_human_decision and not mobile_risk_decision and not forgery_decision
         )
         tabular_score_in_domain = bool(
             self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
@@ -307,6 +325,11 @@ class EnsembleBotDetector:
             reasons.append(
                 f"Phone/tablet ({mobile_human['device']}) judged on {mobile_human['gestures']} touch gestures; "
                 "evidence against it: " + ", ".join(mobile_human["risk"]).lower().replace("_", " ")
+            )
+        elif forgery_decision:
+            reasons.append(
+                "Too little input to judge the behaviour, but the browser contradicts itself: "
+                + ", ".join(forgery).lower().replace("_", " ")
             )
         elif mouse_evidence_deferred and not explicit_automation:
             if not self.lstm_available or not self.tabular_available:
@@ -386,6 +409,15 @@ class EnsembleBotDetector:
                     f"Autoclicker: {touch_report['autoclick_taps']} taps on the same point (within 0.5 px) "
                     "at a fixed rate (interval CV under 0.10); no human device in BrainRun taps like this"
                 )
+            elif automation_rule == SYNTHETIC_PATH_RULE:
+                jumps = desktop_risk["jump_profile"]
+                contradiction = forgery or sorted(f for f in automation_evidence["families"] if f != "NETWORK")
+                reasons.append(
+                    f"Synthetic pointer path: {round(jumps['jump_share'] * 100)}% of moves jump across more than "
+                    f"15% of the screen and {round(jumps['turn_share'] * 100)}% of consecutive jumps turn back "
+                    "(no person in the Balabit data moves like this), with a browser that contradicts itself: "
+                    + ", ".join(contradiction).lower().replace("_", " ")
+                )
             elif automation_rule == SYNTHETIC_POINTER_RULE:
                 reasons.append(
                     f"Synthetic mouse presses: {input_provenance['zero_pressure_presses']} presses reported "
@@ -399,6 +431,8 @@ class EnsembleBotDetector:
         elif mobile_human_decision:
             verdict = "HUMAN"
         elif mobile_risk_decision:
+            verdict = "SUSPECT"
+        elif forgery_decision:
             verdict = "SUSPECT"
         elif decision_deferred:
             verdict = "SUSPECT"
@@ -431,7 +465,9 @@ class EnsembleBotDetector:
                     suspect_reason_codes.append("INSUFFICIENT_MOUSE")
             if mobile_risk_decision:
                 suspect_reason_codes.append("MOBILE_RISK")
-            if desktop_risk["codes"] and not decision_deferred:
+            if forgery_decision:
+                suspect_reason_codes.append("CLIENT_FORGERY")
+            if desktop_risk["codes"] and not decision_deferred and not forgery_decision:
                 suspect_reason_codes.append("DESKTOP_RISK")
             if critical_flags:
                 suspect_reason_codes.append("CLIENT_AUTOMATION_SIGNAL")
@@ -472,6 +508,7 @@ class EnsembleBotDetector:
                 "touch": {**touch_report, "shadow": score_touch(mouse.get("touch"))},
                 "mobile_human": mobile_human,
                 "desktop_risk": desktop_risk,
+                "client_forgery": {"analysis_version": CLIENT_FORGERY_VERSION, "codes": forgery},
                 "automation_evidence": automation_evidence,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
@@ -487,6 +524,7 @@ class EnsembleBotDetector:
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "mobile_clean_environment" if mobile_human_decision
                     else "mobile_risk" if mobile_risk_decision
+                    else "client_forgery" if forgery_decision
                     else "desktop_risk" if desktop_risk_decision
                     else "explicit_automation" if explicit_automation
                     else "insufficient_evidence" if decision_deferred else "ensemble"

@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "e9ac58496c9246db87b28570dd0396cb",
-  "created_at": "2026-10-28T18:29:46.133168+00:00",
+  "bundle_id": "af5221be5dc14e2a836e87c4bd06a62a",
+  "created_at": "2026-11-10T10:31:16.076437+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -78,6 +78,15 @@
     "capture_tabular_window_weight": null,
     "capture_train_families": [],
     "captured_bot_holdout": null,
+    "client_forgery_rule_gate": {
+      "final_cases": 5,
+      "fixture_fingerprint": "4674d61153c5788caf80980fa5c3196e3c91b20498a5e122672d5e52f74c48be",
+      "insufficient_cases": 4,
+      "passed": 9,
+      "rules": [
+        "client_forgery_v1"
+      ]
+    },
     "collector_window_policy": "mouse_export_v1",
     "dataset": {
       "fingerprint_sha256": "0f1644aeb20abc38454f3b0c79912908511e712f54b885a1c4b9a2e9397e74fe",
@@ -854,15 +863,15 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "25",
+    "decision_policy_version": "26",
     "desktop_risk_rule_gate": {
-      "fixture_fingerprint": "464c7d46390ebc61195164930dc39b0669327f545f148dea53188af4eb4186fc",
-      "human_cases": 15,
-      "passed": 33,
+      "fixture_fingerprint": "07e45e92be1a6e95b00983c03e9891a7198bbdf68d591e29ef4a15ab42432333",
+      "human_cases": 18,
+      "passed": 42,
       "rules": [
         "desktop_risk_v1"
       ],
-      "suspect_cases": 18
+      "suspect_cases": 24
     },
     "diagnostic_only": false,
     "early_augmentation": true,
@@ -1039,16 +1048,16 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 5,
-      "fixture_fingerprint": "ba0e7289d8f4ebb10c1ef52a696599a8dc41a5de765b9ac6ca7b1115deb6031c",
+      "fixture_fingerprint": "1b697a27897dc32b31e2a5adba9432d5c1f163ac2eeb03587435bab1c0da2a0d",
       "human_cases": 8,
-      "passed": 25,
+      "passed": 27,
       "rules": [
         "mobile_clean_environment_v1",
         "mobile_risk_v1",
         "autoclick_taps_v1",
         "mobile_emulation_v1"
       ],
-      "suspect_cases": 12
+      "suspect_cases": 14
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,
@@ -1070,13 +1079,14 @@
     "rolling_full_replay": true,
     "seed": 42,
     "synthetic_device_rule_gate": {
-      "fixture_fingerprint": "de55096d15e0da6cb404b0630db77af1623ebb7978e91adecd4e52bfa873e646",
+      "fixture_fingerprint": "dddec32ab87e060040e499bf7106d8b66f600ced05e62561d207ebcedc578d47",
       "negative_cases": 11,
-      "passed": 16,
-      "positive_cases": 5,
+      "passed": 19,
+      "positive_cases": 8,
       "rules": [
         "synthetic_typing_v1",
-        "synthetic_pointer_v1"
+        "synthetic_pointer_v1",
+        "synthetic_pointer_path_v1"
       ]
     },
     "synthetic_input_rule_gate": {

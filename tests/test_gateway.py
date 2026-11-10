@@ -169,6 +169,11 @@ def test_gate_decides_on_the_session_verdict(db):
         "verdict": "SUSPECT", "breakdown": {"decision_basis": "desktop_risk"}}})
     assert gate(db) == (True, "ok")
     assert gate(db, strict=True) == (False, "risk")
+    # Policy 26: too little input, but a browser that contradicts itself.
+    db["detection_results"].update_one({"sessionId": "s1"}, {"$set": {
+        "breakdown": {"decision_basis": "client_forgery", "client_forgery": {"codes": ["WEBDRIVER_TAMPERED"]}}}})
+    assert gate(db) == (True, "ok")
+    assert gate(db, strict=True) == (False, "risk")
     db["detection_results"].update_one({"sessionId": "s1"}, {"$set": {
         "verdict": "SUSPECT", "decision_state": "INSUFFICIENT_EVIDENCE", "breakdown": {"decision_basis": "insufficient_evidence"}}})
     assert gate(db, strict=True) == (True, "ok")

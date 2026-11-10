@@ -1,0 +1,115 @@
+"""Policy 26: a pointer that jumps between random points, and browser claims no browser makes.
+
+Measured 2026-11-10 on an ad landing page ("Downloader", 3,283 sessions from pop and
+redirect ad networks): the mouse models called 294 of its sessions HUMAN, and 265 of those
+carried the evidence below.
+
+* ``RANDOM_POINTER_JUMPS``: the pointer does not travel, it lands on random points. In a
+  collector export of 25+ moves, at least 40% of the steps cross more than 15% of the
+  viewport, and of at least 5 pairs of consecutive jumps at least half turn back (the two
+  steps more than 90 degrees apart). A hand that moves fast between targets, recorded
+  sparsely, still keeps its direction from one step to the next. Balabit (10 people, 1,676
+  Remote Desktop sessions sampled at about 10 Hz, replayed as 41,899 collector exports):
+  no export matched; jumps alone (30% of steps) matched 15 sessions, which is why the turn
+  is required. On the lander: 388 of 502 sessions with 25+ moves (turn share median 0.78;
+  the people on the shop: 0.09, no jumps).
+* ``UA_POINTER_MISMATCH``: the user agent claims Safari before 13 (or Chrome before 55),
+  which has no Pointer Events, yet trusted pointer events arrived. The lander: 1,422
+  sessions claiming Safari 9-12, 728 of them Safari 9 on macOS 10.13+, which never shipped.
+* ``WEBDRIVER_TAMPERED``: ``navigator.webdriver`` was redefined on the navigator object,
+  given a script getter, or deleted from a Chromium browser. Stealth plugins do this to
+  hide automation; a browser never does. The lander: 2,555 sessions; people on the live
+  site: none. An extension could do it too, so alone it only withholds a HUMAN verdict.
+* ``SERVER_CPU``: a desktop reporting more than 64 logical cores. The lander: 371 sessions,
+  all Linux x86_64 reporting 640. A 128-thread workstation is possible, hence not a BOT rule.
+
+None of these convicts alone. ``synthetic_pointer_path_v1`` convicts a session whose
+pointer jumps at random and whose browser also contradicts itself (one of the other codes
+or any environment family except a cloud address).
+"""
+
+import math
+import re
+
+from core_ml.features.mouse_features import normalize_move_coordinates
+
+SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
+CLIENT_FORGERY_VERSION = "client_forgery_v1"
+JUMP_MIN_MOVES = 25
+JUMP_STEP = 0.15
+JUMP_MIN_SHARE = 0.40
+JUMP_MIN_PAIRS = 5
+JUMP_MIN_TURN_SHARE = 0.50
+SERVER_MIN_CORES = 64
+# Pointer Events shipped in Safari 13 and Chrome 55.
+SAFARI_POINTER_EVENTS = 13
+CHROME_POINTER_EVENTS = 55
+_SAFARI = re.compile(r"Version/(\d+)[.\d]*(?: Mobile/\w+)? Safari/")
+_CHROME = re.compile(r"(?:Chrome|CriOS)/(\d+)\.")
+_OTHER_ENGINES = re.compile(r"Chrome/|CriOS/|FxiOS/|EdgiOS/|Edg/|OPR/|Firefox/")
+
+
+def pointer_jump_profile(moves) -> dict:
+    """Jump share and how often consecutive jumps turn back, over sanitized move records."""
+    points = normalize_move_coordinates(moves) if len(moves) >= JUMP_MIN_MOVES else []
+    steps = [(b[0] - a[0], b[1] - a[1]) for a, b in zip(points, points[1:])]
+    jumps = [math.hypot(dx, dy) > JUMP_STEP for dx, dy in steps]
+    pairs = turns = 0
+    for i in range(1, len(steps)):
+        if jumps[i] and jumps[i - 1]:
+            pairs += 1
+            (ax, ay), (bx, by) = steps[i - 1], steps[i]
+            turns += ax * bx + ay * by < 0
+    share = sum(jumps) / len(steps) if steps else 0.0
+    turn_share = turns / pairs if pairs else 0.0
+    return {
+        "steps": len(steps),
+        "jump_share": round(share, 3),
+        "jump_pairs": pairs,
+        "turn_share": round(turn_share, 3),
+        "random_jumps": bool(
+            steps and share >= JUMP_MIN_SHARE and pairs >= JUMP_MIN_PAIRS and turn_share >= JUMP_MIN_TURN_SHARE
+        ),
+    }
+
+
+def _pointer_moves(payload) -> int:
+    mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
+    stats = mouse.get("pointerStats") if isinstance(mouse.get("pointerStats"), dict) else {}
+    value = stats.get("pointermove")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return 0
+    return int(value)
+
+
+def _claims_no_pointer_events(user_agent: str) -> bool:
+    safari = _SAFARI.search(user_agent)
+    if safari and not _OTHER_ENGINES.search(user_agent):
+        return int(safari.group(1)) < SAFARI_POINTER_EVENTS
+    chrome = _CHROME.search(user_agent)
+    return bool(chrome) and int(chrome.group(1)) < CHROME_POINTER_EVENTS
+
+
+def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) -> list:
+    """Contradictions a genuine browser does not produce; each only withholds a HUMAN verdict."""
+    payload = payload if isinstance(payload, dict) else {}
+    fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
+    families = (automation_evidence or {}).get("families") or {}
+    codes = []
+    if _pointer_moves(payload) > 0 and _claims_no_pointer_events(str(fingerprint.get("userAgent") or "")):
+        codes.append("UA_POINTER_MISMATCH")
+    if any(hit in ("signals.webdriverPatched", "signals.webdriverDeleted") for hit in families.get("NATIVE_PATCH", [])):
+        codes.append("WEBDRIVER_TAMPERED")
+    cores = fingerprint.get("hardwareConcurrency")
+    if (desktop and not isinstance(cores, bool) and isinstance(cores, (int, float))
+            and math.isfinite(cores) and cores > SERVER_MIN_CORES):
+        codes.append("SERVER_CPU")
+    return codes
+
+
+def synthetic_path_fires(jump_profile: dict, forgery: list, automation_evidence: dict) -> bool:
+    """Random jumps and, independently, a browser that contradicts itself."""
+    families = (automation_evidence or {}).get("families") or {}
+    return bool(jump_profile.get("random_jumps")) and bool(
+        forgery or any(family != "NETWORK" for family in families)
+    )
