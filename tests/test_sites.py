@@ -637,3 +637,38 @@ def test_the_refusal_tells_the_collector_how_long_to_stop(api, db):
     api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
     paused = api.post("/api/v1/telemetry", json=telemetry("shop-2"), headers={"Origin": SHOP})
     assert (paused.status_code, paused.headers["x-datacat-stop"]) == (403, "3600")
+
+
+def test_monitoring_views_filter_by_country(api, db, monkeypatch):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    rows = [("a", "shop", "US", "BOT"), ("b", "shop", "US", "HUMAN"), ("c", "shop", "VN", "HUMAN"),
+            ("d", "shop", None, "BOT"), ("e", "blog", "US", "BOT")]
+    db["detection_results"].insert_many([
+        {"sessionId": sid, "site_id": site, "country_code": code, "verdict": verdict, "decision_state": "FINAL",
+         "client_ip": "203.0.113.9", "updated_at": now, "created_at": now, "last_action": "heartbeat"}
+        for sid, site, code, verdict in rows])
+    response = api.get("/api/v1/stats/countries", params={"site": "shop"}, headers=READ)
+    assert response.status_code == 200, response.text
+    countries = response.json()["countries"]
+    assert countries == [{"code": "US", "sessions": 2}, {"code": "VN", "sessions": 1}, {"code": "_none", "sessions": 1}]
+    assert api.get("/api/v1/stats/countries", headers=READ).json()["countries"][0] == {"code": "US", "sessions": 3}
+
+    def summary(**params):
+        body = api.get("/api/v1/stats/summary", params=params, headers=READ).json()
+        return body["total"], body["bots"], body["humans"]
+
+    assert summary(site="shop", country="US") == (2, 1, 1)
+    assert summary(country="US") == (3, 2, 1)
+    assert summary(site="shop", country="_none") == (1, 1, 0)
+    assert summary(site="shop") == (4, 2, 2)
+    # The timeline and the live views read the same condition (mongomock lacks $toLong on dates).
+    seen = []
+    monkeypatch.setattr("api_service.database.get_traffic_timeline",
+                        lambda **kwargs: seen.append(kwargs["site_filter"]) or {"buckets": []})
+    api.get("/api/v1/traffic/timeline", params={"window_minutes": 60, "site": "shop", "country": "VN"}, headers=READ)
+    assert seen == [{"site_id": "shop", "country_code": "VN"}]
+    online = api.get("/api/v1/live/online", params={"country": "US"}, headers=READ)
+    assert online.status_code == 200
+    assert api.get("/api/v1/stats/summary", params={"country": "Vietnam"}, headers=READ).status_code == 422

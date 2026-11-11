@@ -399,6 +399,7 @@ ol, ul { padding: 0; list-style: none; }
 .page-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
 .page-heading h1 { font-size: 21px; line-height: 28px; font-weight: 600; letter-spacing: -0.015em; color: var(--text); }
 .page-sub { font-size: 13px; color: var(--text-3); }
+.page-filters { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .site-picker { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; }
 .site-picker .ui-icon { position: absolute; left: 10px; width: 15px; height: 15px; color: var(--text-3); pointer-events: none; }
 .site-picker select { max-width: 280px; padding-left: 32px; font-weight: 500; }
@@ -775,7 +776,7 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 .sites-table .site-domains .unassigned-origin .domain-chip { flex: 0 1 auto; min-width: 0; overflow-wrap: break-word; }
 .unassigned-origin .label-btn { flex: 0 0 auto; }
 .must-change-note { padding: 12px 16px; border: 1px solid transparent; border-radius: var(--radius); background: var(--warn-soft); color: var(--text); font-size: 13.5px; font-weight: 500; }
-body.must-change .nav-item:not([data-view="account"]), body.must-change .site-picker, body.must-change .nav-section { display: none !important; }
+body.must-change .nav-item:not([data-view="account"]), body.must-change .page-filters, body.must-change .nav-section { display: none !important; }
 .user-sites { margin: 0 0 16px; padding: 10px 12px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
 .user-sites legend { padding: 0 4px; font-size: 13px; font-weight: 500; color: var(--text-2); }
 .user-sites label { display: flex !important; align-items: center; gap: 9px; margin: 4px 0 !important; color: var(--text) !important; font-weight: 400 !important; cursor: pointer; }
@@ -917,6 +918,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 }
 @media (max-width: 760px) {
   .page-header { flex-wrap: wrap; }
+  .page-filters { width: 100%; }
+  .page-filters .site-picker { flex: 1 1 0; }
   .site-picker, .site-picker select { width: 100%; max-width: none; }
   .user-text { display: none; }
   .topbar { gap: 8px; }
@@ -1178,11 +1181,18 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .site-pi
 <main class="main" id="main">
   <div class="page-header">
     <div class="page-heading"><h1 id="pageTitle">Tổng quan</h1><span class="page-sub" id="pageSub"></span></div>
-    <label class="site-picker" id="sitePicker" hidden>
-      <svg class="ui-icon" aria-hidden="true"><use href="#icon-app-window"></use></svg>
-      <span class="sr-only">Trang đang xem</span>
-      <select id="siteFilter" onchange="changeSiteFilter(this.value)"><option value="">Tất cả trang</option></select>
-    </label>
+    <div class="page-filters">
+      <label class="site-picker" id="countryPicker" hidden>
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-globe"></use></svg>
+        <span class="sr-only">Quốc gia của khách</span>
+        <select id="countryFilter" onchange="changeCountryFilter(this.value)"><option value="">Mọi quốc gia</option></select>
+      </label>
+      <label class="site-picker" id="sitePicker" hidden>
+        <svg class="ui-icon" aria-hidden="true"><use href="#icon-app-window"></use></svg>
+        <span class="sr-only">Trang đang xem</span>
+        <select id="siteFilter" onchange="changeSiteFilter(this.value)"><option value="">Tất cả trang</option></select>
+      </label>
+    </div>
   </div>
   <section class="view" id="view-overview" data-title="Tổng quan">
   <div class="alert-banner" id="alertBanner" role="status">
@@ -1946,7 +1956,7 @@ function renderReferenceConnection(integration, failed = false) {
 async function fetchRecentTelemetry() {
   const requestVersion = ++trafficRequestVersion;
   const data = await fetchJSON(API_BASE + '/api/v1/research/traffic?limit=50' +
-    (trafficBefore == null ? '' : '&before_number=' + trafficBefore) + siteParam('&') +
+    (trafficBefore == null ? '' : '&before_number=' + trafficBefore) + monitorParam('&') +
     (selectedVerdict ? '&verdict=' + selectedVerdict : ''));
   if (requestVersion !== trafficRequestVersion) return;
 
@@ -2035,7 +2045,7 @@ function changeTrafficPage(older) {
 
 async function fetchClassificationSummary() {
   const requestedSite = selectedSite;
-  const data = await fetchJSON(API_BASE + '/api/v1/stats/summary' + siteParam('?'));
+  const data = await fetchJSON(API_BASE + '/api/v1/stats/summary' + monitorParam('?'));
   if (!data || requestedSite !== selectedSite) return;
 
   const total = Number(data.total);
@@ -2110,7 +2120,7 @@ async function fetchTrafficTimeline() {
   const requestVersion = ++timelineRequestVersion;
   const data = await fetchJSON(
     API_BASE + `/api/v1/traffic/timeline?window_minutes=${requestedRange}&utc_offset_minutes=${-new Date().getTimezoneOffset()}` +
-    siteParam('&')
+    monitorParam('&')
   );
   if (
     requestVersion === timelineRequestVersion &&
@@ -3213,11 +3223,13 @@ function syncDeleteAllButton() {
 
 async function deleteAllSessions() {
   const scoped = Boolean(selectedSite);
+  // The country filter narrows what is shown, not what is deleted.
+  const everyCountry = selectedCountry ? ` Bộ lọc quốc gia không áp dụng: phiên của mọi quốc gia đều bị xóa.` : '';
   const confirmed = await confirmNotice(scoped
     ? { title: `Xóa mọi phiên của ${siteLabel(selectedSite)}?`, danger: true, icon: 'icon-trash', confirmLabel: 'Xóa phiên',
-        message: 'Phiên của các trang khác giữ nguyên. Phiên mới của trang này được đánh số lại từ 1. Không thể hoàn tác.' }
+        message: 'Phiên của các trang khác giữ nguyên. Phiên mới của trang này được đánh số lại từ 1.' + everyCountry + ' Không thể hoàn tác.' }
     : { title: 'Xóa phiên của mọi trang?', danger: true, icon: 'icon-trash', confirmLabel: 'Xóa tất cả',
-        message: 'Phiên mới được đánh số lại từ 1. Không thể hoàn tác.' });
+        message: 'Phiên mới được đánh số lại từ 1.' + everyCountry + ' Không thể hoàn tác.' });
   if (!confirmed) return;
   try {
     const res = await fetch(API_BASE + '/api/v1/sessions' + siteParam('?'), {
@@ -3378,6 +3390,11 @@ function pollAll() {
   if (now >= nextSummaryPollAt) {
     requests.push(fetchClassificationSummary());
     nextSummaryPollAt = now + 15000;
+  }
+  // New countries appear as traffic comes in; the picker's counts follow once a minute.
+  if (now >= nextCountryPollAt) {
+    nextCountryPollAt = now + 60000;
+    loadCountries();
   }
   activePoll = Promise.all(requests)
     .then(() => {
@@ -3791,12 +3808,12 @@ function applyOnline(online) {
 }
 
 async function refreshOnline() {
-  const online = await fetchJSON(API_BASE + '/api/v1/live/online' + siteParam('?'));
+  const online = await fetchJSON(API_BASE + '/api/v1/live/online' + monitorParam('?'));
   if (online) applyOnline(online);
 }
 
 async function refreshLive() {
-  const data = await fetchJSON(API_BASE + '/api/v1/live' + siteParam('?'));
+  const data = await fetchJSON(API_BASE + '/api/v1/live' + monitorParam('?'));
   if (!data) { setText('pageSub', 'Không tải được dữ liệu Live View'); return; }
   liveData = data;
   renderLiveSide(data);
@@ -3848,6 +3865,75 @@ let editingSiteId = null;
 
 function siteParam(separator) {
   return selectedSite ? separator + 'site=' + encodeURIComponent(selectedSite) : '';
+}
+
+// ──── Country filter of the monitoring views (overview, Live View) ────
+// One page often runs ads in many countries; reports and deletion stay per website.
+const COUNTRY_FILTER_RE = /^([A-Z]{2}|_none)$/;
+let selectedCountry = '';
+try { selectedCountry = localStorage.getItem('datacat-country') || ''; } catch (e) { /* storage unavailable */ }
+if (!COUNTRY_FILTER_RE.test(selectedCountry)) selectedCountry = '';
+let countryList = null;
+let countryListVersion = 0;
+let nextCountryPollAt = 0;
+
+function monitorParam(separator) {
+  const parts = [];
+  if (selectedSite) parts.push('site=' + encodeURIComponent(selectedSite));
+  if (selectedCountry) parts.push('country=' + encodeURIComponent(selectedCountry));
+  return parts.length ? separator + parts.join('&') : '';
+}
+
+function countryLabel(code) {
+  return code === '_none' ? 'Không rõ quốc gia' : countryName({ code, name: code });
+}
+
+async function loadCountries() {
+  const version = ++countryListVersion;
+  const data = await fetchJSON(API_BASE + '/api/v1/stats/countries' + siteParam('?'));
+  if (version !== countryListVersion || !data || !Array.isArray(data.countries)) return;
+  countryList = data.countries;
+  syncCountryPicker();
+}
+
+function syncCountryPicker() {
+  const picker = document.getElementById('countryPicker');
+  const select = document.getElementById('countryFilter');
+  if (!picker || !select) return;
+  const options = [['', 'Mọi quốc gia'], ...(countryList || []).map(c =>
+    [c.code, `${countryLabel(c.code)} (${fmtCount(c.sessions)})`])];
+  if (selectedCountry && !options.some(([value]) => value === selectedCountry)) {
+    options.push([selectedCountry, countryLabel(selectedCountry) + ' (0)']);
+  }
+  select.innerHTML = options.map(([value, label]) =>
+    `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  select.value = selectedCountry;
+  picker.classList.toggle('filtered', Boolean(selectedCountry));
+  // A single country is no choice; a chosen one always shows, so it can be cleared.
+  picker.hidden = !['overview', 'live'].includes(currentViewFromHash()) || (options.length < 3 && !selectedCountry);
+}
+
+function refreshMonitoring() {
+  trafficBefore = null;
+  trafficNextCursor = null;
+  trafficPageHistory.length = 0;
+  allSessions = [];
+  _lastTableHTML = '';
+  trafficRequestVersion++;
+  timelineRequestVersion++;
+  nextTimelinePollAt = 0;
+  nextSummaryPollAt = 0;
+  Promise.resolve(activePoll).then(() => pollAll());
+  if (liveActive) { refreshLive(); refreshOnline(); }
+}
+
+function changeCountryFilter(value) {
+  selectedCountry = COUNTRY_FILTER_RE.test(value || '') ? value : '';
+  try {
+    if (selectedCountry) localStorage.setItem('datacat-country', selectedCountry); else localStorage.removeItem('datacat-country');
+  } catch (e) { /* storage unavailable: the choice lasts for this page */ }
+  syncCountryPicker();
+  refreshMonitoring();
 }
 
 function fmtCount(value) { return (Number(value) || 0).toLocaleString('vi-VN'); }
@@ -3912,6 +3998,7 @@ function changeSiteFilter(value) {
     if (selectedSite) localStorage.setItem('datacat-site', selectedSite); else localStorage.removeItem('datacat-site');
   } catch (e) { /* storage unavailable: the choice lasts for this page */ }
   syncSitePicker();
+  loadCountries();
   // Start the traffic table from the newest page of the chosen website.
   trafficBefore = null;
   trafficNextCursor = null;
@@ -5372,6 +5459,7 @@ function showView(name) {
   if (name === 'reports') loadReport();
   if (name === 'users') loadUsers();
   syncSitePicker();
+  if (['overview', 'live'].includes(name)) loadCountries(); else syncCountryPicker();
 }
 
 function currentViewFromHash() {

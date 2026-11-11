@@ -901,6 +901,18 @@ def _scope(user: Optional[dict], site: Optional[str]) -> dict:
     return {"site_id": {"$in": allowed}}
 
 
+# The monitoring views (overview, Live View) filter by the visitor's country: one page often runs
+# ads in many. "_none": sessions whose address has no known country.
+COUNTRY_FILTER_PATTERN = r"^([A-Z]{2}|_none)$"
+
+
+def _monitor_scope(user: Optional[dict], site: Optional[str], country: Optional[str]) -> dict:
+    scope = dict(_scope(user, site))
+    if country:
+        scope["country_code"] = None if country == "_none" else country
+    return scope
+
+
 def _require_session_visible(user: Optional[dict], session_id: str) -> None:
     allowed = _allowed_sites(user)
     if allowed is None:
@@ -1330,6 +1342,7 @@ def get_traffic_timeline(
     window_minutes: int = Query(default=60, ge=30, le=43200),
     utc_offset_minutes: int = Query(default=0, ge=-720, le=840),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    country: Optional[str] = Query(default=None, pattern=COUNTRY_FILTER_PATTERN),
     user=Depends(require_read_access),
 ):
     """Return session counts using buckets sized for the requested window (up to 30 days,
@@ -1355,7 +1368,7 @@ def get_traffic_timeline(
         window_minutes=window_minutes,
         bucket_minutes=bucket_minutes,
         utc_offset_minutes=utc_offset_minutes,
-        site_filter=_scope(user, site),
+        site_filter=_monitor_scope(user, site, country),
     )
     if timeline is None:
         raise HTTPException(status_code=503, detail="Traffic timeline query failed")
@@ -1654,6 +1667,7 @@ def delete_touch_samples(_admin=Depends(require_admin)):
 def get_live_view(
     window_minutes: int = Query(default=1440, ge=5, le=10080),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    country: Optional[str] = Query(default=None, pattern=COUNTRY_FILTER_PATTERN),
     user=Depends(require_read_access),
 ):
     """Recent traffic by location for the Live View globe (offline GeoIP, no external calls)."""
@@ -1663,14 +1677,16 @@ def get_live_view(
     from api_service.live import build_live_view
 
     now = datetime.now(timezone.utc)
-    rows = get_live_sessions(now - timedelta(minutes=window_minutes), site_filter=_scope(user, site))
+    rows = get_live_sessions(now - timedelta(minutes=window_minutes), site_filter=_monitor_scope(user, site, country))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_live_view(rows, now=now, window_minutes=window_minutes)
 
 
 @app.get("/api/v1/live/online")
-def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), user=Depends(require_read_access)):
+def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+                    country: Optional[str] = Query(default=None, pattern=COUNTRY_FILTER_PATTERN),
+                    user=Depends(require_read_access)):
     """Visitors on the site now (polled every few seconds; one indexed query over two minutes)."""
     from datetime import datetime, timedelta, timezone
 
@@ -1678,22 +1694,44 @@ def get_live_online(site: Optional[str] = Query(default=None, pattern=sites.SITE
     from api_service.live import ONLINE_SECONDS, build_online_view
 
     now = datetime.now(timezone.utc)
-    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS), site_filter=_scope(user, site))
+    rows = get_online_sessions(now - timedelta(seconds=ONLINE_SECONDS), site_filter=_monitor_scope(user, site, country))
     if rows is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
     return build_online_view(rows, now=now)
 
 
 @app.get("/api/v1/stats/summary")
-def get_stats_summary(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN), user=Depends(require_read_access)):
+def get_stats_summary(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+                      country: Optional[str] = Query(default=None, pattern=COUNTRY_FILTER_PATTERN),
+                      user=Depends(require_read_access)):
     """Get aggregated detection statistics from MongoDB."""
     from api_service.database import get_db, get_summary_stats
     if get_db() is None:
         raise HTTPException(status_code=503, detail="Database unavailable")
-    stats = get_summary_stats(site_filter=_scope(user, site))
+    stats = get_summary_stats(site_filter=_monitor_scope(user, site, country))
     if stats is None:
         raise HTTPException(status_code=503, detail="Database query failed")
     return {**stats, "inference_latency": _inference_latency_summary()}
+
+
+@app.get("/api/v1/stats/countries")
+def get_stats_countries(site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+                        user=Depends(require_read_access)):
+    """Countries of the stored sessions of a website, most sessions first (the country picker)."""
+    from api_service.database import get_db
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    scope = _scope(user, site)
+    detections = db["detection_results"]
+    try:
+        # A few dozen countries, each counted from an index (no scan of the sessions themselves).
+        rows = [{"code": code or "_none", "sessions": detections.count_documents({**scope, "country_code": code})}
+                for code in detections.distinct("country_code", scope)]
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+    countries = sorted((row for row in rows if row["sessions"]), key=lambda row: (-row["sessions"], row["code"]))
+    return {"countries": countries}
 
 
 @app.get("/api/v1/sessions/{session_id}/detail")
@@ -1739,11 +1777,12 @@ def research_traffic(
     before_number: Optional[int] = Query(default=None, ge=1),
     site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
     verdict: Optional[Literal["bot", "suspect", "pending", "human"]] = Query(default=None),
+    country: Optional[str] = Query(default=None, pattern=COUNTRY_FILTER_PATTERN),
     user=Depends(require_read_access),
 ):
     scope = _scope(user, site)
     try:
-        page = traffic_page(limit, before_number, site_filter=scope, verdict=verdict)
+        page = traffic_page(limit, before_number, site_filter=scope, verdict=verdict, country=country)
     except Exception as exc:
         logger.exception("Traffic registry query failed")
         raise HTTPException(status_code=503, detail="Traffic registry unavailable") from exc

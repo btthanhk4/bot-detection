@@ -29,7 +29,8 @@ class Collection:
                  "$in": lambda a, b: a in b, "$nin": lambda a, b: a not in b, "$ne": lambda a, b: a != b}
 
     def matches(self, doc, query):
-        return all(all(self.OPERATORS[op](doc.get(key), operand) for op, operand in value.items())
+        return all(all(self.matches(doc, part) for part in value) if key == "$and"
+                   else all(self.OPERATORS[op](doc.get(key), operand) for op, operand in value.items())
                    if isinstance(value, dict) and value and all(op in self.OPERATORS for op in value)
                    else doc.get(key) == value for key, value in query.items())
 
@@ -197,6 +198,27 @@ def test_each_website_numbers_its_sessions_from_one_and_starts_over_after_delete
     assert stt() == [("s7", 1)]
 
 
+def test_the_country_filter_keeps_each_sessions_number(db):
+    countries = {"s1": "US", "s2": "VN", "s3": "US", "s4": None, "s5": "US"}
+    for number, (sid, code) in enumerate(countries.items(), start=1):
+        research.register_traffic({"sessionId": sid, "received_at": number * 1000, "_site_id": "shop"})
+        db["detection_results"].docs[sid] = {"_id": sid, "sessionId": sid, "country_code": code,
+                                             "verdict": "BOT" if sid in ("s3", "s4") else "HUMAN", "decision_state": "FINAL"}
+
+    def page(**kwargs):
+        result = research.traffic_page(50, site_filter={"site_id": "shop"}, **kwargs)
+        return [(row["sessionId"], row["display_number"]) for row in result["sessions"]], result["total"], result["all_total"]
+
+    assert page(country="US") == ([("s5", 5), ("s3", 3), ("s1", 1)], 3, 3)
+    assert page(country="VN") == ([("s2", 2)], 1, 1)
+    assert page(country="_none") == ([("s4", 4)], 1, 1)
+    # With a verdict too: the KPI total stays the country's.
+    assert page(country="US", verdict="bot") == ([("s3", 3)], 1, 3)
+    assert page(country="JP") == ([], 0, 0)
+    # Every website at once.
+    assert [row["sessionId"] for row in research.traffic_page(50, country="US")["sessions"]] == ["s5", "s3", "s1"]
+
+
 def test_the_verdict_filter_reads_ids_once_per_cache_window(db, monkeypatch):
     research.register_traffic({"sessionId": "s1", "received_at": 1000})
     db["detection_results"].docs["s1"] = {"_id": "s1", "sessionId": "s1", "verdict": "BOT", "decision_state": "FINAL"}
@@ -311,8 +333,8 @@ def test_traffic_endpoint_passes_the_verdict_filter(monkeypatch):
     monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
     seen = {}
 
-    def fake_page(limit, before, site_filter=None, verdict=None):
-        seen["verdict"] = verdict
+    def fake_page(limit, before, site_filter=None, verdict=None, country=None):
+        seen["verdict"], seen["country"] = verdict, country
         return {"sessions": [], "returned": 0, "total": 0, "all_total": 0, "next_before": None}
 
     monkeypatch.setattr(main, "traffic_page", fake_page)
@@ -322,4 +344,8 @@ def test_traffic_endpoint_passes_the_verdict_filter(monkeypatch):
     assert seen["verdict"] == "pending"
     assert client.get("/api/v1/research/traffic", headers=headers).status_code == 200
     assert seen["verdict"] is None
+    assert client.get("/api/v1/research/traffic", params={"country": "US"}, headers=headers).status_code == 200
+    assert seen["country"] == "US"
+    # Only an ISO code or "_none" passes.
+    assert client.get("/api/v1/research/traffic", params={"country": "us"}, headers=headers).status_code == 422
     assert client.get("/api/v1/research/traffic", params={"verdict": "robot"}, headers=headers).status_code == 422

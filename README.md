@@ -352,6 +352,14 @@ Cách gán phiên:
   thay vì thử lại vài giây một lần. Không có dữ liệu nào của trang lạ được lưu. Muốn chặn hẳn từ
   gốc, chủ trang phải gỡ đoạn mã.
 - Tài khoản chỉ xem thấy danh sách và mã cài đặt, không thêm, sửa hay xóa được.
+- **Lọc theo quốc gia** (Tổng quan, Live View): một trang thường chạy quảng cáo ở nhiều nước. Ô chọn
+  quốc gia nằm cạnh ô chọn trang, liệt kê các nước có phiên kèm số phiên (cập nhật mỗi phút); các ô
+  tổng hợp, biểu đồ, bảng lượt truy cập và Live View chỉ tính nước đã chọn. STT của phiên vẫn là STT
+  trong trang. Quốc gia được lấy từ IP lúc phiên bắt đầu (DB-IP, ngoại tuyến) và lưu vào
+  `detection_results.country_code`; các phiên cũ được bổ sung một lần khi khởi động. Báo cáo và thao
+  tác xóa không theo bộ lọc này. API: tham số `country` (mã ISO như `US`, hoặc `_none` = không rõ)
+  trên `/api/v1/stats/summary`, `/api/v1/traffic/timeline`, `/api/v1/research/traffic`,
+  `/api/v1/live`, `/api/v1/live/online`; danh sách nước: `GET /api/v1/stats/countries?site=`.
 
 ### Tài khoản và phân quyền
 

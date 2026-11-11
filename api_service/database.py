@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from pymongo.errors import DuplicateKeyError
 
-from api_service import clicks
+from api_service import clicks, geoip
 from api_service.config import settings
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
@@ -202,6 +202,11 @@ def _ensure_indexes(db):
          [("verdict", 1), ("decision_state", 1), ("breakdown.decision_deferred", 1), ("sessionId", 1)], {}),
         # An ad network asks for the verdict of one click (api_service.clicks).
         (db["detection_results"], "click_id_1", [("click_id", 1)], {"sparse": True}),
+        # The monitoring views filter by the visitor's country (one page runs ads in many).
+        # Both orders: a website's countries, and one country's sessions across websites (the
+        # traffic table reads its session ids from this index alone).
+        (db["detection_results"], "site_id_1_country_code_1", [("site_id", 1), ("country_code", 1)], {}),
+        (db["detection_results"], "country_code_1_sessionId_1", [("country_code", 1), ("sessionId", 1)], {}),
         (db["deleted_sessions"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "expires_at_1", [("expires_at", 1)], {"expireAfterSeconds": 0}),
         (db["telemetry_captures"], "sessionId_1_received_at_1", [("sessionId", 1), ("received_at", 1)], {}),
@@ -274,6 +279,7 @@ def _ensure_indexes(db):
             logger.warning(f"[DB] Obsolete index cleanup warning for created_at_-1: {e}")
     if all_ready:
         clicks.backfill_in_background(db)
+        geoip.backfill_countries_in_background(db)
     return all_ready
 
 
@@ -639,7 +645,9 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             )
         if result.matched_count == 0:
             insert_doc = {**doc, **site_fields, **clicks.click_params(doc["pageUrl"], telemetry.get("_site_id")),
-                          "landing_url": doc["pageUrl"], "created_at": now}
+                          "landing_url": doc["pageUrl"], "created_at": now,
+                          # The country of the address the session started from.
+                          "country_code": geoip.country_of(doc.get("client_ip"))}
             try:
                 collection.insert_one(insert_doc)
             except DuplicateKeyError:

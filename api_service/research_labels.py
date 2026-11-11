@@ -151,6 +151,20 @@ def _decided_ids(db, verdict):
     return ids
 
 
+def _country_ids(db, country):
+    """Session ids of one country (``None``: no known country), from the ``country_code`` index."""
+    key = (id(db), "country", country)
+    now = time.monotonic()
+    with _verdict_cache_lock:
+        cached = _verdict_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1]
+    ids = db["detection_results"].distinct("sessionId", {"country_code": country})
+    with _verdict_cache_lock:
+        _verdict_cache[key] = (now + VERDICT_CACHE_SECONDS, ids)
+    return ids
+
+
 def _verdict_condition(db, verdict):
     if verdict == "pending":
         return {"sessionId": {"$nin": _decided_ids(db, None)}}
@@ -176,18 +190,22 @@ def _display_numbers(collection, scope, rows, consecutive):
     return [place - offset.get(row["traffic_number"], 0) for row in rows]
 
 
-def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
+def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None, country=None):
     """``site_filter`` is the dashboard's condition on ``site_id`` (one site, a list, or none);
-    ``verdict`` one of ``VERDICT_FILTERS`` or None. Rows carry ``display_number``, their STT."""
+    ``verdict`` one of ``VERDICT_FILTERS`` or None; ``country`` an ISO code, "_none" (unknown) or
+    None. Rows carry ``display_number``, their STT within the website, whatever the filters."""
     db = get_db()
     if db is None:
         raise RuntimeError("Database unavailable")
     with _lock:
         _prepare(db)
     query = {"deleted": {"$ne": True}}
-    if site_filter:
+    if site_filter and "site_id" in site_filter:
         query["attributed_site_id"] = site_filter["site_id"]
     unfiltered = dict(query)
+    if country:
+        query["$and"] = [{"sessionId": {"$in": _country_ids(db, None if country == "_none" else country)}}]
+    every_verdict = dict(query)
     if verdict:
         query.update(_verdict_condition(db, verdict))
     if before_number is not None:
@@ -200,7 +218,7 @@ def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
         {"sessionId": {"$in": [row["sessionId"] for row in rows]}},
         {"_id": 0, "mouse_trajectory": 0},
     )} if rows else {}
-    numbers = _display_numbers(db["research_sessions"], unfiltered, rows, consecutive=not verdict)
+    numbers = _display_numbers(db["research_sessions"], unfiltered, rows, consecutive=not verdict and not country)
     sessions = []
     for row, number in zip(rows, numbers):
         doc = detections.get(row["sessionId"], {
@@ -217,8 +235,8 @@ def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None):
     total = db["research_sessions"].count_documents(
         {key: value for key, value in query.items() if key != "traffic_number"})
     return {"sessions": sessions, "returned": len(sessions), "total": total,
-            # Every session of the site, whatever the filter (the KPI cards count from it).
-            "all_total": db["research_sessions"].count_documents(unfiltered) if verdict else total,
+            # Every session of the site and country, whatever the verdict (the KPI cards count from it).
+            "all_total": db["research_sessions"].count_documents(every_verdict) if verdict else total,
             "next_before": rows[-1]["traffic_number"] if has_more else None}
 
 

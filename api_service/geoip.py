@@ -111,6 +111,45 @@ def lookup(ip):
     return result or None
 
 
+def country_of(ip):
+    """ISO country code of a visitor address, or None (private, unknown, database missing)."""
+    found = lookup(ip)
+    code = (found or {}).get("country_code")
+    return code.upper() if isinstance(code, str) and len(code) == 2 else None
+
+
+COUNTRY_BACKFILL_MARKER = "country_backfill_v1"
+
+
+def backfill_countries(db) -> int:
+    """Store the country of sessions recorded before it was stored (once, when the database is
+    installed): the monitoring views filter by it."""
+    control = db["service_control"]
+    if control.find_one({"_id": COUNTRY_BACKFILL_MARKER}) or _reader("city") is None:
+        return 0
+    filled = 0
+    cursor = db["detection_results"].find({"country_code": {"$exists": False}}, {"client_ip": 1}).batch_size(500)
+    for doc in cursor:
+        db["detection_results"].update_one({"_id": doc["_id"], "country_code": {"$exists": False}},
+                                           {"$set": {"country_code": country_of(doc.get("client_ip"))}})
+        filled += 1
+    control.update_one({"_id": COUNTRY_BACKFILL_MARKER},
+                       {"$set": {"done_at": datetime.now(timezone.utc), "sessions": filled}}, upsert=True)
+    return filled
+
+
+def backfill_countries_in_background(db) -> None:
+    def run():
+        try:
+            count = backfill_countries(db)
+            if count:
+                logger.info("Country stored on %d earlier sessions", count)
+        except Exception as exc:  # the next start retries
+            logger.warning("Country backfill failed: %s", exc)
+
+    threading.Thread(target=run, name="country-backfill", daemon=True).start()
+
+
 def attach(rows):
     """Add a "geo" field to session documents that carry a client_ip."""
     for row in rows or []:

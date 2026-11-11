@@ -104,7 +104,7 @@ def test_traffic_and_detail_carry_location(readers, monkeypatch):
     from api_service import main
 
     monkeypatch.setattr(main.settings, "READ_TOKEN", "read-secret")
-    monkeypatch.setattr(main, "traffic_page", lambda limit, before, site_filter=None, verdict=None: {
+    monkeypatch.setattr(main, "traffic_page", lambda limit, before, site_filter=None, verdict=None, country=None: {
         "sessions": [{"sessionId": "s1", "client_ip": "42.113.160.186"}], "returned": 1, "total": 1, "next_before": None})
     response = TestClient(main.app).get("/api/v1/research/traffic", headers={"X-Read-Token": "read-secret"})
     assert response.status_code == 200
@@ -112,3 +112,19 @@ def test_traffic_and_detail_carry_location(readers, monkeypatch):
     assert body["sessions"][0]["geo"]["isp"] == "FPT Telecom Company"
     assert body["sessions"][0]["geo"]["region"] == "Hanoi"
     assert body["geoip_attribution"]["url"] == "https://db-ip.com"
+
+
+def test_country_of_and_backfill(readers):
+    import mongomock
+
+    assert geoip.country_of("42.113.160.186") == "VN"
+    assert geoip.country_of("10.0.0.1") is None and geoip.country_of("bad") is None
+    db = mongomock.MongoClient()["geo"]
+    db["detection_results"].insert_many([{"sessionId": "a", "client_ip": "42.113.160.186"}, {"sessionId": "b"},
+                                         {"sessionId": "c", "client_ip": "42.113.160.186", "country_code": "JP"}])
+    assert geoip.backfill_countries(db) == 2
+    stored = {d["sessionId"]: d["country_code"] for d in db["detection_results"].find()}
+    assert stored == {"a": "VN", "b": None, "c": "JP"}
+    # Once.
+    db["detection_results"].insert_one({"sessionId": "d", "client_ip": "42.113.160.186"})
+    assert geoip.backfill_countries(db) == 0
