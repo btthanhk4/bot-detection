@@ -589,3 +589,51 @@ def test_delete_all_with_a_site_deletes_only_that_sites_sessions(api, db):
     assert api.delete("/api/v1/sessions", params={"site": "Bad Site!"}, headers=ADMIN).status_code == 422
     assert api.delete("/api/v1/sessions", params={"site": "blog"}, headers=READ).status_code in (401, 403)
     assert [d["sessionId"] for d in db["detection_results"].find()] == ["b1"]
+
+
+def test_a_refused_page_can_read_its_refusal(api):
+    """An unregistered page's browser passes the telemetry preflight (no credentials), is refused,
+    and can read X-Datacat-Stop, so its collector stops instead of retrying every few seconds."""
+    from fastapi import FastAPI, HTTPException
+
+    from api_service.main import SiteAwareCORSMiddleware
+
+    app = FastAPI()
+
+    @app.post("/api/v1/telemetry")
+    def refuse():
+        raise HTTPException(status_code=403, detail="This page is not registered for monitoring",
+                            headers={"X-Datacat-Stop": "86400"})
+
+    @app.post("/api/v1/sessions")
+    def other():
+        return {}
+
+    app.add_middleware(SiteAwareCORSMiddleware, allow_origins=["https://silkmoon.datacat.io.vn"],
+                       allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    client = TestClient(app)
+    foreign = "https://befitfashion.com"
+    preflight = {"Origin": foreign, "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"}
+    allowed = client.options("/api/v1/telemetry", headers=preflight)
+    assert allowed.status_code == 204
+    assert allowed.headers["access-control-allow-origin"] == foreign
+    assert "access-control-allow-credentials" not in allowed.headers
+    refused = client.post("/api/v1/telemetry", json={}, headers={"Origin": foreign})
+    assert refused.status_code == 403 and refused.headers["x-datacat-stop"] == "86400"
+    assert refused.headers["access-control-allow-origin"] == foreign
+    assert "X-Datacat-Stop" in refused.headers["access-control-expose-headers"]
+    # Other endpoints keep refusing a foreign page; a configured origin keeps its credentials.
+    assert client.options("/api/v1/sessions", headers=preflight).status_code == 400
+    own = client.options("/api/v1/telemetry", headers={**preflight, "Origin": "https://silkmoon.datacat.io.vn"})
+    assert own.status_code == 200 and own.headers["access-control-allow-credentials"] == "true"
+
+
+def test_the_refusal_tells_the_collector_how_long_to_stop(api, db):
+    refused = api.post("/api/v1/telemetry", json=telemetry("befit-1"))
+    assert (refused.status_code, refused.headers["x-datacat-stop"]) == (403, "86400")
+    assert db["detection_results"].count_documents({}) == 0
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
+    api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
+    paused = api.post("/api/v1/telemetry", json=telemetry("shop-2"), headers={"Origin": SHOP})
+    assert (paused.status_code, paused.headers["x-datacat-stop"]) == (403, "3600")

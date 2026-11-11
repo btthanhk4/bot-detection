@@ -9,13 +9,17 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.11.1';
+export const COLLECTOR_VERSION = '1.12.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 // A random id kept in this site's localStorage (collector 1.11). The API counts how many
 // browsers, not tabs, one device fingerprint starts sessions from on one address: a person's
 // thirty product tabs share it; a farm that wipes storage between runs does not.
 const DEVICE_STORAGE_KEY = 'datacat_device';
+// Set when the API refuses this website (not registered, or paused): the collector stays
+// silent on it until then, instead of retrying every few seconds on every page.
+const REFUSAL_STORAGE_KEY = 'datacat_refused';
+const MAX_REFUSAL_MS = 7 * 24 * 3600 * 1000;
 
 function boundedUrl(value) {
   return String(value || '').slice(0, 2048);
@@ -111,8 +115,30 @@ export class BotCollector {
     return this.init();
   }
 
+  // When the API last refused this website, until when the collector stays silent.
+  refusedUntil() {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(REFUSAL_STORAGE_KEY) || 'null');
+      return saved && Number.isFinite(saved.until) ? Math.min(saved.until, Date.now() + MAX_REFUSAL_MS) : 0;
+    } catch (e) { return 0; }
+  }
+
+  refuse(seconds) {
+    this.refused = true;
+    try {
+      window.localStorage.setItem(REFUSAL_STORAGE_KEY,
+        JSON.stringify({ until: Date.now() + Math.min(seconds * 1000, MAX_REFUSAL_MS) }));
+    } catch (e) { /* storage blocked: silent for this page only */ }
+    this.destroy();
+  }
+
   init() {
     if (this.initPromise) return this.initPromise;
+    if (this.refused || this.refusedUntil() > Date.now()) {
+      this.refused = true;
+      this.initPromise = Promise.resolve(this);
+      return this.initPromise;
+    }
     this.destroyed = false;
     const lifecycleVersion = ++this.lifecycleVersion;
     this.sendHello();
@@ -275,6 +301,7 @@ export class BotCollector {
    * Send telemetry asynchronously via sendBeacon or fetch
    */
   async sendTelemetry(action = 'telemetry') {
+    if (this.refused) return false;
     if (this.sendPromise && action !== 'pagehide') return this.sendPromise;
 
     const operation = this._sendTelemetry(action, this.lifecycleVersion);
@@ -377,6 +404,13 @@ export class BotCollector {
         keepalive: action === 'pagehide',
       }, 10000, async (response) => {
         delivery.status = response.status ?? null;
+        const stopFor = response.status === 403 && response.headers && typeof response.headers.get === 'function'
+          ? Number(response.headers.get('X-Datacat-Stop')) : 0;
+        if (stopFor > 0) {
+          // This website is not monitored (or paused): no retries, no heartbeats.
+          this.refuse(stopFor);
+          return response;
+        }
         if (response.ok && typeof response.json === 'function') {
           try {
             const receipt = await response.json();

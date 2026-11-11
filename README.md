@@ -115,22 +115,18 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v30 (current)
+### Policy v31 (current)
 
-Policy v30 thêm hai luật kết luận BOT cho các phiên trước đó còn NGHI VẤN hoặc chưa đủ dữ liệu:
+Policy v31 thêm một mâu thuẫn mới, `UA_API_MISMATCH`. Trình duyệt tự khai là Safari (máy tính) hoặc
+Firefox nhưng lại có `navigator.deviceMemory`, một API chỉ Chromium có. Safari và Firefox thật không
+có API này. Trên production, 13/15 phiên người thật dùng Safari/Firefox không có API này; hai phiên
+còn lại cùng khai Firefox 129 nên có thể là trình duyệt giả mạo. Ngược lại, 3.114/3.133 phiên Bot
+tự khai Safari/Firefox có API này. Có mâu thuẫn này cộng cờ `navigator.webdriver` bị giấu thì kết
+luận BOT. Nhờ đó 340 phiên Mac của trại bot "Safari 9.1.2" chuyển từ NGHI VẤN sang BOT. Đứng một
+mình, mâu thuẫn này chỉ chặn kết luận HUMAN. Policy v30 trước đó đã thêm luật cho WebView giấu cờ
+webdriver và chạm CDP trên iPhone/iPad. Xem [Model release v31](docs/MODEL_RELEASE_V31.md).
 
-- **WebView Android giấu cờ `navigator.webdriver`.** Trên máy tính, tiện ích mở rộng có thể sửa cờ
-  này, nên khi đứng một mình nó chỉ chặn kết luận HUMAN. WebView không chạy được tiện ích mở rộng,
-  nên ứng dụng chứa WebView đã giấu dấu hiệu tự động hóa của chính nó. Trang đích có 59 WebView như
-  vậy, mang tên hộp TV và điện thoại: 39 phiên đã là BOT vì chạm 0 ms, 20 phiên còn lại rời trang
-  trước khi chạm đủ hai lần.
-- **Chạm mang giá trị mặc định của CDP trên iPhone/iPad.** Bán kính đúng bằng 1 và lực đúng bằng 1
-  ở mọi điểm, kể cả lúc nhả. WebKit trên máy thật báo diện tích tiếp xúc của ngón tay (24–49 px trên
-  các iPhone đã đo). 5 phiên iPad trên trang đích có kiểu chạm này.
-
-Xem [Model release v30](docs/MODEL_RELEASE_V30.md).
-
-Lịch sử policy v7–v29, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+Lịch sử policy v7–v30, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 
@@ -348,6 +344,13 @@ Cách gán phiên:
   *Nguồn chưa đăng ký* liệt kê tên miền đã gửi dữ liệu trong 7 ngày mà chưa thuộc website nào.
 - **Tạm dừng** từ chối dữ liệu của website mà không cần khách hàng gỡ mã. **Xóa** chỉ bỏ website
   khỏi danh sách; phiên đã ghi vẫn giữ.
+- Trang gắn mã mà không được đăng ký (hoặc đang tạm dừng) bị từ chối với `403` và header
+  `X-Datacat-Stop` (86.400 giây, tạm dừng là 3.600 giây). Bước preflight của endpoint telemetry
+  được cho qua với mọi Origin (không kèm credentials), nên collector 1.12+ đọc được lời từ chối. Nó
+  tắt luôn và ghi nhớ trong `localStorage` của trang đó: các trang sau trên cùng website không gửi gì
+  cho tới khi hết hạn (tối đa 7 ngày). Nhờ vậy mỗi khách của trang lạ chỉ gửi một request mỗi ngày,
+  thay vì thử lại vài giây một lần. Không có dữ liệu nào của trang lạ được lưu. Muốn chặn hẳn từ
+  gốc, chủ trang phải gỡ đoạn mã.
 - Tài khoản chỉ xem thấy danh sách và mã cài đặt, không thêm, sửa hay xóa được.
 
 ### Tài khoản và phân quyền

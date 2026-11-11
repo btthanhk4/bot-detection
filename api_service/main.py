@@ -32,6 +32,8 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.responses import Response as StarletteResponse
 
 from api_service import auth, clicks, gateway, geoip, sites
 from api_service.capture import build_capture
@@ -151,11 +153,46 @@ app = FastAPI(
 
 app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BYTES)
 
+# A refused page's browser must be able to read the refusal, or the collector takes the failed
+# preflight for a network error and keeps retrying every few seconds. Seconds it stops for:
+STOP_UNREGISTERED_S = 86400
+STOP_PAUSED_S = 3600
+_TELEMETRY_PATHS = ("/api/v1/telemetry",)
+
+
 class SiteAwareCORSMiddleware(CORSMiddleware):
-    """CORS for the configured origins plus the active sites registered on the dashboard."""
+    """CORS for the configured origins plus the active sites registered on the dashboard.
+
+    Telemetry from any other page passes the preflight without credentials, so its POST reaches
+    the API, is refused there (403, nothing stored) and the collector reads ``X-Datacat-Stop``.
+    """
 
     def is_allowed_origin(self, origin: str) -> bool:
         return super().is_allowed_origin(origin) or sites.registry.allows_cors(origin)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") in _TELEMETRY_PATHS:
+            headers = Headers(scope=scope)
+            origin = headers.get("origin")
+            if origin and not self.is_allowed_origin(origin):
+                if scope["method"] == "OPTIONS" and "access-control-request-method" in headers:
+                    await StarletteResponse(status_code=204, headers={
+                        "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST",
+                        "Access-Control-Allow-Headers": "content-type", "Access-Control-Max-Age": "86400",
+                        "Vary": "Origin"})(scope, receive, send)
+                    return
+
+                async def send_readable(message):
+                    if message["type"] == "http.response.start":
+                        response_headers = MutableHeaders(scope=message)
+                        response_headers["Access-Control-Allow-Origin"] = origin
+                        response_headers["Access-Control-Expose-Headers"] = "X-Datacat-Stop, Retry-After"
+                        response_headers.add_vary_header("Origin")
+                    await send(message)
+
+                await self.app(scope, receive, send_readable)
+                return
+        await super().__call__(scope, receive, send)
 
 
 # Enable CORS for local development and cloud deployments
@@ -771,9 +808,11 @@ def _resolve_telemetry_site(request: Request, data: dict) -> tuple:
         verified = False
     if not allowed:
         if site is not None:
-            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
+            raise HTTPException(status_code=403, detail="Monitoring is paused for this site",
+                                headers={"X-Datacat-Stop": str(STOP_PAUSED_S)})
         _log_refused_page(origin, data.get("pageUrl"))
-        raise HTTPException(status_code=403, detail="This page is not registered for monitoring")
+        raise HTTPException(status_code=403, detail="This page is not registered for monitoring",
+                            headers={"X-Datacat-Stop": str(STOP_UNREGISTERED_S)})
     return site, verified and site is not None
 
 

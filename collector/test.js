@@ -38,6 +38,49 @@ async function waitFor(predicate) {
   throw new Error('Timed out waiting for asynchronous collector state');
 }
 
+async function testRefusedWebsiteStaysSilent() {
+  const previousWindow = global.window;
+  const previousFetch = global.fetch;
+  let requests = 0;
+  global.fetch = async () => {
+    requests++;
+    return { ok: false, status: 403, headers: { get: (name) => (name === 'X-Datacat-Stop' ? '86400' : null) } };
+  };
+  try {
+    const collector = new BotCollector({ autoSendInterval: 1000, retryBaseDelay: 100 });
+    const resolverIndex = digestResolvers.length;
+    const start = collector.start();
+    await waitFor(() => digestResolvers.length > resolverIndex);
+    digestResolvers[resolverIndex]();
+    await start;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.strictEqual(requests, 1, 'a refused website gets no retry');
+    assert.strictEqual(collector.destroyed, true, 'and no heartbeat');
+    assert.strictEqual(collector.timer, null);
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), false);
+
+    // The refusal is remembered on the website: its next pages do not even start.
+    const store = {};
+    const storage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); } };
+    global.window = { sessionStorage: storage, localStorage: storage, removeEventListener() {} };
+    new BotCollector({ autoSendInterval: 0 }).refuse(86400);
+    const until = JSON.parse(store.datacat_refused).until;
+    assert.ok(until > Date.now() + 86000 * 1000 && until <= Date.now() + 86400 * 1000);
+    const next = new BotCollector({ autoSendInterval: 1000 });
+    await next.start();
+    assert.strictEqual(requests, 1, 'later pages send nothing');
+    assert.strictEqual(next.refused, true);
+    // A misbehaving server cannot silence the collector for more than a week, and it expires.
+    store.datacat_refused = JSON.stringify({ until: Date.now() + 365 * 24 * 3600 * 1000 });
+    assert.ok(next.refusedUntil() <= Date.now() + 7 * 24 * 3600 * 1000);
+    store.datacat_refused = JSON.stringify({ until: Date.now() - 1 });
+    assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() < Date.now());
+  } finally {
+    global.window = previousWindow;
+    global.fetch = previousFetch;
+  }
+}
+
 async function testSessionContinuesAcrossPagesOfOneTab() {
   const previousWindow = global.window;
   const originalUUID = global.crypto.randomUUID;
@@ -960,6 +1003,7 @@ testRestartDuringFingerprinting()
   .then(testSessionContinuesAcrossPagesOfOneTab)
   .then(testKeyboardTimingAndPressPressure)
   .then(testTouchGesturesAreCaptured)
+  .then(testRefusedWebsiteStaysSilent)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');
