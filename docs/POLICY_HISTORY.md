@@ -1,6 +1,21 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v30, mô tả trong [README](../README.md#policy-v30-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v31, mô tả trong [README](../README.md#policy-v31-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v30
+
+Policy v30 thêm hai luật kết luận BOT cho các phiên trước đó còn NGHI VẤN hoặc chưa đủ dữ liệu:
+
+- **WebView Android giấu cờ `navigator.webdriver`.** Trên máy tính, tiện ích mở rộng có thể sửa cờ
+  này, nên khi đứng một mình nó chỉ chặn kết luận HUMAN. WebView không chạy được tiện ích mở rộng,
+  nên ứng dụng chứa WebView đã giấu dấu hiệu tự động hóa của chính nó. Trang đích có 59 WebView như
+  vậy, mang tên hộp TV và điện thoại: 39 phiên đã là BOT vì chạm 0 ms, 20 phiên còn lại rời trang
+  trước khi chạm đủ hai lần.
+- **Chạm mang giá trị mặc định của CDP trên iPhone/iPad.** Bán kính đúng bằng 1 và lực đúng bằng 1
+  ở mọi điểm, kể cả lúc nhả. WebKit trên máy thật báo diện tích tiếp xúc của ngón tay (24–49 px trên
+  các iPhone đã đo). 5 phiên iPad trên trang đích có kiểu chạm này.
+
+Xem [Model release v30](MODEL_RELEASE_V30.md).
 
 ## Policy v29
 

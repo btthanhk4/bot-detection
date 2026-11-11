@@ -2222,11 +2222,11 @@ const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hì
   ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
   CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt',
   RANDOM_POINTER_JUMPS: 'Con trỏ nhảy ngẫu nhiên', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản',
-  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ' };
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ', UA_API_MISMATCH: 'Trình duyệt khai sai loại' };
 const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
-  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản' };
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2559,6 +2559,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   // Policy 26: claims a genuine browser does not make.
   const FORGERY_LABELS = { UA_POINTER_MISMATCH: 'trình duyệt tự khai là bản cũ không có Pointer Events, nhưng lại gửi sự kiện này',
     WEBDRIVER_TAMPERED: 'navigator.webdriver bị định nghĩa lại hoặc bị xóa (plugin stealth che dấu tự động hóa)',
+    UA_API_MISMATCH: 'tự khai là Safari hoặc Firefox nhưng có navigator.deviceMemory, API chỉ Chrome/Chromium có',
     SERVER_CPU: 'máy báo hơn 64 nhân CPU (máy chủ)' };
   const jumpProfile = (bd.desktop_risk || {}).jump_profile || {};
   const MOBILE_CODE_LABELS = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
@@ -2567,7 +2568,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     HARDWARE: 'phần cứng không phải điện thoại (CPU máy chủ)', CLOUD_IP: 'IP thuộc trung tâm dữ liệu cloud',
     ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt',
     UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ', DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ',
-    WEBDRIVER_TAMPERED: FORGERY_LABELS.WEBDRIVER_TAMPERED, UA_POINTER_MISMATCH: FORGERY_LABELS.UA_POINTER_MISMATCH };
+    WEBDRIVER_TAMPERED: FORGERY_LABELS.WEBDRIVER_TAMPERED, UA_POINTER_MISMATCH: FORGERY_LABELS.UA_POINTER_MISMATCH,
+    UA_API_MISMATCH: FORGERY_LABELS.UA_API_MISMATCH };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',

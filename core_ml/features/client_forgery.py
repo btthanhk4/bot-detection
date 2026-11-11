@@ -67,6 +67,16 @@ Policy 30 (2026-11-11, the lander's 225 live sessions; 22 SUSPECT, 30 insufficie
   and other iPhones on the shop: 24.3/36.4/48.6 px, force 0) and Playwright's WebKit none, so a
   browser that claims Safari and sends these touches is a Chromium driven through CDP. The lander:
   5 iPads (Safari 26-27, 2-19 taps), SUSPECT or insufficient before. Two gestures are enough.
+
+Policy 31 (2026-11-11, the lander's 5,267 live sessions):
+
+* ``UA_API_MISMATCH``: the user agent claims desktop Safari or Firefox, yet the page
+  reports ``navigator.deviceMemory``, an API only Chromium implements (WebKit and Gecko never
+  shipped it). Every genuine Safari and Firefox on the live site reported none (the user's iPhones,
+  9 Mac Safari sessions, 4 Firefox); the lander's Mac farm claims Safari 9.1.2 on macOS 10.9-15 and
+  reports 2-8 GB: 334 of its sessions carried only a tampered webdriver and stayed SUSPECT. One more
+  contradiction towards the two of ``forged_browser_v1``; alone it withholds HUMAN. iOS keeps its
+  own check (``chromium_api_on_ios``, policy 17), where DevTools' device mode stays insufficient.
 """
 
 import math
@@ -140,6 +150,15 @@ def _claims_no_pointer_events(user_agent: str) -> bool:
     return bool(chrome) and int(chrome.group(1)) < CHROME_POINTER_EVENTS
 
 
+def _claims_engine_without_device_memory(user_agent: str) -> bool:
+    """Desktop Safari or Firefox: engines without navigator.deviceMemory (iOS has its own check)."""
+    if re.search(r"\((iPhone|iPod|iPad);", user_agent):
+        return False
+    if _SAFARI.search(user_agent) and not _OTHER_ENGINES.search(user_agent):
+        return True
+    return "Firefox/" in user_agent and not re.search(r"Chrome/|Edg/|OPR/", user_agent)
+
+
 def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) -> list:
     """Contradictions a genuine browser does not produce; each only withholds a HUMAN verdict."""
     payload = payload if isinstance(payload, dict) else {}
@@ -150,6 +169,10 @@ def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) ->
         codes.append("UA_POINTER_MISMATCH")
     if any(hit in ("signals.webdriverPatched", "signals.webdriverDeleted") for hit in families.get("NATIVE_PATCH", [])):
         codes.append("WEBDRIVER_TAMPERED")
+    memory = fingerprint.get("deviceMemory")
+    if (isinstance(memory, (int, float)) and not isinstance(memory, bool) and math.isfinite(memory) and memory > 0
+            and _claims_engine_without_device_memory(str(fingerprint.get("userAgent") or ""))):
+        codes.append("UA_API_MISMATCH")
     cores = fingerprint.get("hardwareConcurrency")
     if (desktop and not isinstance(cores, bool) and isinstance(cores, (int, float))
             and math.isfinite(cores) and cores > SERVER_MIN_CORES):

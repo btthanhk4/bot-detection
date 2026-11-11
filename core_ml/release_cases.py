@@ -699,6 +699,7 @@ _WEBVIEW_TV = ("Mozilla/5.0 (Linux; Android 11; MiTV-MOOQ3 Build/RTM4.220307.164
 _MALI = "Mali-G52"
 # A 60 ms tap with CDP's Input.dispatchTouchEvent defaults: radius 1, force 1, release included.
 _CDP_TAP = [[0.0, 412.0, 300.0, 1, 1, 1], [60.0, 412.5, 300.0, 1, 1, 1]]
+_FIREFOX129 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0"
 
 
 def _deferred(**kwargs):
@@ -771,7 +772,29 @@ CLIENT_FORGERY_CASES = (
     ("BOT", "FINAL", "synthetic_touch", _phone(_IOS18, "iPhone", "Apple GPU", [_CDP_TAP] * 2)),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS16, "iPhone", "Apple GPU", [_CDP_TAP] * 4)),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP])),
+    # Policy 31: navigator.deviceMemory (Chromium only) under a Safari or Firefox user agent; the
+    # lander's Mac farm (Safari 9.1.2 on macOS 10.15, no input). With a hidden webdriver it
+    # convicts; alone it withholds HUMAN. Genuine Safari and Firefox report none; Chrome may.
+    # Safari 17 here, so the Pointer Events contradiction of Safari 9 does not add to it.
+    ("BOT", "FINAL", "forged_browser", _deferred(ua=_SAFARI17, renderer="Apple Software Renderer",
+                                                 fingerprint={"deviceMemory": 8, "platform": "MacIntel"},
+                                                 signals={"webdriverPatched": True})),
+    ("BOT", "FINAL", "forged_browser", _deferred(ua=_FIREFOX129, fingerprint={"deviceMemory": 16},
+                                                 signals={"webdriverDeleted": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(ua=_SAFARI17, renderer="Apple Software Renderer",
+                                                     fingerprint={"deviceMemory": 8, "platform": "MacIntel"})),
+    ("SUSPECT", "FINAL", None, _desktop(ua=_FIREFOX129, fingerprint={"deviceMemory": 16})),
+    ("HUMAN", "FINAL", None, _desktop(ua=_FIREFOX129, fingerprint={"deviceMemory": 0})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(coalesced=0.0, multi=0.0, ua=_SAFARI17, renderer=_APPLE_M2,
+                                                         fingerprint={"deviceMemory": 0, "platform": "MacIntel"})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_MAC_CHROME, fingerprint={"deviceMemory": 8})),
 )
+
+# Frozen gate of policy 30.
+CLIENT_FORGERY_RULE_GATE_V30 = {
+    "rules": ['client_forgery_v1', 'forged_browser_v1', 'webview_webdriver_v1', 'apple_synthetic_touch_v1'], "final_cases": 23, "insufficient_cases": 8, "passed": 31,
+    "fixture_fingerprint": "3f8dee2769434b3e19169ff79d444254766f336e39e3a5471b28c47d83a28be2",
+}
 
 # Frozen gate of policy 29.
 CLIENT_FORGERY_RULE_GATE_V29 = {
@@ -798,7 +821,8 @@ CLIENT_FORGERY_RULE_GATE_V26 = {
 }
 
 CLIENT_FORGERY_RULE_GATE = {
-    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1"],
+    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
+              "ua_api_mismatch_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

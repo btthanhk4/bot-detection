@@ -186,7 +186,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (23, 8)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (28, 10)
 
 
 def test_two_contradictions_convict():
@@ -279,3 +279,23 @@ def test_cdp_contact_on_current_webkit_is_a_bot():
     assert not apple_synthetic_touch_fires(ipad, {"gestures": 6, "research_flags": []})
     assert not apple_synthetic_touch_fires({"fingerprint": {"userAgent": ANDROID_CHROME}}, cdp)
     assert not apple_synthetic_touch_fires(None, None)
+
+
+FIREFOX129 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0"
+
+
+@pytest.mark.parametrize("user_agent, memory, expected", [
+    (SAFARI17, 8, True), (SAFARI9, 4, True), (FIREFOX129, 16, True),
+    # Genuine Safari and Firefox report none; Chromium browsers have the API.
+    (SAFARI17, 0, False), (FIREFOX129, None, False), (CHROME155, 8, False), (MAC_CHROME, 8, False), (WEBVIEW, 4, False),
+    # iOS keeps its own check (chromium_api_on_ios), and a boolean is not a size.
+    (CRIOS, 4, False), (IOS16, 4, False), (SAFARI17, True, False),
+])
+def test_device_memory_under_a_safari_or_firefox_user_agent(user_agent, memory, expected):
+    fingerprint = {"userAgent": user_agent, **({"deviceMemory": memory} if memory is not None else {})}
+    assert ("UA_API_MISMATCH" in forgery_codes({"fingerprint": fingerprint}, {}, desktop=True)) is expected
+
+
+def test_device_memory_with_a_hidden_webdriver_is_a_forged_browser():
+    assert forged_browser_fires(["UA_API_MISMATCH", "WEBDRIVER_TAMPERED"])
+    assert not forged_browser_fires(["UA_API_MISMATCH"])
