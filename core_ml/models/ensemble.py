@@ -17,13 +17,17 @@ from core_ml.features.automation_evidence import (
     analyze_automation_evidence,
 )
 from core_ml.features.client_forgery import (
+    APPLE_SYNTHETIC_TOUCH_RULE,
     CLIENT_FORGERY_VERSION,
     FORGED_BROWSER_RULE,
     SYNTHETIC_PATH_RULE,
+    WEBVIEW_WEBDRIVER_RULE,
+    apple_synthetic_touch_fires,
     contradictions,
     forged_browser_fires,
     forgery_codes,
     synthetic_path_fires,
+    webview_webdriver_fires,
 )
 from core_ml.features.desktop_risk import analyze_desktop_risk
 from core_ml.features.env_features import extract_env_vector, safe_bool, safe_float
@@ -54,7 +58,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "29"
+DECISION_POLICY_VERSION = "30"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -229,6 +233,12 @@ class EnsembleBotDetector:
         elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"]):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
+        elif webview_webdriver_fires(payload, forgery):
+            # Policy 30: no extension runs in a WebView; its app hid the automation flag.
+            automation_rule = WEBVIEW_WEBDRIVER_RULE
+        elif apple_synthetic_touch_fires(payload, touch_report):
+            # Policy 30: CDP's contact defaults from a browser that claims WebKit on iOS.
+            automation_rule = APPLE_SYNTHETIC_TOUCH_RULE
         elif "AUTOCLICK_TAPS" in touch_report["research_flags"]:
             # Policy 19: one point, metronomic taps; no human device in BrainRun does this.
             automation_rule = AUTOCLICK_RULE
@@ -438,6 +448,17 @@ class EnsembleBotDetector:
                     + ", ".join(browser_contradictions).lower().replace("_", " ")
                     + "); no person on the live site carried even one"
                 )
+            elif automation_rule == WEBVIEW_WEBDRIVER_RULE:
+                reasons.append(
+                    "Android WebView with navigator.webdriver hidden: a WebView runs no browser extensions, "
+                    "so the app hosting it hid its own automation flag"
+                )
+            elif automation_rule == APPLE_SYNTHETIC_TOUCH_RULE:
+                reasons.append(
+                    f"Synthetic touches on an iPhone or iPad: all {touch_report['gestures']} gestures report contact "
+                    "radius 1 and force 1 at every point (Chromium's CDP defaults); WebKit on a real device "
+                    "reports the finger's contact area"
+                )
             elif automation_rule == SYNTHETIC_POINTER_RULE:
                 reasons.append(
                     f"Synthetic mouse presses: {input_provenance['zero_pressure_presses']} presses reported "
@@ -544,6 +565,8 @@ class EnsembleBotDetector:
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "forged_browser" if automation_rule == FORGED_BROWSER_RULE
+                    else "webview_automation" if automation_rule == WEBVIEW_WEBDRIVER_RULE
+                    else "synthetic_touch" if automation_rule == APPLE_SYNTHETIC_TOUCH_RULE
                     else "mobile_clean_environment" if mobile_human_decision
                     else "mobile_risk" if mobile_risk_decision
                     else "client_forgery" if forgery_decision

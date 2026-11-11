@@ -20,6 +20,7 @@ Tổng quan hệ thống và cách chạy nằm ở [README](../README.md).
 ## Phát hành mô hình
 
 - [POLICY_HISTORY.md](POLICY_HISTORY.md): Lịch sử policy và kết quả thí nghiệm
+- [MODEL_RELEASE_V30.md](MODEL_RELEASE_V30.md): Model release v30: WebView giấu cờ webdriver và chạm CDP trên iPhone/iPad
 - [MODEL_RELEASE_V29.md](MODEL_RELEASE_V29.md): Model release v29: chạm 0 ms là một mâu thuẫn nữa
 - [MODEL_RELEASE_V28.md](MODEL_RELEASE_V28.md): Model release v28: phần cứng máy chủ là một mâu thuẫn nữa
 - [MODEL_RELEASE_V27.md](MODEL_RELEASE_V27.md): Model release v27: kiểm chứng trên quỹ đạo chuột người thật

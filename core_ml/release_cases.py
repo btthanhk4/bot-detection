@@ -694,6 +694,11 @@ DESKTOP_RISK_RULE_GATE = {
 
 
 _ZERO_TIME_TAPS = [_tap(150 + 20 * i, 324 + 10 * i, 0.0) for i in range(6)]
+_WEBVIEW_TV = ("Mozilla/5.0 (Linux; Android 11; MiTV-MOOQ3 Build/RTM4.220307.164; wv) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Version/4.0 Chrome/156.0.8078.47 Mobile Safari/537.36")
+_MALI = "Mali-G52"
+# A 60 ms tap with CDP's Input.dispatchTouchEvent defaults: radius 1, force 1, release included.
+_CDP_TAP = [[0.0, 412.0, 300.0, 1, 1, 1], [60.0, 412.5, 300.0, 1, 1, 1]]
 
 
 def _deferred(**kwargs):
@@ -746,7 +751,33 @@ CLIENT_FORGERY_CASES = (
                                                memory=4)),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _ZERO_TIME_TAPS[:1] + _ANDROID_HAND,
                                                memory=4, signals={"webdriverPatched": True})),
+    # Policy 30: an Android WebView that hid navigator.webdriver (the lander's TV-box WebViews; no
+    # extension runs in a WebView), with or without input. Chrome itself, where an extension may
+    # run, a WebView without the flag hidden, and a desktop GPU behind a WebView UA are not judged.
+    ("BOT", "FINAL", "webview_automation", _phone(_WEBVIEW_TV, "Linux armv8l", _MALI, [], memory=2,
+                                                  signals={"webdriverDeleted": True, "webdriverPatched": True})),
+    ("BOT", "FINAL", "webview_automation", _phone(_WEBVIEW_TV, "Linux armv8l", _MALI, _ANDROID_HAND, memory=2,
+                                                  signals={"webdriverPatched": True})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_WEBVIEW_TV, "Linux armv8l", _MALI, [], memory=2)),
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                  signals={"webdriverPatched": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_WEBVIEW_TV, "Linux armv8l", _HOST_GPU, [],
+                                                  signals={"webdriverPatched": True})),
+    # Policy 30: CDP's contact defaults (radius 1, force 1, release included) from an iPhone or an
+    # iPad in desktop mode on current WebKit, which reports the finger's contact area; also with
+    # WebGL unavailable. iOS 16 is not judged; one gesture is not enough.
+    ("BOT", "FINAL", "synthetic_touch", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP] * 7)),
+    ("BOT", "FINAL", "synthetic_touch", _phone(_IPAD_DESKTOP, "MacIntel", "unsupported", [_CDP_TAP] * 3)),
+    ("BOT", "FINAL", "synthetic_touch", _phone(_IOS18, "iPhone", "Apple GPU", [_CDP_TAP] * 2)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS16, "iPhone", "Apple GPU", [_CDP_TAP] * 4)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP])),
 )
+
+# Frozen gate of policy 29.
+CLIENT_FORGERY_RULE_GATE_V29 = {
+    "rules": ["client_forgery_v1", "forged_browser_v1"], "final_cases": 15, "insufficient_cases": 6, "passed": 21,
+    "fixture_fingerprint": "948d7d6c05cc63992c6685dbd0e8f6bd925c981fd880d6d23c65973e037c3359",
+}
 
 # Frozen gate of policy 28.
 CLIENT_FORGERY_RULE_GATE_V28 = {
@@ -767,7 +798,7 @@ CLIENT_FORGERY_RULE_GATE_V26 = {
 }
 
 CLIENT_FORGERY_RULE_GATE = {
-    "rules": ["client_forgery_v1", "forged_browser_v1"],
+    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

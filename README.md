@@ -115,16 +115,22 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v29 (current)
+### Policy v30 (current)
 
-Policy v29 coi lần chạm 0 ms là thêm một mâu thuẫn. Ngón tay thật luôn nằm trên mặt kính vài chục
-mili giây: iPhone của người dùng chạm nhanh nhất có thể vẫn mất 47–80 ms, không lần nào dưới 1 ms
-trong 20 lần chạm. Bot WebView trên trang đích quảng cáo có trung vị 0 ms. Chạm 0 ms cộng
-`navigator.webdriver` bị sửa thì kết luận BOT. Đứng một mình, cờ này chỉ chặn kết luận HUMAN, vì
-trình đọc màn hình có thể chạm tức thời. Policy v28 trước đó đã coi phần cứng máy chủ là một mâu
-thuẫn. Xem [Model release v29](docs/MODEL_RELEASE_V29.md).
+Policy v30 thêm hai luật kết luận BOT cho các phiên trước đó còn NGHI VẤN hoặc chưa đủ dữ liệu:
 
-Lịch sử policy v7–v28, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+- **WebView Android giấu cờ `navigator.webdriver`.** Trên máy tính, tiện ích mở rộng có thể sửa cờ
+  này, nên khi đứng một mình nó chỉ chặn kết luận HUMAN. WebView không chạy được tiện ích mở rộng,
+  nên ứng dụng chứa WebView đã giấu dấu hiệu tự động hóa của chính nó. Trang đích có 59 WebView như
+  vậy, mang tên hộp TV và điện thoại: 39 phiên đã là BOT vì chạm 0 ms, 20 phiên còn lại rời trang
+  trước khi chạm đủ hai lần.
+- **Chạm mang giá trị mặc định của CDP trên iPhone/iPad.** Bán kính đúng bằng 1 và lực đúng bằng 1
+  ở mọi điểm, kể cả lúc nhả. WebKit trên máy thật báo diện tích tiếp xúc của ngón tay (24–49 px trên
+  các iPhone đã đo). 5 phiên iPad trên trang đích có kiểu chạm này.
+
+Xem [Model release v30](docs/MODEL_RELEASE_V30.md).
+
+Lịch sử policy v7–v29, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 

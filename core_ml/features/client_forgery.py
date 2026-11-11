@@ -51,16 +51,38 @@ as it could, gave 47-80 ms (0 of 20 taps under 1 ms, 2026-11-10), two other iPho
 0 of 5; the lander's WebView bots 145 of 237 taps under 1 ms (median 0), Playwright's iPhone 8
 of 8. Screen readers (TalkBack) may synthesize instant taps, so alone it only withholds HUMAN;
 with ``navigator.webdriver`` tampered it convicts.
+
+Policy 30 (2026-11-11, the lander's 225 live sessions; 22 SUSPECT, 30 insufficient):
+
+* ``webview_webdriver_v1``: an Android WebView (``; wv)`` in the user agent) whose
+  ``navigator.webdriver`` was redefined or deleted. On a desktop an extension could do that, which
+  is why the flag alone only withholds HUMAN; a WebView runs no extensions, so the app hosting it
+  hid its own automation flag. The lander: 59 such WebViews, all Chrome 156/157 on Android TV and
+  phone names (Chromecast, MiTV-MOOQ3, FlowBox-Z3), all missing the Sec-Fetch headers a Chromium
+  page sends. 39 tapped 12-20 times at 0 ms and were already BOT; the other 20 left before tapping
+  twice and stayed SUSPECT. A desktop GPU behind a WebView user agent is not judged here.
+* ``apple_synthetic_touch_v1``: an iPhone or iPad (including iPadOS Safari's desktop mode) on a
+  current WebKit (18+) whose every touch point has contact radius exactly 1 and force exactly 1,
+  release included: Chromium's CDP defaults. WebKit reports the finger's contact area (the user's
+  and other iPhones on the shop: 24.3/36.4/48.6 px, force 0) and Playwright's WebKit none, so a
+  browser that claims Safari and sends these touches is a Chromium driven through CDP. The lander:
+  5 iPads (Safari 26-27, 2-19 taps), SUSPECT or insufficient before. Two gestures are enough.
 """
 
 import math
 import re
 
-from core_ml.features.automation_evidence import TAMPERING_ANCHOR_FAMILIES
+from core_ml.features.automation_evidence import _DESKTOP_GPU, TAMPERING_ANCHOR_FAMILIES
 from core_ml.features.mouse_features import normalize_move_coordinates
 
 SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
 FORGED_BROWSER_RULE = "forged_browser_v1"
+WEBVIEW_WEBDRIVER_RULE = "webview_webdriver_v1"
+APPLE_SYNTHETIC_TOUCH_RULE = "apple_synthetic_touch_v1"
+APPLE_TOUCH_MIN_GESTURES = 2
+# WebKit reports a contact radius on current iOS (seen on iOS 18 and Safari 26, whose UA
+# freezes the OS at 18_6); older versions are not judged.
+APPLE_CONTACT_MIN_VERSION = 18
 FORGED_BROWSER_MIN_CODES = 2
 CLIENT_FORGERY_VERSION = "client_forgery_v1"
 JUMP_MIN_MOVES = 10
@@ -161,3 +183,36 @@ def forged_browser_fires(forgery: list, automation_evidence: dict = None, touch_
     """Policy 27: two independent claims no genuine browser makes (policy 28: or one and an
     environment anchor; policy 29: or one and taps of 0 ms)."""
     return len(contradictions(forgery, automation_evidence, touch_flags)) >= FORGED_BROWSER_MIN_CODES
+
+
+def _fingerprint(payload) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    return payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
+
+
+def webview_webdriver_fires(payload: dict, forgery: list) -> bool:
+    """Policy 30: an Android WebView that hid ``navigator.webdriver`` (no extension runs there)."""
+    fingerprint = _fingerprint(payload)
+    user_agent = str(fingerprint.get("userAgent") or "")
+    return bool("WEBDRIVER_TAMPERED" in (forgery or []) and "Android" in user_agent and "; wv)" in user_agent
+                and not _DESKTOP_GPU.search(str(fingerprint.get("webglRenderer") or "")))
+
+
+def apple_touch_device(fingerprint: dict) -> bool:
+    """The user agent of an iPhone or iPad, or iPadOS Safari asking for desktop sites."""
+    user_agent = str(fingerprint.get("userAgent") or "")
+    if re.search(r"\((iPhone|iPod|iPad);", user_agent):
+        return True
+    touch = fingerprint.get("maxTouchPoints")
+    return bool("Macintosh" in user_agent and not _OTHER_ENGINES.search(user_agent)
+                and str(fingerprint.get("platform") or "") == "MacIntel"
+                and isinstance(touch, (int, float)) and not isinstance(touch, bool) and touch > 1)
+
+
+def apple_synthetic_touch_fires(payload: dict, touch_report: dict) -> bool:
+    """Policy 30: an iPhone or iPad on WebKit 18+ whose touches carry CDP's contact defaults."""
+    fingerprint = _fingerprint(payload)
+    versions = [int(v) for v in re.findall(r"(?:OS |Version/)(\d+)", str(fingerprint.get("userAgent") or ""))]
+    return bool(apple_touch_device(fingerprint) and versions and max(versions) >= APPLE_CONTACT_MIN_VERSION
+                and int((touch_report or {}).get("gestures") or 0) >= APPLE_TOUCH_MIN_GESTURES
+                and "SYNTHETIC_CONTACT" in ((touch_report or {}).get("research_flags") or []))

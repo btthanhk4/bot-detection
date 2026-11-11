@@ -1,15 +1,18 @@
-"""Policies 26-27: random pointer jumps and browser claims no genuine browser makes."""
+"""Policies 26-30: random pointer jumps and browser claims no genuine browser makes."""
 
 import copy
 
 import pytest
 
 from core_ml.features.client_forgery import (
+    apple_synthetic_touch_fires,
+    apple_touch_device,
     contradictions,
     forged_browser_fires,
     forgery_codes,
     pointer_jump_profile,
     synthetic_path_fires,
+    webview_webdriver_fires,
 )
 from core_ml.models.ensemble import EnsembleBotDetector
 from core_ml.release_cases import (
@@ -183,7 +186,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (15, 6)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (23, 8)
 
 
 def test_two_contradictions_convict():
@@ -234,3 +237,45 @@ def test_random_jumps_on_a_short_session_are_evidence():
     assert result["breakdown"]["client_forgery"]["codes"] == []
     bot = detector().predict(_desktop(path=_jumps(n=15), signals={"webdriverPatched": True}))
     assert bot["breakdown"]["automation_rule"] == "synthetic_pointer_path_v1"
+
+
+IPAD_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                "Version/27.0.1 Safari/605.1.15")
+IOS16 = ("Mozilla/5.0 (iPhone; CPU iPhone OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+         "Version/16.6 Mobile/15E148 Safari/604.1")
+MAC_CHROME = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/155.0.0.0 Safari/537.36")
+ANDROID_CHROME = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/156.0.0.0 Mobile Safari/537.36")
+
+
+def test_a_webview_that_hid_webdriver_is_a_bot():
+    payload = {"fingerprint": {"userAgent": WEBVIEW, "webglRenderer": "Mali-G52"}}
+    assert webview_webdriver_fires(payload, ["WEBDRIVER_TAMPERED"])
+    # Nothing hidden; Chrome, where an extension may run; a desktop GPU behind the WebView UA.
+    assert not webview_webdriver_fires(payload, [])
+    assert not webview_webdriver_fires({"fingerprint": {"userAgent": ANDROID_CHROME}}, ["WEBDRIVER_TAMPERED"])
+    assert not webview_webdriver_fires({"fingerprint": {"userAgent": WEBVIEW, "webglRenderer": (
+        "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)")}}, ["WEBDRIVER_TAMPERED"])
+    assert not webview_webdriver_fires(None, None)
+
+
+def test_apple_devices_include_ipad_desktop_mode_but_not_mac_browsers():
+    assert apple_touch_device({"userAgent": CRIOS})
+    assert apple_touch_device({"userAgent": IPAD_DESKTOP, "platform": "MacIntel", "maxTouchPoints": 5})
+    assert not apple_touch_device({"userAgent": IPAD_DESKTOP, "platform": "MacIntel", "maxTouchPoints": 0})
+    assert not apple_touch_device({"userAgent": MAC_CHROME, "platform": "MacIntel", "maxTouchPoints": 5})
+    assert not apple_touch_device({"userAgent": WEBVIEW})
+
+
+def test_cdp_contact_on_current_webkit_is_a_bot():
+    cdp = {"gestures": 2, "research_flags": ["SYNTHETIC_CONTACT"]}
+    ipad = {"fingerprint": {"userAgent": IPAD_DESKTOP, "platform": "MacIntel", "maxTouchPoints": 5}}
+    assert apple_synthetic_touch_fires(ipad, cdp)
+    assert apple_synthetic_touch_fires({"fingerprint": {"userAgent": CRIOS}}, cdp)
+    # One gesture, older WebKit, real contact, Android (a low-end phone may lack size sensors).
+    assert not apple_synthetic_touch_fires(ipad, {**cdp, "gestures": 1})
+    assert not apple_synthetic_touch_fires({"fingerprint": {"userAgent": IOS16}}, cdp)
+    assert not apple_synthetic_touch_fires(ipad, {"gestures": 6, "research_flags": []})
+    assert not apple_synthetic_touch_fires({"fingerprint": {"userAgent": ANDROID_CHROME}}, cdp)
+    assert not apple_synthetic_touch_fires(None, None)

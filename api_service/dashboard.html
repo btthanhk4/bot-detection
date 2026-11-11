@@ -2231,7 +2231,7 @@ const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
-  forged_browser: 'Trình duyệt giả mạo' };
+  forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2630,6 +2630,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
     } else if (syntheticDecision) {
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
+    } else if (bd.decision_basis === 'webview_automation') {
+      explainText = 'WebView Android giấu cờ navigator.webdriver. WebView không chạy được tiện ích mở rộng, nên chính ứng dụng chứa nó đã giấu dấu hiệu tự động hóa.';
+    } else if (bd.decision_basis === 'synthetic_touch') {
+      explainText = `Chạm giả lập trên iPhone/iPad: cả ${Number(touchInfoForText.gestures) || 0} lần chạm có bán kính 1 và lực 1 ở mọi điểm (giá trị mặc định của CDP). WebKit trên máy thật luôn báo diện tích tiếp xúc của ngón tay.`;
     } else if (bd.decision_basis === 'forged_browser') {
       const cf = bd.client_forgery || {};
       explainText = `Trình duyệt giả mạo, hai điều trình duyệt thật không làm: ${escapeHtml((cf.contradictions || cf.codes || []).map(c => DESKTOP_CODE_LABELS[c] || c).join('; '))}.`;

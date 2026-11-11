@@ -1,6 +1,15 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v29, mô tả trong [README](../README.md#policy-v29-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v30, mô tả trong [README](../README.md#policy-v30-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v29
+
+Policy v29 coi lần chạm 0 ms là thêm một mâu thuẫn. Ngón tay thật luôn nằm trên mặt kính vài chục
+mili giây: iPhone của người dùng chạm nhanh nhất có thể vẫn mất 47–80 ms, không lần nào dưới 1 ms
+trong 20 lần chạm. Bot WebView trên trang đích quảng cáo có trung vị 0 ms. Chạm 0 ms cộng
+`navigator.webdriver` bị sửa thì kết luận BOT. Đứng một mình, cờ này chỉ chặn kết luận HUMAN, vì
+trình đọc màn hình có thể chạm tức thời. Policy v28 trước đó đã coi phần cứng máy chủ là một mâu
+thuẫn. Xem [Model release v29](MODEL_RELEASE_V29.md).
 
 ## Policy v28
 
