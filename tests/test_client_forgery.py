@@ -186,7 +186,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (28, 10)
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (32, 11)
 
 
 def test_two_contradictions_convict():
@@ -299,3 +299,14 @@ def test_device_memory_under_a_safari_or_firefox_user_agent(user_agent, memory, 
 def test_device_memory_with_a_hidden_webdriver_is_a_forged_browser():
     assert forged_browser_fires(["UA_API_MISMATCH", "WEBDRIVER_TAMPERED"])
     assert not forged_browser_fires(["UA_API_MISMATCH"])
+
+
+def test_a_page_platform_the_worker_contradicts_is_spoofed():
+    spoofed = {"CONTEXT": ["worker.platformMismatch"]}
+    assert "PLATFORM_SPOOFED" in forgery_codes({}, {"families": spoofed}, desktop=False)
+    # Other worker disagreements (cores, user agent) are not this code.
+    assert "PLATFORM_SPOOFED" not in forgery_codes({}, {"families": {"CONTEXT": ["worker.cpuMismatch"]}}, desktop=False)
+    # With the worker's WebGL renderer differing too (the GPU anchor), two contradictions convict.
+    both = {"families": {**spoofed, "GPU": ["worker.rendererMismatch"]}}
+    assert forged_browser_fires(forgery_codes({}, both, desktop=False), both)
+    assert not forged_browser_fires(forgery_codes({}, {"families": spoofed}, desktop=False), {"families": spoofed})

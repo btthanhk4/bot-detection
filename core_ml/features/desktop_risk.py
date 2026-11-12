@@ -72,7 +72,8 @@ DESKTOP_RISK_VERSION = "desktop_risk_v1"
 RISK_CODES = ("FRAME_LOCKED_POINTER", "POINTER_API_TAMPERED", "SUBFRAME_POINTER_BURST",
               "CLOUD_SOFTWARE_GPU", "NON_BROWSER_REQUEST", "ENVIRONMENT_EVIDENCE", "UNVERIFIED_PAGE_LOAD",
               "DEVICE_VELOCITY", "CDP_ATTACHED", "RANDOM_POINTER_JUMPS", "UA_POINTER_MISMATCH",
-              "WEBDRIVER_TAMPERED", "SERVER_CPU", "UA_API_MISMATCH")
+              "WEBDRIVER_TAMPERED", "SERVER_CPU", "UA_API_MISMATCH",
+              "PLATFORM_SPOOFED")
 # Same minimum as the mouse models, so a page they judge is judged here too.
 FRAME_LOCK_MIN_MOVES = 25
 # CDP measured 1.000-1.051 samples with up to 4.8% multi-sample moves (a stalled main

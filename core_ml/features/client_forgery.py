@@ -77,6 +77,17 @@ Policy 31 (2026-11-11, the lander's 5,267 live sessions):
   reports 2-8 GB: 334 of its sessions carried only a tampered webdriver and stayed SUSPECT. One more
   contradiction towards the two of ``forged_browser_v1``; alone it withholds HUMAN. iOS keeps its
   own check (``chromium_api_on_ios``, policy 17), where DevTools' device mode stays insufficient.
+
+Policy 32 (2026-11-12, Downloader and the new "Spin" lander, 2,823 sessions):
+
+* ``PLATFORM_SPOOFED``: a dedicated worker reports another ``navigator.platform`` than the page
+  (the collector already lets iPadOS Safari, whose worker says iPad, call itself a Mac). Device
+  spoofers patch the page's navigator, not the worker's. On production none of the 238 HUMAN
+  sessions carried it; all 241 sessions that did are spoofed devices: Android Chrome 14x-15x whose
+  page reports "Linux armv8l" (the 61 genuine ones on Spin report Chrome's frozen "Linux armv81"),
+  and "iPhones" in Indonesia with fractional pixel ratios no iPhone has, 6 cores where Safari
+  always reports 4, and a worker that disagrees on cores, platform and GPU. With the GPU anchor
+  (the worker's WebGL renderer differs too) it convicts; 148 of them were SUSPECT or insufficient.
 """
 
 import math
@@ -169,6 +180,8 @@ def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) ->
         codes.append("UA_POINTER_MISMATCH")
     if any(hit in ("signals.webdriverPatched", "signals.webdriverDeleted") for hit in families.get("NATIVE_PATCH", [])):
         codes.append("WEBDRIVER_TAMPERED")
+    if "worker.platformMismatch" in (families.get("CONTEXT") or []):
+        codes.append("PLATFORM_SPOOFED")
     memory = fingerprint.get("deviceMemory")
     if (isinstance(memory, (int, float)) and not isinstance(memory, bool) and math.isfinite(memory) and memory > 0
             and _claims_engine_without_device_memory(str(fingerprint.get("userAgent") or ""))):

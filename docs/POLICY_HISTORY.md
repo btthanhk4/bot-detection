@@ -1,6 +1,17 @@
 # Lịch sử policy và kết quả thí nghiệm
 
-Các policy trước bản hiện hành (v31, mô tả trong [README](../README.md#policy-v31-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+Các policy trước bản hiện hành (v32, mô tả trong [README](../README.md#policy-v32-current)), giữ nguyên văn để đối chiếu. Mỗi policy có báo cáo chi tiết `MODEL_RELEASE_V*.md` trong thư mục này.
+
+## Policy v31
+
+Policy v31 thêm một mâu thuẫn mới, `UA_API_MISMATCH`. Trình duyệt tự khai là Safari (máy tính) hoặc
+Firefox nhưng lại có `navigator.deviceMemory`, một API chỉ Chromium có. Safari và Firefox thật không
+có API này. Trên production, 13/15 phiên người thật dùng Safari/Firefox không có API này; hai phiên
+còn lại cùng khai Firefox 129 nên có thể là trình duyệt giả mạo. Ngược lại, 3.114/3.133 phiên Bot
+tự khai Safari/Firefox có API này. Có mâu thuẫn này cộng cờ `navigator.webdriver` bị giấu thì kết
+luận BOT. Nhờ đó 340 phiên Mac của trại bot "Safari 9.1.2" chuyển từ NGHI VẤN sang BOT. Đứng một
+mình, mâu thuẫn này chỉ chặn kết luận HUMAN. Policy v30 trước đó đã thêm luật cho WebView giấu cờ
+webdriver và chạm CDP trên iPhone/iPad. Xem [Model release v31](MODEL_RELEASE_V31.md).
 
 ## Policy v30
 

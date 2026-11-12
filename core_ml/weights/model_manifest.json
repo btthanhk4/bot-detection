@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "c3f62b64dec64c878b98769a01068367",
-  "created_at": "2026-11-11T10:48:07.225883+00:00",
+  "bundle_id": "9981e7bf8d844034a548fdba1d791c7c",
+  "created_at": "2026-11-12T01:36:06.516406+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -79,16 +79,17 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 28,
-      "fixture_fingerprint": "e0e9706cdd4cb640d888b6454a7d9120080b93d674e20bad27217d2403094f69",
-      "insufficient_cases": 10,
-      "passed": 38,
+      "final_cases": 32,
+      "fixture_fingerprint": "b02dacc629777eded363588ef83bb82d7d3d33817acfa82d65aff1e6a57ef58b",
+      "insufficient_cases": 11,
+      "passed": 43,
       "rules": [
         "client_forgery_v1",
         "forged_browser_v1",
         "webview_webdriver_v1",
         "apple_synthetic_touch_v1",
-        "ua_api_mismatch_v1"
+        "ua_api_mismatch_v1",
+        "platform_spoofed_v1"
       ]
     },
     "collector_window_policy": "mouse_export_v1",
@@ -867,7 +868,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "31",
+    "decision_policy_version": "32",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,

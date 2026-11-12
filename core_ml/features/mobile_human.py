@@ -27,7 +27,8 @@ MOBILE_RISK_RULE = "mobile_risk_v1"
 # Missing conditions that are evidence against the session, not just absence of data.
 RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
               "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY",
-              "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH")
+              "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
+              "PLATFORM_SPOOFED")
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
                    "ios_touch_without_contact"}
 MOBILE_HUMAN_MIN_GESTURES = 3

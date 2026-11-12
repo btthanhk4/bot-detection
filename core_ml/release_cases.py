@@ -700,6 +700,7 @@ _MALI = "Mali-G52"
 # A 60 ms tap with CDP's Input.dispatchTouchEvent defaults: radius 1, force 1, release included.
 _CDP_TAP = [[0.0, 412.0, 300.0, 1, 1, 1], [60.0, 412.5, 300.0, 1, 1, 1]]
 _FIREFOX129 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0"
+_ANGLE_MALI = "ANGLE (ARM, Mali-G68, OpenGL ES 3.2)"
 
 
 def _deferred(**kwargs):
@@ -788,7 +789,28 @@ CLIENT_FORGERY_CASES = (
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(coalesced=0.0, multi=0.0, ua=_SAFARI17, renderer=_APPLE_M2,
                                                          fingerprint={"deviceMemory": 0, "platform": "MacIntel"})),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_MAC_CHROME, fingerprint={"deviceMemory": 8})),
+    # Policy 32: the page's navigator.platform differs from a worker's (device spoofers patch the
+    # page only). With the worker's WebGL renderer differing too, it convicts, with or without
+    # touches: Spin's spoofed Android Chrome ("Linux armv8l") and fake iPhones (6 cores). Alone it
+    # withholds HUMAN.
+    ("BOT", "FINAL", "forged_browser", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, [], memory=8,
+                                              worker={"platformMismatch": True, "rendererMismatch": True})),
+    ("BOT", "FINAL", "forged_browser", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND, cores=6,
+                                              worker={"platformMismatch": True, "rendererMismatch": True,
+                                                      "cpuMismatch": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, [], memory=8,
+                                                  worker={"platformMismatch": True})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, _ANDROID_HAND, memory=8,
+                                               worker={"platformMismatch": True})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_ANDROID10, "Linux armv81", _ANGLE_MALI, [], memory=8,
+                                                      worker={"platformMismatch": False, "rendererMismatch": False})),
 )
+
+# Frozen gate of policy 31.
+CLIENT_FORGERY_RULE_GATE_V31 = {
+    "rules": ['client_forgery_v1', 'forged_browser_v1', 'webview_webdriver_v1', 'apple_synthetic_touch_v1', 'ua_api_mismatch_v1'], "final_cases": 28, "insufficient_cases": 10, "passed": 38,
+    "fixture_fingerprint": "e0e9706cdd4cb640d888b6454a7d9120080b93d674e20bad27217d2403094f69",
+}
 
 # Frozen gate of policy 30.
 CLIENT_FORGERY_RULE_GATE_V30 = {
@@ -822,7 +844,7 @@ CLIENT_FORGERY_RULE_GATE_V26 = {
 
 CLIENT_FORGERY_RULE_GATE = {
     "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
-              "ua_api_mismatch_v1"],
+              "ua_api_mismatch_v1", "platform_spoofed_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

@@ -20,6 +20,7 @@ Tổng quan hệ thống và cách chạy nằm ở [README](../README.md).
 ## Phát hành mô hình
 
 - [POLICY_HISTORY.md](POLICY_HISTORY.md): Lịch sử policy và kết quả thí nghiệm
+- [MODEL_RELEASE_V32.md](MODEL_RELEASE_V32.md): Model release v32: platform bị giả, và rà soát traffic Downloader + Spin
 - [MODEL_RELEASE_V31.md](MODEL_RELEASE_V31.md): Model release v31: Safari/Firefox có API chỉ Chromium có, và rà soát toàn bộ phiên
 - [MODEL_RELEASE_V30.md](MODEL_RELEASE_V30.md): Model release v30: WebView giấu cờ webdriver và chạm CDP trên iPhone/iPad
 - [MODEL_RELEASE_V29.md](MODEL_RELEASE_V29.md): Model release v29: chạm 0 ms là một mâu thuẫn nữa
