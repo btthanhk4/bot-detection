@@ -1595,7 +1595,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.14.0';
+  const COLLECTOR_VERSION = '1.15.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -1610,6 +1610,11 @@
   // (Unix seconds). A refusal recorded before then is void, so a page registered or resumed again
   // collects at once instead of after the silence. 0 when the script is not served by the API.
   const REGISTRY_EPOCH = Number('__DATACAT_REGISTRY_EPOCH__') || 0;
+  // Collector 1.15: reference labels from Fingerprint bot detection (api_service.reference). The API
+  // writes its public key and the sampled share of sessions into the script; no key or 0 turns it off.
+  const REFERENCE_KEY = '__DATACAT_FP_KEY__';
+  const REFERENCE_RATE = Number('__DATACAT_FP_RATE__') || 0;
+  const REFERENCE_STORAGE_KEY = 'datacat_reference';
 
   function refusalStores() {
     const stores = [];
@@ -1649,6 +1654,8 @@
           ? endpointPath.replace(/\/api\/v1\/telemetry$/, '/api/v1/visit') : null);
       this.pageToken = null;
       this.tokenSessionId = null;
+      this.referenceEventId = null;
+      this.referenceSessionId = null;
       this.tokenPromise = null;
       // One session per browser tab, renewed by activity and ended after 30 idle
       // minutes (the usual web-analytics definition), so a reload or a link to
@@ -1779,6 +1786,7 @@
       const lifecycleVersion = ++this.lifecycleVersion;
       this.tokenPromise = this.fetchPageToken();
       this.helloPromise = this.sendHello();
+      this.referencePromise = this.fetchReference();
       this.initPromise = this.initialize(lifecycleVersion);
       return this.initPromise;
     }
@@ -1806,6 +1814,48 @@
         }
       } catch (e) { /* judged as an unverified page load, never blocks telemetry */ }
       return this.pageToken;
+    }
+
+    // A sampled session also asks the Fingerprint agent for its own bot verdict, which the API
+    // fetches server-side as a reference label (one identification per session). It never blocks
+    // or changes DATACAT's telemetry, and a refused page loads nothing from a third party.
+    async fetchReference() {
+      if (!/^[A-Za-z0-9]{8,64}$/.test(REFERENCE_KEY) || !(REFERENCE_RATE > 0) || typeof window === 'undefined') {
+        return null;
+      }
+      const sessionId = this.sessionId;
+      let saved = null;
+      try { saved = JSON.parse(window.sessionStorage.getItem(REFERENCE_STORAGE_KEY) || 'null'); } catch (e) { /* blocked */ }
+      if (saved && saved.sid === sessionId) {
+        if (typeof saved.eventId === 'string') {
+          this.referenceEventId = saved.eventId;
+          this.referenceSessionId = sessionId;
+        }
+        if (saved.done) return this.referenceEventId;
+      }
+      const picked = Math.random() < REFERENCE_RATE;
+      const remember = (extra) => {
+        try {
+          window.sessionStorage.setItem(REFERENCE_STORAGE_KEY, JSON.stringify({ sid: sessionId, picked, done: true, ...extra }));
+        } catch (e) { /* optional */ }
+      };
+      remember({});
+      if (!picked) return null;
+      if (this.tokenPromise) await this.tokenPromise;
+      if (this.refused || this.destroyed || sessionId !== this.sessionId) return null;
+      try {
+        const agent = await import('https://fpjscdn.net/v4/' + REFERENCE_KEY);
+        const fp = agent.start({ region: 'us' });
+        const result = await fp.get({ linkedId: sessionId, timeout: 8000 });
+        const eventId = result && typeof result.event_id === 'string' ? result.event_id : '';
+        if (/^[A-Za-z0-9._-]{1,128}$/.test(eventId) && sessionId === this.sessionId && !this.destroyed) {
+          this.referenceEventId = eventId;
+          this.referenceSessionId = sessionId;
+          remember({ eventId });
+          this.sendTelemetry('heartbeat').catch(() => false);
+        }
+      } catch (e) { /* ad blocker or CSP: this session simply has no reference label */ }
+      return this.referenceEventId;
     }
 
     // Greets the API before fingerprinting (which takes a second or more), so a gateway that
@@ -1944,6 +1994,8 @@
           sdkVersion: COLLECTOR_VERSION,
           pageInstanceId: this.pageInstanceId,
           ...(this.pageToken && this.tokenSessionId === this.sessionId ? { pageToken: this.pageToken } : {}),
+          ...(this.referenceEventId && this.referenceSessionId === this.sessionId
+            ? { referenceEventId: this.referenceEventId } : {}),
           ...(this.studyId ? { studyId: this.studyId } : {}),
           ...(this.siteId ? { siteId: this.siteId } : {}),
         },
@@ -1965,7 +2017,9 @@
       const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
       const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
       const gestures = mouse.touch && Number.isFinite(mouse.touch.total) ? mouse.touch.total : 0;
-      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures]);
+      // A reference event id that arrives later is news worth one heartbeat even without activity.
+      const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
+      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, reference]);
     }
 
     /**

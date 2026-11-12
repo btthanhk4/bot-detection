@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.14.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.15.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -947,6 +947,27 @@ async function testUnchangedHeartbeatIsCoalescedUntilIdleDeadline() {
   collector.destroy();
 }
 
+async function testReferenceEventIsOptionalAndTravelsWithTelemetry() {
+  // Unserved script (placeholders left): the Fingerprint agent is never loaded.
+  const collector = new BotCollector({ autoSendInterval: 0 });
+  assert.strictEqual(await collector.fetchReference(), null);
+  collector.cachedFingerprint = { visitorId: 'v', components: {} };
+  collector.cachedBotd = {};
+  let payload = await collector.getPayload('heartbeat');
+  assert.strictEqual(payload.collector.referenceEventId, undefined);
+  const before = collector.getActivitySignature(payload);
+  collector.referenceEventId = '1731400000000.AbC-12';
+  collector.referenceSessionId = collector.sessionId;
+  payload = await collector.getPayload('heartbeat');
+  assert.strictEqual(payload.collector.referenceEventId, '1731400000000.AbC-12');
+  assert.notStrictEqual(collector.getActivitySignature(payload), before, 'a late event id is sent once');
+  // An event id of an earlier session never travels with a new one.
+  collector.referenceSessionId = 'sess_other';
+  payload = await collector.getPayload('heartbeat');
+  assert.strictEqual(payload.collector.referenceEventId, undefined);
+  collector.destroy();
+}
+
 function testActivitySignatureIncludesEarlierPoints() {
   const collector = new BotCollector({ autoSendInterval: 0 });
   const first = {
@@ -1164,6 +1185,7 @@ testRestartDuringFingerprinting()
   .then(testRegistryEpochVoidsOlderRefusal)
   .then(testRefusalFallsBackToSessionStorage)
   .then(testRefusedThirdPartyPageCostsOneRequest)
+  .then(testReferenceEventIsOptionalAndTravelsWithTelemetry)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

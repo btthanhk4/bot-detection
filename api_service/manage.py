@@ -50,7 +50,22 @@ def main(argv=None) -> int:
     sub.add_parser("list-users")
     rejudge_command = sub.add_parser("rejudge", help="Apply the policy 30-32 browser rules to stored sessions")
     rejudge_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
+    report_command = sub.add_parser("reference-report", help="DATACAT versus Fingerprint bot verdicts (read-only)")
+    report_command.add_argument("--site", action="append", help="Limit to a site id (repeatable)")
     args = parser.parse_args(argv)
+
+    if args.command == "reference-report":
+        import json
+
+        from api_service.database import get_db
+        from api_service.reference import report
+
+        db = get_db()
+        if db is None:
+            print("Không kết nối được MongoDB", file=sys.stderr)
+            return 2
+        print(json.dumps(report(db, args.site), ensure_ascii=False, indent=1))
+        return 0
 
     if args.command == "rejudge":
         from api_service.database import get_db

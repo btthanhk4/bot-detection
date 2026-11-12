@@ -125,6 +125,13 @@ class Settings:
     GATE_STRICT_PATHS: str = os.getenv("BOT_GATE_STRICT_PATHS", r"^/api/v1/(assistant|ar)/").strip()
     # Page views without telemetry after this long become "no telemetry" sessions.
     NO_TELEMETRY_AFTER_SECONDS: int = _env_int("BOT_NO_TELEMETRY_AFTER_SECONDS", 120, 30, 3600)
+    # Reference labels from Fingerprint Pro Plus bot detection (api_service.reference). The collector
+    # loads the Fingerprint agent for this share of sessions and the API fetches each event's `bot`
+    # verdict server-side; it is stored apart from DATACAT's verdict and never used to decide it.
+    FINGERPRINT_PUBLIC_KEY: str = os.getenv("FINGERPRINT_PUBLIC_KEY", "").strip()
+    FINGERPRINT_SECRET_KEY: str = os.getenv("FINGERPRINT_SECRET_KEY", "").strip()
+    FINGERPRINT_SAMPLE_RATE: float = _env_float("FINGERPRINT_SAMPLE_RATE", 0.0, 0.0, 1.0)
+    FINGERPRINT_API_URL: str = os.getenv("FINGERPRINT_API_URL", "https://api.fpjs.io/v4").strip().rstrip("/")
     # Offline IP geolocation (DB-IP Lite). Auto-update downloads the monthly files.
     GEOIP_DIR: str = os.getenv("BOT_GEOIP_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "var", "geoip"))
     GEOIP_AUTO_UPDATE: bool = os.getenv("BOT_GEOIP_AUTO_UPDATE", "false").lower() in ("1", "true", "yes")

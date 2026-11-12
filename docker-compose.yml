@@ -40,6 +40,10 @@ services:
       # telemetry must come from a page the gateway served. Empty disables both.
       - BOT_GATEWAY_SECRET=${BOT_GATEWAY_SECRET:-}
       - BOT_PAGEVIEW_HOSTS=${BOT_PAGEVIEW_HOSTS:-}
+      # Reference labels from Fingerprint Pro Plus (api_service/reference.py); rate 0 turns them off.
+      - FINGERPRINT_PUBLIC_KEY=${FINGERPRINT_PUBLIC_KEY:-}
+      - FINGERPRINT_SECRET_KEY=${FINGERPRINT_SECRET_KEY:-}
+      - FINGERPRINT_SAMPLE_RATE=${FINGERPRINT_SAMPLE_RATE:-0}
       - MONGO_URI=${MONGO_URI:-mongodb://silkmoon-mongodb:27017}
       - MONGO_DB=${MONGO_DB:-bot_detection}
     restart: unless-stopped

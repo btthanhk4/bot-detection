@@ -36,7 +36,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import Response as StarletteResponse
 
-from api_service import auth, clicks, gateway, geoip, page_tokens, sites
+from api_service import auth, clicks, gateway, geoip, page_tokens, reference, sites
 from api_service.capture import build_capture
 from api_service.config import settings
 from api_service.research_labels import (
@@ -123,9 +123,14 @@ async def app_lifespan(_app):
         logger.warning("Dashboard user index setup deferred", exc_info=True)
     maintenance_task = asyncio.create_task(_maintenance_loop())
     geoip_task = asyncio.create_task(_geoip_update_loop()) if settings.GEOIP_AUTO_UPDATE else None
+    reference_task = asyncio.create_task(_reference_loop()) if reference.enabled() else None
     try:
         yield
     finally:
+        if reference_task is not None:
+            reference_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await reference_task
         maintenance_task.cancel()
         with suppress(asyncio.CancelledError):
             await maintenance_task
@@ -322,6 +327,38 @@ async def _geoip_update_loop():
         except Exception:
             logger.exception("GeoIP update failed")
         await asyncio.sleep(86400)
+
+
+async def _reference_loop():
+    """Fetch the Fingerprint verdicts of sampled sessions (api_service.reference)."""
+    from api_service import database
+
+    try:
+        await run_in_threadpool(reference.ensure_indexes, database.get_db())
+    except Exception:
+        logger.warning("Reference index setup deferred", exc_info=True)
+    while True:
+        try:
+            outcome = await run_in_threadpool(reference.poll_pending, database.get_db())
+            if any(outcome.values()):
+                logger.info("Fingerprint reference: %s", outcome)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Fingerprint reference iteration failed")
+        await asyncio.sleep(20)
+
+
+def _record_reference(data: dict) -> None:
+    event_id = (data.get("collector") or {}).get("referenceEventId")
+    if not event_id or not reference.enabled():
+        return
+    from api_service import database
+
+    try:
+        reference.record_event(database.get_db(), data.get("sessionId"), event_id)
+    except Exception:
+        logger.warning("Fingerprint reference event not recorded", exc_info=True)
 
 
 async def _maintenance_loop():
@@ -727,6 +764,8 @@ class CollectorMetadata(BaseModel):
     pageInstanceId: str = Field(min_length=1, max_length=128)
     # Collector 1.13: the page-view token GET /api/v1/visit issued for this session.
     pageToken: Optional[str] = Field(default=None, max_length=512)
+    # Collector 1.15: event id of the Fingerprint agent for a sampled session (api_service.reference).
+    referenceEventId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,128}$")
     studyId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
     siteId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -1356,6 +1395,8 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         logger.exception("Telemetry persistence failed")
         persisted = False
         persistence_failed = True
+    if persisted:
+        await run_in_threadpool(_record_reference, data)
 
     # Keep a best-effort copy only during a real database outage. Rejected
     # tombstoned/stale events must not reappear from this fallback buffer.
@@ -1489,15 +1530,22 @@ def get_bot_collector_sdk(request: Request):
     # The registry epoch is written into the script, so a browser told to stay silent asks
     # again as soon as a page is registered or resumed (see sites.SiteRegistry.epoch).
     epoch = sites.registry.epoch
-    etag = f'"{bundle[1]}-{epoch}"'
+    # Fingerprint reference sampling (api_service.reference): empty key and rate 0 turn it off.
+    fp_key, fp_rate = reference.collector_config()
+    variant = hashlib.sha256(f"{epoch}|{fp_key}|{fp_rate}".encode("utf-8")).hexdigest()[:8]
+    etag = f'"{bundle[1]}-{epoch}-{variant}"'
     headers = {"Cache-Control": "public, no-cache", "ETag": etag}
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
-    return Response(bundle[0].replace(COLLECTOR_EPOCH_PLACEHOLDER, str(epoch)),
-                    media_type="application/javascript", headers=headers)
+    text = (bundle[0].replace(COLLECTOR_EPOCH_PLACEHOLDER, str(epoch))
+            .replace(COLLECTOR_FP_KEY_PLACEHOLDER, fp_key)
+            .replace(COLLECTOR_FP_RATE_PLACEHOLDER, repr(float(fp_rate))))
+    return Response(text, media_type="application/javascript", headers=headers)
 
 
 COLLECTOR_EPOCH_PLACEHOLDER = "__DATACAT_REGISTRY_EPOCH__"
+COLLECTOR_FP_KEY_PLACEHOLDER = "__DATACAT_FP_KEY__"
+COLLECTOR_FP_RATE_PLACEHOLDER = "__DATACAT_FP_RATE__"
 _bundle_cache: dict = {}
 
 
