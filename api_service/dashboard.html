@@ -4049,8 +4049,9 @@ function renderSites(data) {
   const rows = sites.map(site => {
     const state = SITE_STATES[site.install_state] || SITE_STATES.waiting;
     // Full page addresses run long: the chip ellipsises, the tooltip keeps the whole address.
+    // Break opportunities go between escaped pieces: inserted after escaping, a <wbr> would split '&amp;'.
     const domains = site.origins.map(scope => siteEntry(site, scope)).map(o => `<span class="domain-chip" title="${escapeHtml(o)}">${
-      escapeHtml(o.replace(/^https:\/\//, '')).replace(/([/?&-])/g, '$1<wbr>')}</span>`).join('');
+      o.replace(/^https:\/\//, '').split(/(?<=[/?&-])/).map(escapeHtml).join('<wbr>')}</span>`).join('');
     return `<tr>
       <td class="site-name"><strong>${escapeHtml(site.name)}</strong><span class="site-sub"><code>${escapeHtml(site.site_id)}</code>${site.platform && PLATFORM_GUIDES[site.platform] ? ' · ' + PLATFORM_GUIDES[site.platform].label : ''}</span></td>
       <td class="site-domains"><div class="domain-list">${domains}</div></td>
