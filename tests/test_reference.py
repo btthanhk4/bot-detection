@@ -114,3 +114,22 @@ def test_telemetry_ignores_reference_events_when_disabled(api, db):  # noqa: F81
     assert api.post("/api/v1/telemetry", json=payload,
                     headers={"Origin": "https://silkmoon.datacat.io.vn"}).status_code == 200
     assert "reference" not in db["detection_results"].find_one({"sessionId": "r3"})
+
+
+def test_review_lists_and_endpoint(api, db, enabled):  # noqa: F811
+    READ = {"X-Read-Token": "read-secret"}
+    now = datetime.now(timezone.utc)
+    rows = [("x1", "HUMAN", "bad"), ("x2", "BOT", "not_detected"), ("x3", "BOT", "good"), ("x4", "BOT", "bad")]
+    for sid, verdict, bot in rows:
+        db["detection_results"].insert_one({
+            "sessionId": sid, "verdict": verdict, "decision_state": "FINAL", "site_id": "shop", "created_at": now,
+            "reference": {"fingerprint": {"status": "done", "bot": bot, "event_id": "e." + sid}}})
+    kinds = {kind: [r["sessionId"] for r in reference.disagreements(db, kind)] for kind in reference.DISAGREEMENTS}
+    assert kinds == {"fingerprint_only": ["x1"], "datacat_only": ["x2"], "good_bot": ["x3"]}
+    res = api.get("/api/v1/reference/fingerprint?days=7", headers=READ)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["enabled"] and body["statuses"] == {"done": 4}
+    assert body["crosstab"]["BOT"] == {"not_detected": 1, "good": 1, "bad": 1}
+    assert [r["sessionId"] for r in body["review"]["fingerprint_only"]] == ["x1"]
+    assert api.get("/api/v1/reference/fingerprint?days=14", headers=READ).status_code == 422

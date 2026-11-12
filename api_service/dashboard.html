@@ -668,6 +668,10 @@ input:disabled { background: var(--surface-2); color: var(--text-3); }
 .reference-detail dt { font-size: 12px; color: var(--text-3); }
 .reference-detail dd { font-size: 13.5px; color: var(--text); }
 .reference-status.ok, .reference-status.ready { color: var(--ok-text); } .reference-status.warning { color: var(--warn-text); } .reference-status.error { color: var(--crit-text); }
+.fp-review-head { border-top: 1px solid var(--border); }
+.fp-review tr.fp-row { cursor: pointer; }
+.fp-review tr.fp-row:hover td { background: var(--surface-2, rgba(0,0,0,.03)); }
+.fp-n { margin-left: 6px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .reference-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 13px; color: var(--text-2); }
 
 /* ───────────────────────────── Live View ───────────────────────────── */
@@ -1413,6 +1417,32 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
         </table>
       </div>
     </div>
+    <div class="panel" id="fpPanel" hidden>
+      <div class="panel-header">
+        <div class="panel-title">Đối chiếu Fingerprint<span class="panel-badge badge-count" id="fpCount"></span></div>
+        <span class="panel-meta" id="fpSummary"></span>
+      </div>
+      <div class="table-scroll report-ip-scroll">
+        <table class="sites-table report-clicks">
+          <thead><tr><th>DATACAT \ Fingerprint</th><th class="num">Bot (bad)</th><th class="num">Bot hợp lệ (good)</th><th class="num">Không phát hiện</th><th class="num">Tổng</th></tr></thead>
+          <tbody id="fpCrosstab"><tr><td colspan="5" class="empty-state">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel-header fp-review-head">
+        <div class="verdict-filter" id="fpReviewFilter" role="group" aria-label="Danh sách cần rà soát">
+          <button type="button" data-kind="fingerprint_only" aria-pressed="true">Fingerprint thấy bot, DATACAT chưa kết tội<span class="fp-n" id="fpN-fingerprint_only"></span></button>
+          <button type="button" data-kind="datacat_only" aria-pressed="false">Chỉ DATACAT kết tội<span class="fp-n" id="fpN-datacat_only"></span></button>
+          <button type="button" data-kind="good_bot" aria-pressed="false">Bot hợp lệ<span class="fp-n" id="fpN-good_bot"></span></button>
+        </div>
+      </div>
+      <div class="table-scroll report-click-scroll">
+        <table class="sites-table report-clicks fp-review">
+          <thead><tr><th>Thời gian</th><th>Trang</th><th>DATACAT</th><th>Lý do của DATACAT</th><th>Fingerprint</th><th>Quốc gia</th></tr></thead>
+          <tbody id="fpReview"><tr><td colspan="6" class="empty-state">Đang tải…</td></tr></tbody>
+        </table>
+      </div>
+      <p class="click-hint">Fingerprint là một bộ phát hiện khác, không phải nhãn đúng sai: <em>Không phát hiện</em> không có nghĩa là người thật. Bấm một dòng để mở chi tiết phiên và so sánh bằng chứng.</p>
+    </div>
     <div class="panel">
       <div class="panel-header">
         <div class="panel-title">IP bot nhiều nhất<span class="panel-badge badge-count" id="reportIpCount"></span></div>
@@ -1553,12 +1583,12 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
         </div>
       </div>
 
-      <section class="drawer-section" id="dReferenceSection" aria-label="Tham chiếu Castle" hidden>
-        <div class="drawer-section-title">Tham chiếu Castle</div>
+      <section class="drawer-section" id="dReferenceSection" aria-label="Tham chiếu độc lập" hidden>
+        <div class="drawer-section-title" id="dReferenceTitle">Tham chiếu độc lập</div>
         <span id="dReferenceStatus" class="reference-status">Chưa có kết quả</span>
         <dl class="reference-detail">
           <div><dt>Phân loại tham chiếu</dt><dd id="dReferenceVerdict">--</dd></div>
-          <div><dt>Bot score (0–100)</dt><dd id="dReferenceScore">--</dd></div>
+          <div><dt id="dReferenceScoreLabel">Bot score (0–100)</dt><dd id="dReferenceScore">--</dd></div>
           <div><dt>Đối chiếu DATACAT</dt><dd id="dReferenceComparison">Chưa thể đối chiếu</dd></div>
           <div><dt>Event ID</dt><dd id="dReferenceEvent">--</dd></div>
           <div><dt>Thời điểm đánh giá</dt><dd id="dReferenceTime">--</dd></div>
@@ -1897,10 +1927,45 @@ async function fetchHealth() {
   }
 }
 
+// Fingerprint bot detection fetched server-side (api_service/reference.py). "not_detected" is not a
+// human label: only a "bad" verdict is evidence, and it is another detector's view, not the truth.
+const FP_BOT_LABEL = { bad: 'Bot (bad)', good: 'Bot hợp lệ (good)', not_detected: 'Không phát hiện bot' };
+
+function fingerprintComparison(session, bot) {
+  const ours = String(session.verdict || '').toUpperCase();
+  const decided = session.decision_state !== 'INSUFFICIENT_EVIDENCE' && session.breakdown?.decision_deferred !== true;
+  if (bot === 'good') return ours === 'BOT' ? 'Cùng là bot; Fingerprint xác định là bot hợp lệ' : 'Fingerprint xác định là bot hợp lệ';
+  if (!decided || !['BOT', 'HUMAN'].includes(ours)) {
+    return bot === 'bad' ? 'Fingerprint thấy bot · DATACAT chưa kết luận' : 'Chưa thể đối chiếu';
+  }
+  if (ours === 'BOT') return bot === 'bad' ? 'Đồng thuận: bot' : 'Chỉ DATACAT kết tội · cần rà soát';
+  return bot === 'bad' ? 'Bất đồng · cần rà soát' : 'Không mâu thuẫn';
+}
+
+function fingerprintView(session, f) {
+  const base = { title: 'Tham chiếu Fingerprint', scoreLabel: 'Chi tiết bot', verdict: '--', score: '--',
+    event: f.event_id || '--', time: '--', comparison: 'Chưa thể đối chiếu', trusted: false };
+  const states = { pending: ['Đang chờ kết quả', ''], mismatch: ['Event không thuộc phiên này', 'warning'],
+    not_found: ['Không có kết quả', ''], error: ['Lỗi tham chiếu', 'error'] };
+  if (f.status !== 'done') {
+    const state = states[f.status] || ['Dữ liệu không hợp lệ', 'warning'];
+    return { ...base, label: state[0], tone: state[1] };
+  }
+  const detail = [f.bot_category, f.bot_name, f.bot_confidence ? 'độ tin cậy ' + f.bot_confidence : '']
+    .filter(Boolean).join(' · ');
+  const fetched = f.fetched_at ? new Date(typeof f.fetched_at === 'string' || typeof f.fetched_at === 'number'
+    ? f.fetched_at : f.fetched_at.$date || f.fetched_at) : null;
+  return { ...base, label: 'Đã xác thực phía máy chủ', tone: 'ready', trusted: true,
+    verdict: FP_BOT_LABEL[f.bot] || '--', score: detail || '--',
+    time: fetched && !Number.isNaN(fetched.getTime()) ? fetched.toLocaleString('vi-VN') : '--',
+    comparison: fingerprintComparison(session, f.bot) };
+}
+
 // Optional server-owned contract; never infer a human label from a low score.
 function referenceView(session) {
   const r = session.reference;
   const empty = { label: 'Chưa có kết quả', tone: '', trusted: false, verdict: '--', score: '--', event: '--', time: '--', comparison: 'Chưa thể đối chiếu' };
+  if (r && r.fingerprint) return fingerprintView(session, r.fingerprint);
   if (!r || r.provider !== 'castle') return empty;
   if (r.mode === 'mock') return { ...empty, label: 'Dữ liệu thử', tone: 'warning' };
   if (r.status !== 'ready') {
@@ -1926,8 +1991,10 @@ function referenceView(session) {
 
 function renderReferenceDetail(session) {
   const ref = referenceView(session);
-  // Only shown for sessions that actually carry a Castle reference.
+  // Only shown for sessions that actually carry a reference (Castle or Fingerprint).
   document.getElementById('dReferenceSection').hidden = !session.reference;
+  setText('dReferenceTitle', ref.title || 'Tham chiếu Castle');
+  setText('dReferenceScoreLabel', ref.scoreLabel || 'Bot score (0–100)');
   const status = document.getElementById('dReferenceStatus');
   status.className = 'reference-status ' + ref.tone;
   status.textContent = ref.label;
@@ -4658,8 +4725,82 @@ async function loadReport() {
   }
   reportData = data;
   renderReport(data);
+  loadFingerprintReference(version);
   await chart;
 }
+
+const fpReview = { kind: 'fingerprint_only', data: null };
+const FP_ROWS = [['BOT', 'BOT', 'verdict-bot'], ['SUSPECT', 'Nghi vấn', 'verdict-suspect'],
+  ['PENDING', 'Chưa đủ dữ liệu', 'verdict-pending'], ['HUMAN', 'Người thật', 'verdict-human']];
+const FP_DATACAT = Object.fromEntries(FP_ROWS.map(([key, label, cls]) => [key, [cls, label]]));
+
+async function loadFingerprintReference(version) {
+  const data = await fetchJSON(API_BASE + '/api/v1/reference/fingerprint?days=' + reportDays + siteParam('&'));
+  if (version !== reportVersion) return;
+  const panel = document.getElementById('fpPanel');
+  const statuses = data && data.statuses ? Object.values(data.statuses).reduce((a, b) => a + b, 0) : 0;
+  panel.hidden = !data || (!data.enabled && !statuses);
+  if (panel.hidden) return;
+  fpReview.data = data;
+  const cross = data.crosstab || {};
+  const done = (data.statuses || {}).done || 0;
+  setText('fpCount', fmtCount(done) + ' phiên');
+  const kappa = data.kappa == null ? '--' : String(data.kappa).replace('.', ',');
+  setText('fpSummary', `${fmtCount(statuses)} phiên lấy mẫu · ${fmtCount(done)} có kết quả`
+    + (data.decided_pairs ? ` · đồng thuận ${percentOf(data.both_bot + data.neither, data.decided_pairs)} trên ${fmtCount(data.decided_pairs)} phiên đã kết luận · κ = ${kappa}` : ''));
+  const cell = (n) => n ? fmtCount(n) : '<span class="muted">0</span>';
+  document.getElementById('fpCrosstab').innerHTML = FP_ROWS.map(([key, label, cls]) => {
+    const row = cross[key] || {};
+    const total = (row.bad || 0) + (row.good || 0) + (row.not_detected || 0) + (row.unknown || 0);
+    return `<tr><td data-label="DATACAT"><span class="verdict-badge ${cls}">${label}</span></td>
+      <td class="num" data-label="Bot (bad)">${cell(row.bad)}</td><td class="num" data-label="Bot hợp lệ">${cell(row.good)}</td>
+      <td class="num" data-label="Không phát hiện">${cell(row.not_detected)}</td><td class="num" data-label="Tổng">${cell(total)}</td></tr>`;
+  }).join('');
+  for (const kind of Object.keys(data.review || {})) {
+    setText('fpN-' + kind, ' ' + fmtCount((data.review[kind] || []).length));
+  }
+  renderFingerprintReview();
+}
+
+function renderFingerprintReview() {
+  document.querySelectorAll('#fpReviewFilter button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kind === fpReview.kind)));
+  const rows = ((fpReview.data || {}).review || {})[fpReview.kind] || [];
+  document.getElementById('fpReview').innerHTML = rows.map(row => {
+    const [cls, label] = FP_DATACAT[row.datacat] || FP_DATACAT.SUSPECT;
+    const reason = shortReason({ verdict: row.datacat === 'PENDING' ? 'SUSPECT' : row.datacat,
+      breakdown: { automation_rule: row.rule, desktop_risk: { codes: row.codes }, client_forgery: { codes: row.codes } } },
+      row.datacat === 'PENDING');
+    const fp = [FP_BOT_LABEL[row.fingerprint] || '--', row.bot_category, row.bot_name].filter(Boolean).join(' · ');
+    return `<tr class="fp-row" data-session="${escapeHtml(row.sessionId || '')}" tabindex="0">
+      <td data-label="Thời gian">${row.created_at ? escapeHtml(formatDateTime(row.created_at)) : '--'}</td>
+      <td data-label="Trang">${escapeHtml(row.site_id || '--')}</td>
+      <td data-label="DATACAT"><span class="verdict-badge ${cls}">${label}</span></td>
+      <td data-label="Lý do">${escapeHtml(reason || row.reason || '--')}</td>
+      <td data-label="Fingerprint">${escapeHtml(fp)}</td>
+      <td data-label="Quốc gia">${escapeHtml(row.country || '--')}</td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="empty-state">Không có phiên nào trong nhóm này</td></tr>';
+}
+
+document.getElementById('fpReviewFilter').addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-kind]');
+  if (!button) return;
+  fpReview.kind = button.dataset.kind;
+  renderFingerprintReview();
+});
+
+async function openReviewSession(event) {
+  const row = event.target.closest('tr.fp-row');
+  if (!row || (event.type === 'keydown' && event.key !== 'Enter')) return;
+  const selection = ++sessionSelectionVersion;
+  const sessionId = row.dataset.session;
+  // The review row is a summary: open the drawer on the full stored session.
+  const detail = await fetchJSON(API_BASE + '/api/v1/sessions/' + encodeURIComponent(sessionId) + '/detail');
+  if (selection !== sessionSelectionVersion) return;
+  clearTrajectory('Đang tải quỹ đạo…');
+  openSessionDrawer(-1, null, detail && detail.sessionId ? detail : { sessionId }, selection);
+}
+document.getElementById('fpReview').addEventListener('click', openReviewSession);
+document.getElementById('fpReview').addEventListener('keydown', openReviewSession);
 
 document.getElementById('reportPeriod').addEventListener('click', (event) => {
   const button = event.target.closest('button[data-days]');

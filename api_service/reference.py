@@ -44,9 +44,15 @@ def collector_config() -> tuple:
 
 
 def ensure_indexes(db) -> None:
-    db["detection_results"].create_index(
+    collection = db["detection_results"]
+    collection.create_index(
         [(FIELD + ".next_at", 1)], name="reference_fingerprint_pending",
         partialFilterExpression={FIELD + ".status": "pending"},
+    )
+    # Reports and the review list read only sessions that carry a reference.
+    collection.create_index(
+        [(FIELD + ".status", 1), ("created_at", -1)], name="reference_fingerprint_status",
+        partialFilterExpression={FIELD + ".status": {"$exists": True}},
     )
 
 
@@ -161,15 +167,58 @@ def cohen_kappa(table: dict) -> Optional[float]:
     return (observed - expected) / (1 - expected)
 
 
-def report(db, site_ids=None) -> dict:
-    """DATACAT verdict versus the Fingerprint bot verdict on sessions with a fetched reference."""
-    query = {FIELD + ".status": "done"}
+def _query(site_ids=None, site_filter=None, since=None, **extra) -> dict:
+    query = {FIELD + ".status": {"$exists": True}, **extra}
     if site_ids:
         query["site_id"] = {"$in": list(site_ids)}
+    if site_filter:
+        query.update(site_filter)
+    if since is not None:
+        query["created_at"] = {"$gte": since}
+    return query
+
+
+# Review lists: where the two detectors disagree on a decided session, the cases worth reading.
+DISAGREEMENTS = {
+    # Fingerprint saw a bad bot, DATACAT did not convict: a candidate for a new contradiction.
+    "fingerprint_only": {"verdict": {"$ne": "BOT"}, FIELD + ".bot": "bad"},
+    # DATACAT convicted, Fingerprint saw no bot: check the evidence of DATACAT's rule.
+    "datacat_only": {"verdict": "BOT", FIELD + ".bot": "not_detected"},
+    # Fingerprint names a known good bot (crawler, AI assistant) that DATACAT judged.
+    "good_bot": {FIELD + ".bot": "good"},
+}
+
+
+def disagreements(db, kind: str, site_filter=None, since=None, limit: int = 50) -> list:
+    """Sessions of one disagreement kind, newest first, with what a reviewer needs to compare."""
+    query = _query(site_filter=site_filter, since=since, **{FIELD + ".status": "done"}, **DISAGREEMENTS[kind])
+    rows = []
+    for doc in (db["detection_results"].find(query, {
+            "_id": 0, "sessionId": 1, "site_id": 1, "verdict": 1, "decision_state": 1, "created_at": 1,
+            "client_ip": 1, "country_code": 1, "reasons": 1, "breakdown.automation_rule": 1,
+            "breakdown.suspect_reason_codes": 1, FIELD: 1}).sort("created_at", -1).limit(limit)):
+        ref = (doc.get("reference") or {}).get("fingerprint") or {}
+        created = doc.get("created_at")
+        rows.append({
+            "sessionId": doc.get("sessionId"), "site_id": doc.get("site_id"),
+            "datacat": _datacat_class(doc),
+            "rule": (doc.get("breakdown") or {}).get("automation_rule"),
+            "codes": (doc.get("breakdown") or {}).get("suspect_reason_codes") or [],
+            "reason": (doc.get("reasons") or [None])[0],
+            "fingerprint": ref.get("bot"), "bot_category": ref.get("bot_category"), "bot_name": ref.get("bot_name"),
+            "country": doc.get("country_code"),
+            "created_at": int(created.timestamp() * 1000) if hasattr(created, "timestamp") else created,
+        })
+    return rows
+
+
+def report(db, site_ids=None, site_filter=None, since=None) -> dict:
+    """DATACAT verdict versus the Fingerprint bot verdict on sessions with a fetched reference."""
+    query = _query(site_ids, site_filter, since, **{FIELD + ".status": "done"})
     crosstab: dict = {}
     binary: dict = {}
     statuses: dict = {}
-    for doc in db["detection_results"].find({FIELD: {"$exists": True}}, {FIELD + ".status": 1}):
+    for doc in db["detection_results"].find(_query(site_ids, site_filter, since), {FIELD + ".status": 1}):
         status = ((doc.get("reference") or {}).get("fingerprint") or {}).get("status")
         statuses[status] = statuses.get(status, 0) + 1
     for doc in db["detection_results"].find(query, {"verdict": 1, "decision_state": 1, FIELD + ".bot": 1}):

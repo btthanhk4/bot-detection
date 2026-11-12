@@ -2155,6 +2155,32 @@ def report_clicks(
         raise HTTPException(status_code=503, detail="Database query failed") from exc
 
 
+@app.get("/api/v1/reference/fingerprint")
+def fingerprint_reference(
+    days: int = Query(default=30),
+    site: Optional[str] = Query(default=None, pattern=sites.SITE_FILTER_PATTERN),
+    user=Depends(require_read_access),
+):
+    """DATACAT versus Fingerprint bot detection on the sampled sessions of the period, and the
+    sessions where they disagree (api_service.reference). A comparison, not an accuracy."""
+    from datetime import timedelta
+
+    _reports, db, scope = _report_scope(user, site, days)
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    try:
+        return {
+            "enabled": reference.enabled(),
+            "sample_rate": settings.FINGERPRINT_SAMPLE_RATE if reference.enabled() else 0,
+            "days": days,
+            **reference.report(db, site_filter=scope, since=since),
+            "review": {kind: reference.disagreements(db, kind, site_filter=scope, since=since, limit=30)
+                       for kind in reference.DISAGREEMENTS},
+        }
+    except Exception as exc:
+        logger.exception("Fingerprint reference report failed")
+        raise HTTPException(status_code=503, detail="Database query failed") from exc
+
+
 @app.get("/api/v1/clicks/{click_id}")
 def click_verdict(
     click_id: str = PathParam(pattern=clicks.CLICK_VALUE_PATTERN),
