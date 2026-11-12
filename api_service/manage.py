@@ -48,7 +48,20 @@ def main(argv=None) -> int:
         if name == "create-admin":
             command.add_argument("--role", choices=auth.ROLES, default="admin")
     sub.add_parser("list-users")
+    rejudge_command = sub.add_parser("rejudge", help="Apply the policy 30-32 browser rules to stored sessions")
+    rejudge_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
     args = parser.parse_args(argv)
+
+    if args.command == "rejudge":
+        from api_service.database import get_db
+        from api_service.rejudge import rejudge
+
+        db = get_db()
+        if db is None:
+            print("Không kết nối được MongoDB", file=sys.stderr)
+            return 2
+        print(rejudge(db, apply=args.apply))
+        return 0
 
     if auth.get_users_collection() is None:
         print("Không kết nối được MongoDB", file=sys.stderr)

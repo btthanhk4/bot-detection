@@ -115,18 +115,21 @@ nhãn yếu (`touch_samples`, chỉ hình học và thời gian, TTL 180 ngày) 
 cứu cùng điểm mô hình vuốt thử nghiệm (huấn luyện trên BrainRun và Touchalytics). Kết luận không đổi (policy
 17). Xem [Dữ liệu cảm ứng](docs/TOUCH_DATA.md).
 
-### Policy v31 (current)
+### Policy v32 (current)
 
-Policy v31 thêm một mâu thuẫn mới, `UA_API_MISMATCH`. Trình duyệt tự khai là Safari (máy tính) hoặc
-Firefox nhưng lại có `navigator.deviceMemory`, một API chỉ Chromium có. Safari và Firefox thật không
-có API này. Trên production, 13/15 phiên người thật dùng Safari/Firefox không có API này; hai phiên
-còn lại cùng khai Firefox 129 nên có thể là trình duyệt giả mạo. Ngược lại, 3.114/3.133 phiên Bot
-tự khai Safari/Firefox có API này. Có mâu thuẫn này cộng cờ `navigator.webdriver` bị giấu thì kết
-luận BOT. Nhờ đó 340 phiên Mac của trại bot "Safari 9.1.2" chuyển từ NGHI VẤN sang BOT. Đứng một
-mình, mâu thuẫn này chỉ chặn kết luận HUMAN. Policy v30 trước đó đã thêm luật cho WebView giấu cờ
-webdriver và chạm CDP trên iPhone/iPad. Xem [Model release v31](docs/MODEL_RELEASE_V31.md).
+Policy v32 thêm mâu thuẫn `PLATFORM_SPOOFED`: hệ điều hành mà trang báo (`navigator.platform`)
+khác với hệ điều hành mà một worker báo. Công cụ giả thiết bị chỉ sửa được giá trị trên trang, còn
+worker vẫn báo giá trị thật. Trên production, không phiên người thật nào (0/238) có mâu thuẫn này;
+cả 241 phiên mang nó đều là thiết bị giả:
+- Chrome Android báo platform `Linux armv8l`, trong khi 61/61 Chrome thật báo giá trị cố định
+  `Linux armv81`.
+- "iPhone" có tỉ lệ điểm ảnh lẻ, điều mà không iPhone nào có.
 
-Lịch sử policy v7–v30, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
+Mâu thuẫn này cộng với GPU bị sửa (worker báo GPU khác trang) thì kết luận BOT. Trên trang Spin có
+146 phiên như vậy trước đây chỉ ở mức NGHI VẤN hoặc chưa đủ dữ liệu. Policy v31 trước đó đã thêm
+`UA_API_MISMATCH`. Xem [Model release v32](docs/MODEL_RELEASE_V32.md).
+
+Lịch sử policy v7–v31, bảng kết quả trên tập test cùng nguồn và 9 thí nghiệm đánh giá: [docs/POLICY_HISTORY.md](docs/POLICY_HISTORY.md).
 
 ---
 
@@ -351,6 +354,22 @@ Cách gán phiên:
   cho tới khi hết hạn (tối đa 7 ngày). Nhờ vậy mỗi khách của trang lạ chỉ gửi một request mỗi ngày,
   thay vì thử lại vài giây một lần. Không có dữ liệu nào của trang lạ được lưu. Muốn chặn hẳn từ
   gốc, chủ trang phải gỡ đoạn mã.
+- **Chống lộ mã và spam (collector 1.13+).** Đoạn mã nhúng không chứa bí mật nào; ai mở trang cũng
+  đọc được. Vì vậy mỗi phiên phải xin server một token cho lượt tải trang (`GET /api/v1/visit?sid=`):
+  - Token được ký HMAC bằng khóa lưu trong MongoDB, gắn với website và phiên, hiệu lực 24 giờ.
+  - Mỗi IP chỉ xin được 60 token cho mỗi website trong 10 phút. Mức này để rộng vì nhà mạng di động
+    dùng chung IP cho nhiều người.
+  - Telemetry không kèm token hợp lệ (thiếu, giả, hoặc là token của phiên khác) không bị từ chối. Nó
+    được chấm như một trang mà gateway không phục vụ (`UNVERIFIED_PAGE_LOAD`, policy 24), nên không
+    bao giờ được kết luận HUMAN.
+
+  Một script chép mã muốn giả phiên phải bắt tay với server cho từng phiên, và bị giới hạn theo IP.
+  Collector cũ (không có token) được miễn xét đến `BOT_PAGE_TOKEN_REQUIRED_FROM` (mặc định
+  14/11/2026). Trang chạy qua gateway (silkmoon) chứng minh lượt tải trang bằng cookie của gateway.
+- **Chấm lại phiên cũ** theo các luật mâu thuẫn của policy 30–32:
+  `python -m api_service.manage rejudge`, thêm `--apply` để ghi. Lệnh chỉ đọc các trường đã lưu
+  (fingerprint, nhóm môi trường, mã giả mạo, chạm). Nó chỉ nâng kết luận lên BOT, không bao giờ hạ,
+  và ghi kết luận cũ vào trường `rejudged`.
 - Tài khoản chỉ xem thấy danh sách và mã cài đặt, không thêm, sửa hay xóa được.
 - **Lọc theo quốc gia** (Tổng quan, Live View): một trang thường chạy quảng cáo ở nhiều nước. Ô chọn
   quốc gia nằm cạnh ô chọn trang, liệt kê các nước có phiên kèm số phiên (cập nhật mỗi phút); các ô
