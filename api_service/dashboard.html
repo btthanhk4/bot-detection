@@ -1365,7 +1365,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
     </div>
     <div class="panel">
       <div class="panel-header"><div class="panel-title"><span id="reportChartTitle">Lưu lượng theo ngày</span></div>
-        <div class="chart-legend"><span><i class="legend-square" style="--key: var(--v-human)"></i>Người thật</span><span><i class="legend-square" style="--key: var(--v-suspect)"></i>Nghi vấn</span><span><i class="legend-square" style="--key: var(--v-bot)"></i>Bot</span></div></div>
+        <div class="chart-legend"><span><i class="legend-square" style="--key: var(--v-human)"></i>Người thật</span><span><i class="legend-square" style="--key: var(--v-suspect)"></i>Nghi vấn</span><span><i class="legend-square" style="--key: var(--v-pending)"></i>Chưa đủ dữ liệu</span><span><i class="legend-square" style="--key: var(--v-bot)"></i>Bot</span></div></div>
       <div class="report-chart"><canvas id="reportChart" role="img" aria-label="Biểu đồ lưu lượng theo kết luận"></canvas></div>
     </div>
     <div class="report-grid">
@@ -3011,8 +3011,8 @@ function formatTrafficAxis(value) {
 
 function initTimelineChart() {
   const ctx = document.getElementById('timelineChart').getContext('2d');
-  const line = (label, colorVar) => ({
-    label, baseLabel: label, data: [],
+  const line = (label, colorVar, key) => ({
+    label, baseLabel: label, key, colorVar, data: [],
     borderColor: cssVar(colorVar), backgroundColor: cssVar(colorVar),
     borderWidth: 2, cubicInterpolationMode: 'monotone', borderJoinStyle: 'round', borderCapStyle: 'round', fill: false,
     pointRadius: 0, pointHoverRadius: 4, pointHoverBorderWidth: 2, pointHoverBorderColor: cssVar('--bg-card'), pointHitRadius: 12,
@@ -3021,8 +3021,9 @@ function initTimelineChart() {
     type: 'line',
     data: {
       labels: [],
-      // Order matters: updateCharts and the theme code read [human, suspect, bot].
-      datasets: [line('Người thật', '--fill-human'), line('Nghi vấn', '--fill-suspect'), line('Bot', '--fill-bot')],
+      // Each dataset names its bucket field (key) and colour token (colorVar).
+      datasets: [line('Người thật', '--fill-human', 'human'), line('Nghi vấn', '--fill-suspect', 'suspect'),
+                 line('Chưa đủ dữ liệu', '--fill-pending', 'insufficient'), line('Bot', '--fill-bot', 'bot')],
     },
     options: {
       responsive: true,
@@ -3096,8 +3097,8 @@ function updateCharts() {
     : [];
 
   timelineChart.data.labels = buckets.map(bucket => formatTimelineLabel(bucket.start));
-  ['human', 'suspect', 'bot'].forEach((key, i) => {
-    timelineChart.data.datasets[i].data = buckets.map(bucket => Math.max(0, Number(bucket[key]) || 0));
+  timelineChart.data.datasets.forEach(ds => {
+    ds.data = buckets.map(bucket => Math.max(0, Number(bucket[ds.key]) || 0));
   });
   timelineChart.update('none');
   renderTimelineLegend();
@@ -4450,14 +4451,14 @@ function formatDateTime(ms) { return ms ? new Date(ms).toLocaleString('vi-VN', {
 function initReportChart() {
   if (reportChart || !window.Chart) return;
   // Stacked columns, capped at 24px, rounded ends, a 2px surface gap between segments.
-  const bar = (label, colorVar) => ({
-    label, data: [], backgroundColor: cssVar(colorVar), borderColor: cssVar('--bg-card'),
+  const bar = (label, colorVar, key) => ({
+    label, key, colorVar, data: [], backgroundColor: cssVar(colorVar), borderColor: cssVar('--bg-card'),
     borderWidth: { top: 2 }, borderSkipped: false, borderRadius: 3, maxBarThickness: 24,
   });
   reportChart = new Chart(document.getElementById('reportChart').getContext('2d'), {
     type: 'bar',
-    // Order matters: applyChartTheme reads [human, suspect, bot].
-    data: { labels: [], datasets: [bar('Người thật', '--fill-human'), bar('Nghi vấn', '--fill-suspect'), bar('Bot', '--fill-bot')] },
+    data: { labels: [], datasets: [bar('Người thật', '--fill-human', 'human'), bar('Nghi vấn', '--fill-suspect', 'suspect'),
+                                   bar('Chưa đủ dữ liệu', '--fill-pending', 'insufficient'), bar('Bot', '--fill-bot', 'bot')] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       scales: {
@@ -4492,8 +4493,8 @@ async function loadReportChart(version) {
     const hours = new Map();
     for (const b of buckets) {
       const start = Math.floor(b.start / 3600000) * 3600000;
-      const h = hours.get(start) || { start, human: 0, suspect: 0, bot: 0 };
-      h.human += b.human; h.suspect += b.suspect; h.bot += b.bot;
+      const h = hours.get(start) || { start, human: 0, suspect: 0, insufficient: 0, bot: 0 };
+      h.human += b.human; h.suspect += b.suspect; h.insufficient += b.insufficient || 0; h.bot += b.bot;
       hours.set(start, h);
     }
     buckets = [...hours.values()].slice(-24);
@@ -4506,10 +4507,7 @@ async function loadReportChart(version) {
   reportChart.data.labels = buckets.map(b => reportDays === 1
     ? new Date(b.start).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false })
     : new Date(b.start).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }));
-  const [human, suspect, bot] = reportChart.data.datasets;
-  human.data = buckets.map(b => b.human);
-  suspect.data = buckets.map(b => b.suspect);
-  bot.data = buckets.map(b => b.bot);
+  reportChart.data.datasets.forEach(ds => { ds.data = buckets.map(b => Number(b[ds.key]) || 0); });
   reportChart.update('none');
 }
 
@@ -5573,10 +5571,7 @@ function applyChartTheme() {
   };
   for (const chart of [timelineChart, reportChart]) {
     if (!chart) continue;
-    const [human, suspect, bot] = chart.data.datasets;
-    human.backgroundColor = cssVar('--fill-human');
-    suspect.backgroundColor = cssVar('--fill-suspect');
-    bot.backgroundColor = cssVar('--fill-bot');
+    chart.data.datasets.forEach(ds => { ds.backgroundColor = cssVar(ds.colorVar); });
     if (chart === timelineChart) {
       chart.data.datasets.forEach(ds => { ds.borderColor = ds.backgroundColor; ds.pointHoverBorderColor = cssVar('--bg-card'); });
     } else {

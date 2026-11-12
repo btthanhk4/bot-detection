@@ -786,6 +786,7 @@ def get_traffic_timeline(
                 "$project": {
                     "event_time": {"$ifNull": ["$created_at", "$updated_at"]},
                     "verdict": {"$toUpper": {"$ifNull": ["$verdict", "SUSPECT"]}},
+                    "deferred": {"$eq": ["$decision_state", "INSUFFICIENT_EVIDENCE"]},
                 }
             },
             {
@@ -797,6 +798,7 @@ def get_traffic_timeline(
                         ]
                     },
                     "verdict": 1,
+                    "deferred": 1,
                 }
             },
             {
@@ -808,6 +810,12 @@ def get_traffic_timeline(
                     },
                     "bot": {
                         "$sum": {"$cond": [{"$eq": ["$verdict", "BOT"]}, 1, 0]}
+                    },
+                    # Sessions still short of data are their own series, as on the cards.
+                    "insufficient": {
+                        "$sum": {"$cond": [{"$and": [
+                            "$deferred", {"$not": [{"$in": ["$verdict", ["HUMAN", "BOT"]]}]},
+                        ]}, 1, 0]}
                     },
                 }
             },
@@ -822,10 +830,12 @@ def get_traffic_timeline(
             total = max(0, int(row.get("total", 0)))
             human = max(0, int(row.get("human", 0)))
             bot = max(0, int(row.get("bot", 0)))
-            suspect = max(0, total - human - bot)
+            insufficient = min(max(0, int(row.get("insufficient", 0))), max(0, total - human - bot))
+            suspect = max(0, total - human - bot - insufficient)
             counts[bucket_start] = {
                 "human": human,
                 "suspect": suspect,
+                "insufficient": insufficient,
                 "bot": bot,
                 "total": total,
             }
@@ -835,7 +845,7 @@ def get_traffic_timeline(
             bucket_start = window_start_ms + index * bucket_ms
             values = counts.get(
                 bucket_start,
-                {"human": 0, "suspect": 0, "bot": 0, "total": 0},
+                {"human": 0, "suspect": 0, "insufficient": 0, "bot": 0, "total": 0},
             )
             buckets.append({"start": bucket_start, **values})
 

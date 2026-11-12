@@ -278,6 +278,7 @@ def test_traffic_timeline_fills_empty_minutes_and_preserves_large_counts(monkeyp
                     "total": 1000,
                     "human": 700,
                     "bot": 100,
+                    "insufficient": 150,
                 }
             ]
 
@@ -295,7 +296,8 @@ def test_traffic_timeline_fills_empty_minutes_and_preserves_large_counts(monkeyp
     assert timeline["buckets"][-1] == {
         "start": active_bucket,
         "human": 700,
-        "suspect": 200,
+        "suspect": 50,
+        "insufficient": 150,
         "bot": 100,
         "total": 1000,
     }
