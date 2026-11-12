@@ -672,3 +672,77 @@ def test_monitoring_views_filter_by_country(api, db, monkeypatch):
     online = api.get("/api/v1/live/online", params={"country": "US"}, headers=READ)
     assert online.status_code == 200
     assert api.get("/api/v1/stats/summary", params={"country": "Vietnam"}, headers=READ).status_code == 422
+
+
+def test_page_tokens_sign_a_session_of_a_site():
+    from datetime import datetime, timezone
+
+    import mongomock
+
+    from api_service import page_tokens
+
+    page_tokens.reset_secret_cache()
+    db = mongomock.MongoClient()["tokens"]
+    token = page_tokens.issue(db, "shop", "sess-1", now=1_000_000)
+    assert page_tokens.verify(db, token, "shop", "sess-1", now=1_000_100)
+    assert not page_tokens.verify(db, token, "blog", "sess-1", now=1_000_100)
+    assert not page_tokens.verify(db, token, "shop", "sess-2", now=1_000_100)
+    assert not page_tokens.verify(db, token, "shop", "sess-1", now=1_000_000 + 25 * 3600)
+    body, signature = token.rsplit(".", 1)
+    assert not page_tokens.verify(db, body + "." + signature[::-1], "shop", "sess-1", now=1_000_100)
+    assert not page_tokens.verify(db, "garbage", "shop", "sess-1")
+    # Old collectors are not judged until the date; 1.13+ without a token is.
+    grace = datetime(2026, 11, 14, tzinfo=timezone.utc)
+    before, after = datetime(2026, 11, 13, tzinfo=timezone.utc), datetime(2026, 11, 15, tzinfo=timezone.utc)
+    old = {"sessionId": "sess-1", "collector": {"sdkVersion": "1.12.0"}}
+    new = {"sessionId": "sess-1", "collector": {"sdkVersion": "1.13.0"}}
+    assert page_tokens.page_state(db, old, "shop", grace, before) is None
+    assert page_tokens.page_state(db, old, "shop", grace, after) == "missing"
+    assert page_tokens.page_state(db, new, "shop", grace, before) == "missing"
+    assert page_tokens.page_state(db, {**new, "collector": {"pageToken": "x.y"}}, "shop", grace, before) == "unknown"
+    assert page_tokens.page_state(db, new, None, grace, after) is None
+    page_tokens.reset_secret_cache()
+
+
+def test_token_quota_per_address_and_site():
+    from api_service.page_tokens import Quota
+
+    quota = Quota(limit=3, window=600)
+    assert [quota.allow("1.1.1.1", "shop", now=t) for t in (0, 1, 2, 3)] == [True, True, True, False]
+    assert quota.allow("1.1.1.1", "blog", now=3) and quota.allow("2.2.2.2", "shop", now=3)
+    assert quota.allow("1.1.1.1", "shop", now=601)
+
+
+def test_a_phone_with_a_page_token_can_be_human_one_without_cannot(api, db, monkeypatch):
+    from api_service import main, page_tokens
+    from core_ml.release_cases import _IOS18, _IOS_HAND, _phone
+
+    page_tokens.reset_secret_cache()
+    monkeypatch.setattr(page_tokens, "quota", page_tokens.Quota(limit=2))
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
+    issued = api.get("/api/v1/visit", params={"sid": "sess-phone-1", "page": SHOP + "/"}, headers={"Origin": SHOP})
+    assert issued.status_code == 200
+    token = issued.json()["token"]
+    refused = api.get("/api/v1/visit", params={"sid": "sess-phone-9"}, headers={"Origin": "https://befitfashion.com"})
+    assert (refused.status_code, refused.headers["x-datacat-stop"]) == (403, "86400")
+    api.get("/api/v1/visit", params={"sid": "sess-phone-2"}, headers={"Origin": SHOP})
+    assert api.get("/api/v1/visit", params={"sid": "sess-phone-3"}, headers={"Origin": SHOP}).status_code == 429
+
+    def phone(session_id, **collector):
+        payload = _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND)
+        return {"sessionId": session_id, "visitorId": "v-" + session_id, "pageUrl": SHOP + "/",
+                "fingerprint": payload["fingerprint"], "botd": payload["botd"], "mouse": payload["mouse"],
+                "collector": {"schemaVersion": 1, "sdkVersion": "1.13.0", "pageInstanceId": "p-" + session_id, **collector}}
+
+    headers = {"Origin": SHOP, "User-Agent": _IOS18}
+    assert api.post("/api/v1/telemetry", json=phone("sess-phone-1", pageToken=token), headers=headers).status_code == 200
+    assert api.post("/api/v1/telemetry", json=phone("sess-phone-2"), headers=headers).status_code == 200
+    # Another session's token proves nothing.
+    assert api.post("/api/v1/telemetry", json=phone("sess-phone-4", pageToken=token), headers=headers).status_code == 200
+    verdicts = {d["sessionId"]: (d["verdict"], d["breakdown"]["mobile_human"]["missing"])
+                for d in db["detection_results"].find()}
+    assert verdicts["sess-phone-1"] == ("HUMAN", [])
+    assert verdicts["sess-phone-2"] == ("SUSPECT", ["UNVERIFIED_PAGE_LOAD"])
+    assert verdicts["sess-phone-4"] == ("SUSPECT", ["UNVERIFIED_PAGE_LOAD"])
+    page_tokens.reset_secret_cache()
+    assert main.page_tokens is page_tokens

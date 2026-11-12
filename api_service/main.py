@@ -35,7 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import Response as StarletteResponse
 
-from api_service import auth, clicks, gateway, geoip, sites
+from api_service import auth, clicks, gateway, geoip, page_tokens, sites
 from api_service.capture import build_capture
 from api_service.config import settings
 from api_service.research_labels import (
@@ -157,7 +157,7 @@ app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BY
 # preflight for a network error and keeps retrying every few seconds. Seconds it stops for:
 STOP_UNREGISTERED_S = 86400
 STOP_PAUSED_S = 3600
-_TELEMETRY_PATHS = ("/api/v1/telemetry",)
+_TELEMETRY_PATHS = ("/api/v1/telemetry", "/api/v1/visit")
 
 
 class SiteAwareCORSMiddleware(CORSMiddleware):
@@ -404,6 +404,26 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
     ) if data.get("visitorId") and not phone else None
     if gateway.valid_page_view_id(page_view_id):
         data["_page_view_id"] = page_view_id
+    # A website without the gateway proves its page loads with a page-view token instead.
+    if headers["page_view"] == "untracked" and data.get("_page_token"):
+        headers["page_view"] = data["_page_token"]
+
+
+def _page_token_state(data: dict, site: Optional[dict]) -> Optional[str]:
+    from api_service.database import get_db
+
+    db = get_db()
+    if db is None or not site:
+        return None
+    try:
+        required_from = datetime.fromisoformat(settings.PAGE_TOKEN_REQUIRED_FROM) if settings.PAGE_TOKEN_REQUIRED_FROM else None
+    except ValueError:
+        required_from = None
+    try:
+        return page_tokens.page_state(db, data, site.get("site_id"), required_from=required_from)
+    except Exception:
+        logger.warning("Page token check unavailable", exc_info=True)
+        return None
 
 
 def _purge_session_from_memory(session_id: str) -> bool:
@@ -679,6 +699,8 @@ class CollectorMetadata(BaseModel):
     schemaVersion: Literal[1]
     sdkVersion: str = Field(min_length=1, max_length=32)
     pageInstanceId: str = Field(min_length=1, max_length=128)
+    # Collector 1.13: the page-view token GET /api/v1/visit issued for this session.
+    pageToken: Optional[str] = Field(default=None, max_length=512)
     studyId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
     siteId: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -1139,6 +1161,28 @@ async def gate_request(request: Request):
     return Response(status_code=204 if allowed else 403, headers={"X-Datacat-Gate": reason})
 
 
+@app.get("/api/v1/visit")
+def issue_page_token(
+    request: Request,
+    sid: str = Query(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$"),
+    page: Optional[str] = Query(default=None, max_length=2048),
+):
+    """A page-view token for one session of a registered page (collector 1.13+, see page_tokens)."""
+    from api_service.database import get_db
+
+    data = {"sessionId": sid, "pageUrl": page}
+    site, _verified = _resolve_telemetry_site(request, data)
+    if site is None:
+        # An allowlisted origin outside the registry: nothing to bind a token to.
+        return StarletteResponse(status_code=204)
+    if not page_tokens.quota.allow(get_client_ip(request), site["site_id"]):
+        raise HTTPException(status_code=429, detail="Too many sessions from this address", headers={"Retry-After": "600"})
+    db = get_db()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"token": page_tokens.issue(db, site["site_id"], sid), "expires_in": page_tokens.TOKEN_TTL_SECONDS}
+
+
 @app.post("/api/v1/telemetry")
 async def receive_telemetry(request: Request, background_tasks: BackgroundTasks):
     """
@@ -1189,7 +1233,9 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     data["received_at"] = int(time.time() * 1000)
     data["_server_user_agent"] = (request.headers.get("user-agent") or "")[:512]
     data["_server_headers"] = _observed_headers(request)
+    data["_page_token"] = await run_in_threadpool(_page_token_state, data, site)
     await run_in_threadpool(_attach_server_context, request, data, link=True)
+    data.pop("_page_token", None)
 
     capture = None
     capture_status = None

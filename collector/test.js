@@ -38,6 +38,53 @@ async function waitFor(predicate) {
   throw new Error('Timed out waiting for asynchronous collector state');
 }
 
+async function testPageTokenTravelsWithTelemetry() {
+  const previousFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url: String(url), method: (options && options.method) || 'GET', body: options && options.body });
+    if (String(url).includes('/api/v1/visit')) {
+      return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ token: 'tok.sig' }) };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+  try {
+    const collector = new BotCollector({ endpointUrl: 'https://api.example.test/api/v1/telemetry', autoSendInterval: 0 });
+    assert.strictEqual(collector.visitUrl, 'https://api.example.test/api/v1/visit');
+    const resolverIndex = digestResolvers.length;
+    const start = collector.start();
+    await waitFor(() => digestResolvers.length > resolverIndex);
+    digestResolvers[resolverIndex]();
+    await start;
+    assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
+    const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
+    assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
+    assert.strictEqual(sent.collector.sdkVersion, '1.13.0');
+    collector.destroy();
+
+    // A same-origin or gateway endpoint asks for no token.
+    assert.strictEqual(new BotCollector({ autoSendInterval: 0 }).visitUrl, null);
+    assert.strictEqual(new BotCollector({ endpointUrl: 'https://shop.test/_dc/t', autoSendInterval: 0 }).visitUrl, null);
+
+    // A website the API refuses learns it from the token request and sends nothing.
+    calls.length = 0;
+    global.fetch = async (url) => {
+      calls.push({ url: String(url) });
+      return { ok: false, status: 403, headers: { get: (name) => (name === 'X-Datacat-Stop' ? '86400' : null) } };
+    };
+    const refused = new BotCollector({ endpointUrl: 'https://api.example.test/api/v1/telemetry', autoSendInterval: 0 });
+    const refusedIndex = digestResolvers.length;
+    const refusedStart = refused.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    if (digestResolvers.length > refusedIndex) digestResolvers[refusedIndex]();
+    await refusedStart;
+    assert.strictEqual(refused.refused, true);
+    assert.deepStrictEqual(calls.map((call) => call.url.split('?')[0]), ['https://api.example.test/api/v1/visit']);
+  } finally {
+    global.fetch = previousFetch;
+  }
+}
+
 async function testRefusedWebsiteStaysSilent() {
   const previousWindow = global.window;
   const previousFetch = global.fetch;
@@ -1004,6 +1051,7 @@ testRestartDuringFingerprinting()
   .then(testKeyboardTimingAndPressPressure)
   .then(testTouchGesturesAreCaptured)
   .then(testRefusedWebsiteStaysSilent)
+  .then(testPageTokenTravelsWithTelemetry)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

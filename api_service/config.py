@@ -115,6 +115,9 @@ class Settings:
         for host in os.getenv("BOT_PAGEVIEW_HOSTS", "").split(",")
         if host.strip()
     ]
+    # Page-view tokens (collector 1.13+): telemetry of a registered website without a valid token is
+    # judged like an unserved page. Older collectors are not judged until this date (ISO, UTC).
+    PAGE_TOKEN_REQUIRED_FROM: str = os.getenv("BOT_PAGE_TOKEN_REQUIRED_FROM", "2026-11-14T00:00:00+00:00").strip()
     # After the collector greeted the API, writes are allowed this long before its first scored
     # telemetry arrives (it normally follows within seconds).
     GATE_GRACE_SECONDS: int = _env_int("BOT_GATE_GRACE_SECONDS", 60, 0, 600)

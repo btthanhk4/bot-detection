@@ -9,7 +9,7 @@ import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
 
-export const COLLECTOR_VERSION = '1.12.0';
+export const COLLECTOR_VERSION = '1.13.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -29,6 +29,16 @@ export class BotCollector {
   constructor(options = {}) {
     this.endpointUrl = options.endpointUrl || options.endpoint || '/api/v1/telemetry';
     this.detectUrl = options.detectUrl || '/api/v1/detect';
+    // Collector 1.13: a page-view token from the API for each session (api_service.page_tokens),
+    // asked for beside the telemetry endpoint of a third-party integration. A gateway endpoint
+    // (first-party path) proves its page loads with the gateway's cookie instead.
+    const endpointPath = String(this.endpointUrl).split('?')[0];
+    this.visitUrl = options.visitUrl !== undefined ? options.visitUrl
+      : (/^https?:\/\//.test(endpointPath) && /\/api\/v1\/telemetry$/.test(endpointPath)
+        ? endpointPath.replace(/\/api\/v1\/telemetry$/, '/api/v1/visit') : null);
+    this.pageToken = null;
+    this.tokenSessionId = null;
+    this.tokenPromise = null;
     // One session per browser tab, renewed by activity and ended after 30 idle
     // minutes (the usual web-analytics definition), so a reload or a link to
     // another page of the site continues the same session.
@@ -141,9 +151,36 @@ export class BotCollector {
     }
     this.destroyed = false;
     const lifecycleVersion = ++this.lifecycleVersion;
+    this.tokenPromise = this.fetchPageToken();
     this.sendHello();
     this.initPromise = this.initialize(lifecycleVersion);
     return this.initPromise;
+  }
+
+  // The page-view token of the current session; telemetry goes without it if this fails.
+  async fetchPageToken() {
+    if (!this.visitUrl || typeof fetch !== 'function' || this.refused) return null;
+    const sessionId = this.sessionId;
+    try {
+      const page = typeof window !== 'undefined' && window.location ? boundedUrl(window.location.href) : '';
+      const url = this.visitUrl + (this.visitUrl.includes('?') ? '&' : '?') + 'sid=' + encodeURIComponent(sessionId)
+        + (page ? '&page=' + encodeURIComponent(page) : '');
+      const res = await this.fetchWithTimeout(url, { method: 'GET', credentials: 'omit' }, 5000);
+      const stopFor = res && res.status === 403 && res.headers && typeof res.headers.get === 'function'
+        ? Number(res.headers.get('X-Datacat-Stop')) : 0;
+      if (stopFor > 0) {
+        this.refuse(stopFor);
+        return null;
+      }
+      if (res && res.ok && res.status !== 204 && typeof res.json === 'function') {
+        const body = await res.json();
+        if (body && typeof body.token === 'string' && body.token.length <= 512 && sessionId === this.sessionId) {
+          this.pageToken = body.token;
+          this.tokenSessionId = sessionId;
+        }
+      }
+    } catch (e) { /* judged as an unverified page load, never blocks telemetry */ }
+    return this.pageToken;
   }
 
   // Greets the API before fingerprinting (which takes a second or more), so a gateway that
@@ -273,6 +310,7 @@ export class BotCollector {
         schemaVersion: 1,
         sdkVersion: COLLECTOR_VERSION,
         pageInstanceId: this.pageInstanceId,
+        ...(this.pageToken && this.tokenSessionId === this.sessionId ? { pageToken: this.pageToken } : {}),
         ...(this.studyId ? { studyId: this.studyId } : {}),
         ...(this.siteId ? { siteId: this.siteId } : {}),
       },
@@ -415,9 +453,11 @@ export class BotCollector {
           try {
             const receipt = await response.json();
             if (receipt && receipt.session_closed === true && this.persistSession) {
-              // The session was deleted on the server; continue under a fresh id.
+              // The session was deleted on the server; continue under a fresh id (and token).
               this.sessionId = this.generateSessionId();
               this.touchSession();
+              this.pageToken = null;
+              this.tokenPromise = this.fetchPageToken();
             }
             if (receipt && receipt.recorded === true) {
               const captureFlags = Object.prototype.hasOwnProperty.call(receipt, 'capture_persisted');
@@ -456,6 +496,11 @@ export class BotCollector {
 
   async _sendTelemetry(action, lifecycleVersion) {
     try {
+      if (this.tokenPromise && action !== 'pagehide') {
+        // Usually ready long before fingerprinting ends; never hold telemetry back for long.
+        await Promise.race([this.tokenPromise, new Promise((resolve) => setTimeout(resolve, 2000))]);
+        if (this.refused) return false;
+      }
       const payload = await this.getPayload(action);
       if (action !== 'pagehide' && (this.destroyed || lifecycleVersion !== this.lifecycleVersion)) {
         return false;
