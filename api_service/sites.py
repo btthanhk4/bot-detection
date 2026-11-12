@@ -232,6 +232,13 @@ class SiteRegistry:
         self._lock = threading.Lock()
         self._sites = {}
         self._by_origin = {}
+        self._epoch = 0
+
+    @property
+    def epoch(self) -> int:
+        """When a page last became monitored (created, resumed, address added), in Unix seconds.
+        Served inside the collector: a browser told to stay silent before then asks again."""
+        return self._epoch
 
     def reload(self, db) -> bool:
         if db is None:
@@ -250,8 +257,10 @@ class SiteRegistry:
                 except ValueError:
                     continue
                 by_origin.setdefault(origin_key(origin), []).append((path, row))
+        stamps = [_as_utc(row.get("activated_at") or row.get("created_at")) for row in sites.values()]
+        epoch = max((int(stamp.timestamp()) for stamp in stamps if stamp), default=0)
         with self._lock:
-            self._sites, self._by_origin = sites, by_origin
+            self._sites, self._by_origin, self._epoch = sites, by_origin, epoch
         return True
 
     def sites(self) -> dict:
@@ -276,6 +285,21 @@ class SiteRegistry:
 
     def allows_cors(self, origin: str) -> bool:
         return any(site.get("status") == "active" for _, site in self._entries(origin))
+
+    def has_active(self, origin: str) -> bool:
+        """Some page of this website is monitored: a refusal then covers the refused page only."""
+        return self.allows_cors(origin)
+
+    def refusal(self, origin: str, configured) -> Optional[str]:
+        """``unregistered`` or ``paused`` when every page of ``origin`` is refused, whatever the
+        page and session (decided before the request body is read); None otherwise."""
+        origin = str(origin or "").strip().rstrip("/")
+        if not origin or origin.lower() == "null" or origin in (configured or ()):
+            return None
+        entries = self._entries(origin)
+        if entries:
+            return None if any(site.get("status") == "active" for _, site in entries) else "paused"
+        return "unregistered" if (configured or self._sites) else None
 
     def _same_website(self, site: Optional[dict], origin) -> bool:
         key = origin_key(origin)
@@ -436,7 +460,7 @@ def create_site(db, *, name: str, origins, site_id: Optional[str] = None, contac
     site = {"site_id": site_id, "name": name.strip(), "origins": origins, "page_queries": page_queries(entries),
             "status": status, "platform": platform,
             "contact": (contact or "").strip() or None, "notes": (notes or "").strip() or None,
-            "created_at": now, "updated_at": now}
+            "created_at": now, "updated_at": now, "activated_at": now}
     db["sites"].insert_one(dict(site))
     attribute_history(db, site_id, origins)
     registry.reload(db)
@@ -470,9 +494,15 @@ def update_site(db, site_id: str, changes: dict) -> dict:
     for key in ("contact", "notes"):
         if key in changes:
             update[key] = (changes[key] or "").strip() or None
-    update["updated_at"] = datetime.now(timezone.utc)
-    db["sites"].update_one({"site_id": site_id}, {"$set": update})
+    now = datetime.now(timezone.utc)
+    update["updated_at"] = now
     added = set(update.get("origins") or []) - set(current.get("origins") or [])
+    resumed = update.get("status") == "active" and current.get("status") == "paused"
+    if resumed:
+        update["resumed_at"] = now
+    if resumed or (added and (update.get("status") or current.get("status")) == "active"):
+        update["activated_at"] = now
+    db["sites"].update_one({"site_id": site_id}, {"$set": update})
     if added:
         attribute_history(db, site_id, sorted(added))
     registry.reload(db)

@@ -350,10 +350,24 @@ Cách gán phiên:
 - Trang gắn mã mà không được đăng ký (hoặc đang tạm dừng) bị từ chối với `403` và header
   `X-Datacat-Stop` (86.400 giây, tạm dừng là 3.600 giây). Bước preflight của endpoint telemetry
   được cho qua với mọi Origin (không kèm credentials), nên collector 1.12+ đọc được lời từ chối. Nó
-  tắt luôn và ghi nhớ trong `localStorage` của trang đó: các trang sau trên cùng website không gửi gì
-  cho tới khi hết hạn (tối đa 7 ngày). Nhờ vậy mỗi khách của trang lạ chỉ gửi một request mỗi ngày,
-  thay vì thử lại vài giây một lần. Không có dữ liệu nào của trang lạ được lưu. Muốn chặn hẳn từ
-  gốc, chủ trang phải gỡ đoạn mã.
+  tắt luôn và ghi nhớ trong `localStorage` của trang đó (`sessionStorage` nếu `localStorage` bị chặn):
+  các trang sau không gửi gì cho tới khi hết hạn (tối đa 7 ngày). Nhờ vậy mỗi khách của trang lạ chỉ
+  gửi một request mỗi ngày, thay vì thử lại vài giây một lần. Không có dữ liệu nào của trang lạ được
+  lưu. Muốn chặn hẳn từ gốc, chủ trang phải gỡ đoạn mã. Các trường hợp biên (collector 1.14):
+  - **Phạm vi:** `X-Datacat-Stop-Scope: page` khi website còn trang khác đang được giám sát (chỉ
+    trang bị từ chối im lặng, trang đã đăng ký cùng tên miền vẫn thu thập); `origin` khi không còn
+    trang nào của website được giám sát. Header được expose cả trên origin đã đăng ký.
+  - **Đăng ký lại / tiếp tục:** server ghi `epoch` của registry (lần gần nhất một trang được tạo,
+    tiếp tục hoặc thêm địa chỉ) vào `bot-collector.js` lúc phục vụ (ETag đổi theo). Lời từ chối ghi
+    trước epoch đó bị bỏ qua, nên trang thu thập lại ngay ở lượt tải sau, không phải chờ hết hạn.
+  - **Chặn sớm:** website không còn trang nào được giám sát bị từ chối trước khi đọc body và trước rate
+    limit (cả `/telemetry`, `/visit`, `/detect`), nên luôn nhận được tín hiệu dừng thay vì 400/422/429
+    (những mã collector sẽ thử lại).
+  - **Một request cho mỗi khách mới:** lời chào (`hello`) chờ câu trả lời của `/visit` (tối đa 1,5
+    giây) và không gửi nếu đã bị từ chối.
+  - **Gateway:** shop đang tạm dừng hoặc đã xóa không bị gate chặn thao tác ghi vì "không có
+    collector" (`not_monitored`); trong 1 giờ sau khi tiếp tục, phiên chưa có telemetry được cho qua
+    (`resumed`), còn kết luận BOT vẫn bị chặn.
 - **Chống lộ mã và spam (collector 1.13+).** Đoạn mã nhúng không chứa bí mật nào; ai mở trang cũng
   đọc được. Vì vậy mỗi phiên phải xin server một token cho lượt tải trang (`GET /api/v1/visit?sid=`):
   - Token được ký HMAC bằng khóa lưu trong MongoDB, gắn với website và phiên, hiệu lực 24 giờ.

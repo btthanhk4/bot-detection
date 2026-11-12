@@ -6,6 +6,7 @@ and provides endpoints for telemetry ingestion and operational analysis.
 
 import asyncio
 import collections
+import hashlib
 import ipaddress
 import json
 import logging
@@ -157,6 +158,31 @@ app.add_middleware(RequestBodyLimitMiddleware, max_bytes=settings.MAX_PAYLOAD_BY
 # preflight for a network error and keeps retrying every few seconds. Seconds it stops for:
 STOP_UNREGISTERED_S = 86400
 STOP_PAUSED_S = 3600
+# Headers a refused collector must be able to read, on allowed and refused origins alike.
+_STOP_EXPOSED = "X-Datacat-Stop, X-Datacat-Stop-Scope, Retry-After"
+
+
+def _stop_headers(kind: str, origin) -> dict:
+    """X-Datacat-Stop: how long the collector stays silent. X-Datacat-Stop-Scope: ``page`` when
+    other pages of the website are still monitored (only this page goes silent), else ``origin``."""
+    scope = "page" if origin and sites.registry.has_active(str(origin).strip().rstrip("/")) else "origin"
+    seconds = STOP_PAUSED_S if kind == "paused" else STOP_UNREGISTERED_S
+    return {"X-Datacat-Stop": str(seconds), "X-Datacat-Stop-Scope": scope}
+
+
+def _early_refusal(request: Request) -> None:
+    """Refuse telemetry from a website none of whose pages is monitored before the body is read
+    or counted against the rate limit, so a refused page costs the API almost nothing and the
+    collector always gets the stop signal (never a 400, 422 or 429 it would retry)."""
+    origin = request.headers.get("origin")
+    kind = sites.registry.refusal(origin, settings.TELEMETRY_ALLOWED_ORIGINS)
+    if kind is None:
+        return
+    if kind == "unregistered":
+        _log_refused_page(origin, None)
+    raise HTTPException(status_code=403, headers=_stop_headers(kind, origin),
+                        detail="Monitoring is paused for this site" if kind == "paused"
+                        else "This page is not registered for monitoring")
 _TELEMETRY_PATHS = ("/api/v1/telemetry", "/api/v1/visit")
 
 
@@ -186,7 +212,7 @@ class SiteAwareCORSMiddleware(CORSMiddleware):
                     if message["type"] == "http.response.start":
                         response_headers = MutableHeaders(scope=message)
                         response_headers["Access-Control-Allow-Origin"] = origin
-                        response_headers["Access-Control-Expose-Headers"] = "X-Datacat-Stop, Retry-After"
+                        response_headers["Access-Control-Expose-Headers"] = _STOP_EXPOSED
                         response_headers.add_vary_header("Origin")
                     await send(message)
 
@@ -202,7 +228,7 @@ app.add_middleware(
     allow_credentials="*" not in settings.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Retry-After"],
+    expose_headers=["Retry-After", "X-Datacat-Stop", "X-Datacat-Stop-Scope"],
 )
 
 # Global model holders
@@ -829,12 +855,18 @@ def _resolve_telemetry_site(request: Request, data: dict) -> tuple:
             session_site=lookup)
         verified = False
     if not allowed:
+        stop_origin = origin if verified else request.headers.get("referer")
+        if verified is False and stop_origin:
+            try:
+                stop_origin = sites.normalize_origin(str(stop_origin).split("?")[0])
+            except ValueError:
+                stop_origin = None
         if site is not None:
             raise HTTPException(status_code=403, detail="Monitoring is paused for this site",
-                                headers={"X-Datacat-Stop": str(STOP_PAUSED_S)})
+                                headers=_stop_headers("paused", stop_origin))
         _log_refused_page(origin, data.get("pageUrl"))
         raise HTTPException(status_code=403, detail="This page is not registered for monitoring",
-                            headers={"X-Datacat-Stop": str(STOP_UNREGISTERED_S)})
+                            headers=_stop_headers("unregistered", stop_origin))
     return site, verified and site is not None
 
 
@@ -860,12 +892,14 @@ def _require_allowed_origin(request: Request, page_url=None) -> Optional[dict]:
     The domain comes from the Origin header the browser sets, never from the tag's site id;
     the reported page URL only picks among the sites registered on that domain.
     """
-    allowed, site = sites.registry.origin_decision(request.headers.get("origin"), settings.TELEMETRY_ALLOWED_ORIGINS,
-                                                   page_url)
+    origin = request.headers.get("origin")
+    allowed, site = sites.registry.origin_decision(origin, settings.TELEMETRY_ALLOWED_ORIGINS, page_url)
     if not allowed:
         if site is not None:
-            raise HTTPException(status_code=403, detail="Monitoring is paused for this site")
-        raise HTTPException(status_code=403, detail="Origin is not allowed to submit telemetry")
+            raise HTTPException(status_code=403, detail="Monitoring is paused for this site",
+                                headers=_stop_headers("paused", origin))
+        raise HTTPException(status_code=403, detail="Origin is not allowed to submit telemetry",
+                            headers=_stop_headers("unregistered", origin))
     return site
 
 
@@ -1067,6 +1101,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     Real-time bot classification endpoint.
     Fuses mouse dynamics, environment fingerprint, and heuristic checks.
     """
+    _early_refusal(request)
     client_ip = get_client_ip(request)
     if not check_rate_limit(client_ip):
         raise HTTPException(
@@ -1140,6 +1175,15 @@ async def record_page_view(request: Request):
     return Response(status_code=204)
 
 
+def _recently_resumed(site) -> bool:
+    resumed = (site or {}).get("resumed_at")
+    if not isinstance(resumed, datetime):
+        return False
+    if resumed.tzinfo is None:
+        resumed = resumed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - resumed).total_seconds() <= STOP_PAUSED_S
+
+
 @app.api_route("/api/v1/gate", methods=["GET", "POST"], include_in_schema=False)
 async def gate_request(request: Request):
     """``auth_request`` target: 204 lets a shop request through, 403 refuses it."""
@@ -1149,6 +1193,12 @@ async def gate_request(request: Request):
         strict = bool(settings.GATE_STRICT_PATHS) and re.search(settings.GATE_STRICT_PATHS, path) is not None
     except re.error:
         strict = False
+    # A shop whose monitoring is paused or removed has no collector to wait for: its writes pass.
+    host = _request_host(request)
+    monitored, site = sites.registry.origin_decision(
+        f"https://{host}", settings.TELEMETRY_ALLOWED_ORIGINS, f"https://{host}{path.split('?')[0]}")         if host else (True, None)
+    if not monitored:
+        return Response(status_code=204, headers={"X-Datacat-Gate": "not_monitored"})
     allowed, reason = await run_in_threadpool(
         gateway.gate_decision, _gateway_db(),
         page_view_id=request.cookies.get(gateway.PAGE_VIEW_COOKIE),
@@ -1156,6 +1206,9 @@ async def gate_request(request: Request):
         strict=strict, grace_seconds=settings.GATE_GRACE_SECONDS,
         user_agent=request.headers.get("user-agent") or "",
     )
+    if not allowed and reason in ("no_collector", "no_telemetry") and _recently_resumed(site):
+        # Browsers told to stay silent while the site was paused may not have asked again yet.
+        allowed, reason = True, "resumed"
     if not allowed:
         logger.info("Gate refused %s %s: %s", request.headers.get("x-original-method"), path[:200], reason)
     return Response(status_code=204 if allowed else 403, headers={"X-Datacat-Gate": reason})
@@ -1170,6 +1223,7 @@ def issue_page_token(
     """A page-view token for one session of a registered page (collector 1.13+, see page_tokens)."""
     from api_service.database import get_db
 
+    _early_refusal(request)
     data = {"sessionId": sid, "pageUrl": page}
     site, _verified = _resolve_telemetry_site(request, data)
     if site is None:
@@ -1189,6 +1243,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     Asynchronous telemetry ingestion endpoint (e.g. from navigator.sendBeacon).
     Accepts application/json, text/plain (beacons), and raw JSON payloads.
     """
+    _early_refusal(request)
     client_ip = get_client_ip(request)
     if not check_rate_limit(client_ip):
         raise HTTPException(
@@ -1422,19 +1477,42 @@ def get_traffic_timeline(
 
 
 @app.get("/bot-collector.js")
-def get_bot_collector_sdk():
+def get_bot_collector_sdk(request: Request):
     """
     Serves the pre-compiled BotCollector standalone UMD bundle for proxy injection.
     """
     dist_path = os.path.join(os.path.dirname(__file__), "..", "collector", "dist", "bot-collector.js")
     dist_path = os.path.abspath(dist_path)
-    if os.path.exists(dist_path):
-        return FileResponse(
-            dist_path,
-            media_type="application/javascript",
-            headers={"Cache-Control": "public, no-cache"},
-        )
-    raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
+    bundle = _collector_bundle(dist_path)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="Collector SDK bundle not found.")
+    # The registry epoch is written into the script, so a browser told to stay silent asks
+    # again as soon as a page is registered or resumed (see sites.SiteRegistry.epoch).
+    epoch = sites.registry.epoch
+    etag = f'"{bundle[1]}-{epoch}"'
+    headers = {"Cache-Control": "public, no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(bundle[0].replace(COLLECTOR_EPOCH_PLACEHOLDER, str(epoch)),
+                    media_type="application/javascript", headers=headers)
+
+
+COLLECTOR_EPOCH_PLACEHOLDER = "__DATACAT_REGISTRY_EPOCH__"
+_bundle_cache: dict = {}
+
+
+def _collector_bundle(path: str):
+    """(text, content hash) of the built collector, re-read when the file changes."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    key = (path, stat.st_mtime_ns, stat.st_size)
+    if _bundle_cache.get("key") != key:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        _bundle_cache.update(key=key, value=(text, hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]))
+    return _bundle_cache["value"]
 
 
 def _read_page(name: str) -> str:

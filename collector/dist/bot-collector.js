@@ -1595,7 +1595,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.13.0';
+  const COLLECTOR_VERSION = '1.14.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -1606,6 +1606,31 @@
   // silent on it until then, instead of retrying every few seconds on every page.
   const REFUSAL_STORAGE_KEY = 'datacat_refused';
   const MAX_REFUSAL_MS = 7 * 24 * 3600 * 1000;
+  // Collector 1.14: the API writes into the script it serves when a page last became monitored
+  // (Unix seconds). A refusal recorded before then is void, so a page registered or resumed again
+  // collects at once instead of after the silence. 0 when the script is not served by the API.
+  const REGISTRY_EPOCH = Number('__DATACAT_REGISTRY_EPOCH__') || 0;
+
+  function refusalStores() {
+    const stores = [];
+    try { if (window.localStorage) stores.push(window.localStorage); } catch (e) { /* blocked */ }
+    try { if (window.sessionStorage) stores.push(window.sessionStorage); } catch (e) { /* blocked */ }
+    return stores;
+  }
+
+  function currentPath() {
+    try { return String(window.location.pathname || '/'); } catch (e) { return '/'; }
+  }
+
+  // X-Datacat-Stop of a refused request: [seconds, scope], or null when the API did not refuse.
+  function stopSignal(response) {
+    if (!response || response.status !== 403 || !response.headers || typeof response.headers.get !== 'function') {
+      return null;
+    }
+    const seconds = Number(response.headers.get('X-Datacat-Stop'));
+    if (!(seconds > 0)) return null;
+    return [seconds, response.headers.get('X-Datacat-Stop-Scope') === 'page' ? 'page' : 'origin'];
+  }
 
   function boundedUrl(value) {
     return String(value || '').slice(0, 2048);
@@ -1711,20 +1736,35 @@
       return this.init();
     }
 
-    // When the API last refused this website, until when the collector stays silent.
+    // When the API last refused this website (or this page of it), until when the collector stays
+    // silent. A refusal from before the registry epoch, or for another page, does not count.
     refusedUntil() {
-      try {
-        const saved = JSON.parse(window.localStorage.getItem(REFUSAL_STORAGE_KEY) || 'null');
-        return saved && Number.isFinite(saved.until) ? Math.min(saved.until, Date.now() + MAX_REFUSAL_MS) : 0;
-      } catch (e) { return 0; }
+      for (const store of refusalStores()) {
+        try {
+          const saved = JSON.parse(store.getItem(REFUSAL_STORAGE_KEY) || 'null');
+          if (!saved || !Number.isFinite(saved.until)) continue;
+          if (REGISTRY_EPOCH > 0 && !(Number(saved.epoch) >= REGISTRY_EPOCH)) {
+            store.removeItem(REFUSAL_STORAGE_KEY);
+            continue;
+          }
+          if (typeof saved.path === 'string' && saved.path !== currentPath()) continue;
+          return Math.min(saved.until, Date.now() + MAX_REFUSAL_MS);
+        } catch (e) { /* unreadable: ignore */ }
+      }
+      return 0;
     }
 
-    refuse(seconds) {
+    refuse(seconds, scope = 'origin') {
       this.refused = true;
-      try {
-        window.localStorage.setItem(REFUSAL_STORAGE_KEY,
-          JSON.stringify({ until: Date.now() + Math.min(seconds * 1000, MAX_REFUSAL_MS) }));
-      } catch (e) { /* storage blocked: silent for this page only */ }
+      const record = { until: Date.now() + Math.min(seconds * 1000, MAX_REFUSAL_MS), epoch: REGISTRY_EPOCH };
+      if (scope === 'page') record.path = currentPath();
+      // localStorage first; sessionStorage where it is blocked; else silent for this page only.
+      for (const store of refusalStores()) {
+        try {
+          store.setItem(REFUSAL_STORAGE_KEY, JSON.stringify(record));
+          break;
+        } catch (e) { /* try the next one */ }
+      }
       this.destroy();
     }
 
@@ -1738,7 +1778,7 @@
       this.destroyed = false;
       const lifecycleVersion = ++this.lifecycleVersion;
       this.tokenPromise = this.fetchPageToken();
-      this.sendHello();
+      this.helloPromise = this.sendHello();
       this.initPromise = this.initialize(lifecycleVersion);
       return this.initPromise;
     }
@@ -1752,10 +1792,9 @@
         const url = this.visitUrl + (this.visitUrl.includes('?') ? '&' : '?') + 'sid=' + encodeURIComponent(sessionId)
           + (page ? '&page=' + encodeURIComponent(page) : '');
         const res = await this.fetchWithTimeout(url, { method: 'GET', credentials: 'omit' }, 5000);
-        const stopFor = res && res.status === 403 && res.headers && typeof res.headers.get === 'function'
-          ? Number(res.headers.get('X-Datacat-Stop')) : 0;
-        if (stopFor > 0) {
-          this.refuse(stopFor);
+        const stop = stopSignal(res);
+        if (stop) {
+          this.refuse(...stop);
           return null;
         }
         if (res && res.ok && res.status !== 204 && typeof res.json === 'function') {
@@ -1771,11 +1810,17 @@
 
     // Greets the API before fingerprinting (which takes a second or more), so a gateway that
     // gates shop requests on this page can tell that the collector runs. No device data.
-    sendHello() {
+    // A third-party page waits for the token answer first (at most 1.5 s): on a refused website
+    // that answer already silences the collector, so the visitor costs the API one request.
+    async sendHello() {
       if (!this.helloEnabled || this.helloSent || typeof fetch !== 'function') return;
       this.helloSent = true;
+      if (this.tokenPromise) {
+        await Promise.race([this.tokenPromise, new Promise((resolve) => setTimeout(resolve, 1500))]);
+        if (this.refused || this.destroyed) return;
+      }
       try {
-        fetch(this.endpointUrl, {
+        const res = await fetch(this.endpointUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1786,7 +1831,9 @@
           }),
           keepalive: true,
           credentials: 'same-origin',
-        }).catch(() => {});
+        });
+        const stop = stopSignal(res);
+        if (stop) this.refuse(...stop);
       } catch (e) { /* never break the host page */ }
     }
 
@@ -2028,11 +2075,10 @@
           keepalive: action === 'pagehide',
         }, 10000, async (response) => {
           delivery.status = response.status ?? null;
-          const stopFor = response.status === 403 && response.headers && typeof response.headers.get === 'function'
-            ? Number(response.headers.get('X-Datacat-Stop')) : 0;
-          if (stopFor > 0) {
-            // This website is not monitored (or paused): no retries, no heartbeats.
-            this.refuse(stopFor);
+          const stop = stopSignal(response);
+          if (stop) {
+            // This page is not monitored (or paused): no retries, no heartbeats.
+            this.refuse(...stop);
             return response;
           }
           if (response.ok && typeof response.json === 'function') {
@@ -2171,6 +2217,8 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         }, 10000, async (res) => {
+          const stop = stopSignal(res);
+          if (stop) this.refuse(...stop);
           if (!res.ok) {
             return {
               is_bot: false,

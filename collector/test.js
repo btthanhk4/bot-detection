@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.13.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.14.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -124,6 +124,114 @@ async function testRefusedWebsiteStaysSilent() {
     assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() < Date.now());
   } finally {
     global.window = previousWindow;
+    global.fetch = previousFetch;
+  }
+}
+
+function memoryStorage() {
+  const store = {};
+  return { store, getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+}
+
+function stopResponse(seconds, scope) {
+  return { ok: false, status: 403, headers: { get: (name) => (name === 'X-Datacat-Stop' ? String(seconds)
+    : name === 'X-Datacat-Stop-Scope' ? scope : null) } };
+}
+
+// The bundle as the API serves it, with the registry epoch written in.
+function collectorWithEpoch(epoch) {
+  const fs = require('fs');
+  const path = require('path');
+  const Module = require('module');
+  const file = path.join(__dirname, 'dist', 'bot-collector.js');
+  const text = fs.readFileSync(file, 'utf-8').replace('__DATACAT_REGISTRY_EPOCH__', String(epoch));
+  const loaded = new Module(file + '?epoch=' + epoch, module);
+  loaded.filename = file;
+  loaded.paths = module.paths;
+  loaded._compile(text, file);
+  return loaded.exports;
+}
+
+async function testPageScopedRefusalLeavesOtherPagesCollecting() {
+  const previousWindow = global.window;
+  const previousFetch = global.fetch;
+  const local = memoryStorage();
+  const location = { pathname: '/promo/other', href: 'https://shop.test/promo/other' };
+  global.window = { localStorage: local, sessionStorage: memoryStorage(), location, removeEventListener() {} };
+  let requests = 0;
+  global.fetch = async () => { requests++; return stopResponse(86400, 'page'); };
+  try {
+    // A page of a website whose other pages are monitored: only this page goes silent.
+    const refused = new BotCollector({ autoSendInterval: 0, hello: true, endpointUrl: '/api/v1/telemetry' });
+    await refused.sendHello();
+    assert.strictEqual(refused.refused, true, 'the greeting reads the stop signal too');
+    assert.strictEqual(JSON.parse(local.store.datacat_refused).path, '/promo/other');
+    assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() > Date.now(), 'the refused page stays silent');
+    location.pathname = '/download/downloader';
+    assert.strictEqual(new BotCollector({ autoSendInterval: 0 }).refusedUntil(), 0, 'the monitored page still collects');
+    // A website none of whose pages is monitored goes silent everywhere.
+    new BotCollector({ autoSendInterval: 0 }).refuse(86400, 'origin');
+    assert.strictEqual(JSON.parse(local.store.datacat_refused).path, undefined);
+    location.pathname = '/anything';
+    assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() > Date.now());
+    assert.strictEqual(requests, 1);
+  } finally {
+    global.window = previousWindow;
+    global.fetch = previousFetch;
+  }
+}
+
+async function testRegistryEpochVoidsOlderRefusal() {
+  const previousWindow = global.window;
+  const local = memoryStorage();
+  global.window = { localStorage: local, location: { pathname: '/' }, removeEventListener() {} };
+  try {
+    const Served = collectorWithEpoch(2000000000);
+    // Refused before the page was registered (or resumed) again: collect at once.
+    local.store.datacat_refused = JSON.stringify({ until: Date.now() + 3600000, epoch: 1999999999 });
+    assert.strictEqual(new Served({ autoSendInterval: 0 }).refusedUntil(), 0);
+    assert.strictEqual(local.store.datacat_refused, undefined, 'the void refusal is cleared');
+    // A refusal from 1.12/1.13 carries no epoch: void too.
+    local.store.datacat_refused = JSON.stringify({ until: Date.now() + 3600000 });
+    assert.strictEqual(new Served({ autoSendInterval: 0 }).refusedUntil(), 0);
+    // A refusal given under the current registry holds, and records its epoch.
+    new Served({ autoSendInterval: 0 }).refuse(3600);
+    assert.strictEqual(JSON.parse(local.store.datacat_refused).epoch, 2000000000);
+    assert.ok(new Served({ autoSendInterval: 0 }).refusedUntil() > Date.now());
+    // A script not served by the API (epoch unknown) keeps honouring any refusal.
+    local.store.datacat_refused = JSON.stringify({ until: Date.now() + 3600000 });
+    assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() > Date.now());
+  } finally {
+    global.window = previousWindow;
+  }
+}
+
+async function testRefusalFallsBackToSessionStorage() {
+  const previousWindow = global.window;
+  const blocked = { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); }, removeItem() {} };
+  const session = memoryStorage();
+  global.window = { localStorage: blocked, sessionStorage: session, location: { pathname: '/' }, removeEventListener() {} };
+  try {
+    new BotCollector({ autoSendInterval: 0 }).refuse(3600);
+    assert.ok(session.store.datacat_refused, 'kept for the tab when localStorage is blocked');
+    assert.ok(new BotCollector({ autoSendInterval: 0 }).refusedUntil() > Date.now());
+  } finally {
+    global.window = previousWindow;
+  }
+}
+
+async function testRefusedThirdPartyPageCostsOneRequest() {
+  const previousFetch = global.fetch;
+  const urls = [];
+  global.fetch = async (url) => { urls.push(String(url)); return stopResponse(86400, 'origin'); };
+  try {
+    const collector = new BotCollector({ autoSendInterval: 0, hello: true, endpointUrl: 'https://api.test/api/v1/telemetry' });
+    collector.tokenPromise = collector.fetchPageToken();
+    await collector.sendHello();
+    assert.deepStrictEqual(urls.map((u) => u.split('?')[0]), ['https://api.test/api/v1/visit'],
+      'the greeting waits for the token answer and is not sent once refused');
+    assert.strictEqual(collector.refused, true);
+  } finally {
     global.fetch = previousFetch;
   }
 }
@@ -1052,6 +1160,10 @@ testRestartDuringFingerprinting()
   .then(testTouchGesturesAreCaptured)
   .then(testRefusedWebsiteStaysSilent)
   .then(testPageTokenTravelsWithTelemetry)
+  .then(testPageScopedRefusalLeavesOtherPagesCollecting)
+  .then(testRegistryEpochVoidsOlderRefusal)
+  .then(testRefusalFallsBackToSessionStorage)
+  .then(testRefusedThirdPartyPageCostsOneRequest)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

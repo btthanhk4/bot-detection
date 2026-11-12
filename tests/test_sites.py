@@ -746,3 +746,72 @@ def test_a_phone_with_a_page_token_can_be_human_one_without_cannot(api, db, monk
     assert verdicts["sess-phone-4"] == ("SUSPECT", ["UNVERIFIED_PAGE_LOAD"])
     page_tokens.reset_secret_cache()
     assert main.page_tokens is page_tokens
+
+
+def test_a_refused_page_of_a_monitored_website_reads_a_page_scoped_stop(api):
+    """Another page of a registered website is refused for itself only (the monitored page must
+    keep collecting in the same browser), and its collector can read the stop on an allowed origin."""
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP + "/landing"]}, headers=ADMIN)
+    body = {**telemetry("other-1"), "pageUrl": SHOP + "/other"}
+    refused = api.post("/api/v1/telemetry", json=body, headers={"Origin": SHOP})
+    assert refused.status_code == 403
+    assert (refused.headers["x-datacat-stop"], refused.headers["x-datacat-stop-scope"]) == ("86400", "page")
+    exposed = refused.headers["access-control-expose-headers"]
+    assert "X-Datacat-Stop" in exposed and "X-Datacat-Stop-Scope" in exposed
+    landing = {**telemetry("landing-1"), "pageUrl": SHOP + "/landing"}
+    assert api.post("/api/v1/telemetry", json=landing, headers={"Origin": SHOP}).status_code == 200
+    foreign = api.post("/api/v1/telemetry", json=telemetry("befit-1"), headers={"Origin": "https://befitfashion.com"})
+    assert foreign.headers["x-datacat-stop-scope"] == "origin"
+
+
+def test_a_website_without_a_monitored_page_is_refused_before_its_body(api, db, monkeypatch):
+    """No body parsing, validation or rate limit for a refused website: it always gets the stop
+    signal (a 400, 422 or 429 would be retried by its collector) and costs the API almost nothing."""
+    from api_service import main
+
+    foreign = {"Origin": "https://befitfashion.com", "Content-Type": "application/json"}
+    for content in (b"not json", b"[]", b'{"sessionId": 5}'):
+        response = api.post("/api/v1/telemetry", content=content, headers=foreign)
+        assert (response.status_code, response.headers.get("x-datacat-stop")) == (403, "86400")
+    monkeypatch.setattr(main, "check_rate_limit", lambda _ip: False)
+    assert api.post("/api/v1/telemetry", content=b"{}", headers=foreign).headers["x-datacat-stop"] == "86400"
+    assert api.post("/api/v1/detect", json={}, headers=foreign).headers["x-datacat-stop"] == "86400"
+    visit = api.get("/api/v1/visit", params={"sid": "sess-12345678"}, headers=foreign)
+    assert (visit.status_code, visit.headers["x-datacat-stop"]) == (403, "86400")
+    # Every page of a paused website: refused for an hour, the whole website.
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
+    api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
+    paused = api.post("/api/v1/telemetry", content=b"not json", headers={**foreign, "Origin": SHOP})
+    assert (paused.status_code, paused.headers["x-datacat-stop"], paused.headers["x-datacat-stop-scope"]) == \
+        (403, "3600", "origin")
+    # A monitored website is still rate limited as before.
+    api.patch("/api/v1/sites/shop", json={"status": "active"}, headers=ADMIN)
+    assert api.post("/api/v1/telemetry", json=telemetry("s-1"), headers={"Origin": SHOP}).status_code == 429
+    assert db["detection_results"].count_documents({}) == 0
+
+
+def test_the_served_collector_carries_the_registry_epoch(api, db):
+    """A browser told to stay silent asks again once a page is registered or resumed: the epoch
+    in the script moves on create, resume and a new address, not on a pause or a rename."""
+    api.post("/api/v1/sites", json={"name": "Shop", "origins": [SHOP]}, headers=ADMIN)
+    past = datetime.now(timezone.utc) - timedelta(days=1)
+    db["sites"].update_one({"site_id": "shop"}, {"$set": {"activated_at": past}})
+    sites.registry.reload(db)
+    created = sites.registry.epoch
+    assert created == int(past.timestamp())
+    api.patch("/api/v1/sites/shop", json={"status": "paused"}, headers=ADMIN)
+    api.patch("/api/v1/sites/shop", json={"name": "Shop 2"}, headers=ADMIN)
+    assert sites.registry.epoch == created
+    script = api.get("/bot-collector.js")
+    assert script.status_code == 200 and f"Number('{created}')" in script.text
+    assert "__DATACAT_REGISTRY_EPOCH__" not in script.text
+    assert api.get("/bot-collector.js", headers={"If-None-Match": script.headers["etag"]}).status_code == 304
+    api.patch("/api/v1/sites/shop", json={"status": "active"}, headers=ADMIN)
+    assert sites.registry.epoch > created
+    assert db["sites"].find_one({"site_id": "shop"})["resumed_at"] is not None
+    renewed = api.get("/bot-collector.js", headers={"If-None-Match": script.headers["etag"]})
+    assert renewed.status_code == 200 and renewed.headers["etag"] != script.headers["etag"]
+    db["sites"].update_one({"site_id": "shop"}, {"$set": {"activated_at": past}})
+    sites.registry.reload(db)
+    api.patch("/api/v1/sites/shop", json={"origins": [SHOP, BLOG]}, headers=ADMIN)
+    assert sites.registry.epoch > created, "a new address is a newly monitored page"

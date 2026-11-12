@@ -375,3 +375,38 @@ def test_device_sessions_count_browsers_not_tabs(db):
         db["detection_results"].update_one({"sessionId": f"wipe-{index}"}, {"$set": {"device_token": f"{index:032x}"}})
     assert gateway.device_sessions(db, visitor_id="dev-wiper", ip="203.0.113.7", session_id="next",
                                    device_token="f" * 32) == 31
+
+
+def test_gate_does_not_wait_for_a_collector_that_was_told_to_stop(api, db):
+    """A paused or removed shop has no collector to wait for, so its customers' writes pass; for an
+    hour after a resume, browsers still silent from the pause are not refused for being silent."""
+    from api_service import sites
+
+    write = {**GW, "X-Original-Method": "POST", "X-Original-URI": "/api/v1/orders", "User-Agent": CHROME, "Host": SHOP}
+    try:
+        # Another website keeps the registry in use (an empty one accepts every page: local runs).
+        sites.create_site(db, name="Other", origins=["https://other.example"])
+        sites.create_site(db, name="SilkMoon", origins=["https://" + SHOP], status="paused")
+        view(db, age=600)
+        api.cookies.set(gateway.PAGE_VIEW_COOKIE, PV)
+        paused = api.get("/api/v1/gate", headers=write)
+        assert (paused.status_code, paused.headers["X-Datacat-Gate"]) == (204, "not_monitored")
+        sites.update_site(db, "silkmoon", {"status": "active"})
+        resumed = api.get("/api/v1/gate", headers=write)
+        assert (resumed.status_code, resumed.headers["X-Datacat-Gate"]) == (204, "resumed")
+        db["sites"].update_one({"site_id": "silkmoon"},
+                               {"$set": {"resumed_at": datetime.now(timezone.utc) - timedelta(hours=2)}})
+        sites.registry.reload(db)
+        later = api.get("/api/v1/gate", headers=write)
+        assert (later.status_code, later.headers["X-Datacat-Gate"]) == (403, "no_collector")
+        # A verdict is never waved through by the resume grace.
+        db["sites"].update_one({"site_id": "silkmoon"}, {"$set": {"resumed_at": datetime.now(timezone.utc)}})
+        sites.registry.reload(db)
+        db["detection_results"].insert_one({"sessionId": "bot-1", "page_view_id": PV, "verdict": "BOT",
+                                            "updated_at": datetime.now(timezone.utc)})
+        assert api.get("/api/v1/gate", headers=write).headers["X-Datacat-Gate"] == "bot"
+        sites.delete_site(db, "silkmoon")
+        assert api.get("/api/v1/gate", headers=write).headers["X-Datacat-Gate"] == "not_monitored"
+    finally:
+        import mongomock
+        sites.registry.reload(mongomock.MongoClient()["empty"])
