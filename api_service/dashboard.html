@@ -2299,11 +2299,13 @@ const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hì
   ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
   CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt',
   RANDOM_POINTER_JUMPS: 'Con trỏ nhảy ngẫu nhiên', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản',
-  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả' };
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP' };
 const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
-  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả' };
+  WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2340,7 +2342,9 @@ function shortReason(s, deferred) {
   if (basis === 'desktop_risk') return codes((bd.desktop_risk || {}).codes, SHORT_DESKTOP_CODES) || 'Rủi ro trên máy tính';
   if (basis === 'mobile_risk') return codes((bd.mobile_human || {}).risk, SHORT_MOBILE_CODES) || 'Rủi ro trên điện thoại';
   if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
+  if (basis === 'mobile_light_touch') return `${(bd.mobile_human || {}).gestures || 0} lần chạm thật (độ tin cậy thấp hơn)`;
   if (deferred) {
+    if ((bd.suspect_reason_codes || []).includes('NOT_VIEWED')) return 'Trang chưa từng hiển thị';
     if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) return 'Chưa đủ thao tác chạm';
     return `Mới ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} lần di chuột`;
   }
@@ -2647,12 +2651,16 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường', CLIENT_AUTOMATION_SIGNAL: 'có cờ tự động hóa từ trình duyệt',
     UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ', DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ',
     WEBDRIVER_TAMPERED: FORGERY_LABELS.WEBDRIVER_TAMPERED, UA_POINTER_MISMATCH: FORGERY_LABELS.UA_POINTER_MISMATCH,
-    UA_API_MISMATCH: FORGERY_LABELS.UA_API_MISMATCH, PLATFORM_SPOOFED: FORGERY_LABELS.PLATFORM_SPOOFED };
+    UA_API_MISMATCH: FORGERY_LABELS.UA_API_MISMATCH, PLATFORM_SPOOFED: FORGERY_LABELS.PLATFORM_SPOOFED,
+    TIMEZONE_MISMATCH: 'múi giờ của trình duyệt lệch từ 1 giờ trở lên so với nước của địa chỉ IP (truy cập qua VPN/proxy nước khác)',
+    INSTANT_TOUCH: 'chạm màn hình chưa tới 120 ms sau khi trang hiện ra (người cần vài trăm ms để phản ứng)',
+    NOT_VIEWED: 'trang chạy ở chế độ tải trước hoặc tab nền, chưa từng hiển thị cho ai xem' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
     DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường',
     ZERO_TIME_TAPS: 'chạm và nhả cùng lúc (0 ms), ngón tay thật chạm màn hình ít nhất vài chục ms',
+    TIMEZONE_MISMATCH: 'múi giờ của trình duyệt lệch từ 1 giờ trở lên so với nước của địa chỉ IP (truy cập qua VPN/proxy nước khác)',
     RANDOM_POINTER_JUMPS: `con trỏ nhảy giữa các điểm ngẫu nhiên (${Math.round((jumpProfile.jump_share || 0) * 100)}% bước nhảy quá 15% màn hình, ${Math.round((jumpProfile.turn_share || 0) * 100)}% quay ngược hướng)`,
     ...FORGERY_LABELS };
 
@@ -2732,6 +2740,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     const mh = bd.mobile_human || {};
     const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
     explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm thật, không có dấu hiệu bot.`;
+  } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_light_touch') {
+    const mh = bd.mobile_human || {};
+    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
+    explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm có tiếp xúc ngón tay thật, môi trường sạch. Ít hơn 3 thao tác nên độ tin cậy thấp hơn.`;
   } else if (v === 'HUMAN') {
     explainText = 'Không có dấu hiệu bot.';
   } else if (deferred) {

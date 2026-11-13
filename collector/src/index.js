@@ -8,8 +8,9 @@ import { runBotDetectors } from './botd.js';
 import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
 import { MouseRecorder } from './mouse.js';
+import { PagePresence } from './presence.js';
 
-export const COLLECTOR_VERSION = '1.15.0';
+export const COLLECTOR_VERSION = '1.16.0';
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -89,6 +90,7 @@ export class BotCollector {
       Number(options.idleHeartbeatInterval ?? 60000) || 60000,
     );
     this.mouseRecorder = new MouseRecorder();
+    this.presence = new PagePresence();
     this.cachedFingerprint = null;
     this.cachedBotd = null;
     this.timer = null;
@@ -303,6 +305,7 @@ export class BotCollector {
 
   async initialize(lifecycleVersion) {
     this.mouseRecorder.start();
+    try { this.presence.start(); } catch (e) { /* optional evidence */ }
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', this.handlePageHide, { capture: true });
     }
@@ -340,6 +343,7 @@ export class BotCollector {
     this.destroyed = true;
     this.lifecycleVersion++;
     this.mouseRecorder.stop();
+    try { this.presence.stop(); } catch (e) { /* optional evidence */ }
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.initPromise = null;
@@ -395,6 +399,7 @@ export class BotCollector {
     // The API rebuilds canonical chunks from raw records. Sending overlapping
     // windows can push a mature session beyond the request-size limit.
     delete mouseData.chunks;
+    try { mouseData.presence = this.presence.exportData(); } catch (e) { /* optional evidence */ }
     const sequence = this.sequence;
     this.sequence = (this.sequence + 1) % 1000000;
 
@@ -431,9 +436,10 @@ export class BotCollector {
     const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
     const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
     const gestures = mouse.touch && Number.isFinite(mouse.touch.total) ? mouse.touch.total : 0;
+    const scrolls = mouse.presence && Number.isFinite(mouse.presence.scrolls) ? mouse.presence.scrolls : 0;
     // A reference event id that arrives later is news worth one heartbeat even without activity.
     const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
-    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, reference]);
+    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
   }
 
   /**

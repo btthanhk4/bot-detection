@@ -31,11 +31,17 @@ export async function readProfileNavigator(nav, timeoutMs = 1000) {
     result.clientHintsStatus = 'partial';
     if (typeof hints.getHighEntropyValues !== 'function') return result;
     const extra = await Promise.race([
-      Promise.resolve().then(() => hints.getHighEntropyValues(['fullVersionList'])),
+      Promise.resolve().then(() => hints.getHighEntropyValues(['fullVersionList', 'model', 'platformVersion', 'architecture', 'bitness'])),
       new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
     ]);
     if (extra && typeof extra === 'object') {
       result.clientHints.fullVersionList = brands(extra.fullVersionList);
+      // 1.16.0: an Android phone reports its model and an ARM CPU; an emulator says x86
+      // or an SDK model, a desktop browser posing as a phone reports no model.
+      result.clientHints.model = typeof extra.model === 'string' ? extra.model.slice(0, 64) : null;
+      result.clientHints.platformVersion = typeof extra.platformVersion === 'string' ? extra.platformVersion.slice(0, 32) : null;
+      result.clientHints.architecture = typeof extra.architecture === 'string' ? extra.architecture.slice(0, 16) : null;
+      result.clientHints.bitness = typeof extra.bitness === 'string' ? extra.bitness.slice(0, 8) : null;
       result.clientHintsStatus = 'ok';
     } else {
       result.clientHintsStatus = extra === null ? 'timeout' : 'error';

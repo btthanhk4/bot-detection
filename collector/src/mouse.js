@@ -13,6 +13,7 @@ const TOUCH_COMPAT_WINDOW_MS = 800;
 // spacing of pointermoves with the frame interval measured over this many frames.
 // The 25th percentile is reported: page-load jank only lengthens frames.
 const FRAME_PROBE_FRAMES = 60;
+const LISTEN_OPTIONS = { capture: true, passive: true };
 
 export class MouseRecorder {
   constructor(options = {}) {
@@ -75,22 +76,24 @@ export class MouseRecorder {
 
   start() {
     if (this.isListening || typeof window === 'undefined') return;
+    // Capture phase (1.16.0): a page handler that stops propagation (games, sliders,
+    // custom buttons) would otherwise hide the very taps and clicks the API judges.
     this.isListening = true;
-    window.addEventListener('mousemove', this.handleMouseMove, { passive: true });
-    window.addEventListener('mousedown', this.handleMouseDown, { passive: true });
-    window.addEventListener('mouseup', this.handleMouseUp, { passive: true });
-    window.addEventListener('click', this.handleClick, { passive: true });
-    window.addEventListener('wheel', this.handleWheel, { passive: true });
-    window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
-    window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
-    window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
-    window.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
+    window.addEventListener('mousemove', this.handleMouseMove, LISTEN_OPTIONS);
+    window.addEventListener('mousedown', this.handleMouseDown, LISTEN_OPTIONS);
+    window.addEventListener('mouseup', this.handleMouseUp, LISTEN_OPTIONS);
+    window.addEventListener('click', this.handleClick, LISTEN_OPTIONS);
+    window.addEventListener('wheel', this.handleWheel, LISTEN_OPTIONS);
+    window.addEventListener('touchstart', this.handleTouchStart, LISTEN_OPTIONS);
+    window.addEventListener('touchmove', this.handleTouchMove, LISTEN_OPTIONS);
+    window.addEventListener('touchend', this.handleTouchEnd, LISTEN_OPTIONS);
+    window.addEventListener('touchcancel', this.handleTouchCancel, LISTEN_OPTIONS);
     // Coalesced samples and raw updates are only exposed in secure contexts.
-    window.addEventListener('pointermove', this.handlePointerMove, { passive: true });
+    window.addEventListener('pointermove', this.handlePointerMove, LISTEN_OPTIONS);
     if (window.isSecureContext && 'onpointerrawupdate' in window) {
-      window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, { passive: true });
+      window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, LISTEN_OPTIONS);
     }
-    window.addEventListener('pointerdown', this.handlePointerDown, { passive: true });
+    window.addEventListener('pointerdown', this.handlePointerDown, LISTEN_OPTIONS);
     window.addEventListener('keydown', this.handleKeyDown, { capture: true, passive: true });
     window.addEventListener('keyup', this.handleKeyUp, { capture: true, passive: true });
     window.addEventListener('input', this.handleInput, { capture: true, passive: true });
@@ -137,18 +140,18 @@ export class MouseRecorder {
   stop() {
     if (!this.isListening || typeof window === 'undefined') return;
     this.isListening = false;
-    window.removeEventListener('mousemove', this.handleMouseMove);
-    window.removeEventListener('mousedown', this.handleMouseDown);
-    window.removeEventListener('mouseup', this.handleMouseUp);
-    window.removeEventListener('click', this.handleClick);
-    window.removeEventListener('wheel', this.handleWheel);
-    window.removeEventListener('touchstart', this.handleTouchStart);
-    window.removeEventListener('touchmove', this.handleTouchMove);
-    window.removeEventListener('touchend', this.handleTouchEnd);
-    window.removeEventListener('touchcancel', this.handleTouchCancel);
-    window.removeEventListener('pointermove', this.handlePointerMove);
-    window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate);
-    window.removeEventListener('pointerdown', this.handlePointerDown);
+    window.removeEventListener('mousemove', this.handleMouseMove, true);
+    window.removeEventListener('mousedown', this.handleMouseDown, true);
+    window.removeEventListener('mouseup', this.handleMouseUp, true);
+    window.removeEventListener('click', this.handleClick, true);
+    window.removeEventListener('wheel', this.handleWheel, true);
+    window.removeEventListener('touchstart', this.handleTouchStart, true);
+    window.removeEventListener('touchmove', this.handleTouchMove, true);
+    window.removeEventListener('touchend', this.handleTouchEnd, true);
+    window.removeEventListener('touchcancel', this.handleTouchCancel, true);
+    window.removeEventListener('pointermove', this.handlePointerMove, true);
+    window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate, true);
+    window.removeEventListener('pointerdown', this.handlePointerDown, true);
     window.removeEventListener('keydown', this.handleKeyDown, true);
     window.removeEventListener('keyup', this.handleKeyUp, true);
     window.removeEventListener('input', this.handleInput, true);

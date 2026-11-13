@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.15.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.16.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -309,6 +309,80 @@ async function testTouchGesturesAreCaptured() {
   assert.strictEqual(bounded.gestures.length, 20);
   assert.ok(bounded.gestures.every((g) => g.points.length <= 48));
   collector.destroy();
+}
+
+async function testPagePresenceAndMotionSummary() {
+  const saved = { window: global.window, document: global.document, motion: global.DeviceMotionEvent };
+  const make = ({ visibility = 'hidden', prerendering = false, gated = false } = {}) => {
+    const handlers = {};
+    const listen = (type, fn) => { handlers[type] = fn; };
+    global.document = {
+      visibilityState: visibility, prerendering, addEventListener: listen, removeEventListener() {},
+      scrollingElement: { scrollHeight: 2000 },
+    };
+    global.window = { isSecureContext: true, addEventListener: listen, removeEventListener() {}, scrollY: 0, innerHeight: 800 };
+    global.DeviceMotionEvent = function DeviceMotionEvent() {};
+    if (gated) global.DeviceMotionEvent.requestPermission = () => Promise.resolve('denied');
+    const presence = new (new BotCollector({ autoSendInterval: 0 }).presence.constructor)();
+    presence.start();
+    return { presence, handlers };
+  };
+  try {
+    // Opened in a background tab: no reaction time until the page is seen.
+    const { presence, handlers } = make();
+    handlers.touchstart({ isTrusted: true, timeStamp: 50 });
+    assert.strictEqual(presence.exportData().firstTouchMs, null, 'a touch before the page is visible is not a reaction');
+    global.document.visibilityState = 'visible';
+    handlers.visibilitychange();
+    const shownAt = presence.exportData().firstVisibleMs;
+    assert.ok(Number.isFinite(shownAt));
+    handlers.touchstart({ isTrusted: false, timeStamp: shownAt + 5 });
+    handlers.touchstart({ isTrusted: true, timeStamp: shownAt + 640 });
+    handlers.touchstart({ isTrusted: true, timeStamp: shownAt + 9000 });
+    assert.strictEqual(presence.exportData().firstTouchMs, 640, 'first trusted touch after the page appeared');
+    global.window.scrollY = 1200;
+    handlers.scroll({ isTrusted: true });
+    handlers.scroll({ isTrusted: false });
+    let data = presence.exportData();
+    assert.strictEqual(data.scrolls, 1);
+    assert.strictEqual(data.maxScrollRatio, 1);
+    assert.strictEqual(data.initialVisibility, 'hidden');
+    // A hand-held phone: gravity tilted about 45 degrees, small tremor.
+    for (let i = 0; i < 30; i++) {
+      const j = (i % 3 - 1) * 0.05;
+      handlers.devicemotion({
+        isTrusted: true,
+        acceleration: { x: j, y: -j, z: j / 2 },
+        accelerationIncludingGravity: { x: j, y: 6.93 + j, z: 6.93 - j },
+        rotationRate: { alpha: 1 + j, beta: 0.5, gamma: 0.2 },
+      });
+    }
+    data = presence.exportData();
+    assert.strictEqual(data.motion.status, 'ok');
+    assert.strictEqual(data.motion.events, 30);
+    assert.ok(data.motion.tiltDeg > 40 && data.motion.tiltDeg < 50, `tilt ${data.motion.tiltDeg}`);
+    assert.ok(data.motion.linearSd > 0 && data.motion.gravitySd > 0);
+    assert.ok(!('stream' in data.motion) && Object.keys(data.motion).length <= 11, 'summary only, no motion stream');
+    presence.stop();
+
+    // Prerendered: scripts ran before anyone looked; visible only after activation.
+    const pre = make({ visibility: 'visible', prerendering: true });
+    assert.strictEqual(pre.presence.exportData().initialVisibility, 'prerender');
+    assert.strictEqual(pre.presence.exportData().firstVisibleMs, null);
+    assert.strictEqual(pre.presence.exportData().prerendered, true);
+    global.document.prerendering = false;
+    pre.handlers.prerenderingchange();
+    assert.ok(Number.isFinite(pre.presence.exportData().firstVisibleMs));
+
+    // iOS asks permission for motion: nothing is requested, nothing is listened to.
+    const ios = make({ visibility: 'visible', gated: true });
+    assert.strictEqual(ios.presence.exportData().motion.status, 'permission_gated');
+    assert.strictEqual(ios.handlers.devicemotion, undefined);
+  } finally {
+    global.window = saved.window;
+    global.document = saved.document;
+    global.DeviceMotionEvent = saved.motion;
+  }
 }
 
 async function testKeyboardTimingAndPressPressure() {
@@ -1186,6 +1260,7 @@ testRestartDuringFingerprinting()
   .then(testRefusalFallsBackToSessionStorage)
   .then(testRefusedThirdPartyPageCostsOneRequest)
   .then(testReferenceEventIsOptionalAndTravelsWithTelemetry)
+  .then(testPagePresenceAndMotionSummary)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

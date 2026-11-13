@@ -216,9 +216,10 @@ AUTOMATION_EVIDENCE_CASES = (
                                   fingerprint={"platform": "iPhone", "deviceMemory": 0, "maxTouchPoints": 5})),
     ("SUSPECT", None, _automation(browser_ua=_PIXEL, http_ua=_PIXEL, renderer="Mali-G710",
                                   fingerprint={"platform": "Linux aarch64", "deviceMemory": 8, "maxTouchPoints": 5})),
-    ("SUSPECT", None, _automation(browser_ua=_IPHONE, http_ua=_IPHONE, renderer=_D3D,
-                                  fingerprint={"platform": "iPhone", "deviceMemory": 16, "maxTouchPoints": 1})),
-    ("SUSPECT", None, _automation(
+    # Policy 33: evidence against a phone no longer waits for touches: a final SUSPECT.
+    ("SUSPECT", "mobile_risk", _automation(browser_ua=_IPHONE, http_ua=_IPHONE, renderer=_D3D,
+                                           fingerprint={"platform": "iPhone", "deviceMemory": 16, "maxTouchPoints": 1})),
+    ("SUSPECT", "mobile_risk", _automation(
         browser_ua=_PIXEL, http_ua=_PIXEL, renderer="Android Emulator OpenGL ES Translator (Google SwiftShader)",
         fingerprint={"platform": "Linux x86_64", "deviceMemory": 2, "maxTouchPoints": 10})),
     ("SUSPECT", None, _automation(browser_ua=_CUBOT, http_ua=_CUBOT)),
@@ -290,6 +291,13 @@ AUTOMATION_EVIDENCE_RULE_GATE_V20 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
     "positive_cases": 11, "negative_cases": 18, "passed": 29,
     "fixture_fingerprint": "148fa79976767a10794a32ba8a1ec267c9bf4eec0d683d72f58b63880a6622ee",
+}
+
+# Frozen gate of policies 24-32 (phones with evidence against them but no touches stayed insufficient).
+AUTOMATION_EVIDENCE_RULE_GATE_V24 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
+    "positive_cases": 12, "negative_cases": 19, "passed": 31,
+    "fixture_fingerprint": "6163f4d5aa5216c0b65da60d6a48905a25ebcf032b2a65f0ca52a570a07af0b9",
 }
 
 AUTOMATION_EVIDENCE_RULE_GATE = {
@@ -490,6 +498,23 @@ _SAME_BUTTON_TIMES = [1000, 1650, 2480, 3010, 3920, 4410]
 _AUTOCLICK = [_tap(180, 324, 40, radius=(0.3, 0.3), force=1.0) for _ in range(6)] + _ANDROID_HAND[:3]
 _REPLAY = [_finger(150, 640, radius=(11.5, 10.0), force=0.42, spread=0.3)] * 3 + _ANDROID_HAND[4:]
 _SPOOFED = {"platformMismatch": True}
+
+
+def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None):
+    """Policy 33 context: page presence (collector 1.16), Client Hints, time zone and IP country."""
+    payload["mouse"]["presence"] = {
+        "prerendered": not shown, "initialVisibility": "visible" if shown else "prerender",
+        "firstVisibleMs": 0 if shown else None, "visibleMs": 8000 if shown else 0, "hiddenCount": 0,
+        "firstTouchMs": first_touch_ms if shown else None, "scrolls": 2, "maxScrollRatio": 0.6,
+        "motion": {"status": "unsupported"},
+    }
+    if hints:
+        payload["botd"]["profile"] = {"schema": "browser-profile-v1", "main": {"clientHints": hints}}
+    if timezone:
+        payload["fingerprint"]["timezone"] = timezone
+    if country:
+        payload["_server_headers"]["ip_country"] = country
+    return payload
 _PATCHED = {"navigatorGetterPatched": True}
 
 # Policy 19 fixtures: (verdict, decision state, decision basis, payload).
@@ -511,8 +536,8 @@ MOBILE_RULE_CASES = (
     ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS16, "iPhone", "Apple GPU", _NO_CONTACT_HAND)),
     ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_IOS18, "iPhone", "Apple GPU", _SAME_BUTTON,
                                                           times=_SAME_BUTTON_TIMES)),
-    # Not enough to judge.
-    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND[:2])),
+    # Not enough to judge (policy 33: one or two real touches are a HUMAN of lower confidence).
+    ("HUMAN", "FINAL", "mobile_light_touch", _phone(_IPHONE, "iPhone", "Apple GPU", _IOS_HAND[:2])),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(None, "Win32", _D3D, _ANDROID_HAND, touch_points=10)),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_MAC_CHROME, "MacIntel", "Apple GPU", _IOS_HAND)),
     # Judged, with evidence against: CDP contact, ruler swipes, replayed swipes,
@@ -552,6 +577,23 @@ MOBILE_RULE_CASES = (
                                                signals={"webdriverPatched": True})),
     ("SUSPECT", "FINAL", "client_forgery", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND[:2],
                                                   signals={"webdriverPatched": True})),
+    # Policy 33: one real tap on a clean Android phone that was seen is a HUMAN of lower
+    # confidence; a page nobody saw stays insufficient; a tap 40 ms after the page appeared,
+    # an emulator (by Client Hints or renderer) and a time zone of another country count
+    # against a phone however few its gestures.
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8), timezone="Asia/Jakarta", country="ID")),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                            memory=4, cores=8), shown=False)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8), first_touch_ms=40)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_PIXEL, "Linux aarch64", "Mali-G710", _ANDROID_HAND, memory=8),
+                                              hints={"model": "sdk_gphone64_x86_64", "architecture": "x86"})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_PIXEL, "Linux x86_64", _EMULATOR_GPU, _ANDROID_HAND[4:],
+                                               touch_points=10, memory=2)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8), timezone="Asia/Jakarta", country="US")),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPHONE, "iPhone", "Apple GPU", [])),
 )
 
 # Frozen gate of policies 19-23.
@@ -568,8 +610,16 @@ MOBILE_RULE_GATE_V24 = {
     "fixture_fingerprint": "ba0e7289d8f4ebb10c1ef52a696599a8dc41a5de765b9ac6ca7b1115deb6031c",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policies 26-32.
+MOBILE_RULE_GATE_V26 = {
     "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
+    "human_cases": 8, "suspect_cases": 14, "bot_cases": 5, "passed": 27,
+    "fixture_fingerprint": "1b697a27897dc32b31e2a5adba9432d5c1f163ac2eeb03587435bab1c0da2a0d",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),
@@ -767,12 +817,13 @@ CLIENT_FORGERY_CASES = (
                                                   signals={"webdriverPatched": True})),
     # Policy 30: CDP's contact defaults (radius 1, force 1, release included) from an iPhone or an
     # iPad in desktop mode on current WebKit, which reports the finger's contact area; also with
-    # WebGL unavailable. iOS 16 is not judged; one gesture is not enough.
+    # WebGL unavailable. iOS 16 is not judged; one gesture is not enough to convict (policy 33:
+    # it is evidence against the phone, a final SUSPECT).
     ("BOT", "FINAL", "synthetic_touch", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP] * 7)),
     ("BOT", "FINAL", "synthetic_touch", _phone(_IPAD_DESKTOP, "MacIntel", "unsupported", [_CDP_TAP] * 3)),
     ("BOT", "FINAL", "synthetic_touch", _phone(_IOS18, "iPhone", "Apple GPU", [_CDP_TAP] * 2)),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS16, "iPhone", "Apple GPU", [_CDP_TAP] * 4)),
-    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP])),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP])),
     # Policy 31: navigator.deviceMemory (Chromium only) under a Safari or Firefox user agent; the
     # lander's Mac farm (Safari 9.1.2 on macOS 10.15, no input). With a hidden webdriver it
     # convicts; alone it withholds HUMAN. Genuine Safari and Firefox report none; Chrome may.
@@ -805,6 +856,13 @@ CLIENT_FORGERY_CASES = (
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_ANDROID10, "Linux armv81", _ANGLE_MALI, [], memory=8,
                                                       worker={"platformMismatch": False, "rendererMismatch": False})),
 )
+
+# Frozen gate of policy 32 (one CDP tap left a phone insufficient).
+CLIENT_FORGERY_RULE_GATE_V32 = {
+    "rules": ['client_forgery_v1', 'forged_browser_v1', 'webview_webdriver_v1', 'apple_synthetic_touch_v1',
+              'ua_api_mismatch_v1', 'platform_spoofed_v1'], "final_cases": 32, "insufficient_cases": 11, "passed": 43,
+    "fixture_fingerprint": "b02dacc629777eded363588ef83bb82d7d3d33817acfa82d65aff1e6a57ef58b",
+}
 
 # Frozen gate of policy 31.
 CLIENT_FORGERY_RULE_GATE_V31 = {

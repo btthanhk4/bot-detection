@@ -822,10 +822,13 @@ def validate_automation_evidence_rules(detector) -> dict:
     """Check framework-marker and tampering fixtures before publishing policy 12."""
     for expected, basis, payload in AUTOMATION_EVIDENCE_CASES:
         result = detector.predict(payload)
+        # Policy 33: a phone with evidence against it is a final SUSPECT even without touches.
         if result["verdict"] != expected or result["decision_state"] != (
-            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+            "FINAL" if expected == "BOT" or basis == "mobile_risk" else "INSUFFICIENT_EVIDENCE"
         ):
             raise RuntimeError("Automation evidence rule release gate failed")
+        if basis == "mobile_risk" and result["breakdown"]["decision_basis"] != basis:
+            raise RuntimeError("Automation evidence rule metadata release gate failed")
         if expected == "BOT" and (
             result["breakdown"]["decision_basis"] != basis or result["breakdown"]["risk_score_in_domain"]
         ):

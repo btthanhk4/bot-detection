@@ -41,7 +41,7 @@ def test_release_fixtures(detector, index):
 def test_release_gate_counts(detector):
     gate = validate_mobile_rules(detector)
     assert gate == MOBILE_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (8, 14, 5)
+    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (10, 19, 5)
 
 
 def test_phone_human_is_not_locked_and_has_no_mouse_risk(detector):
@@ -62,10 +62,22 @@ def test_phone_risk_is_final_but_not_locked(detector):
     assert any("evidence against it: emulator" in reason for reason in result["reasons"])
 
 
-def test_risk_needs_enough_gestures_to_be_judged(detector):
+def test_risk_no_longer_waits_for_three_gestures(detector):
+    # Policy 33: an emulator is evidence against a phone however few its gestures.
     payload = _case(13)
     touch = payload["mouse"]["touch"]
     touch["gestures"], touch["total"] = touch["gestures"][:2], 2
+    result = detector.predict(payload)
+    assert (result["verdict"], result["decision_state"]) == ("SUSPECT", "FINAL")
+    assert "EMULATOR" in result["breakdown"]["mobile_human"]["risk"]
+    assert result["breakdown"]["decision_basis"] == "mobile_risk"
+
+
+def test_unverified_page_alone_still_waits_with_few_gestures(detector):
+    payload = _clean_iphone()
+    payload["_server_headers"]["page_view"] = "missing"
+    touch = payload["mouse"]["touch"]
+    touch["gestures"], touch["total"] = [], 0
     result = detector.predict(payload)
     assert (result["verdict"], result["decision_state"]) == ("SUSPECT", "INSUFFICIENT_EVIDENCE")
     assert result["breakdown"]["mobile_human"]["risk"] == []
@@ -84,9 +96,38 @@ def test_gesture_threshold_is_inclusive(detector):
     touch["gestures"] = touch["gestures"][:MOBILE_HUMAN_MIN_GESTURES]
     touch["total"] = MOBILE_HUMAN_MIN_GESTURES
     assert detector.predict(payload)["verdict"] == "HUMAN"
+    assert detector.predict(payload)["breakdown"]["decision_basis"] == "mobile_clean_environment"
     touch["gestures"] = touch["gestures"][:MOBILE_HUMAN_MIN_GESTURES - 1]
     touch["total"] = MOBILE_HUMAN_MIN_GESTURES - 1
-    assert detector.predict(payload)["verdict"] == "SUSPECT"
+    # Policy 33: fewer than three real touches are a HUMAN of lower confidence.
+    result = detector.predict(payload)
+    assert result["verdict"] == "HUMAN" and result["breakdown"]["decision_basis"] == "mobile_light_touch"
+    assert any("lower confidence" in reason for reason in result["reasons"])
+    touch["gestures"], touch["total"] = [], 0
+    assert detector.predict(payload)["decision_state"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_light_touch_needs_real_contact_and_a_seen_page(detector):
+    payload = _clean_iphone()
+    touch = payload["mouse"]["touch"]
+    touch["gestures"], touch["total"] = touch["gestures"][4:5], 1
+    assert detector.predict(copy.deepcopy(payload))["breakdown"]["decision_basis"] == "mobile_light_touch"
+    cdp = copy.deepcopy(payload)
+    for point in cdp["mouse"]["touch"]["gestures"][0]["points"]:
+        point[3:6] = [1, 1, 1]
+    assert detector.predict(cdp)["verdict"] != "HUMAN", "CDP contact is not a finger"
+    instant = copy.deepcopy(payload)
+    gesture = instant["mouse"]["touch"]["gestures"][0]["points"]
+    for point in gesture:
+        point[0] = 0.0
+    instant["mouse"]["touch"]["gestures"][0]["points"] = gesture[:1] + gesture[:1]
+    assert detector.predict(instant)["verdict"] != "HUMAN", "a 0 ms tap is not a finger"
+    unseen = copy.deepcopy(payload)
+    unseen["mouse"]["presence"] = {"prerendered": True, "initialVisibility": "prerender", "firstVisibleMs": None,
+                                   "visibleMs": 0, "firstTouchMs": None, "motion": {"status": "unsupported"}}
+    result = detector.predict(unseen)
+    assert result["decision_state"] == "INSUFFICIENT_EVIDENCE"
+    assert "NOT_VIEWED" in result["breakdown"]["suspect_reason_codes"]
 
 
 def test_page_without_touch_stays_insufficient(detector):

@@ -15,6 +15,17 @@ Policy 19 (``mobile_risk_v1``): once a phone has enough gestures to be judged,
 concrete evidence against it (emulator, desktop hardware, injected or replayed
 touches, contradictory environment, cloud address) makes it SUSPECT as a final
 verdict instead of "insufficient evidence". Too few gestures stay insufficient.
+
+Policy 33, from 4,598 undecided sessions of 12-13 Nov 2026 checked against Fingerprint:
+
+* ``mobile_light_touch_v1``: one or two trusted touches with real finger contact (no
+  CDP contact, no 0 ms tap, not within 120 ms of the page appearing) on a clean phone
+  are a HUMAN of lower confidence. 1,974 sessions qualified; Fingerprint flagged 4 of
+  200 sampled (2%), against 0.7% of the phones already HUMAN and 68% of the BOTs.
+* Evidence against a phone no longer waits for three gestures: 59 undecided phones
+  carried some (Fingerprint flagged 38%) and are now a final SUSPECT. An unverified page
+  load alone still waits while websites adopt page tokens.
+* A phone whose page was never shown (prerender, background tab) is never HUMAN.
 """
 
 import re
@@ -24,14 +35,18 @@ from core_ml.features.server_context import server_context_codes
 
 MOBILE_HUMAN_RULE = "mobile_clean_environment_v1"
 MOBILE_RISK_RULE = "mobile_risk_v1"
+MOBILE_LIGHT_RULE = "mobile_light_touch_v1"
 # Missing conditions that are evidence against the session, not just absence of data.
 RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
               "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY",
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
-              "PLATFORM_SPOOFED")
+              "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH")
+# With fewer than three gestures, these still wait (page tokens are not everywhere yet).
+_FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
                    "ios_touch_without_contact"}
 MOBILE_HUMAN_MIN_GESTURES = 3
+MOBILE_LIGHT_MIN_GESTURES = 1
 # Families an ordinary phone can trip on its own (header quirks of in-app
 # browsers, Client Hints gaps). One is tolerated; anchors never are.
 _TOLERATED_FAMILIES = {"HTTP", "CLIENT_HINTS", "CONTEXT", "NATIVE_PATCH"}
@@ -59,7 +74,7 @@ def _mobile_kind(fingerprint: dict) -> str:
 
 
 def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report: dict,
-                         client_flags: list) -> dict:
+                         client_flags: list, presence_codes=()) -> dict:
     """Whether the phone-human rule applies, and what is missing when it does not."""
     payload = payload if isinstance(payload, dict) else {}
     fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
@@ -76,8 +91,9 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
     if touch_report.get("research_flags"):
         missing.append("TOUCH_FLAGS")
     emulation = set(automation_evidence.get("mobile_emulation") or ())
+    presence_codes = set(presence_codes or ())
     if (_EMULATOR_RENDERER.search(renderer) or (kind == "android" and _X86_PLATFORM.search(platform))
-            or "desktop_gpu" in emulation):
+            or "desktop_gpu" in emulation or "CH_EMULATOR" in presence_codes):
         missing.append("EMULATOR")
     if emulation & _PLATFORM_CODES:
         missing.append("PLATFORM_CONTRADICTION")
@@ -93,13 +109,29 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
     missing += server_context_codes(payload)
     # Policy 26: a hidden webdriver flag, a user agent without the Pointer Events it delivered.
     missing += forgery_codes(payload, automation_evidence, desktop=False)
+    # Policy 33: a page nobody saw, a first touch faster than anyone can react.
+    missing += [code for code in ("NOT_VIEWED", "INSTANT_TOUCH") if code in presence_codes]
+    few = "FEW_GESTURES" in missing
+    light_eligible = (
+        bool(kind) and few and MOBILE_LIGHT_MIN_GESTURES <= gestures < MOBILE_HUMAN_MIN_GESTURES
+        and missing == ["FEW_GESTURES"]
+        and not touch_report.get("zero_time_taps") and not touch_report.get("synthetic_contact_gestures")
+    )
+    if not kind:
+        risk = []
+    elif few:
+        risk = [code for code in missing if code in RISK_CODES and code not in _FEW_GESTURE_EXEMPT]
+    else:
+        risk = [code for code in missing if code in RISK_CODES]
     return {
         "rule": MOBILE_HUMAN_RULE,
         "device": kind or None,
         "gestures": gestures,
         "minimum_gestures": MOBILE_HUMAN_MIN_GESTURES,
         "eligible": not missing,
+        "light_rule": MOBILE_LIGHT_RULE,
+        "light_eligible": light_eligible,
         "missing": missing,
-        # Judged (enough gestures on a phone) and something speaks against it.
-        "risk": [code for code in missing if code in RISK_CODES] if kind and "FEW_GESTURES" not in missing else [],
+        # Something speaks against the phone (policy 33: however few its gestures).
+        "risk": risk,
     }

@@ -38,7 +38,10 @@ from core_ml.features.input_provenance import (
     analyze_input_provenance,
 )
 from core_ml.features.interaction_features import extract_interaction_features
-from core_ml.features.mobile_human import analyze_mobile_human
+from core_ml.features.mobile_human import (
+    MOBILE_HUMAN_MIN_GESTURES,
+    analyze_mobile_human,
+)
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
     compute_statistical_features,
@@ -48,17 +51,19 @@ from core_ml.features.mouse_features import (
     records_to_chunks,
     sanitize_mouse_records,
 )
+from core_ml.features.presence import analyze_presence
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import (
     PROFILE_CANDIDATE_RULE,
     corroborated_profile_evidence,
 )
+from core_ml.features.server_context import timezone_mismatch
 from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "32"
+DECISION_POLICY_VERSION = "33"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -219,6 +224,10 @@ class EnsembleBotDetector:
         # Policy 27: random jumps judged from 10 moves count as evidence on a session too short
         # for the mouse models.
         deferred_evidence = forgery + (["RANDOM_POINTER_JUMPS"] if desktop_risk["jump_profile"]["random_jumps"] else [])
+        # Policy 33: a desktop too short of input to judge, reached through another country
+        # (its time zone is an hour or more from every zone of the address's country).
+        if not unsupported_mobile and timezone_mismatch(payload):
+            deferred_evidence.append("TIMEZONE_MISMATCH")
         # Policy 28: a headless, GPU or permission contradiction counts towards the two that
         # convict (alone it leaves a session without input insufficient, as since policy 12).
         browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"])
@@ -314,26 +323,37 @@ class EnsembleBotDetector:
             or unsupported_mobile or legacy_touch_ambiguous
         )
         # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
-        mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags)
+        presence_report = analyze_presence(payload, android="android" in str(fingerprint.get("userAgent") or "").lower())
+        mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags,
+                                            presence_report["codes"])
         mobile_human_decision = (
             mouse_evidence_deferred and not explicit_automation and mobile_human["eligible"]
             and self.lstm_available and self.tabular_available
         )
+        # Policy 33: one or two real touches on a clean phone, a HUMAN of lower confidence.
+        mobile_light_decision = (
+            mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+            and mobile_human["light_eligible"] and self.lstm_available and self.tabular_available
+        )
         # Policy 19: a phone judged on enough gestures with evidence against it is a final SUSPECT.
+        # Policy 33: however few its gestures (a forged browser keeps its own basis, policy 26).
         mobile_risk_decision = (
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
-            and bool(mobile_human["risk"]) and self.lstm_available and self.tabular_available
+            and not mobile_light_decision and bool(mobile_human["risk"])
+            and (mobile_human["gestures"] >= MOBILE_HUMAN_MIN_GESTURES or not deferred_evidence)
+            and self.lstm_available and self.tabular_available
         )
         # Policy 26: too little input to judge, but the browser contradicts itself: a final SUSPECT.
         # Policy 27: so does a pointer jumping at random over 10-24 moves.
         forgery_decision = (
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
-            and not mobile_risk_decision and bool(deferred_evidence) and self.lstm_available
+            and not mobile_light_decision and not mobile_risk_decision and bool(deferred_evidence)
+            and self.lstm_available
             and self.tabular_available
         )
         decision_deferred = (
-            mouse_evidence_deferred and not explicit_automation
-            and not mobile_human_decision and not mobile_risk_decision and not forgery_decision
+            mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+            and not mobile_light_decision and not mobile_risk_decision and not forgery_decision
         )
         tabular_score_in_domain = bool(
             self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
@@ -344,6 +364,12 @@ class EnsembleBotDetector:
             reasons.append(
                 f"Phone/tablet ({mobile_human['device']}) with {mobile_human['gestures']} trusted touch gestures "
                 "and no automation, emulator, cloud or environment evidence; touch behaviour itself is not scored"
+            )
+        elif mobile_light_decision:
+            reasons.append(
+                f"Phone/tablet ({mobile_human['device']}) with {mobile_human['gestures']} trusted touch "
+                f"gesture{'s' if mobile_human['gestures'] > 1 else ''} with real finger contact and no automation, "
+                "emulator, cloud or environment evidence; fewer than three gestures, so a HUMAN of lower confidence"
             )
         elif mobile_risk_decision:
             reasons.append(
@@ -469,7 +495,7 @@ class EnsembleBotDetector:
                     "Experimental policy: client-reported HeadlessChrome is corroborated across "
                     "browser contexts or by an explicit automation marker"
                 )
-        elif mobile_human_decision:
+        elif mobile_human_decision or mobile_light_decision:
             verdict = "HUMAN"
         elif mobile_risk_decision:
             verdict = "SUSPECT"
@@ -508,6 +534,8 @@ class EnsembleBotDetector:
                 suspect_reason_codes.append("MOBILE_RISK")
             if forgery_decision:
                 suspect_reason_codes.append("CLIENT_FORGERY")
+            if decision_deferred and "NOT_VIEWED" in presence_report["codes"]:
+                suspect_reason_codes.append("NOT_VIEWED")
             if desktop_risk["codes"] and not decision_deferred and not forgery_decision:
                 suspect_reason_codes.append("DESKTOP_RISK")
             if critical_flags:
@@ -548,6 +576,7 @@ class EnsembleBotDetector:
                 # Touch flags can only withhold the phone HUMAN verdict; the shadow score is research only.
                 "touch": {**touch_report, "shadow": score_touch(mouse.get("touch"))},
                 "mobile_human": mobile_human,
+                "presence": presence_report,
                 "desktop_risk": desktop_risk,
                 "client_forgery": {"analysis_version": CLIENT_FORGERY_VERSION, "codes": forgery,
                                    "contradictions": browser_contradictions, "evidence": deferred_evidence},
@@ -568,6 +597,7 @@ class EnsembleBotDetector:
                     else "webview_automation" if automation_rule == WEBVIEW_WEBDRIVER_RULE
                     else "synthetic_touch" if automation_rule == APPLE_SYNTHETIC_TOUCH_RULE
                     else "mobile_clean_environment" if mobile_human_decision
+                    else "mobile_light_touch" if mobile_light_decision
                     else "mobile_risk" if mobile_risk_decision
                     else "client_forgery" if forgery_decision
                     else "desktop_risk" if desktop_risk_decision

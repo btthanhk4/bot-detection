@@ -15,7 +15,7 @@ if (!fs.existsSync(distDir)) {
 
 // Every source module must be listed here; an unlisted one would leave its imports undefined
 // at runtime, where the collector swallows the error.
-const BUNDLED = ['fingerprint.js', 'botd.js', 'profile.js', 'pristine.js', 'automation.js', 'mouse.js', 'index.js', 'pilot.js'];
+const BUNDLED = ['fingerprint.js', 'botd.js', 'profile.js', 'pristine.js', 'automation.js', 'mouse.js', 'presence.js', 'index.js', 'pilot.js'];
 const unbundled = fs.readdirSync(srcDir).filter((name) => name.endsWith('.js') && !BUNDLED.includes(name));
 if (unbundled.length) throw new Error(`Add to the bundle: ${unbundled.join(', ')}`);
 
@@ -26,6 +26,7 @@ let profileCode = fs.readFileSync(path.join(srcDir, 'profile.js'), 'utf-8');
 let pristineCode = fs.readFileSync(path.join(srcDir, 'pristine.js'), 'utf-8');
 let automationCode = fs.readFileSync(path.join(srcDir, 'automation.js'), 'utf-8');
 let mouseCode = fs.readFileSync(path.join(srcDir, 'mouse.js'), 'utf-8');
+let presenceCode = fs.readFileSync(path.join(srcDir, 'presence.js'), 'utf-8');
 let indexCode = fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8');
 let pilotCode = fs.readFileSync(path.join(srcDir, 'pilot.js'), 'utf-8');
 
@@ -44,6 +45,7 @@ profileCode = stripEsModules(profileCode);
 pristineCode = stripEsModules(pristineCode);
 automationCode = stripEsModules(automationCode);
 mouseCode = stripEsModules(mouseCode);
+presenceCode = stripEsModules(presenceCode);
 indexCode = stripEsModules(indexCode);
 pilotCode = stripEsModules(pilotCode);
 
@@ -70,6 +72,9 @@ ${automationCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- DELBOT Mouse Dynamics Recorder ---
 ${mouseCode.split('\n').map(l => '  ' + l).join('\n')}
+
+  // --- Page presence and device motion summary ---
+${presenceCode.split('\n').map(l => '  ' + l).join('\n')}
 
   // --- Unified BotCollector SDK ---
 ${indexCode.split('\n').map(l => '  ' + l).join('\n')}

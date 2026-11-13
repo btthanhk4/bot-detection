@@ -479,11 +479,17 @@
       result.clientHintsStatus = 'partial';
       if (typeof hints.getHighEntropyValues !== 'function') return result;
       const extra = await Promise.race([
-        Promise.resolve().then(() => hints.getHighEntropyValues(['fullVersionList'])),
+        Promise.resolve().then(() => hints.getHighEntropyValues(['fullVersionList', 'model', 'platformVersion', 'architecture', 'bitness'])),
         new Promise((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
       ]);
       if (extra && typeof extra === 'object') {
         result.clientHints.fullVersionList = brands(extra.fullVersionList);
+        // 1.16.0: an Android phone reports its model and an ARM CPU; an emulator says x86
+        // or an SDK model, a desktop browser posing as a phone reports no model.
+        result.clientHints.model = typeof extra.model === 'string' ? extra.model.slice(0, 64) : null;
+        result.clientHints.platformVersion = typeof extra.platformVersion === 'string' ? extra.platformVersion.slice(0, 32) : null;
+        result.clientHints.architecture = typeof extra.architecture === 'string' ? extra.architecture.slice(0, 16) : null;
+        result.clientHints.bitness = typeof extra.bitness === 'string' ? extra.bitness.slice(0, 8) : null;
         result.clientHintsStatus = 'ok';
       } else {
         result.clientHintsStatus = extra === null ? 'timeout' : 'error';
@@ -949,6 +955,7 @@
   // spacing of pointermoves with the frame interval measured over this many frames.
   // The 25th percentile is reported: page-load jank only lengthens frames.
   const FRAME_PROBE_FRAMES = 60;
+  const LISTEN_OPTIONS = { capture: true, passive: true };
 
   class MouseRecorder {
     constructor(options = {}) {
@@ -1011,22 +1018,24 @@
 
     start() {
       if (this.isListening || typeof window === 'undefined') return;
+      // Capture phase (1.16.0): a page handler that stops propagation (games, sliders,
+      // custom buttons) would otherwise hide the very taps and clicks the API judges.
       this.isListening = true;
-      window.addEventListener('mousemove', this.handleMouseMove, { passive: true });
-      window.addEventListener('mousedown', this.handleMouseDown, { passive: true });
-      window.addEventListener('mouseup', this.handleMouseUp, { passive: true });
-      window.addEventListener('click', this.handleClick, { passive: true });
-      window.addEventListener('wheel', this.handleWheel, { passive: true });
-      window.addEventListener('touchstart', this.handleTouchStart, { passive: true });
-      window.addEventListener('touchmove', this.handleTouchMove, { passive: true });
-      window.addEventListener('touchend', this.handleTouchEnd, { passive: true });
-      window.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
+      window.addEventListener('mousemove', this.handleMouseMove, LISTEN_OPTIONS);
+      window.addEventListener('mousedown', this.handleMouseDown, LISTEN_OPTIONS);
+      window.addEventListener('mouseup', this.handleMouseUp, LISTEN_OPTIONS);
+      window.addEventListener('click', this.handleClick, LISTEN_OPTIONS);
+      window.addEventListener('wheel', this.handleWheel, LISTEN_OPTIONS);
+      window.addEventListener('touchstart', this.handleTouchStart, LISTEN_OPTIONS);
+      window.addEventListener('touchmove', this.handleTouchMove, LISTEN_OPTIONS);
+      window.addEventListener('touchend', this.handleTouchEnd, LISTEN_OPTIONS);
+      window.addEventListener('touchcancel', this.handleTouchCancel, LISTEN_OPTIONS);
       // Coalesced samples and raw updates are only exposed in secure contexts.
-      window.addEventListener('pointermove', this.handlePointerMove, { passive: true });
+      window.addEventListener('pointermove', this.handlePointerMove, LISTEN_OPTIONS);
       if (window.isSecureContext && 'onpointerrawupdate' in window) {
-        window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, { passive: true });
+        window.addEventListener('pointerrawupdate', this.handlePointerRawUpdate, LISTEN_OPTIONS);
       }
-      window.addEventListener('pointerdown', this.handlePointerDown, { passive: true });
+      window.addEventListener('pointerdown', this.handlePointerDown, LISTEN_OPTIONS);
       window.addEventListener('keydown', this.handleKeyDown, { capture: true, passive: true });
       window.addEventListener('keyup', this.handleKeyUp, { capture: true, passive: true });
       window.addEventListener('input', this.handleInput, { capture: true, passive: true });
@@ -1073,18 +1082,18 @@
     stop() {
       if (!this.isListening || typeof window === 'undefined') return;
       this.isListening = false;
-      window.removeEventListener('mousemove', this.handleMouseMove);
-      window.removeEventListener('mousedown', this.handleMouseDown);
-      window.removeEventListener('mouseup', this.handleMouseUp);
-      window.removeEventListener('click', this.handleClick);
-      window.removeEventListener('wheel', this.handleWheel);
-      window.removeEventListener('touchstart', this.handleTouchStart);
-      window.removeEventListener('touchmove', this.handleTouchMove);
-      window.removeEventListener('touchend', this.handleTouchEnd);
-      window.removeEventListener('touchcancel', this.handleTouchCancel);
-      window.removeEventListener('pointermove', this.handlePointerMove);
-      window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate);
-      window.removeEventListener('pointerdown', this.handlePointerDown);
+      window.removeEventListener('mousemove', this.handleMouseMove, true);
+      window.removeEventListener('mousedown', this.handleMouseDown, true);
+      window.removeEventListener('mouseup', this.handleMouseUp, true);
+      window.removeEventListener('click', this.handleClick, true);
+      window.removeEventListener('wheel', this.handleWheel, true);
+      window.removeEventListener('touchstart', this.handleTouchStart, true);
+      window.removeEventListener('touchmove', this.handleTouchMove, true);
+      window.removeEventListener('touchend', this.handleTouchEnd, true);
+      window.removeEventListener('touchcancel', this.handleTouchCancel, true);
+      window.removeEventListener('pointermove', this.handlePointerMove, true);
+      window.removeEventListener('pointerrawupdate', this.handlePointerRawUpdate, true);
+      window.removeEventListener('pointerdown', this.handlePointerDown, true);
       window.removeEventListener('keydown', this.handleKeyDown, true);
       window.removeEventListener('keyup', this.handleKeyUp, true);
       window.removeEventListener('input', this.handleInput, true);
@@ -1583,6 +1592,220 @@
   }
 
 
+  // --- Page presence and device motion summary ---
+  /**
+   * Page presence and device motion (1.16.0): was the page ever seen, how long after it
+   * appeared did the first finger land, how far was it scrolled, and was the phone held.
+   *
+   * - A prerendered or preloaded page (speculation rules, in-app browser prefetch) runs
+   *   scripts before anyone looks at it; such a session is not a visit.
+   * - Reaction time: a person needs a few hundred milliseconds to see a page and touch it.
+   * - Motion (zkSENSE, BeCAPTCHA): a phone in a hand trembles; an emulator reports no
+   *   motion or a constant vector, a phone in a rack lies perfectly still. Only summary
+   *   statistics leave the page; no motion stream is kept. iOS asks for permission before
+   *   any motion event, so nothing is requested and nothing arrives there.
+   */
+
+  const MOTION_MAX_EVENTS = 400;
+  const MOTION_MAX_MS = 12000;
+
+  function presenceNow() {
+    return typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  }
+
+  function presenceRound(value, digits = 3) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const scale = 10 ** digits;
+    return Math.round(value * scale) / scale;
+  }
+
+  // Welford running mean and variance.
+  function motionStat() {
+    return { n: 0, mean: 0, m2: 0 };
+  }
+
+  function motionPush(s, x) {
+    if (typeof x !== 'number' || !Number.isFinite(x)) return;
+    s.n++;
+    const d = x - s.mean;
+    s.mean += d / s.n;
+    s.m2 += d * (x - s.mean);
+  }
+
+  function motionSd(s) {
+    return s.n > 1 ? Math.sqrt(s.m2 / (s.n - 1)) : null;
+  }
+
+  class PagePresence {
+    constructor() {
+      this.listening = false;
+      this.startedAt = presenceNow();
+      this.prerendered = false;
+      this.initialVisibility = null;
+      this.visibleSince = null;
+      this.visibleMs = 0;
+      this.firstVisibleMs = null;
+      this.hiddenCount = 0;
+      this.firstTouchMs = null;
+      this.scrolls = 0;
+      this.maxScrollRatio = 0;
+      this.motion = {
+        supported: false, permissionGated: false, events: 0, nullEvents: 0, intervals: motionStat(),
+        ax: motionStat(), ay: motionStat(), az: motionStat(), gx: motionStat(), gy: motionStat(), gz: motionStat(), rotation: motionStat(),
+        lastAt: null, done: false,
+      };
+      this.handleVisibility = this.handleVisibility.bind(this);
+      this.handleActivation = this.handleActivation.bind(this);
+      this.handleScroll = this.handleScroll.bind(this);
+      this.handleTouch = this.handleTouch.bind(this);
+      this.handleMotion = this.handleMotion.bind(this);
+    }
+
+    start() {
+      if (this.listening || typeof window === 'undefined' || typeof document === 'undefined') return;
+      this.listening = true;
+      // Times are on the page's clock (ms since navigation start), like event.timeStamp.
+      let activation = 0;
+      try {
+        const nav = typeof performance !== 'undefined' && performance.getEntriesByType
+          ? performance.getEntriesByType('navigation')[0] : null;
+        activation = nav && nav.activationStart > 0 ? nav.activationStart : 0;
+        this.prerendered = document.prerendering === true || activation > 0;
+      } catch (e) { /* unsupported */ }
+      this.initialVisibility = document.prerendering === true ? 'prerender' : String(document.visibilityState || '');
+      // Visible since navigation (or since a prerendered page was activated).
+      if (document.visibilityState === 'visible' && document.prerendering !== true) this.markVisible(activation);
+      document.addEventListener('visibilitychange', this.handleVisibility, { capture: true, passive: true });
+      document.addEventListener('prerenderingchange', this.handleActivation, { capture: true, passive: true });
+      window.addEventListener('scroll', this.handleScroll, { capture: true, passive: true });
+      window.addEventListener('touchstart', this.handleTouch, { capture: true, passive: true });
+      const Motion = typeof DeviceMotionEvent !== 'undefined' ? DeviceMotionEvent : null;
+      this.motion.supported = Boolean(Motion) && window.isSecureContext === true;
+      this.motion.permissionGated = Boolean(Motion && typeof Motion.requestPermission === 'function');
+      if (this.motion.supported && !this.motion.permissionGated) {
+        window.addEventListener('devicemotion', this.handleMotion, { passive: true });
+      }
+    }
+
+    stop() {
+      if (!this.listening) return;
+      this.listening = false;
+      this.closeVisible();
+      document.removeEventListener('visibilitychange', this.handleVisibility, true);
+      document.removeEventListener('prerenderingchange', this.handleActivation, true);
+      window.removeEventListener('scroll', this.handleScroll, true);
+      window.removeEventListener('touchstart', this.handleTouch, true);
+      window.removeEventListener('devicemotion', this.handleMotion);
+    }
+
+    markVisible(at = presenceNow()) {
+      if (this.visibleSince !== null) return;
+      this.visibleSince = at;
+      if (this.firstVisibleMs === null) this.firstVisibleMs = Math.round(at);
+    }
+
+    closeVisible() {
+      if (this.visibleSince === null) return;
+      this.visibleMs += presenceNow() - this.visibleSince;
+      this.visibleSince = null;
+    }
+
+    handleVisibility() {
+      if (document.prerendering === true) return;
+      if (document.visibilityState === 'visible') this.markVisible();
+      else {
+        this.closeVisible();
+        this.hiddenCount++;
+      }
+    }
+
+    handleActivation() {
+      if (document.visibilityState === 'visible') this.markVisible();
+    }
+
+    handleScroll(e) {
+      if (e && e.isTrusted === false) return;
+      this.scrolls++;
+      try {
+        const root = document.scrollingElement || document.documentElement;
+        const height = root ? root.scrollHeight : 0;
+        if (height > 0) {
+          const ratio = Math.min(1, ((window.scrollY || 0) + (window.innerHeight || 0)) / height);
+          if (ratio > this.maxScrollRatio) this.maxScrollRatio = ratio;
+        }
+      } catch (err) { /* layout unavailable */ }
+    }
+
+    handleTouch(e) {
+      if (!e || e.isTrusted === false || this.firstTouchMs !== null || this.firstVisibleMs === null) return;
+      // Old WebKit stamps events in epoch ms; the page clock is used then.
+      const at = typeof e.timeStamp === 'number' && e.timeStamp > 0 && e.timeStamp < 1e11 ? e.timeStamp : presenceNow();
+      this.firstTouchMs = Math.max(0, Math.round(at - this.firstVisibleMs));
+    }
+
+    handleMotion(e) {
+      const m = this.motion;
+      if (m.done || !e || e.isTrusted === false) return;
+      const t = presenceNow();
+      if (m.lastAt !== null) motionPush(m.intervals, t - m.lastAt);
+      m.lastAt = t;
+      m.events++;
+      const a = e.acceleration || {};
+      const g = e.accelerationIncludingGravity || {};
+      const r = e.rotationRate || {};
+      if (g.x === null || g.x === undefined) m.nullEvents++;
+      motionPush(m.ax, a.x); motionPush(m.ay, a.y); motionPush(m.az, a.z);
+      motionPush(m.gx, g.x); motionPush(m.gy, g.y); motionPush(m.gz, g.z);
+      if ([r.alpha, r.beta, r.gamma].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+        motionPush(m.rotation, Math.sqrt(r.alpha * r.alpha + r.beta * r.beta + r.gamma * r.gamma));
+      }
+      if (m.events >= MOTION_MAX_EVENTS || t - this.startedAt > MOTION_MAX_MS) {
+        m.done = true;
+        try { window.removeEventListener('devicemotion', this.handleMotion); } catch (err) { /* ignore */ }
+      }
+    }
+
+    motionSummary() {
+      const m = this.motion;
+      if (!m.supported) return { status: 'unsupported' };
+      if (m.permissionGated) return { status: 'permission_gated' };
+      if (!m.events) return { status: 'no_events' };
+      const gravity = Math.sqrt(m.gx.mean ** 2 + m.gy.mean ** 2 + m.gz.mean ** 2);
+      // Tilt from lying flat: 0 degrees on a table, typically 20-70 in a hand.
+      const tilt = gravity > 0 ? Math.acos(Math.min(1, Math.abs(m.gz.mean) / gravity)) * 180 / Math.PI : null;
+      const linear = [motionSd(m.ax), motionSd(m.ay), motionSd(m.az)].filter((v) => v !== null);
+      const gravitySd = [motionSd(m.gx), motionSd(m.gy), motionSd(m.gz)].filter((v) => v !== null);
+      return {
+        status: 'ok',
+        events: m.events,
+        nullEvents: m.nullEvents,
+        intervalMs: presenceRound(m.intervals.n ? m.intervals.mean : null, 1),
+        gravity: presenceRound(gravity, 2),
+        tiltDeg: presenceRound(tilt, 1),
+        linearSd: linear.length ? presenceRound(Math.max(...linear), 4) : null,
+        gravitySd: gravitySd.length ? presenceRound(Math.max(...gravitySd), 4) : null,
+        rotationMean: presenceRound(m.rotation.n ? m.rotation.mean : null, 3),
+        rotationSd: presenceRound(motionSd(m.rotation), 3),
+      };
+    }
+
+    exportData() {
+      const visible = this.visibleMs + (this.visibleSince !== null ? presenceNow() - this.visibleSince : 0);
+      return {
+        prerendered: this.prerendered,
+        initialVisibility: this.initialVisibility,
+        firstVisibleMs: this.firstVisibleMs,
+        visibleMs: Math.round(visible),
+        hiddenCount: this.hiddenCount,
+        firstTouchMs: this.firstTouchMs,
+        scrolls: this.scrolls,
+        maxScrollRatio: presenceRound(this.maxScrollRatio, 3),
+        motion: this.motionSummary(),
+      };
+    }
+  }
+
+
   // --- Unified BotCollector SDK ---
   /**
    * Unified Bot & Fraud Telemetry Collector SDK
@@ -1595,7 +1818,8 @@
 
 
 
-  const COLLECTOR_VERSION = '1.15.0';
+
+  const COLLECTOR_VERSION = '1.16.0';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -1675,6 +1899,7 @@
         Number(options.idleHeartbeatInterval ?? 60000) || 60000,
       );
       this.mouseRecorder = new MouseRecorder();
+      this.presence = new PagePresence();
       this.cachedFingerprint = null;
       this.cachedBotd = null;
       this.timer = null;
@@ -1889,6 +2114,7 @@
 
     async initialize(lifecycleVersion) {
       this.mouseRecorder.start();
+      try { this.presence.start(); } catch (e) { /* optional evidence */ }
       if (typeof window !== 'undefined') {
         window.addEventListener('pagehide', this.handlePageHide, { capture: true });
       }
@@ -1926,6 +2152,7 @@
       this.destroyed = true;
       this.lifecycleVersion++;
       this.mouseRecorder.stop();
+      try { this.presence.stop(); } catch (e) { /* optional evidence */ }
       if (this.timer) clearInterval(this.timer);
       this.timer = null;
       this.initPromise = null;
@@ -1981,6 +2208,7 @@
       // The API rebuilds canonical chunks from raw records. Sending overlapping
       // windows can push a mature session beyond the request-size limit.
       delete mouseData.chunks;
+      try { mouseData.presence = this.presence.exportData(); } catch (e) { /* optional evidence */ }
       const sequence = this.sequence;
       this.sequence = (this.sequence + 1) % 1000000;
 
@@ -2017,9 +2245,10 @@
       const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
       const clicks = Array.isArray(mouse.clickEvents) ? mouse.clickEvents.length : 0;
       const gestures = mouse.touch && Number.isFinite(mouse.touch.total) ? mouse.touch.total : 0;
+      const scrolls = mouse.presence && Number.isFinite(mouse.presence.scrolls) ? mouse.presence.scrolls : 0;
       // A reference event id that arrives later is news worth one heartbeat even without activity.
       const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
-      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, reference]);
+      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
     }
 
     /**

@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "9981e7bf8d844034a548fdba1d791c7c",
-  "created_at": "2026-11-12T01:36:06.516406+00:00",
+  "bundle_id": "054bde3414a14ab4b3bbeb2931d9817a",
+  "created_at": "2026-11-13T15:57:54.737204+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,7 +62,7 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "6163f4d5aa5216c0b65da60d6a48905a25ebcf032b2a65f0ca52a570a07af0b9",
+      "fixture_fingerprint": "8a28acf18d1058f28648bc76e725e98c209269e980b8e6035e4533c94ce6de87",
       "negative_cases": 19,
       "passed": 31,
       "positive_cases": 12,
@@ -79,9 +79,9 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 32,
-      "fixture_fingerprint": "b02dacc629777eded363588ef83bb82d7d3d33817acfa82d65aff1e6a57ef58b",
-      "insufficient_cases": 11,
+      "final_cases": 33,
+      "fixture_fingerprint": "038974221de07dd095cb515eb4dd2157976e727e6b8ef5c304982f9734701592",
+      "insufficient_cases": 10,
       "passed": 43,
       "rules": [
         "client_forgery_v1",
@@ -868,7 +868,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "32",
+    "decision_policy_version": "33",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1053,16 +1053,17 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 5,
-      "fixture_fingerprint": "1b697a27897dc32b31e2a5adba9432d5c1f163ac2eeb03587435bab1c0da2a0d",
-      "human_cases": 8,
-      "passed": 27,
+      "fixture_fingerprint": "edb7dec1d6159bfcc841814f0855f64fe0c9296a001e54f9821debb006dc4cfe",
+      "human_cases": 10,
+      "passed": 34,
       "rules": [
         "mobile_clean_environment_v1",
+        "mobile_light_touch_v1",
         "mobile_risk_v1",
         "autoclick_taps_v1",
         "mobile_emulation_v1"
       ],
-      "suspect_cases": 14
+      "suspect_cases": 19
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,

@@ -18,11 +18,18 @@ async function main() {
   const hints = {
     platform: 'Windows', mobile: false,
     brands: [{ brand: 'Chromium', version: '153' }],
-    getHighEntropyValues: async () => ({ fullVersionList: [{ brand: 'HeadlessChrome', version: '153.0' }] }),
+    getHighEntropyValues: async (keys) => ({
+      fullVersionList: [{ brand: 'HeadlessChrome', version: '153.0' }],
+      ...(keys.includes('model') ? { model: 'sdk_gphone64_x86_64', platformVersion: '14.0.0', architecture: 'x86', bitness: '64' } : {}),
+    }),
   };
   const measured = await readProfileNavigator({ userAgentData: hints });
   assert.strictEqual(measured.clientHintsStatus, 'ok');
   assert.strictEqual(measured.clientHints.fullVersionList[0].brand, 'HeadlessChrome');
+  assert.strictEqual(measured.clientHints.model, 'sdk_gphone64_x86_64');
+  assert.strictEqual(measured.clientHints.architecture, 'x86');
+  assert.strictEqual(measured.clientHints.platformVersion, '14.0.0');
+  assert.strictEqual(measured.clientHints.bitness, '64');
 
   const timedOut = await readProfileNavigator({
     userAgentData: { ...hints, getHighEntropyValues: () => new Promise(() => {}) },

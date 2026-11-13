@@ -465,6 +465,11 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
         db, visitor_id=data.get("visitorId"), ip=data.get("client_ip") or get_client_ip(request),
         session_id=str(data.get("sessionId") or ""), device_token=data.get("deviceToken"),
     ) if data.get("visitorId") and not phone else None
+    # Policy 33: the address's country, to compare with the browser's time zone.
+    try:
+        headers["ip_country"] = geoip.country_of(data.get("client_ip") or get_client_ip(request))
+    except Exception:
+        headers["ip_country"] = None
     if gateway.valid_page_view_id(page_view_id):
         data["_page_view_id"] = page_view_id
     # A website without the gateway proves its page loads with a page-view token instead.
