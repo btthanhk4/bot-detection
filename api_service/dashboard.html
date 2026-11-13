@@ -1951,12 +1951,16 @@ function fingerprintView(session, f) {
     const state = states[f.status] || ['Dữ liệu không hợp lệ', 'warning'];
     return { ...base, label: state[0], tone: state[1] };
   }
-  const detail = [f.bot_category, f.bot_name, f.bot_confidence ? 'độ tin cậy ' + f.bot_confidence : '']
+  const strong = [f.tampering ? 'can thiệp trình duyệt' : '', f.anti_detect ? 'trình duyệt anti-detect' : '',
+    typeof f.suspect_score === 'number' ? 'suspect ' + f.suspect_score : '', f.vpn ? 'VPN' : '',
+    f.datacenter ? 'IP trung tâm dữ liệu' : ''].filter(Boolean);
+  const detail = [f.bot_category, f.bot_name, f.bot_confidence ? 'độ tin cậy ' + f.bot_confidence : '', ...strong]
     .filter(Boolean).join(' · ');
   const fetched = f.fetched_at ? new Date(typeof f.fetched_at === 'string' || typeof f.fetched_at === 'number'
     ? f.fetched_at : f.fetched_at.$date || f.fetched_at) : null;
   return { ...base, label: 'Đã xác thực phía máy chủ', tone: 'ready', trusted: true,
-    verdict: FP_BOT_LABEL[f.bot] || '--', score: detail || '--',
+    verdict: (FP_BOT_LABEL[f.bot] || '--') + (f.strong === true ? ' · có cờ mạnh' : f.strong === false ? ' · không có cờ mạnh' : ''),
+    score: detail || '--',
     time: fetched && !Number.isNaN(fetched.getTime()) ? fetched.toLocaleString('vi-VN') : '--',
     comparison: fingerprintComparison(session, f.bot) };
 }
@@ -2300,12 +2304,12 @@ const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hì
   CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt',
   RANDOM_POINTER_JUMPS: 'Con trỏ nhảy ngẫu nhiên', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản',
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
-  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP' };
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', PLUGINS_EMPTY: 'Không có plugin' };
 const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
-  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện' };
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện', DESKTOP_FONTS: 'Font của máy tính' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2345,6 +2349,7 @@ function shortReason(s, deferred) {
   if (basis === 'mobile_light_touch') return `${(bd.mobile_human || {}).gestures || 0} lần chạm thật (độ tin cậy thấp hơn)`;
   if (deferred) {
     if ((bd.suspect_reason_codes || []).includes('NOT_VIEWED')) return 'Trang chưa từng hiển thị';
+    if ((bd.suspect_reason_codes || []).includes('NO_INTERACTION_CLEAN')) return 'Không thao tác, môi trường sạch';
     if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) return 'Chưa đủ thao tác chạm';
     return `Mới ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} lần di chuột`;
   }
@@ -2642,7 +2647,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     WEBDRIVER_TAMPERED: 'navigator.webdriver bị định nghĩa lại hoặc bị xóa (plugin stealth che dấu tự động hóa)',
     UA_API_MISMATCH: 'tự khai là Safari hoặc Firefox nhưng có navigator.deviceMemory, API chỉ Chrome/Chromium có',
     PLATFORM_SPOOFED: 'trang và worker khai hai hệ điều hành khác nhau (công cụ giả thiết bị chỉ sửa được trang)',
-    SERVER_CPU: 'máy báo hơn 64 nhân CPU (máy chủ)' };
+    SERVER_CPU: 'máy báo hơn 64 nhân CPU (máy chủ)',
+    DESKTOP_FONTS: 'điện thoại có bộ font của máy tính (Android thật có 5-6, iPhone 7-8 font kiểm tra)',
+    PLUGINS_EMPTY: 'trình duyệt máy tính không liệt kê plugin nào (Chrome, Edge, Firefox, Safari đều có 5 mục trình xem PDF)',
+    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường (headless, GPU phần mềm, quyền hoặc CDP)' };
   const jumpProfile = (bd.desktop_risk || {}).jump_profile || {};
   const MOBILE_CODE_LABELS = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
     TOUCH_FLAGS: 'thao tác cảm ứng bất thường: ' + ((touchInfoForText.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f).join(', ') || '--'),

@@ -208,13 +208,14 @@ class TestEnsembleDetector:
             assert result["verdict"] == expected
             assert result["is_bot"] is (expected == "BOT")
             framework = bool(flags.keys() & {"webdriver", "chromeDriverGlobal"})
+            # Policy 34: a headless family alone is a final SUSPECT on a desktop without input.
             assert result["breakdown"]["decision_basis"] == (
                 ("explicit_automation" if framework else "automation_marker") if expected == "BOT"
-                else "insufficient_evidence"
+                else "client_forgery" if flags.get("headlessUa") else "insufficient_evidence"
             )
             assert result["breakdown"]["risk_score_in_domain"] is False
             assert result["decision_state"] == (
-                "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+                "FINAL" if expected == "BOT" or flags.get("headlessUa") else "INSUFFICIENT_EVIDENCE"
             )
 
     def test_confirmed_profile_decision_does_not_depend_on_mouse_models(self):
@@ -348,7 +349,8 @@ class TestEnsembleDetector:
         res_bot = ensemble.predict(bot_payload)
         assert res_bot["is_bot"] is False
         assert res_bot["verdict"] == "SUSPECT"
-        assert res_bot["decision_state"] == "INSUFFICIENT_EVIDENCE"
+        # Policy 34: final, but a SUSPECT, never a block on the client's word alone.
+        assert res_bot["decision_state"] == "FINAL"
         assert res_bot["score_calibrated"] is False
 
         # 2. None / empty payload (graceful degradation)

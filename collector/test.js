@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.16.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.16.1');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -374,10 +374,13 @@ async function testPagePresenceAndMotionSummary() {
     pre.handlers.prerenderingchange();
     assert.ok(Number.isFinite(pre.presence.exportData().firstVisibleMs));
 
-    // iOS asks permission for motion: nothing is requested, nothing is listened to.
+    // iOS asks permission for motion: nothing is requested; without events it says so.
     const ios = make({ visibility: 'visible', gated: true });
     assert.strictEqual(ios.presence.exportData().motion.status, 'permission_gated');
-    assert.strictEqual(ios.handlers.devicemotion, undefined);
+    // A browser exposing requestPermission that still delivers events (Chrome on Android).
+    ios.handlers.devicemotion({ isTrusted: true, acceleration: { x: 0.1, y: 0, z: 0 },
+      accelerationIncludingGravity: { x: 0.1, y: 6.9, z: 6.9 }, rotationRate: { alpha: 1, beta: 0, gamma: 0 } });
+    assert.strictEqual(ios.presence.exportData().motion.status, 'ok');
   } finally {
     global.window = saved.window;
     global.document = saved.document;

@@ -533,7 +533,8 @@ def test_detect_client_flag_without_mouse_defers_decision(client):
     data = res.json()
     assert data["is_bot"] is False
     assert data["verdict"] == "SUSPECT"
-    assert data["decision_state"] == "INSUFFICIENT_EVIDENCE"
+    # Policy 34: a headless family alone makes a desktop without input a final SUSPECT (never BOT).
+    assert data["decision_state"] == "FINAL"
     assert data["score_calibrated"] is False
     assert data["policy_version"] == DECISION_POLICY_VERSION
 

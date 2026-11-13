@@ -1682,7 +1682,9 @@
       const Motion = typeof DeviceMotionEvent !== 'undefined' ? DeviceMotionEvent : null;
       this.motion.supported = Boolean(Motion) && window.isSecureContext === true;
       this.motion.permissionGated = Boolean(Motion && typeof Motion.requestPermission === 'function');
-      if (this.motion.supported && !this.motion.permissionGated) {
+      // Listening never prompts. iOS delivers nothing until a page asks; Chrome on Android also
+      // exposes requestPermission (1.16.0 skipped it there by mistake) yet delivers events.
+      if (this.motion.supported) {
         window.addEventListener('devicemotion', this.handleMotion, { passive: true });
       }
     }
@@ -1768,8 +1770,7 @@
     motionSummary() {
       const m = this.motion;
       if (!m.supported) return { status: 'unsupported' };
-      if (m.permissionGated) return { status: 'permission_gated' };
-      if (!m.events) return { status: 'no_events' };
+      if (!m.events) return { status: m.permissionGated ? 'permission_gated' : 'no_events' };
       const gravity = Math.sqrt(m.gx.mean ** 2 + m.gy.mean ** 2 + m.gz.mean ** 2);
       // Tilt from lying flat: 0 degrees on a table, typically 20-70 in a hand.
       const tilt = gravity > 0 ? Math.acos(Math.min(1, Math.abs(m.gz.mean) / gravity)) * 180 / Math.PI : null;
@@ -1819,7 +1820,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.16.0';
+  const COLLECTOR_VERSION = '1.16.1';
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many

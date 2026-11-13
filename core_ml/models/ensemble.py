@@ -24,6 +24,7 @@ from core_ml.features.client_forgery import (
     WEBVIEW_WEBDRIVER_RULE,
     apple_synthetic_touch_fires,
     contradictions,
+    evidence_codes,
     forged_browser_fires,
     forgery_codes,
     synthetic_path_fires,
@@ -63,7 +64,7 @@ from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
 
-DECISION_POLICY_VERSION = "33"
+DECISION_POLICY_VERSION = "34"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -228,6 +229,10 @@ class EnsembleBotDetector:
         # (its time zone is an hour or more from every zone of the address's country).
         if not unsupported_mobile and timezone_mismatch(payload):
             deferred_evidence.append("TIMEZONE_MISMATCH")
+        # Policy 34: an empty plugin list or an environment family alone on such a desktop.
+        if not unsupported_mobile:
+            deferred_evidence += [code for code in evidence_codes(payload, automation_evidence)
+                                  if code not in deferred_evidence]
         # Policy 28: a headless, GPU or permission contradiction counts towards the two that
         # convict (alone it leaves a session without input insufficient, as since policy 12).
         browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"])
@@ -536,6 +541,12 @@ class EnsembleBotDetector:
                 suspect_reason_codes.append("CLIENT_FORGERY")
             if decision_deferred and "NOT_VIEWED" in presence_report["codes"]:
                 suspect_reason_codes.append("NOT_VIEWED")
+            # Policy 34: a phone that was seen and never touched, with nothing against it. Not a
+            # verdict: the reference flagged 1.8% of such phones (in-app browsers 1.3%).
+            elif (decision_deferred and mobile_human["device"] and mobile_human["gestures"] == 0
+                  and mobile_human["missing"] == ["FEW_GESTURES"] and not deferred_evidence
+                  and presence_report["reported"]):
+                suspect_reason_codes.append("NO_INTERACTION_CLEAN")
             if desktop_risk["codes"] and not decision_deferred and not forgery_decision:
                 suspect_reason_codes.append("DESKTOP_RISK")
             if critical_flags:

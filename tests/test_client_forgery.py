@@ -186,7 +186,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (33, 10)  # policy 33: one CDP tap on an iPad is a final SUSPECT
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (37, 11)  # policy 34: desktop fonts, empty plugins, an environment family alone
 
 
 def test_two_contradictions_convict():

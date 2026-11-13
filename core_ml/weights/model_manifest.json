@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "054bde3414a14ab4b3bbeb2931d9817a",
-  "created_at": "2026-11-13T15:57:54.737204+00:00",
+  "bundle_id": "af7485764f5e46ba98b384f82e180dd9",
+  "created_at": "2026-11-13T17:30:45.849649+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -62,7 +62,7 @@
     "augmented_training_prefixes": 1174,
     "augmented_training_rolling_windows": 12121,
     "automation_evidence_rule_gate": {
-      "fixture_fingerprint": "8a28acf18d1058f28648bc76e725e98c209269e980b8e6035e4533c94ce6de87",
+      "fixture_fingerprint": "a8c40250f4dc2c2783567e00fb38d2ef82617f40a780d8ae236977782b0a0368",
       "negative_cases": 19,
       "passed": 31,
       "positive_cases": 12,
@@ -79,17 +79,19 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 33,
-      "fixture_fingerprint": "038974221de07dd095cb515eb4dd2157976e727e6b8ef5c304982f9734701592",
-      "insufficient_cases": 10,
-      "passed": 43,
+      "final_cases": 37,
+      "fixture_fingerprint": "e9475e17ae30a9b13eca8394c48bab4e35cc84efc1edb24e347a9efd1fb33233",
+      "insufficient_cases": 11,
+      "passed": 48,
       "rules": [
         "client_forgery_v1",
         "forged_browser_v1",
         "webview_webdriver_v1",
         "apple_synthetic_touch_v1",
         "ua_api_mismatch_v1",
-        "platform_spoofed_v1"
+        "platform_spoofed_v1",
+        "desktop_fonts_v1",
+        "desktop_evidence_v1"
       ]
     },
     "collector_window_policy": "mouse_export_v1",
@@ -868,7 +870,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "33",
+    "decision_policy_version": "34",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,

@@ -40,7 +40,7 @@ MOBILE_LIGHT_RULE = "mobile_light_touch_v1"
 RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
               "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY",
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
-              "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH")
+              "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS")
 # With fewer than three gestures, these still wait (page tokens are not everywhere yet).
 _FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",

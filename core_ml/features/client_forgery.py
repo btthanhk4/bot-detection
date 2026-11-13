@@ -88,6 +88,20 @@ Policy 32 (2026-11-12, Downloader and the new "Spin" lander, 2,823 sessions):
   and "iPhones" in Indonesia with fractional pixel ratios no iPhone has, 6 cores where Safari
   always reports 4, and a worker that disagrees on cores, platform and GPU. With the GPU anchor
   (the worker's WebGL renderer differs too) it convicts; 148 of them were SUSPECT or insufficient.
+
+Policy 34 (2026-11-13, 9,048 sessions of Downloader and Spin, 5,712 with Fingerprint's strong
+flags as a reference; rules kept only where the reference agreed on both sites):
+
+* ``DESKTOP_FONTS``: a phone (Android, iPhone, iPad user agent) on which more than 8 of the
+  collector's probe fonts exist. Real Android phones report 5-6, iPhones 7-8 (4,497 and 422
+  sessions); all 70 phones reporting 9-12 were flagged by the reference (55 Android, 15 iOS) and
+  none was ever HUMAN: a desktop font set behind a phone user agent. One more contradiction.
+* Evidence that is not a contradiction (``evidence_codes``), for desktops only: it withholds
+  HUMAN, and makes a desktop without enough mouse input a final SUSPECT.
+  ``PLUGINS_EMPTY``: a desktop Chrome, Edge, Firefox or Safari lists no plugins; all of them list
+  the five PDF viewer entries unless the PDF viewer is turned off. Windows: 25 of 26 flagged,
+  never HUMAN. ``ENVIRONMENT_EVIDENCE``: a headless, GPU, permission or CDP family alone, which
+  before left a desktop without input insufficient (190 SwiftShader sessions, 99.5% flagged).
 """
 
 import math
@@ -112,6 +126,10 @@ JUMP_MIN_SHARE = 0.40
 JUMP_MIN_PAIRS = 5
 JUMP_MIN_TURN_SHARE = 0.50
 SERVER_MIN_CORES = 64
+PHONE_MAX_FONTS = 8
+_PHONE_UA = re.compile(r"Android|iPhone|iPad|iPod")
+_DESKTOP_BROWSER = re.compile(r"Chrome/|Firefox/|Version/\d+[.\d]* Safari/|Edg/")
+DESKTOP_EVIDENCE_FAMILIES = ("HEADLESS_ENV", "GPU", "PERMISSION", "CDP")
 # Pointer Events shipped in Safari 13 and Chrome 55.
 SAFARI_POINTER_EVENTS = 13
 CHROME_POINTER_EVENTS = 55
@@ -190,6 +208,28 @@ def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) ->
     if (desktop and not isinstance(cores, bool) and isinstance(cores, (int, float))
             and math.isfinite(cores) and cores > SERVER_MIN_CORES):
         codes.append("SERVER_CPU")
+    fonts = fingerprint.get("fontsCount")
+    if (not isinstance(fonts, bool) and isinstance(fonts, (int, float)) and math.isfinite(fonts)
+            and fonts > PHONE_MAX_FONTS and _PHONE_UA.search(str(fingerprint.get("userAgent") or ""))):
+        codes.append("DESKTOP_FONTS")
+    return codes
+
+
+def evidence_codes(payload: dict, automation_evidence: dict) -> list:
+    """Policy 34: desktop evidence that is not a contradiction; it withholds HUMAN and makes a
+    desktop without enough mouse input a final SUSPECT."""
+    fingerprint = _fingerprint(payload)
+    user_agent = str(fingerprint.get("userAgent") or "")
+    if _PHONE_UA.search(user_agent) or "Mobile" in user_agent:
+        return []
+    codes = []
+    plugins = fingerprint.get("pluginsLength")
+    if (not isinstance(plugins, bool) and isinstance(plugins, (int, float)) and plugins == 0
+            and _DESKTOP_BROWSER.search(user_agent)):
+        codes.append("PLUGINS_EMPTY")
+    families = (automation_evidence or {}).get("families") or {}
+    if any(family in families for family in DESKTOP_EVIDENCE_FAMILIES):
+        codes.append("ENVIRONMENT_EVIDENCE")
     return codes
 
 

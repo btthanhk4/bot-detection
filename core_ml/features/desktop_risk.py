@@ -64,7 +64,11 @@ training sets were recorded by other tools with other timing.
 
 import re
 
-from core_ml.features.client_forgery import forgery_codes, pointer_jump_profile
+from core_ml.features.client_forgery import (
+    evidence_codes,
+    forgery_codes,
+    pointer_jump_profile,
+)
 from core_ml.features.server_context import server_context_codes
 
 DESKTOP_RISK_RULE = "desktop_risk_v1"
@@ -186,6 +190,10 @@ def analyze_desktop_risk(payload: dict, automation_evidence: dict, moves: list, 
         codes.append("RANDOM_POINTER_JUMPS")
     if judged:
         codes += forgery_codes(payload, automation_evidence, desktop=True)
+        # Policy 34: a desktop browser that lists no plugins.
+        # (Environment families are already judged above, with CDP under its own code.)
+        codes += [code for code in evidence_codes(payload, automation_evidence)
+                  if code not in codes and code != "ENVIRONMENT_EVIDENCE"]
     return {
         "analysis_version": DESKTOP_RISK_VERSION,
         "judged": judged,

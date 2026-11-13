@@ -731,8 +731,9 @@ def validate_explicit_automation_rule(detector) -> dict:
             "botd": {"detectors": flags},
             "mouse": {"records": []},
         })
+        # Policy 34: a headless family alone makes a desktop without input a final SUSPECT.
         if result["verdict"] != expected or result["decision_state"] != (
-            "FINAL" if expected == "BOT" else "INSUFFICIENT_EVIDENCE"
+            "FINAL" if expected == "BOT" or flags.get("headlessUa") else "INSUFFICIENT_EVIDENCE"
         ):
             raise RuntimeError("Explicit automation rule release gate failed")
         basis = "explicit_automation" if flags.keys() & {"webdriver", "chromeDriverGlobal"} else "automation_marker"
@@ -824,10 +825,10 @@ def validate_automation_evidence_rules(detector) -> dict:
         result = detector.predict(payload)
         # Policy 33: a phone with evidence against it is a final SUSPECT even without touches.
         if result["verdict"] != expected or result["decision_state"] != (
-            "FINAL" if expected == "BOT" or basis == "mobile_risk" else "INSUFFICIENT_EVIDENCE"
+            "FINAL" if expected == "BOT" or basis in ("mobile_risk", "client_forgery") else "INSUFFICIENT_EVIDENCE"
         ):
             raise RuntimeError("Automation evidence rule release gate failed")
-        if basis == "mobile_risk" and result["breakdown"]["decision_basis"] != basis:
+        if basis in ("mobile_risk", "client_forgery") and result["breakdown"]["decision_basis"] != basis:
             raise RuntimeError("Automation evidence rule metadata release gate failed")
         if expected == "BOT" and (
             result["breakdown"]["decision_basis"] != basis or result["breakdown"]["risk_score_in_domain"]

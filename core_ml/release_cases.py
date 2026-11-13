@@ -172,7 +172,8 @@ AUTOMATION_EVIDENCE_CASES = (
     ("SUSPECT", None, _automation(
         signals={"uaHintsMismatch": True, "navigatorGetterPatched": True}, worker={"uaMismatch": True},
         http_ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/155.0.0.0 Safari/537.36")),
-    ("SUSPECT", None, _automation(signals={"gpuOsMismatch": True}, permission=True)),
+    # Policy 34: an environment family alone makes a desktop without input a final SUSPECT.
+    ("SUSPECT", "client_forgery", _automation(signals={"gpuOsMismatch": True}, permission=True)),
     ("SUSPECT", None, _automation(signals={"webdriverDeleted": "true", "headlessScreen": 1},
                                   detectors={"webdriver": "false"}, permission="yes")),
     # Policy 13 additions from the first real traffic (2026-10-26): a Linux host
@@ -239,7 +240,7 @@ AUTOMATION_EVIDENCE_CASES = (
     ("BOT", "environment_tampering", _automation(
         renderer="Intel Iris OpenGL Engine", signals={"gpuOsMismatch": True, "cdpRuntime": True},
         worker={"rendererMismatch": True, "cpuMismatch": True})),
-    ("SUSPECT", None, _automation(signals={"cdpRuntime": True})),
+    ("SUSPECT", "client_forgery", _automation(signals={"cdpRuntime": True})),
 )
 
 # Frozen gate of policy 12 so its bundles stay verifiable after the fixtures grew.
@@ -291,6 +292,13 @@ AUTOMATION_EVIDENCE_RULE_GATE_V20 = {
     "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
     "positive_cases": 11, "negative_cases": 18, "passed": 29,
     "fixture_fingerprint": "148fa79976767a10794a32ba8a1ec267c9bf4eec0d683d72f58b63880a6622ee",
+}
+
+# Frozen gate of policy 33 (an environment family alone left a desktop without input insufficient).
+AUTOMATION_EVIDENCE_RULE_GATE_V33 = {
+    "rules": ["automation_marker_v1", "environment_tampering_v1", "idle_cloud_browser_v1", "mobile_emulation_v1"],
+    "positive_cases": 12, "negative_cases": 19, "passed": 31,
+    "fixture_fingerprint": "8a28acf18d1058f28648bc76e725e98c209269e980b8e6035e4533c94ce6de87",
 }
 
 # Frozen gate of policies 24-32 (phones with evidence against them but no touches stayed insufficient).
@@ -444,8 +452,9 @@ def _tap(x, y, ms=84.0, radius=(36.4, 36.4), force=0.0):
     return [[0.0, x, y, radius[0], radius[1], force], [ms, x + 0.5, y, radius[0], radius[1], force]]
 
 
-def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, cores=None, times=None, **kwargs):
-    fingerprint = {"platform": platform, "maxTouchPoints": touch_points,
+def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, cores=None, times=None,
+           fingerprint_extra=None, **kwargs):
+    fingerprint = {"platform": platform, "maxTouchPoints": touch_points, **(fingerprint_extra or {}),
                    **({"deviceMemory": memory} if memory is not None else {}),
                    **({"hardwareConcurrency": cores} if cores is not None else {})}
     payload = _automation(browser_ua=ua, http_ua=ua, renderer=renderer, fingerprint=fingerprint, **kwargs)
@@ -455,6 +464,8 @@ def _phone(ua, platform, renderer, gestures, touch_points=5, memory=None, cores=
     return payload
 
 
+_WINDOWS_CHROME_34 = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/157.0.0.0 Safari/537.36")
 _IPAD_DESKTOP = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
                  "Version/26.6 Safari/605.1.15")
 _MAC_CHROME = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -792,8 +803,10 @@ CLIENT_FORGERY_CASES = (
     ("BOT", "FINAL", "forged_browser", _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
                                                  fingerprint={"hardwareConcurrency": 640})),
     ("BOT", "FINAL", "forged_browser", _deferred(signals={"webdriverPatched": True, "headlessScreen": True})),
-    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
-                                                         fingerprint={"hardwareConcurrency": 8})),
+    # Policy 34: SwiftShader alone on a desktop without input is a final SUSPECT (190 such
+    # sessions on production, 99.5% flagged by the reference).
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(ua=_LINUX_CHROME, renderer=_SWIFTSHADER,
+                                                     fingerprint={"hardwareConcurrency": 8})),
     # Policy 29: taps released the moment they landed are one more (the lander's WebView bots,
     # median 0 ms; the user's iPhone tapping as fast as it could, 47-80 ms). Alone, as a screen
     # reader might make them, or with a single such tap, they only withhold HUMAN.
@@ -824,6 +837,20 @@ CLIENT_FORGERY_CASES = (
     ("BOT", "FINAL", "synthetic_touch", _phone(_IOS18, "iPhone", "Apple GPU", [_CDP_TAP] * 2)),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_IOS16, "iPhone", "Apple GPU", [_CDP_TAP] * 4)),
     ("SUSPECT", "FINAL", "mobile_risk", _phone(_IPAD_DESKTOP, "MacIntel", "Apple GPU", [_CDP_TAP])),
+    # Policy 34: a phone with a desktop font set (more than 8 probe fonts; real Android 5-6,
+    # iPhone 7-8) contradicts its user agent; with a tampered webdriver it convicts. A desktop
+    # browser without plugins, and without mouse input, is a final SUSPECT; with plugins it waits.
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                  fingerprint_extra={"fontsCount": 11})),
+    ("BOT", "FINAL", "forged_browser", _phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                              fingerprint_extra={"fontsCount": 11},
+                                              signals={"webdriverPatched": True})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                      fingerprint_extra={"fontsCount": 6})),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(ua=_WINDOWS_CHROME_34, renderer=_D3D,
+                                                     fingerprint={"pluginsLength": 0})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _deferred(ua=_WINDOWS_CHROME_34, renderer=_D3D,
+                                                         fingerprint={"pluginsLength": 5})),
     # Policy 31: navigator.deviceMemory (Chromium only) under a Safari or Firefox user agent; the
     # lander's Mac farm (Safari 9.1.2 on macOS 10.15, no input). With a hidden webdriver it
     # convicts; alone it withholds HUMAN. Genuine Safari and Firefox report none; Chrome may.
@@ -856,6 +883,13 @@ CLIENT_FORGERY_CASES = (
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_ANDROID10, "Linux armv81", _ANGLE_MALI, [], memory=8,
                                                       worker={"platformMismatch": False, "rendererMismatch": False})),
 )
+
+# Frozen gate of policy 33 (an environment family alone left a desktop without input insufficient).
+CLIENT_FORGERY_RULE_GATE_V33 = {
+    "rules": ['client_forgery_v1', 'forged_browser_v1', 'webview_webdriver_v1', 'apple_synthetic_touch_v1',
+              'ua_api_mismatch_v1', 'platform_spoofed_v1'], "final_cases": 33, "insufficient_cases": 10, "passed": 43,
+    "fixture_fingerprint": "038974221de07dd095cb515eb4dd2157976e727e6b8ef5c304982f9734701592",
+}
 
 # Frozen gate of policy 32 (one CDP tap left a phone insufficient).
 CLIENT_FORGERY_RULE_GATE_V32 = {
@@ -902,7 +936,7 @@ CLIENT_FORGERY_RULE_GATE_V26 = {
 
 CLIENT_FORGERY_RULE_GATE = {
     "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
-              "ua_api_mismatch_v1", "platform_spoofed_v1"],
+              "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

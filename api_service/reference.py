@@ -29,6 +29,8 @@ MAX_ATTEMPTS = 6
 # The Server API allows 5 requests per second; the loop stays well below it.
 REQUEST_INTERVAL_SECONDS = 0.3
 BATCH = 40
+# Fingerprint suspect score from which a session counts as flagged (with tampering or an anti-detect browser).
+STRONG_SUSPECT_SCORE = 20
 
 
 def enabled() -> bool:
@@ -93,11 +95,23 @@ def _bot_fields(body: dict) -> dict:
     linked = body.get("linked_id")
     if linked is None:
         linked = (((body.get("products") or {}).get("identification") or {}).get("data") or {}).get("linkedId")
+    # The signals that separate bots from people on production (2026-11-13: 68% of DATACAT's
+    # BOTs, 0.7% of its phone HUMANs) are tampering, an anti-detect browser and the suspect score;
+    # the bot field alone barely fires. Kept so evaluation needs no second Server API read.
+    details = body.get("tampering_details") if isinstance(body.get("tampering_details"), dict) else {}
+    suspect = body.get("suspect_score")
+    suspect = suspect if isinstance(suspect, (int, float)) and not isinstance(suspect, bool) else None
+    ip_v4 = ((body.get("ip_info") or {}).get("v4") or {}) if isinstance(body.get("ip_info"), dict) else {}
+    tampering = body.get("tampering") is True
+    anti_detect = details.get("anti_detect_browser") is True
     return {
         "bot": bot if bot in ("bad", "good", "not_detected") else None,
         "bot_type": body.get("bot_type"),
         "bot_category": info.get("category"), "bot_name": info.get("name"),
         "bot_identity": info.get("identity"), "bot_confidence": info.get("confidence"),
+        "tampering": tampering, "anti_detect": anti_detect, "suspect_score": suspect,
+        "vpn": body.get("vpn") is True, "datacenter": ip_v4.get("datacenter_result") is True,
+        "strong": tampering or anti_detect or (suspect is not None and suspect >= STRONG_SUSPECT_SCORE),
         "linked_id": linked,
     }
 
@@ -221,11 +235,19 @@ def report(db, site_ids=None, site_filter=None, since=None) -> dict:
     for doc in db["detection_results"].find(_query(site_ids, site_filter, since), {FIELD + ".status": 1}):
         status = ((doc.get("reference") or {}).get("fingerprint") or {}).get("status")
         statuses[status] = statuses.get(status, 0) + 1
-    for doc in db["detection_results"].find(query, {"verdict": 1, "decision_state": 1, FIELD + ".bot": 1}):
+    strong: dict = {}
+    for doc in db["detection_results"].find(query, {"verdict": 1, "decision_state": 1, FIELD + ".bot": 1,
+                                                     FIELD + ".strong": 1}):
         ours = _datacat_class(doc)
-        theirs = ((doc.get("reference") or {}).get("fingerprint") or {}).get("bot") or "unknown"
+        ref = (doc.get("reference") or {}).get("fingerprint") or {}
+        theirs = ref.get("bot") or "unknown"
         crosstab.setdefault(ours, {}).setdefault(theirs, 0)
         crosstab[ours][theirs] += 1
+        # Strong flags are stored from 2026-11-13 on; older labels have none.
+        if isinstance(ref.get("strong"), bool):
+            row = strong.setdefault(ours, {"labelled": 0, "flagged": 0})
+            row["labelled"] += 1
+            row["flagged"] += ref["strong"]
         # Binary view on decided sessions only: DATACAT BOT vs HUMAN, Fingerprint bad vs not bad.
         if ours in ("BOT", "HUMAN") and theirs in ("bad", "good", "not_detected"):
             key = (ours == "BOT", theirs == "bad")
@@ -242,4 +264,6 @@ def report(db, site_ids=None, site_filter=None, since=None) -> dict:
         "datacat_bot_only": binary.get((True, False), 0),
         "fingerprint_bot_only": binary.get((False, True), 0),
         "neither": binary.get((False, False), 0),
+        # Tampering, anti-detect browser or suspect score >= 20, by DATACAT verdict.
+        "strong_by_verdict": strong,
     }
