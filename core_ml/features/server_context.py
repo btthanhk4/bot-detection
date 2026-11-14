@@ -31,6 +31,14 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   and stayed about ten seconds (deviceMemory 4 behind Pixel 9 Pro and Galaxy S23 names);
   among the other phones lying still, no two models ever coincided.
 
+* ``audio_hash_sessions`` (policy 36): how many other sessions of the last 24 hours reported this
+  Android Chrome page's audio fingerprint. Real phones share it by the thousand (one value covered
+  1,157 of 1,907 phones on 13-14 Nov 2026); anti-detect browsers add noise so that every profile
+  gets its own. A value nobody else reported (``AUDIO_NOVEL``): Fingerprint flagged 29 of 34. Desktops
+  are not judged: cloned server farms share one value, and there the new values were people. iOS
+  Safari 26, Firefox, Samsung Internet and in-app browsers randomise or differ by design and are
+  not judged either (the API leaves the count empty).
+
 Each code only withholds a HUMAN verdict, like the other desktop and phone risk codes.
 """
 
@@ -104,4 +112,7 @@ def server_context_codes(payload) -> list:
     models = headers.get("sensor_signature_models")
     if isinstance(models, int) and not isinstance(models, bool) and models >= SHARED_SIGNATURE_MODELS:
         codes.append("SHARED_SENSOR_SIGNATURE")
+    audio = headers.get("audio_hash_sessions")
+    if isinstance(audio, int) and not isinstance(audio, bool) and audio == 0:
+        codes.append("AUDIO_NOVEL")
     return codes

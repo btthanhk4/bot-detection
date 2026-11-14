@@ -200,12 +200,15 @@ def test_api_counts_models_for_phones_only(db, monkeypatch):
 
 # ---- Decisions ----
 
+# The seven fixtures policy 35 added (after the 34 of policies 33-34).
+POLICY35_CASES = MOBILE_RULE_CASES[34:41]
+
 def _case(index):
-    return copy.deepcopy(MOBILE_RULE_CASES[index][3])
+    return copy.deepcopy(POLICY35_CASES[index][3])
 
 
 def test_fixtures_cover_both_directions():
-    ours = MOBILE_RULE_CASES[-7:]
+    ours = POLICY35_CASES
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("HUMAN", "FINAL", "mobile_light_touch"), ("HUMAN", "FINAL", "mobile_clean_environment"),
         ("SUSPECT", "FINAL", "mobile_risk"), ("SUSPECT", "FINAL", "mobile_risk"),
@@ -249,4 +252,4 @@ def test_flagship_with_four_gigabytes_never_becomes_bot_alone():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "35"
+    assert DECISION_POLICY_VERSION in ("35", "36")

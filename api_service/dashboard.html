@@ -2310,12 +2310,14 @@ const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICT
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
   TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện', DESKTOP_FONTS: 'Font của máy tính',
-  SYNTHETIC_MOTION: 'Cảm biến giả lập', MODEL_MEMORY_MISMATCH: 'Model và RAM mâu thuẫn', SHARED_SENSOR_SIGNATURE: 'Cảm biến trùng nhiều máy' };
+  SYNTHETIC_MOTION: 'Cảm biến giả lập', MODEL_MEMORY_MISMATCH: 'Model và RAM mâu thuẫn', SHARED_SENSOR_SIGNATURE: 'Cảm biến trùng nhiều máy',
+  AUDIO_NOVEL: 'Mã âm thanh lạ' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
-  forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập' };
+  forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập',
+  emulated_phone: 'Điện thoại giả lập' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2667,7 +2669,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     NOT_VIEWED: 'trang chạy ở chế độ tải trước hoặc tab nền, chưa từng hiển thị cho ai xem',
     DESKTOP_FONTS: FORGERY_LABELS.DESKTOP_FONTS, MODEL_MEMORY_MISMATCH: FORGERY_LABELS.MODEL_MEMORY_MISMATCH,
     SYNTHETIC_MOTION: 'cảm biến chuyển động giả lập: máy nằm phẳng tuyệt đối (nghiêng ≤ 0,2°) mà gia tốc vẫn rung đều (điện thoại thật nằm trên bàn luôn nghiêng vài độ)',
-    SHARED_SENSOR_SIGNATURE: 'cùng một bộ hiệu chuẩn cảm biến (trọng lực, độ nghiêng) xuất hiện trên từ 3 model máy khác nhau trong 24 giờ: một máy hoặc một mẫu giả lập đội lốt nhiều thiết bị' };
+    SHARED_SENSOR_SIGNATURE: 'cùng một bộ hiệu chuẩn cảm biến (trọng lực, độ nghiêng) xuất hiện trên từ 3 model máy khác nhau trong 24 giờ: một máy hoặc một mẫu giả lập đội lốt nhiều thiết bị',
+    AUDIO_NOVEL: 'mã âm thanh (audio fingerprint) của Chrome Android này chưa phiên nào khác có trong 24 giờ; điện thoại thật dùng chung mã theo hàng nghìn máy, trình duyệt anti-detect chèn nhiễu để mỗi hồ sơ có mã riêng' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
@@ -2731,6 +2734,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Nhấn chuột giả lập: ${provenance.zero_pressure_presses} lần nhấn có áp lực 0.`;
     } else if (syntheticDecision) {
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
+    } else if (bd.decision_basis === 'emulated_phone') {
+      explainText = 'Điện thoại giả lập: cảm biến báo máy nằm phẳng tuyệt đối mà gia tốc vẫn rung đều (trọng lực lý tưởng của trình giả lập cộng nhiễu; điện thoại thật nằm trên bàn luôn nghiêng vài độ), và một kênh độc lập cũng cho thấy điều đó (mã âm thanh chưa máy nào khác có, múi giờ khác nước của IP, hoặc trình duyệt tự mâu thuẫn).';
     } else if (bd.decision_basis === 'webview_automation') {
       explainText = 'WebView Android giấu cờ navigator.webdriver. WebView không chạy được tiện ích mở rộng, nên chính ứng dụng chứa nó đã giấu dấu hiệu tự động hóa.';
     } else if (bd.decision_basis === 'synthetic_touch') {

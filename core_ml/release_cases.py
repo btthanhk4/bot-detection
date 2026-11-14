@@ -635,6 +635,27 @@ MOBILE_RULE_CASES = (
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
                                                             headers={"sensor_signature_models": 2}),
                                                      first_touch_ms=None, motion=_TABLE_MOTION)),
+    # Policy 36: emulated motion with a second, independent channel is a BOT: an audio fingerprint no
+    # other phone reported, a time zone of another country, a browser contradiction (a Galaxy S23
+    # reporting 4 GB). Emulated motion alone, or a new audio fingerprint alone, stays SUSPECT; an audio
+    # fingerprint other phones share changes nothing.
+    ("BOT", "FINAL", "emulated_phone", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                    memory=4, cores=8, headers={"audio_hash_sessions": 0}),
+                                             motion=_EMULATED_MOTION)),
+    ("BOT", "FINAL", "emulated_phone", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
+                                             first_touch_ms=None, motion=_EMULATED_MOTION,
+                                             timezone="America/New_York", country="VN")),
+    ("BOT", "FINAL", "emulated_phone", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                    memory=4, cores=8), hints=_S23, motion=_EMULATED_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8, headers={"audio_hash_sessions": 3}),
+                                              motion=_EMULATED_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8, headers={"audio_hash_sessions": 0}),
+                                              motion=_HAND_MOTION)),
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8, headers={"audio_hash_sessions": 4}),
+                                                   motion=_HAND_MOTION)),
 )
 
 # Frozen gate of policies 19-23.
@@ -666,9 +687,18 @@ MOBILE_RULE_GATE_V33 = {
     "fixture_fingerprint": "edb7dec1d6159bfcc841814f0855f64fe0c9296a001e54f9821debb006dc4cfe",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 35.
+MOBILE_RULE_GATE_V35 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1"],
+    "human_cases": 12, "suspect_cases": 24, "bot_cases": 5, "passed": 41,
+    "fixture_fingerprint": "b19da854b7f965b451c80f4c2349edbfbad324b23a12b9f6027d220e149354b1",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),

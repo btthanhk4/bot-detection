@@ -36,6 +36,7 @@ import math
 import re
 
 PRESENCE_VERSION = "presence_v2"
+EMULATED_PHONE_RULE = "emulated_phone_v1"
 INSTANT_TOUCH_MS = 120
 NOT_VIEWED_MS = 500
 STILL_SD = 0.005
@@ -112,6 +113,17 @@ def synthetic_motion(motion: dict) -> bool:
         and (motion.get("linear_sd") or 0) >= SYNTHETIC_MIN_NOISE
         and (motion.get("events") or 0) >= SYNTHETIC_MIN_EVENTS
     )
+
+
+def emulated_phone_fires(presence_codes, server_codes, browser_contradictions) -> bool:
+    """Policy 36 (``emulated_phone_v1``): emulated motion sensors and, from an independent channel,
+    an audio stack never seen on any other phone (noise injection), a time zone of another country
+    than the address, or a browser contradiction. On 13-14 Nov 2026, 59 phones; Fingerprint flagged 45
+    of the 51 it checked (88%; the BOT rules already deployed on phones: 77%), and the other 6 match
+    the flagged ones on all seven motion statistics. None of 352 obvious people (3+ gestures, held in a
+    hand, nothing against them) showed even one of the channels."""
+    return "SYNTHETIC_MOTION" in set(presence_codes or ()) and bool(
+        {"AUDIO_NOVEL", "TIMEZONE_MISMATCH"} & set(server_codes or ()) or browser_contradictions)
 
 
 def still_signature(motion: dict):

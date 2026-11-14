@@ -498,6 +498,12 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
             _sensor_db(), data, str(data.get("sessionId") or "")) if phone else None
     except Exception:
         headers["sensor_signature_models"] = None
+    # Policy 36: other sessions that reported this Android Chrome page's audio fingerprint.
+    try:
+        headers["audio_hash_sessions"] = sensor_fleet.audio_hash_sessions(
+            _sensor_db(), data, str(data.get("sessionId") or "")) if phone else None
+    except Exception:
+        headers["audio_hash_sessions"] = None
     # Policy 33: the address's country, to compare with the browser's time zone.
     try:
         headers["ip_country"] = geoip.country_of(data.get("client_ip") or get_client_ip(request))

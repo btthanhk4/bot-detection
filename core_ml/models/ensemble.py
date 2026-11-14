@@ -52,13 +52,17 @@ from core_ml.features.mouse_features import (
     records_to_chunks,
     sanitize_mouse_records,
 )
-from core_ml.features.presence import analyze_presence
+from core_ml.features.presence import (
+    EMULATED_PHONE_RULE,
+    analyze_presence,
+    emulated_phone_fires,
+)
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import (
     PROFILE_CANDIDATE_RULE,
     corroborated_profile_evidence,
 )
-from core_ml.features.server_context import timezone_mismatch
+from core_ml.features.server_context import server_context_codes, timezone_mismatch
 from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -66,7 +70,9 @@ from core_ml.models.touch_shadow import score_touch
 
 # Policy 35: emulated motion sensors, a flagship reporting too little memory and a sensor
 # calibration shared by several claimed models count against a phone (mobile_human).
-DECISION_POLICY_VERSION = "35"
+# Policy 36: emulated motion sensors with an independent second channel convict a phone
+# (emulated_phone_v1); an Android Chrome audio fingerprint nobody else reported counts against it.
+DECISION_POLICY_VERSION = "36"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -238,6 +244,8 @@ class EnsembleBotDetector:
         # Policy 28: a headless, GPU or permission contradiction counts towards the two that
         # convict (alone it leaves a session without input insufficient, as since policy 12).
         browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"])
+        # Policy 18/33: page presence, motion and Client Hints (policy 36 reads them for a BOT rule too).
+        presence_report = analyze_presence(payload, android="android" in str(fingerprint.get("userAgent") or "").lower())
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:
@@ -249,6 +257,9 @@ class EnsembleBotDetector:
         elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"]):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
+        elif emulated_phone_fires(presence_report["codes"], server_context_codes(payload), browser_contradictions):
+            # Policy 36: emulated motion sensors, and an independent channel says the same.
+            automation_rule = EMULATED_PHONE_RULE
         elif webview_webdriver_fires(payload, forgery):
             # Policy 30: no extension runs in a WebView; its app hid the automation flag.
             automation_rule = WEBVIEW_WEBDRIVER_RULE
@@ -330,7 +341,6 @@ class EnsembleBotDetector:
             or unsupported_mobile or legacy_touch_ambiguous
         )
         # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
-        presence_report = analyze_presence(payload, android="android" in str(fingerprint.get("userAgent") or "").lower())
         mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags,
                                             presence_report["codes"])
         mobile_human_decision = (
@@ -481,6 +491,15 @@ class EnsembleBotDetector:
                     + ", ".join(browser_contradictions).lower().replace("_", " ")
                     + "); no person on the live site carried even one"
                 )
+            elif automation_rule == EMULATED_PHONE_RULE:
+                second = [code.lower().replace("_", " ") for code in ("AUDIO_NOVEL", "TIMEZONE_MISMATCH")
+                          if code in server_context_codes(payload)]
+                second += [code.lower().replace("_", " ") for code in browser_contradictions]
+                reasons.append(
+                    "Emulated phone: the motion sensors report a device lying perfectly level while its "
+                    "accelerometer jitters (the ideal gravity vector of an emulator plus noise; real phones on a "
+                    "table tilt by their camera bump), and independently: " + ", ".join(second)
+                )
             elif automation_rule == WEBVIEW_WEBDRIVER_RULE:
                 reasons.append(
                     "Android WebView with navigator.webdriver hidden: a WebView runs no browser extensions, "
@@ -607,6 +626,7 @@ class EnsembleBotDetector:
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "forged_browser" if automation_rule == FORGED_BROWSER_RULE
+                    else "emulated_phone" if automation_rule == EMULATED_PHONE_RULE
                     else "webview_automation" if automation_rule == WEBVIEW_WEBDRIVER_RULE
                     else "synthetic_touch" if automation_rule == APPLE_SYNTHETIC_TOUCH_RULE
                     else "mobile_clean_environment" if mobile_human_decision

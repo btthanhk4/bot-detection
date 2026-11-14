@@ -30,6 +30,7 @@ Policy 33, from 4,598 undecided sessions of 12-13 Nov 2026 checked against Finge
 Policy 35: emulated motion sensors (``SYNTHETIC_MOTION``), a flagship model reporting too
 little memory (``MODEL_MEMORY_MISMATCH``) and a sensor calibration shared by several claimed
 models (``SHARED_SENSOR_SIGNATURE``) count against a phone, with or without touches.
+Policy 36: so does an Android Chrome audio fingerprint no other phone reported (``AUDIO_NOVEL``).
 """
 
 import re
@@ -45,7 +46,8 @@ RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "
               "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY",
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
               "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS",
-              "SYNTHETIC_MOTION", "MODEL_MEMORY_MISMATCH", "SHARED_SENSOR_SIGNATURE")
+              "SYNTHETIC_MOTION", "MODEL_MEMORY_MISMATCH", "SHARED_SENSOR_SIGNATURE",
+              "AUDIO_NOVEL")
 # With fewer than three gestures, these still wait (page tokens are not everywhere yet).
 _FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
