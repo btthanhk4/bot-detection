@@ -3,8 +3,8 @@
     "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "af7485764f5e46ba98b384f82e180dd9",
-  "created_at": "2026-11-13T17:30:45.849649+00:00",
+  "bundle_id": "f3b027731bc04a78bfceeb78457ff602",
+  "created_at": "2026-11-14T02:20:46.246129+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -870,7 +870,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "34",
+    "decision_policy_version": "35",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1055,17 +1055,20 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 5,
-      "fixture_fingerprint": "edb7dec1d6159bfcc841814f0855f64fe0c9296a001e54f9821debb006dc4cfe",
-      "human_cases": 10,
-      "passed": 34,
+      "fixture_fingerprint": "b19da854b7f965b451c80f4c2349edbfbad324b23a12b9f6027d220e149354b1",
+      "human_cases": 12,
+      "passed": 41,
       "rules": [
         "mobile_clean_environment_v1",
         "mobile_light_touch_v1",
         "mobile_risk_v1",
         "autoclick_taps_v1",
-        "mobile_emulation_v1"
+        "mobile_emulation_v1",
+        "synthetic_motion_v1",
+        "model_memory_mismatch_v1",
+        "shared_sensor_signature_v1"
       ],
-      "suspect_cases": 19
+      "suspect_cases": 24
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,

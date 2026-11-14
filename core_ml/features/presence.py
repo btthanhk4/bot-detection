@@ -13,16 +13,40 @@ Policy 33 reads three of these:
 Motion is summarised only and stays research evidence: whether a phone held in a hand
 (tilted, trembling; zkSENSE, BeCAPTCHA) can stand in for touches needs a validated
 baseline first. ``STILL_DEVICE`` (no tremor at all) and ``NO_MOTION`` are reported, not used.
+
+Policy 35, from 1,361 phone sessions of 13-14 Nov 2026 (collector 1.16.1) checked against the
+Fingerprint flags stored with each label:
+
+- ``SYNTHETIC_MOTION``: a phone lying perfectly level (mean tilt at most 0.2 degrees) whose
+  accelerometer nevertheless jitters (linear acceleration SD of 0.03 m/s^2 or more), over 100+
+  events. Emulated sensors start from the ideal gravity vector (0, 0, 9.81) and add noise
+  (Petsas et al., EuroSec 2014: emulators betray themselves by ideal sensor values). A real
+  phone on a table is tilted by its camera bump and calibration offset: the 1,165 other phones
+  reporting motion ranged from 0.6 degrees up, none below. 59 sessions showed it, on dozens of
+  claimed models, all at 9.79-9.82 m/s^2 and 60 Hz; Fingerprint flagged 47 of the 52 it had
+  checked (tampering, anti-detect browser), yet 13 had been HUMAN. It withholds HUMAN.
+- ``sensor_signature``: the gravity magnitude and tilt of a phone lying still. Calibration
+  offsets differ from one physical device to the next (SensorID, IEEE S&P 2019), so the same
+  values on three different claimed models are one device, or one emulator template, behind
+  spoofed identities. The API counts the models (``SHARED_SENSOR_SIGNATURE``, see
+  ``core_ml.features.server_context``).
 """
 
 import math
 import re
 
-PRESENCE_VERSION = "presence_v1"
+PRESENCE_VERSION = "presence_v2"
 INSTANT_TOUCH_MS = 120
 NOT_VIEWED_MS = 500
 STILL_SD = 0.005
 HELD_MIN_SD = 0.02
+SYNTHETIC_MAX_TILT = 0.2
+SYNTHETIC_MIN_NOISE = 0.03
+SYNTHETIC_MIN_EVENTS = 100
+# A phone lying still enough for its mean gravity and tilt to be its calibration fingerprint.
+SIGNATURE_MAX_GRAVITY_SD = 0.06
+SIGNATURE_MAX_ROTATION_SD = 0.1
+SIGNATURE_MIN_EVENTS = 50
 _SDK_MODEL = re.compile(r"sdk_gphone|android sdk built|emulator|generic_x86|vbox86|goldfish|ranchu", re.I)
 
 
@@ -80,6 +104,35 @@ def client_hints(payload: dict) -> dict:
     }
 
 
+def synthetic_motion(motion: dict) -> bool:
+    """Policy 35: perfectly level, yet jittering (sanitized motion summary)."""
+    return bool(
+        motion.get("status") == "ok" and motion.get("tilt_deg") is not None
+        and motion["tilt_deg"] <= SYNTHETIC_MAX_TILT
+        and (motion.get("linear_sd") or 0) >= SYNTHETIC_MIN_NOISE
+        and (motion.get("events") or 0) >= SYNTHETIC_MIN_EVENTS
+    )
+
+
+def still_signature(motion: dict):
+    """(gravity, tilt) of a phone lying still, or None (sanitized motion summary)."""
+    if (motion.get("status") != "ok" or motion.get("gravity") is None or motion.get("tilt_deg") is None
+            or motion.get("gravity_sd") is None or motion["gravity_sd"] >= SIGNATURE_MAX_GRAVITY_SD
+            or (motion.get("events") or 0) < SIGNATURE_MIN_EVENTS
+            or (motion.get("rotation_sd") is not None and motion["rotation_sd"] >= SIGNATURE_MAX_ROTATION_SD)):
+        return None
+    return motion["gravity"], motion["tilt_deg"]
+
+
+def sensor_signature(payload: dict):
+    """Policy 35: (gravity, tilt, claimed model) of a phone lying still, or None."""
+    payload = payload if isinstance(payload, dict) else {}
+    mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
+    signature = still_signature(sanitize_presence(mouse.get("presence"))["motion"])
+    model = (client_hints(payload)["model"] or "").strip()
+    return (*signature, model) if signature and model else None
+
+
 def analyze_presence(payload: dict, *, android: bool) -> dict:
     """Presence summary and the codes policy 33 reads (and the research-only ones)."""
     payload = payload if isinstance(payload, dict) else {}
@@ -95,6 +148,8 @@ def analyze_presence(payload: dict, *, android: bool) -> dict:
         if presence["first_touch_ms"] is not None and presence["first_touch_ms"] < INSTANT_TOUCH_MS:
             codes.append("INSTANT_TOUCH")
         motion = presence["motion"]
+        if synthetic_motion(motion):
+            codes.append("SYNTHETIC_MOTION")
         if motion["status"] == "ok" and motion["linear_sd"] is not None and motion["gravity_sd"] is not None:
             if motion["linear_sd"] < STILL_SD and motion["gravity_sd"] < STILL_SD:
                 research.append("STILL_DEVICE")

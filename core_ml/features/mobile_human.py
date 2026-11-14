@@ -26,6 +26,10 @@ Policy 33, from 4,598 undecided sessions of 12-13 Nov 2026 checked against Finge
   carried some (Fingerprint flagged 38%) and are now a final SUSPECT. An unverified page
   load alone still waits while websites adopt page tokens.
 * A phone whose page was never shown (prerender, background tab) is never HUMAN.
+
+Policy 35: emulated motion sensors (``SYNTHETIC_MOTION``), a flagship model reporting too
+little memory (``MODEL_MEMORY_MISMATCH``) and a sensor calibration shared by several claimed
+models (``SHARED_SENSOR_SIGNATURE``) count against a phone, with or without touches.
 """
 
 import re
@@ -40,7 +44,8 @@ MOBILE_LIGHT_RULE = "mobile_light_touch_v1"
 RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "CLOUD_IP",
               "ENVIRONMENT_EVIDENCE", "CLIENT_AUTOMATION_SIGNAL", "UNVERIFIED_PAGE_LOAD", "DEVICE_VELOCITY",
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
-              "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS")
+              "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS",
+              "SYNTHETIC_MOTION", "MODEL_MEMORY_MISMATCH", "SHARED_SENSOR_SIGNATURE")
 # With fewer than three gestures, these still wait (page tokens are not everywhere yet).
 _FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
@@ -111,6 +116,8 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
     missing += forgery_codes(payload, automation_evidence, desktop=False)
     # Policy 33: a page nobody saw, a first touch faster than anyone can react.
     missing += [code for code in ("NOT_VIEWED", "INSTANT_TOUCH") if code in presence_codes]
+    # Policy 35: sensors that only an emulator produces.
+    missing += [code for code in ("SYNTHETIC_MOTION",) if code in presence_codes]
     few = "FEW_GESTURES" in missing
     light_eligible = (
         bool(kind) and few and MOBILE_LIGHT_MIN_GESTURES <= gestures < MOBILE_HUMAN_MIN_GESTURES

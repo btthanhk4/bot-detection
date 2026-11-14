@@ -22,6 +22,15 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   Neighbouring countries in one time zone, and time zones the tz database does not
   place in a country, are not judged.
 
+* ``sensor_signature_models`` (policy 35): how many different claimed phone models showed, in the
+  last 24 hours, the same calibration fingerprint as this phone lying still (gravity within
+  0.01 m/s^2, tilt within 0.1 degree; see ``core_ml.features.presence``). Calibration offsets
+  are unique to a physical device (SensorID, IEEE S&P 2019), so three or more models are one
+  device or one emulator template behind spoofed identities. On production (13-14 Nov 2026,
+  replayed in arrival order) 42 phones matched, all of one fleet that never touched the page
+  and stayed about ten seconds (deviceMemory 4 behind Pixel 9 Pro and Galaxy S23 names);
+  among the other phones lying still, no two models ever coincided.
+
 Each code only withholds a HUMAN verdict, like the other desktop and phone risk codes.
 """
 
@@ -30,6 +39,7 @@ from datetime import datetime, timezone
 import pytz
 
 DEVICE_VELOCITY_LIMIT = 30
+SHARED_SIGNATURE_MODELS = 3
 TIMEZONE_MISMATCH_MINUTES = 60
 # Names browsers (ICU) still report for zones the tz database renamed.
 _TZ_ALIASES = {
@@ -91,4 +101,7 @@ def server_context_codes(payload) -> list:
         codes.append("DEVICE_VELOCITY")
     if timezone_mismatch(payload):
         codes.append("TIMEZONE_MISMATCH")
+    models = headers.get("sensor_signature_models")
+    if isinstance(models, int) and not isinstance(models, bool) and models >= SHARED_SIGNATURE_MODELS:
+        codes.append("SHARED_SENSOR_SIGNATURE")
     return codes

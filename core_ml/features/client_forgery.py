@@ -102,6 +102,16 @@ flags as a reference; rules kept only where the reference agreed on both sites):
   the five PDF viewer entries unless the PDF viewer is turned off. Windows: 25 of 26 flagged,
   never HUMAN. ``ENVIRONMENT_EVIDENCE``: a headless, GPU, permission or CDP family alone, which
   before left a desktop without input insufficient (190 SwiftShader sessions, 99.5% flagged).
+
+Policy 35 (2026-11-14, 1,361 phone sessions with collector 1.16.1):
+
+* ``MODEL_MEMORY_MISMATCH``: an Android phone whose Client Hints name a model sold only with 8 GB
+  of memory or more (Galaxy S22 and later, Z Flip, Z Fold, Pixel 6 to 10 except the 6a), yet
+  ``navigator.deviceMemory`` reports less than 8. Chrome reports the memory rounded to a power of
+  two and capped at 8, so these phones report 8: all 14 such sessions without other evidence did.
+  19 reported 4, all from one fleet sharing sensor calibration across a dozen claimed models
+  (see ``core_ml.features.presence``). The claimed model and the memory cannot both be true:
+  one more contradiction.
 """
 
 import math
@@ -109,6 +119,7 @@ import re
 
 from core_ml.features.automation_evidence import _DESKTOP_GPU, TAMPERING_ANCHOR_FAMILIES
 from core_ml.features.mouse_features import normalize_move_coordinates
+from core_ml.features.presence import client_hints
 
 SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
 FORGED_BROWSER_RULE = "forged_browser_v1"
@@ -127,6 +138,9 @@ JUMP_MIN_PAIRS = 5
 JUMP_MIN_TURN_SHARE = 0.50
 SERVER_MIN_CORES = 64
 PHONE_MAX_FONTS = 8
+# Policy 35: models never sold with less than 8 GB (Chrome caps deviceMemory at 8).
+FLAGSHIP_MIN_MEMORY = 8
+_FLAGSHIP_8GB = re.compile(r"^(?:SM-[SF]9\d\d|SM-F7\d\d|Pixel (?:(?:6|7|8|9|10)(?: Pro(?: XL| Fold)?)?|(?:7|8|9)a)\b)")
 _PHONE_UA = re.compile(r"Android|iPhone|iPad|iPod")
 _DESKTOP_BROWSER = re.compile(r"Chrome/|Firefox/|Version/\d+[.\d]* Safari/|Edg/")
 DESKTOP_EVIDENCE_FAMILIES = ("HEADLESS_ENV", "GPU", "PERMISSION", "CDP")
@@ -212,7 +226,21 @@ def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) ->
     if (not isinstance(fonts, bool) and isinstance(fonts, (int, float)) and math.isfinite(fonts)
             and fonts > PHONE_MAX_FONTS and _PHONE_UA.search(str(fingerprint.get("userAgent") or ""))):
         codes.append("DESKTOP_FONTS")
+    if model_memory_mismatch(payload):
+        codes.append("MODEL_MEMORY_MISMATCH")
     return codes
+
+
+def model_memory_mismatch(payload: dict) -> bool:
+    """Policy 35: a model sold only with 8 GB or more reporting less memory."""
+    fingerprint = _fingerprint(payload)
+    memory = fingerprint.get("deviceMemory")
+    model = (client_hints(payload if isinstance(payload, dict) else {})["model"] or "").strip()
+    return bool(
+        "Android" in str(fingerprint.get("userAgent") or "") and _FLAGSHIP_8GB.match(model)
+        and not isinstance(memory, bool) and isinstance(memory, (int, float)) and math.isfinite(memory)
+        and 0 < memory < FLAGSHIP_MIN_MEMORY
+    )
 
 
 def evidence_codes(payload: dict, automation_evidence: dict) -> list:

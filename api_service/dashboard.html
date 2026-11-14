@@ -2309,7 +2309,8 @@ const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICT
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
-  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện', DESKTOP_FONTS: 'Font của máy tính' };
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện', DESKTOP_FONTS: 'Font của máy tính',
+  SYNTHETIC_MOTION: 'Cảm biến giả lập', MODEL_MEMORY_MISMATCH: 'Model và RAM mâu thuẫn', SHARED_SENSOR_SIGNATURE: 'Cảm biến trùng nhiều máy' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2650,7 +2651,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     SERVER_CPU: 'máy báo hơn 64 nhân CPU (máy chủ)',
     DESKTOP_FONTS: 'điện thoại có bộ font của máy tính (Android thật có 5-6, iPhone 7-8 font kiểm tra)',
     PLUGINS_EMPTY: 'trình duyệt máy tính không liệt kê plugin nào (Chrome, Edge, Firefox, Safari đều có 5 mục trình xem PDF)',
-    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường (headless, GPU phần mềm, quyền hoặc CDP)' };
+    ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường (headless, GPU phần mềm, quyền hoặc CDP)',
+    MODEL_MEMORY_MISMATCH: 'máy tự khai là dòng flagship chỉ bán bản từ 8 GB RAM (Galaxy S/Z, Pixel) nhưng báo dưới 8 GB' };
   const jumpProfile = (bd.desktop_risk || {}).jump_profile || {};
   const MOBILE_CODE_LABELS = { FEW_GESTURES: `cần ít nhất ${(bd.mobile_human || {}).minimum_gestures || 3} thao tác chạm/vuốt (mới có ${(bd.mobile_human || {}).gestures || 0})`,
     TOUCH_FLAGS: 'thao tác cảm ứng bất thường: ' + ((touchInfoForText.research_flags || []).map(f => TOUCH_FLAG_LABELS[f] || f).join(', ') || '--'),
@@ -2662,7 +2664,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     UA_API_MISMATCH: FORGERY_LABELS.UA_API_MISMATCH, PLATFORM_SPOOFED: FORGERY_LABELS.PLATFORM_SPOOFED,
     TIMEZONE_MISMATCH: 'múi giờ của trình duyệt lệch từ 1 giờ trở lên so với nước của địa chỉ IP (truy cập qua VPN/proxy nước khác)',
     INSTANT_TOUCH: 'chạm màn hình chưa tới 120 ms sau khi trang hiện ra (người cần vài trăm ms để phản ứng)',
-    NOT_VIEWED: 'trang chạy ở chế độ tải trước hoặc tab nền, chưa từng hiển thị cho ai xem' };
+    NOT_VIEWED: 'trang chạy ở chế độ tải trước hoặc tab nền, chưa từng hiển thị cho ai xem',
+    DESKTOP_FONTS: FORGERY_LABELS.DESKTOP_FONTS, MODEL_MEMORY_MISMATCH: FORGERY_LABELS.MODEL_MEMORY_MISMATCH,
+    SYNTHETIC_MOTION: 'cảm biến chuyển động giả lập: máy nằm phẳng tuyệt đối (nghiêng ≤ 0,2°) mà gia tốc vẫn rung đều (điện thoại thật nằm trên bàn luôn nghiêng vài độ)',
+    SHARED_SENSOR_SIGNATURE: 'cùng một bộ hiệu chuẩn cảm biến (trọng lực, độ nghiêng) xuất hiện trên từ 3 model máy khác nhau trong 24 giờ: một máy hoặc một mẫu giả lập đội lốt nhiều thiết bị' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',

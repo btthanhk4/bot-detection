@@ -36,7 +36,16 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import Response as StarletteResponse
 
-from api_service import auth, clicks, gateway, geoip, page_tokens, reference, sites
+from api_service import (
+    auth,
+    clicks,
+    gateway,
+    geoip,
+    page_tokens,
+    reference,
+    sensor_fleet,
+    sites,
+)
 from api_service.capture import build_capture
 from api_service.config import settings
 from api_service.research_labels import (
@@ -121,6 +130,11 @@ async def app_lifespan(_app):
         await run_in_threadpool(auth.ensure_user_indexes)
     except Exception:
         logger.warning("Dashboard user index setup deferred", exc_info=True)
+    # Policy 35: build the sensor-signature index before the first phone asks for it.
+    try:
+        await run_in_threadpool(_sensor_db)
+    except Exception:
+        logger.warning("Sensor signature index setup deferred", exc_info=True)
     maintenance_task = asyncio.create_task(_maintenance_loop())
     geoip_task = asyncio.create_task(_geoip_update_loop()) if settings.GEOIP_AUTO_UPDATE else None
     reference_task = asyncio.create_task(_reference_loop()) if reference.enabled() else None
@@ -401,6 +415,19 @@ def _gateway_db():
     return db
 
 
+_sensor_indexes_ready = False
+
+
+def _sensor_db():
+    """The database for the sensor-signature count (policy 35), with its index (best effort)."""
+    global _sensor_indexes_ready
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None and not _sensor_indexes_ready:
+        _sensor_indexes_ready = sensor_fleet.ensure_indexes(db)
+    return db
+
+
 def _account_unmonitored_page_views() -> int:
     return gateway.account_unmonitored(
         _gateway_db(), after_seconds=settings.NO_TELEMETRY_AFTER_SECONDS,
@@ -465,6 +492,12 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
         db, visitor_id=data.get("visitorId"), ip=data.get("client_ip") or get_client_ip(request),
         session_id=str(data.get("sessionId") or ""), device_token=data.get("deviceToken"),
     ) if data.get("visitorId") and not phone else None
+    # Policy 35: other claimed phone models that showed this phone's sensor calibration.
+    try:
+        headers["sensor_signature_models"] = sensor_fleet.shared_signature_models(
+            _sensor_db(), data, str(data.get("sessionId") or "")) if phone else None
+    except Exception:
+        headers["sensor_signature_models"] = None
     # Policy 33: the address's country, to compare with the browser's time zone.
     try:
         headers["ip_country"] = geoip.country_of(data.get("client_ip") or get_client_ip(request))

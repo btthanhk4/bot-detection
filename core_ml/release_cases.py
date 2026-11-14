@@ -511,13 +511,14 @@ _REPLAY = [_finger(150, 640, radius=(11.5, 10.0), force=0.42, spread=0.3)] * 3 +
 _SPOOFED = {"platformMismatch": True}
 
 
-def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None):
-    """Policy 33 context: page presence (collector 1.16), Client Hints, time zone and IP country."""
+def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None, motion=None):
+    """Policy 33 context: page presence (collector 1.16), Client Hints, time zone and IP country
+    (policy 35: and the device motion summary)."""
     payload["mouse"]["presence"] = {
         "prerendered": not shown, "initialVisibility": "visible" if shown else "prerender",
         "firstVisibleMs": 0 if shown else None, "visibleMs": 8000 if shown else 0, "hiddenCount": 0,
         "firstTouchMs": first_touch_ms if shown else None, "scrolls": 2, "maxScrollRatio": 0.6,
-        "motion": {"status": "unsupported"},
+        "motion": motion or {"status": "unsupported"},
     }
     if hints:
         payload["botd"]["profile"] = {"schema": "browser-profile-v1", "main": {"clientHints": hints}}
@@ -527,6 +528,16 @@ def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, co
         payload["_server_headers"]["ip_country"] = country
     return payload
 _PATCHED = {"navigatorGetterPatched": True}
+# Policy 35 motion summaries measured on production (13-14 Nov 2026): a phone lying on a table
+# (tilted 2.3 degrees by its camera bump), one held in a hand, and the emulated sensor of an
+# anti-detect fleet (perfectly level at 9.80 m/s^2, 60 Hz, constant jitter).
+_TABLE_MOTION = {"status": "ok", "events": 400, "intervalMs": 16.8, "gravity": 9.71, "tiltDeg": 2.3,
+                 "linearSd": 0.021, "gravitySd": 0.022, "rotationMean": 0.09, "rotationSd": 0.05}
+_HAND_MOTION = {"status": "ok", "events": 400, "intervalMs": 17.8, "gravity": 9.92, "tiltDeg": 41.0,
+                "linearSd": 0.21, "gravitySd": 0.36, "rotationMean": 1.6, "rotationSd": 4.3}
+_EMULATED_MOTION = {"status": "ok", "events": 400, "intervalMs": 16.7, "gravity": 9.8, "tiltDeg": 0.0,
+                    "linearSd": 0.072, "gravitySd": 0.072, "rotationMean": 0.112, "rotationSd": 0.049}
+_S23 = {"model": "SM-S918B", "architecture": "", "platformVersion": "14.0.0", "mobile": True}
 
 # Policy 19 fixtures: (verdict, decision state, decision basis, payload).
 # Contact values of real phones measured on the live site (2026-10-27): iPhone
@@ -605,6 +616,25 @@ MOBILE_RULE_CASES = (
     ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
                                                      memory=4, cores=8), timezone="Asia/Jakarta", country="US")),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_IPHONE, "iPhone", "Apple GPU", [])),
+    # Policy 35: a real phone on a table or in a hand stays human; emulated motion counts against a
+    # phone with or without touches; a Galaxy S23 reporting 4 GB contradicts itself (8 GB stays human);
+    # a calibration seen on three claimed models counts against a phone, on two it does not.
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8), motion=_TABLE_MOTION)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND,
+                                                                memory=8, cores=8), hints=_S23, motion=_HAND_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8), motion=_EMULATED_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
+                                              first_touch_ms=None, motion=_EMULATED_MOTION)),
+    ("SUSPECT", "FINAL", "client_forgery", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
+                                                 first_touch_ms=None, hints=_S23, motion=_TABLE_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                                     headers={"sensor_signature_models": 3}),
+                                              first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                                            headers={"sensor_signature_models": 2}),
+                                                     first_touch_ms=None, motion=_TABLE_MOTION)),
 )
 
 # Frozen gate of policies 19-23.
@@ -628,9 +658,17 @@ MOBILE_RULE_GATE_V26 = {
     "fixture_fingerprint": "1b697a27897dc32b31e2a5adba9432d5c1f163ac2eeb03587435bab1c0da2a0d",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policies 33-34.
+MOBILE_RULE_GATE_V33 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1"],
+    "human_cases": 10, "suspect_cases": 19, "bot_cases": 5, "passed": 34,
+    "fixture_fingerprint": "edb7dec1d6159bfcc841814f0855f64fe0c9296a001e54f9821debb006dc4cfe",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),
