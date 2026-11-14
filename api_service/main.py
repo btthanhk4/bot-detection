@@ -504,6 +504,12 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
             _sensor_db(), data, str(data.get("sessionId") or "")) if phone else None
     except Exception:
         headers["audio_hash_sessions"] = None
+    # Policy 37: sessions of this phone's device configuration in the last day, and interactive ones.
+    try:
+        cohort = sensor_fleet.cohort_activity(_sensor_db(), data, str(data.get("sessionId") or "")) if phone else None
+    except Exception:
+        cohort = None
+    headers["cohort_sessions"], headers["cohort_interactive"] = cohort if cohort else (None, None)
     # Policy 33: the address's country, to compare with the browser's time zone.
     try:
         headers["ip_country"] = geoip.country_of(data.get("client_ip") or get_client_ip(request))

@@ -2311,7 +2311,7 @@ const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICT
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
   TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', INSTANT_TOUCH: 'Chạm ngay khi trang hiện', DESKTOP_FONTS: 'Font của máy tính',
   SYNTHETIC_MOTION: 'Cảm biến giả lập', MODEL_MEMORY_MISMATCH: 'Model và RAM mâu thuẫn', SHARED_SENSOR_SIGNATURE: 'Cảm biến trùng nhiều máy',
-  AUDIO_NOVEL: 'Mã âm thanh lạ' };
+  AUDIO_NOVEL: 'Mã âm thanh lạ', INERT_COHORT: 'Nhóm máy không ai tương tác' };
 const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation_marker: 'Dấu vết tự động hóa',
   environment_tampering: 'Trình duyệt bị ngụy trang', idle_cloud_browser: 'Trình duyệt cloud, không thao tác',
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
@@ -2670,7 +2670,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     DESKTOP_FONTS: FORGERY_LABELS.DESKTOP_FONTS, MODEL_MEMORY_MISMATCH: FORGERY_LABELS.MODEL_MEMORY_MISMATCH,
     SYNTHETIC_MOTION: 'cảm biến chuyển động giả lập: máy nằm phẳng tuyệt đối (nghiêng ≤ 0,2°) mà gia tốc vẫn rung đều (điện thoại thật nằm trên bàn luôn nghiêng vài độ)',
     SHARED_SENSOR_SIGNATURE: 'cùng một bộ hiệu chuẩn cảm biến (trọng lực, độ nghiêng) xuất hiện trên từ 3 model máy khác nhau trong 24 giờ: một máy hoặc một mẫu giả lập đội lốt nhiều thiết bị',
-    AUDIO_NOVEL: 'mã âm thanh (audio fingerprint) của Chrome Android này chưa phiên nào khác có trong 24 giờ; điện thoại thật dùng chung mã theo hàng nghìn máy, trình duyệt anti-detect chèn nhiễu để mỗi hồ sơ có mã riêng' };
+    AUDIO_NOVEL: 'mã âm thanh (audio fingerprint) của Chrome Android này chưa phiên nào khác có trong 24 giờ; điện thoại thật dùng chung mã theo hàng nghìn máy, trình duyệt anti-detect chèn nhiễu để mỗi hồ sơ có mã riêng',
+    INERT_COHORT: 'cấu hình máy giống hệt này xuất hiện từ 30 phiên trở lên trong 24 giờ mà không phiên nào chạm hay di chuột (người thật dùng cùng loại máy vẫn tương tác; 30 người độc lập đều không chạm gần như không thể xảy ra)' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',

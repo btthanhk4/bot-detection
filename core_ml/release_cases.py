@@ -656,6 +656,24 @@ MOBILE_RULE_CASES = (
     ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
                                                           memory=4, cores=8, headers={"audio_hash_sessions": 4}),
                                                    motion=_HAND_MOTION)),
+    # Policy 37: a phone without interaction whose configuration was seen 30+ times in a day without a
+    # single interaction is a final SUSPECT; 29 such sessions, or one interactive among them, change
+    # nothing; a phone that touched the screen is judged on its own touches.
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                                     headers={"cohort_sessions": 30, "cohort_interactive": 0}),
+                                              first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8, headers={"cohort_sessions": 29,
+                                                                              "cohort_interactive": 0}),
+                                                     first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8, headers={"cohort_sessions": 80,
+                                                                              "cohort_interactive": 1}),
+                                                     first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8, headers={"cohort_sessions": 80,
+                                                                                      "cohort_interactive": 0}),
+                                                   motion=_HAND_MOTION)),
 )
 
 # Frozen gate of policies 19-23.
@@ -695,10 +713,19 @@ MOBILE_RULE_GATE_V35 = {
     "fixture_fingerprint": "b19da854b7f965b451c80f4c2349edbfbad324b23a12b9f6027d220e149354b1",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 36.
+MOBILE_RULE_GATE_V36 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1"],
+    "human_cases": 13, "suspect_cases": 26, "bot_cases": 8, "passed": 47,
+    "fixture_fingerprint": "85a18d60aea1c7296beed35891ac6bf597c166c95321dce7db3b391f24c7d395",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),

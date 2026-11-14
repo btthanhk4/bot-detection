@@ -31,6 +31,8 @@ Policy 35: emulated motion sensors (``SYNTHETIC_MOTION``), a flagship model repo
 little memory (``MODEL_MEMORY_MISMATCH``) and a sensor calibration shared by several claimed
 models (``SHARED_SENSOR_SIGNATURE``) count against a phone, with or without touches.
 Policy 36: so does an Android Chrome audio fingerprint no other phone reported (``AUDIO_NOVEL``).
+Policy 37: and, for a phone that did not interact itself, a device configuration seen 30+ times in a day
+without a single interaction (``INERT_COHORT``).
 """
 
 import re
@@ -47,7 +49,7 @@ RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
               "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS",
               "SYNTHETIC_MOTION", "MODEL_MEMORY_MISMATCH", "SHARED_SENSOR_SIGNATURE",
-              "AUDIO_NOVEL")
+              "AUDIO_NOVEL", "INERT_COHORT")
 # With fewer than three gestures, these still wait (page tokens are not everywhere yet).
 _FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
@@ -113,7 +115,8 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
     if client_flags:
         missing.append("CLIENT_AUTOMATION_SIGNAL")
     # Policy 24: telemetry without a page the gateway served, a device starting sessions non-stop.
-    missing += server_context_codes(payload)
+    # Policy 37: an inert cohort says nothing about a phone that touched the screen itself.
+    missing += [code for code in server_context_codes(payload) if not (gestures and code == "INERT_COHORT")]
     # Policy 26: a hidden webdriver flag, a user agent without the Pointer Events it delivered.
     missing += forgery_codes(payload, automation_evidence, desktop=False)
     # Policy 33: a page nobody saw, a first touch faster than anyone can react.

@@ -39,6 +39,18 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   Safari 26, Firefox, Samsung Internet and in-app browsers randomise or differ by design and are
   not judged either (the API leaves the count empty).
 
+* ``cohort_sessions`` / ``cohort_interactive`` (policy 37): sessions of the last 24 hours with this
+  phone's device configuration (``visitorId``: identical fingerprints share it, so it is a cohort of
+  identical devices, not one device) and how many of them touched the screen or moved a pointer.
+  On 13-14 Nov 2026 the phones of the live sites interacted in 77% of sessions; of the 35
+  configurations seen 10+ times, 33 interacted (people with popular phones: 36 of 43, 28 of 32...)
+  and 2 never did: 96 sessions of one Thai configuration from one ad campaign that brought almost
+  nothing else (4 configurations in 93 sessions, where the big sources bring 1,046 in 1,700), each
+  session with fresh storage and another /24 subnet; Fingerprint flagged none of them. Thirty
+  sessions without a single interaction (``INERT_COHORT``) are not thirty independent people: even
+  at a 10% interaction rate that happens with probability 0.9^30 = 4%, at the sites' 77% never.
+  Only judged for a session without interaction of its own (``core_ml.features.mobile_human``).
+
 Each code only withholds a HUMAN verdict, like the other desktop and phone risk codes.
 """
 
@@ -48,6 +60,7 @@ import pytz
 
 DEVICE_VELOCITY_LIMIT = 30
 SHARED_SIGNATURE_MODELS = 3
+INERT_COHORT_SESSIONS = 30
 TIMEZONE_MISMATCH_MINUTES = 60
 # Names browsers (ICU) still report for zones the tz database renamed.
 _TZ_ALIASES = {
@@ -115,4 +128,8 @@ def server_context_codes(payload) -> list:
     audio = headers.get("audio_hash_sessions")
     if isinstance(audio, int) and not isinstance(audio, bool) and audio == 0:
         codes.append("AUDIO_NOVEL")
+    cohort, interactive = headers.get("cohort_sessions"), headers.get("cohort_interactive")
+    if (isinstance(cohort, int) and not isinstance(cohort, bool) and cohort >= INERT_COHORT_SESSIONS
+            and isinstance(interactive, int) and not isinstance(interactive, bool) and interactive == 0):
+        codes.append("INERT_COHORT")
     return codes

@@ -10,6 +10,9 @@ session included. ``core_ml.features.server_context`` turns three or more into
 Policy 36: ``audio_hash_sessions`` counts the other sessions of the last 24 hours that reported this
 Android Chrome page's audio fingerprint (``AUDIO_NOVEL`` when none did).
 
+Policy 37: ``cohort_activity`` counts the other sessions of the last 24 hours with this page's device
+configuration (``visitorId``) and whether any of them interacted (``INERT_COHORT``).
+
 The counts only read stored detections; they never gate detection: any failure returns None.
 """
 
@@ -134,6 +137,32 @@ def audio_hash_sessions(db, payload: dict, session_id: str, now=None):
         return None
     _memo.put(key, count)
     return count
+
+
+# ---- Policy 37: a configuration nobody using it ever interacts with ----
+COHORT_SCAN_LIMIT = 200
+_INTERACTED = {"$or": [{"breakdown.touch.gestures_total": {"$gte": 1}}, {"mouse_stats.move_point_count": {"$gte": 25}}]}
+
+
+def cohort_activity(db, payload: dict, session_id: str, now=None):
+    """(other sessions, interactive ones) of the last 24 h with this page's device configuration
+    (``visitorId``: identical fingerprints share it, so it is a cohort of identical devices), or None."""
+    visitor = payload.get("visitorId") if isinstance(payload, dict) else None
+    if db is None or not isinstance(visitor, str) or not visitor:
+        return None
+    key = ("cohort", str(session_id), visitor)
+    cached = _memo.get(key)
+    if cached is not None:
+        return cached
+    since = (now or datetime.now(timezone.utc)) - timedelta(hours=WINDOW_HOURS)
+    query = {"visitorId": visitor, "created_at": {"$gte": since}, "sessionId": {"$ne": str(session_id)}}
+    try:
+        sessions = db["detection_results"].count_documents(query, limit=COHORT_SCAN_LIMIT)
+        interactive = db["detection_results"].count_documents({**query, **_INTERACTED}, limit=1) if sessions else 0
+    except Exception:
+        return None
+    _memo.put(key, (sessions, interactive))
+    return sessions, interactive
 
 
 def ensure_indexes(db) -> bool:

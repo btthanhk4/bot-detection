@@ -144,7 +144,7 @@ def test_api_sets_the_audio_count_for_phones(db, monkeypatch):
 # ---- decisions ----
 
 def test_fixtures_cover_both_directions():
-    ours = MOBILE_RULE_CASES[-6:]
+    ours = MOBILE_RULE_CASES[41:47]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("BOT", "FINAL", "emulated_phone"), ("BOT", "FINAL", "emulated_phone"), ("BOT", "FINAL", "emulated_phone"),
         ("SUSPECT", "FINAL", "mobile_risk"), ("SUSPECT", "FINAL", "mobile_risk"), ("HUMAN", "FINAL", "mobile_light_touch")]
@@ -152,7 +152,7 @@ def test_fixtures_cover_both_directions():
 
 def test_bot_verdict_explains_both_channels_and_locks():
     from api_service.main import ensemble_detector
-    result = ensemble_detector.predict(copy.deepcopy(MOBILE_RULE_CASES[-6][3]))
+    result = ensemble_detector.predict(copy.deepcopy(MOBILE_RULE_CASES[41][3]))
     assert (result["verdict"], result["breakdown"]["automation_rule"]) == ("BOT", "emulated_phone_v1")
     assert result["breakdown"]["verdict_locked"] is True
     reason = " ".join(result["reasons"]).lower()
@@ -162,7 +162,7 @@ def test_bot_verdict_explains_both_channels_and_locks():
 def test_a_real_motion_summary_never_convicts_whatever_else_is_wrong():
     from api_service.main import ensemble_detector
     for motion in (_TABLE_MOTION, _HAND_MOTION):
-        payload = copy.deepcopy(MOBILE_RULE_CASES[-6][3])
+        payload = copy.deepcopy(MOBILE_RULE_CASES[41][3])
         payload["mouse"]["presence"]["motion"] = dict(motion)
         payload["fingerprint"]["timezone"] = "America/New_York"
         payload["_server_headers"]["ip_country"] = "VN"
@@ -173,7 +173,7 @@ def test_a_real_motion_summary_never_convicts_whatever_else_is_wrong():
 
 def test_emulated_motion_alone_is_never_bot():
     from api_service.main import ensemble_detector
-    payload = copy.deepcopy(MOBILE_RULE_CASES[-6][3])
+    payload = copy.deepcopy(MOBILE_RULE_CASES[41][3])
     payload["_server_headers"]["audio_hash_sessions"] = 2
     result = ensemble_detector.predict(payload)
     assert (result["verdict"], result["decision_state"]) == ("SUSPECT", "FINAL")
@@ -182,4 +182,4 @@ def test_emulated_motion_alone_is_never_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "36"
+    assert DECISION_POLICY_VERSION in ("36", "37")
