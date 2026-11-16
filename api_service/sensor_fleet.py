@@ -158,7 +158,8 @@ def cohort_activity(db, payload: dict, session_id: str, now=None):
     query = {"visitorId": visitor, "created_at": {"$gte": since}, "sessionId": {"$ne": str(session_id)}}
     try:
         sessions = db["detection_results"].count_documents(query, limit=COHORT_SCAN_LIMIT)
-        interactive = db["detection_results"].count_documents({**query, **_INTERACTED}, limit=1) if sessions else 0
+        interactive = (db["detection_results"].count_documents({**query, **_INTERACTED}, limit=COHORT_SCAN_LIMIT)
+                       if sessions else 0)
     except Exception:
         return None
     _memo.put(key, (sessions, interactive))

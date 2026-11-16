@@ -74,7 +74,8 @@ from core_ml.models.touch_shadow import score_touch
 # (emulated_phone_v1); an Android Chrome audio fingerprint nobody else reported counts against it.
 # Policy 37: a phone that did not interact, whose device configuration was seen 30+ times in a day
 # without a single interaction, is a final SUSPECT (mobile_human, INERT_COHORT).
-DECISION_POLICY_VERSION = "37"
+# Policy 38: a cohort is inert when people would interact that little with probability under 0.1%.
+DECISION_POLICY_VERSION = "38"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 

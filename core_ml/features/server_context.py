@@ -50,10 +50,18 @@ The API fills ``_server_headers`` before scoring (see ``api_service.gateway``):
   sessions without a single interaction (``INERT_COHORT``) are not thirty independent people: even
   at a 10% interaction rate that happens with probability 0.9^30 = 4%, at the sites' 77% never.
   Only judged for a session without interaction of its own (``core_ml.features.mobile_human``).
+  Policy 38: over the whole day the Thai configuration had 2 interactive sessions in 98 (one tap,
+  one of three gestures), which kept the policy-37 rule silent. A cohort is now inert when people
+  interacting at 25% (below every traffic source of the sites, bots included) would show so few
+  interactions with probability under 0.1% (binomial lower tail), from 30 sessions. Phone cohorts
+  with 30+ sessions on 13-14 Nov 2026 interacted at 0-4% (the fleets) or 78-97% (people), nothing
+  in between; replayed on what each session could have seen, 52 untouched phones matched, all in
+  the two Thai cohorts.
 
 Each code only withholds a HUMAN verdict, like the other desktop and phone risk codes.
 """
 
+import math
 from datetime import datetime, timezone
 
 import pytz
@@ -61,6 +69,8 @@ import pytz
 DEVICE_VELOCITY_LIMIT = 30
 SHARED_SIGNATURE_MODELS = 3
 INERT_COHORT_SESSIONS = 30
+INERT_COHORT_HUMAN_RATE = 0.25
+INERT_COHORT_ALPHA = 0.001
 TIMEZONE_MISMATCH_MINUTES = 60
 # Names browsers (ICU) still report for zones the tz database renamed.
 _TZ_ALIASES = {
@@ -112,6 +122,11 @@ def timezone_mismatch(payload, at=None):
     return min(abs(browser - o) for o in offsets) >= TIMEZONE_MISMATCH_MINUTES
 
 
+def inert_cohort_tail(sessions: int, interactive: int, rate: float = INERT_COHORT_HUMAN_RATE) -> float:
+    """P(at most ``interactive`` of ``sessions`` independent people interact), each with ``rate``."""
+    return sum(math.comb(sessions, i) * rate ** i * (1 - rate) ** (sessions - i) for i in range(interactive + 1))
+
+
 def server_context_codes(payload) -> list:
     headers = _headers(payload)
     codes = []
@@ -130,6 +145,7 @@ def server_context_codes(payload) -> list:
         codes.append("AUDIO_NOVEL")
     cohort, interactive = headers.get("cohort_sessions"), headers.get("cohort_interactive")
     if (isinstance(cohort, int) and not isinstance(cohort, bool) and cohort >= INERT_COHORT_SESSIONS
-            and isinstance(interactive, int) and not isinstance(interactive, bool) and interactive == 0):
+            and isinstance(interactive, int) and not isinstance(interactive, bool)
+            and 0 <= interactive <= cohort and inert_cohort_tail(cohort, interactive) < INERT_COHORT_ALPHA):
         codes.append("INERT_COHORT")
     return codes

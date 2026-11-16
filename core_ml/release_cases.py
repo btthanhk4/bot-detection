@@ -667,9 +667,13 @@ MOBILE_RULE_CASES = (
                                                                               "cohort_interactive": 0}),
                                                      first_touch_ms=None, motion=_TABLE_MOTION)),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
-                                                            cores=8, headers={"cohort_sessions": 80,
-                                                                              "cohort_interactive": 1}),
+                                                            cores=8, headers={"cohort_sessions": 40,
+                                                                              "cohort_interactive": 8}),
                                                      first_touch_ms=None, motion=_TABLE_MOTION)),
+    # Policy 38: 2 interactions in 77 sessions (the Thai cohort) are still inert.
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                                     headers={"cohort_sessions": 77, "cohort_interactive": 2}),
+                                              first_touch_ms=None, motion=_TABLE_MOTION)),
     ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
                                                           memory=4, cores=8, headers={"cohort_sessions": 80,
                                                                                       "cohort_interactive": 0}),
@@ -722,10 +726,19 @@ MOBILE_RULE_GATE_V36 = {
     "fixture_fingerprint": "85a18d60aea1c7296beed35891ac6bf597c166c95321dce7db3b391f24c7d395",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 37.
+MOBILE_RULE_GATE_V37 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v1"],
+    "human_cases": 14, "suspect_cases": 29, "bot_cases": 8, "passed": 51,
+    "fixture_fingerprint": "31d5d1ffe22c168882ff21dc4b26cd3f5ade25d65aeb18f489a8b7a272fc0c3d",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),
