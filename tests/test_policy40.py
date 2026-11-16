@@ -105,6 +105,16 @@ def test_overlapping_exports_share_keys():
     assert {f"w{g}" for g in range(49, 400, 50)} <= {key.split(":")[-1] for key in windows}
 
 
+def test_stored_pieces_are_not_rebuilt():
+    records = trail(400)
+    full = session_pieces(payload(records, move_base=0), records)
+    known = {key for key, _ in full["chunks"][:10]} | {key for key, _ in full["windows"][:2]}
+    rest = session_pieces(payload(records, move_base=0), records, known=known)
+    assert len(rest["chunks"]) == len(full["chunks"]) - 10
+    assert len(rest["windows"]) == len(full["windows"]) - 2
+    assert not known & ({key for key, _ in rest["chunks"]} | {key for key, _ in rest["windows"]})
+
+
 def test_windows_need_context_and_older_collectors_add_none():
     records = trail(160)
     pieces = session_pieces(payload(records[60:], move_base=60), records[60:])

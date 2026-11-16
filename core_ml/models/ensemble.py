@@ -142,6 +142,7 @@ class EnsembleBotDetector:
 
     def _session_mouse(self, payload, export_records, chunks, valid_mouse_records, env_vec, snapshot_tabular):
         """Policy 40: this snapshot's chunk and window scores merged with its session's stored ones."""
+        prior = prior_evidence(payload)
         if export_frame(payload)[0] is None:
             # An older collector: its export is the snapshot window itself.
             moves = [record for record in valid_mouse_records if record["type"] == "move"]
@@ -152,7 +153,8 @@ class EnsembleBotDetector:
             chunk_scores = dict(zip(chunk_keys, preds))
             window_scores = {window_key: snapshot_tabular}
         else:
-            pieces = session_pieces(payload, export_records)
+            # The export's 100 moves of context are usually stored already: score only what is new.
+            pieces = session_pieces(payload, export_records, known=prior["chunks"].keys() | prior["windows"].keys())
             chunk_scores, window_scores = {}, {}
             for start in range(0, len(pieces["chunks"]), 50):
                 batch = pieces["chunks"][start:start + 50]
@@ -167,7 +169,7 @@ class EnsembleBotDetector:
                     "Tabular model")
         for name, value in chunk_scores.items():
             chunk_scores[name] = self._require_model_probability(value, "LSTM chunk")
-        return aggregate(prior_evidence(payload), chunk_scores, window_scores)
+        return aggregate(prior, chunk_scores, window_scores)
 
     def predict(self, telemetry_payload: dict, *, profile_candidate: bool = False) -> dict:
         """

@@ -108,12 +108,13 @@ def legacy_keys(payload: dict, moves: list, chunk_count: int) -> tuple:
     return chunk_keys, f"{page}:{frame}:t{_time_key(moves, len(moves) - 1)}"
 
 
-def session_pieces(payload: dict, records) -> dict:
+def session_pieces(payload: dict, records, known=frozenset()) -> dict:
     """LSTM chunks and tabular windows a collector 1.17 export adds to its session, under stable keys.
 
     ``records`` are the export's raw records. Windows follow the collector (touch records count as
-    other events); their mouse records are what the tabular model reads. Returns
-    {"chunks": [(key, rows)], "windows": [(key, mouse records)]}, empty for older collectors.
+    other events); their mouse records are what the tabular model reads. Pieces whose key is in
+    ``known`` (already stored for the session: the export's 100 moves of context) are not rebuilt.
+    Returns {"chunks": [(key, rows)], "windows": [(key, mouse records)]}, empty for older collectors.
     """
     base, frame, page = export_frame(payload)
     rows = _rows(records)[-MAX_EXPORT_RECORDS:]
@@ -126,15 +127,18 @@ def session_pieces(payload: dict, records) -> dict:
     # before it, so a chunk cut from the middle of an export equals the same chunk of any other.
     transitions = [chunk[0] for chunk in records_to_chunks(moves, 1, 1, max_records=MAX_EXPORT_RECORDS)]
     for start in range((-base) % CHUNK_STRIDE, len(transitions) - CHUNK_SIZE + 1, CHUNK_STRIDE):
-        chunks.append((f"{page}:{frame}:m{base + start}", transitions[start:start + CHUNK_SIZE]))
+        key = f"{page}:{frame}:m{base + start}"
+        if key not in known:
+            chunks.append((key, transitions[start:start + CHUNK_SIZE]))
     last = len(positions) - 1
     for local, raw_index in enumerate(positions):
         global_index = base + local
         on_grid = (global_index + 1) % GRID_MOVES == 0 or local == last
         has_context = local >= WINDOW_RECORDS - 1 or (base == 0 and local >= CHUNK_SIZE)
-        if on_grid and has_context:
+        key = f"{page}:{frame}:w{global_index}"
+        if on_grid and has_context and key not in known:
             window = [record for record in export_window(rows, raw_index) if record.get("source") != "touch"]
-            windows.append((f"{page}:{frame}:w{global_index}", window))
+            windows.append((key, window))
     return {"chunks": chunks, "windows": windows}
 
 
