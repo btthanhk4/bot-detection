@@ -61,6 +61,8 @@ def test_emulated_motion_is_flagged_and_real_phones_are_not():
     ({"linearSd": 0.03}, True), ({"linearSd": 0.029}, False), ({"linearSd": 0.0}, False),
     ({"events": 100}, True), ({"events": 99}, False), ({"status": "no_events"}, False),
     ({"tiltDeg": None}, False), ({"tiltDeg": True}, False), ({"linearSd": float("nan")}, False),
+    ({"gravitySd": 0.03}, True), ({"gravitySd": 0.029}, False), ({"gravitySd": 0.0}, False),
+    ({"gravitySd": None}, False),
 ])
 def test_synthetic_motion_boundaries(change, fires):
     assert synthetic_motion(_summary({**_EMULATED_MOTION, **change})) is fires
@@ -252,4 +254,4 @@ def test_flagship_with_four_gigabytes_never_becomes_bot_alone():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38")
+    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38", "39")

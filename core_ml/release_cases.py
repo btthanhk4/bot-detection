@@ -538,6 +538,10 @@ _HAND_MOTION = {"status": "ok", "events": 400, "intervalMs": 17.8, "gravity": 9.
 _EMULATED_MOTION = {"status": "ok", "events": 400, "intervalMs": 16.7, "gravity": 9.8, "tiltDeg": 0.0,
                     "linearSd": 0.072, "gravitySd": 0.072, "rotationMean": 0.112, "rotationSd": 0.049}
 _S23 = {"model": "SM-S918B", "architecture": "", "platformVersion": "14.0.0", "mobile": True}
+# Policy 39: a Redmi (220333QAG) lying on a desk in a controlled test (16 Nov 2026): perfectly level at
+# 9.80 m/s^2 like the emulator, but its gravity channel still and no gyroscope.
+_LEVEL_LOW_END_MOTION = {"status": "ok", "events": 120, "intervalMs": 80.0, "gravity": 9.8, "tiltDeg": 0.0,
+                         "linearSd": 0.335, "gravitySd": 0.0, "rotationMean": None, "rotationSd": None}
 
 # Policy 19 fixtures: (verdict, decision state, decision basis, payload).
 # Contact values of real phones measured on the live site (2026-10-27): iPhone
@@ -678,6 +682,16 @@ MOBILE_RULE_CASES = (
                                                           memory=4, cores=8, headers={"cohort_sessions": 80,
                                                                                       "cohort_interactive": 0}),
                                                    motion=_HAND_MOTION)),
+    # Policy 39: the real low-end phone lying level is not emulated motion, with a tap or without, even
+    # with a time zone of another country beside it.
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8), motion=_LEVEL_LOW_END_MOTION)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8), first_touch_ms=None,
+                                                     motion=_LEVEL_LOW_END_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
+                                              first_touch_ms=None, motion=_LEVEL_LOW_END_MOTION,
+                                              timezone="America/New_York", country="VN")),
 )
 
 # Frozen gate of policies 19-23.
@@ -735,9 +749,18 @@ MOBILE_RULE_GATE_V37 = {
     "fixture_fingerprint": "31d5d1ffe22c168882ff21dc4b26cd3f5ade25d65aeb18f489a8b7a272fc0c3d",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 38.
+MOBILE_RULE_GATE_V38 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v1", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2"],
+    "human_cases": 14, "suspect_cases": 30, "bot_cases": 8, "passed": 52,
+    "fixture_fingerprint": "4ea7b23cbc9300289ccdab4fda2fb79bac5379ca7d1124bd332960578f032e3e",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),

@@ -25,6 +25,12 @@ Fingerprint flags stored with each label:
   reporting motion ranged from 0.6 degrees up, none below. 59 sessions showed it, on dozens of
   claimed models, all at 9.79-9.82 m/s^2 and 60 Hz; Fingerprint flagged 47 of the 52 it had
   checked (tampering, anti-detect browser), yet 13 had been HUMAN. It withholds HUMAN.
+  Policy 39: a real low-end phone does read perfectly level. A Redmi (220333QAG) lying on a desk
+  in a controlled test (16 Nov 2026) reported tilt 0.0 at 9.80 m/s^2, linear SD 0.13-0.34, and
+  escaped only by having 84 events. Its gravity channel did not move (SD 0.0) and it has no
+  gyroscope; the emulator adds the same noise to both channels (gravity SD 0.068-0.077 in every
+  one of its sessions, and all 583 emulated_phone BOT verdicts of 13-16 Nov had 0.03 or more).
+  The gravity channel must now jitter too (SD 0.03 or more).
 - ``sensor_signature``: the gravity magnitude and tilt of a phone lying still. Calibration
   offsets differ from one physical device to the next (SensorID, IEEE S&P 2019), so the same
   values on three different claimed models are one device, or one emulator template, behind
@@ -111,6 +117,8 @@ def synthetic_motion(motion: dict) -> bool:
         motion.get("status") == "ok" and motion.get("tilt_deg") is not None
         and motion["tilt_deg"] <= SYNTHETIC_MAX_TILT
         and (motion.get("linear_sd") or 0) >= SYNTHETIC_MIN_NOISE
+        # Policy 39: both channels jitter alike (a real level phone's gravity channel stays still).
+        and (motion.get("gravity_sd") or 0) >= SYNTHETIC_MIN_NOISE
         and (motion.get("events") or 0) >= SYNTHETIC_MIN_EVENTS
     )
 

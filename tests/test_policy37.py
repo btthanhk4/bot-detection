@@ -97,7 +97,7 @@ def test_api_counts_cohorts_for_phones_only(db, monkeypatch):
 
 
 def test_fixtures_cover_both_directions():
-    ours = MOBILE_RULE_CASES[47:]
+    ours = MOBILE_RULE_CASES[47:52]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("SUSPECT", "FINAL", "mobile_risk"), ("SUSPECT", "INSUFFICIENT_EVIDENCE", None),
         ("SUSPECT", "INSUFFICIENT_EVIDENCE", None), ("SUSPECT", "FINAL", "mobile_risk"),
@@ -124,4 +124,4 @@ def test_inert_cohort_makes_an_untouched_phone_suspect_not_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "38"
+    assert DECISION_POLICY_VERSION in ("38", "39")

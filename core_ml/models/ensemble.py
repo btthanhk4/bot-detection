@@ -75,7 +75,9 @@ from core_ml.models.touch_shadow import score_touch
 # Policy 37: a phone that did not interact, whose device configuration was seen 30+ times in a day
 # without a single interaction, is a final SUSPECT (mobile_human, INERT_COHORT).
 # Policy 38: a cohort is inert when people would interact that little with probability under 0.1%.
-DECISION_POLICY_VERSION = "38"
+# Policy 39: emulated motion needs the gravity channel to jitter too (a real low-end phone lying
+# level read tilt 0.0 at 9.80 m/s^2 in a controlled test, its gravity channel still).
+DECISION_POLICY_VERSION = "39"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
