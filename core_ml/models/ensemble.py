@@ -76,6 +76,12 @@ from core_ml.features.session_mouse import (
     session_pieces,
 )
 from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
+from core_ml.features.trajectory_signature import (
+    REPLAY_BOT_OVERLAP,
+    REPLAY_SUSPECT_OVERLAP,
+    REPLAYED_TRAJECTORY_RULE,
+    replay_overlap,
+)
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
 from core_ml.models.touch_shadow import score_touch
@@ -91,7 +97,9 @@ from core_ml.models.touch_shadow import score_touch
 # level read tilt 0.0 at 9.80 m/s^2 in a controlled test, its gravity channel still).
 # Policy 40: the mouse models judge every window of a desktop session (collector 1.17 exports every move
 # since the previous snapshot); below BOT the session decides, a single snapshot's BOT still counts.
-DECISION_POLICY_VERSION = "40"
+# Policy 41: a mouse trajectory another session already drew (path signatures resampled by distance)
+# withholds HUMAN from 4 shared signatures and convicts from 8 (replayed_trajectory_v1).
+DECISION_POLICY_VERSION = "41"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -295,6 +303,12 @@ class EnsembleBotDetector:
         # (its time zone is an hour or more from every zone of the address's country).
         if not unsupported_mobile and timezone_mismatch(payload):
             deferred_evidence.append("TIMEZONE_MISMATCH")
+        # Policy 41: a trajectory another session already drew, signature for signature.
+        replayed = replay_overlap(payload) if not unsupported_mobile else None
+        if replayed is not None and REPLAY_SUSPECT_OVERLAP <= replayed < REPLAY_BOT_OVERLAP:
+            deferred_evidence.append("REPLAYED_TRAJECTORY")
+            if desktop_risk["judged"]:
+                desktop_risk = {**desktop_risk, "codes": [*desktop_risk["codes"], "REPLAYED_TRAJECTORY"]}
         # Policy 34: an empty plugin list or an environment family alone on such a desktop.
         if not unsupported_mobile:
             deferred_evidence += [code for code in evidence_codes(payload, automation_evidence)
@@ -312,6 +326,8 @@ class EnsembleBotDetector:
             automation_rule = input_provenance["synthetic_input_rule"]
         elif synthetic_path:
             automation_rule = SYNTHETIC_PATH_RULE
+        elif replayed is not None and replayed >= REPLAY_BOT_OVERLAP:
+            automation_rule = REPLAYED_TRAJECTORY_RULE
         elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"]):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
@@ -602,6 +618,12 @@ class EnsembleBotDetector:
                     "radius 1 and force 1 at every point (Chromium's CDP defaults); WebKit on a real device "
                     "reports the finger's contact area"
                 )
+            elif automation_rule == REPLAYED_TRAJECTORY_RULE:
+                reasons.append(
+                    f"Replayed mouse trajectory: {replayed} path signatures of this session were drawn in another "
+                    "session too (direction sequences resampled by distance, so speed and timing do not matter); "
+                    "nobody moves a mouse along the same complex path twice"
+                )
             elif automation_rule == SYNTHETIC_POINTER_RULE:
                 reasons.append(
                     f"Synthetic mouse presses: {input_provenance['zero_pressure_presses']} presses reported "
@@ -732,6 +754,7 @@ class EnsembleBotDetector:
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "forged_browser" if automation_rule == FORGED_BROWSER_RULE
                     else "emulated_phone" if automation_rule == EMULATED_PHONE_RULE
+                    else "replayed_trajectory" if automation_rule == REPLAYED_TRAJECTORY_RULE
                     else "webview_automation" if automation_rule == WEBVIEW_WEBDRIVER_RULE
                     else "synthetic_touch" if automation_rule == APPLE_SYNTHETIC_TOUCH_RULE
                     else "mobile_clean_environment" if mobile_human_decision

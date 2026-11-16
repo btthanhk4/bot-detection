@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "17703bd4b57eeb41ad994e642cf2ce55bf958913db4da4a6eba4d972a2d67413",
+    "behavioral_lstm.pt": "63982a7ea22d153b304a649cdccfa469c8c4d96d833556fef5e5d1d511128486",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "654c2e7038724ff0a9ff6903e0e5a6af",
-  "created_at": "2026-11-16T09:28:29.930307+00:00",
+  "bundle_id": "36b69d5f722442ea9e867e09055d8915",
+  "created_at": "2026-11-16T16:32:51.990677+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -870,7 +870,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "40",
+    "decision_policy_version": "41",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1111,6 +1111,7 @@
       "positive_cases": 2,
       "rule": "synthetic_click_v1"
     },
+    "synthetic_profile": "legacy_v1",
     "train_full_trajectory_checkpoints": 32,
     "train_full_trajectory_windows": true,
     "training_device": "cpu"

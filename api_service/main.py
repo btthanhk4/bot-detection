@@ -46,6 +46,7 @@ from api_service import (
     sensor_fleet,
     session_mouse_store,
     sites,
+    trajectory_store,
 )
 from api_service.capture import build_capture
 from api_service.config import settings
@@ -429,6 +430,23 @@ def _sensor_db():
     return db
 
 
+_trajectory_indexes_ready = False
+
+
+def _trajectory_db():
+    """The database of trajectory signatures (policy 41), with its indexes (best effort)."""
+    global _trajectory_indexes_ready
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None and not _trajectory_indexes_ready:
+        try:
+            trajectory_store.ensure_indexes(db)
+            _trajectory_indexes_ready = True
+        except Exception:
+            logger.exception("Trajectory signature indexes could not be created")
+    return db
+
+
 _session_mouse_indexes_ready = False
 
 
@@ -540,6 +558,13 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
     except Exception:
         cohort = None
     headers["cohort_sessions"], headers["cohort_interactive"] = cohort if cohort else (None, None)
+    # Policy 41: the most trajectory signatures this desktop session shares with another session's page.
+    try:
+        headers["replay_overlap"] = trajectory_store.replay_overlap(
+            _trajectory_db(), data, str(data.get("sessionId") or "")
+        ) if link and not phone and session_mouse_store.has_mouse_moves(data) else None
+    except Exception:
+        headers["replay_overlap"] = None
     # Policy 33: the address's country, to compare with the browser's time zone.
     try:
         headers["ip_country"] = geoip.country_of(data.get("client_ip") or get_client_ip(request))

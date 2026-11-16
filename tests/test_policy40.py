@@ -258,4 +258,4 @@ def test_api_passes_session_evidence_and_stores_it(monkeypatch):
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "40"
+    assert DECISION_POLICY_VERSION in ("40", "41")

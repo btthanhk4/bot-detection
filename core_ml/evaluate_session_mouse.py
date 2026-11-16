@@ -21,7 +21,7 @@ from core_ml.train import assign_real_session_splits, deduplicate_real_sessions
 
 torch.set_num_threads(2)
 root, split, every, out = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
-det, manifest = _load_detector("core_ml/weights", 0.96)
+det, manifest = _load_detector(__import__("os").environ.get("WEIGHTS_DIR", "core_ml/weights"), 0.96)
 print("bundle", manifest["bundle_id"], flush=True)
 sessions = deduplicate_real_sessions([
     s for sc in ("humans_and_moderate_bots", "humans_and_advanced_bots")

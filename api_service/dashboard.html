@@ -2304,7 +2304,8 @@ const SHORT_DESKTOP_CODES = { FRAME_LOCKED_POINTER: 'Chuột báo theo khung hì
   CDP_ATTACHED: 'Đang bị điều khiển (CDP)', NON_BROWSER_REQUEST: 'Không gửi từ trình duyệt',
   RANDOM_POINTER_JUMPS: 'Con trỏ nhảy ngẫu nhiên', UA_POINTER_MISMATCH: 'Trình duyệt khai sai phiên bản',
   WEBDRIVER_TAMPERED: 'Cờ webdriver bị che', SERVER_CPU: 'CPU máy chủ', UA_API_MISMATCH: 'Trình duyệt khai sai loại', PLATFORM_SPOOFED: 'Thiết bị bị giả',
-  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', PLUGINS_EMPTY: 'Không có plugin' };
+  TIMEZONE_MISMATCH: 'Múi giờ khác nước của IP', PLUGINS_EMPTY: 'Không có plugin',
+  REPLAYED_TRAJECTORY: 'Quỹ đạo chuột phát lại' };
 const SHORT_MOBILE_CODES = { EMULATOR: 'Trình giả lập', PLATFORM_CONTRADICTION: 'Thiết bị mâu thuẫn', HARDWARE: 'Phần cứng máy chủ',
   CLOUD_IP: 'IP cloud', ENVIRONMENT_EVIDENCE: 'Môi trường bất thường', CLIENT_AUTOMATION_SIGNAL: 'Cờ tự động hóa',
   TOUCH_FLAGS: 'Chạm bất thường', UNVERIFIED_PAGE_LOAD: 'Không qua trang thật', DEVICE_VELOCITY: 'Thiết bị mở quá nhiều phiên',
@@ -2317,7 +2318,7 @@ const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
   forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập',
-  emulated_phone: 'Điện thoại giả lập' };
+  emulated_phone: 'Điện thoại giả lập', replayed_trajectory: 'Phát lại quỹ đạo chuột' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2673,6 +2674,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     AUDIO_NOVEL: 'mã âm thanh (audio fingerprint) của Chrome Android này chưa phiên nào khác có trong 24 giờ; điện thoại thật dùng chung mã theo hàng nghìn máy, trình duyệt anti-detect chèn nhiễu để mỗi hồ sơ có mã riêng',
     INERT_COHORT: 'cấu hình máy giống hệt này xuất hiện từ 30 phiên trở lên trong 24 giờ mà gần như không phiên nào chạm hay di chuột (người thật dùng cùng loại máy tương tác 78-97%; xác suất một đám đông người thật tương tác ít như vậy dưới 0,1%)' };
   const DESKTOP_CODE_LABELS = { FRAME_LOCKED_POINTER: 'chuột chỉ báo một mẫu mỗi khung hình (chuột thật báo nhanh hơn)',
+    REPLAYED_TRAJECTORY: 'quỹ đạo chuột trùng từng đoạn với một phiên khác (phát lại bản ghi chuột của người thật)',
     UNALIGNED_POINTER: 'sự kiện chuột dày hơn khung hình màn hình', POINTER_API_TAMPERED: 'API đo chuột bị sửa bằng JavaScript', SUBFRAME_POINTER_BURST: 'sự kiện chuột dồn trong dưới 1 ms',
     CLOUD_SOFTWARE_GPU: 'máy chủ cloud không có GPU', UNVERIFIED_PAGE_LOAD: 'dữ liệu không đến từ trang mà shop đã phục vụ',
     DEVICE_VELOCITY: 'một thiết bị mở rất nhiều phiên trong 1 giờ', CDP_ATTACHED: 'kênh CDP đang gắn (công cụ tự động hóa hoặc DevTools)', NON_BROWSER_REQUEST: 'request gửi dữ liệu thiếu header mà trình duyệt luôn gửi', ENVIRONMENT_EVIDENCE: 'môi trường trình duyệt bất thường',
@@ -2737,6 +2739,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
     } else if (bd.decision_basis === 'emulated_phone') {
       explainText = 'Điện thoại giả lập: cảm biến báo máy nằm phẳng tuyệt đối mà gia tốc vẫn rung đều (trọng lực lý tưởng của trình giả lập cộng nhiễu; điện thoại thật nằm trên bàn luôn nghiêng vài độ), và một kênh độc lập cũng cho thấy điều đó (mã âm thanh chưa máy nào khác có, múi giờ khác nước của IP, hoặc trình duyệt tự mâu thuẫn).';
+    } else if (bd.decision_basis === 'replayed_trajectory') {
+      explainText = 'Phát lại quỹ đạo chuột: nhiều đoạn đường đi của con trỏ trùng khớp với một phiên khác. Chữ ký được tính theo hướng đi sau khi lấy mẫu lại theo quãng đường, nên đổi tốc độ hay thời gian không che được; người thật không bao giờ vẽ lại y hệt một đường phức tạp.';
     } else if (bd.decision_basis === 'webview_automation') {
       explainText = 'WebView Android giấu cờ navigator.webdriver. WebView không chạy được tiện ích mở rộng, nên chính ứng dụng chứa nó đã giấu dấu hiệu tự động hóa.';
     } else if (bd.decision_basis === 'synthetic_touch') {

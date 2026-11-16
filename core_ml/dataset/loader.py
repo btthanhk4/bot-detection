@@ -702,6 +702,147 @@ def generate_synthetic_bot_trajectory(bot_type: str = "linear", n_points: int = 
     return records
 
 
+# Policy 41: "humanizer" bots, the mouse libraries automation uses to look human (ghost-cursor style
+# Bezier paths with ease-in-out and jitter, minimum-jerk profiles with tremor, WindMouse). The
+# synthetic HUMAN generator above is itself such a path, so until policy 40 the models were taught
+# that a humanizer is a person; the bot-lab red team (16 Nov 2026) confirmed they passed. WindMouse is
+# kept out of training to measure generalisation to an unseen humanizer.
+HUMANIZER_TRAIN_KINDS = ("bezier_jitter", "minimum_jerk")
+HUMANIZER_HELDOUT_KINDS = ("windmouse",)
+_VIEWPORTS = ((1366, 768), (1536, 864), (1920, 1080), (1440, 900), (1280, 720))
+
+
+def _humanizer_stroke(kind, start, target, rng):
+    """(x, y, dt) points of one stroke in CSS pixels."""
+    dist = math.hypot(target[0] - start[0], target[1] - start[1])
+    jitter = rng.uniform(0.0, 2.0)
+    frame = rng.choice((16.7, 8.3, None))
+    points = []
+    if kind == "minimum_jerk":
+        duration = 0.2 + rng.uniform(0.08, 0.16) * math.log2(1 + dist / 20)
+        n = max(6, int(duration / ((frame or 12.0) / 1000)))
+        for i in range(1, n + 1):
+            s = i / n
+            p = 10 * s ** 3 - 15 * s ** 4 + 6 * s ** 5
+            points.append((start[0] + (target[0] - start[0]) * p, start[1] + (target[1] - start[1]) * p))
+    elif kind == "windmouse":
+        gravity, wind, max_step = rng.uniform(7, 12), rng.uniform(2, 5), rng.uniform(8, 18)
+        x, y, vx, vy, wx, wy = start[0], start[1], 0.0, 0.0, 0.0, 0.0
+        for _ in range(2000):
+            d = math.hypot(target[0] - x, target[1] - y)
+            if d < 1:
+                break
+            w = min(wind, d)
+            if d >= 12:
+                wx = wx / math.sqrt(3) + (2 * rng.random() - 1) * w / math.sqrt(5)
+                wy = wy / math.sqrt(3) + (2 * rng.random() - 1) * w / math.sqrt(5)
+            else:
+                wx, wy = wx / math.sqrt(3), wy / math.sqrt(3)
+                max_step = max(3.0, max_step / math.sqrt(5))
+            vx += wx + gravity * (target[0] - x) / d
+            vy += wy + gravity * (target[1] - y) / d
+            v = math.hypot(vx, vy)
+            if v > max_step:
+                clip = max_step / 2 + rng.random() * max_step / 2
+                vx, vy = vx / v * clip, vy / v * clip
+            x, y = x + vx, y + vy
+            points.append((x, y))
+    else:  # bezier_jitter
+        n = max(10, int(dist / rng.uniform(6, 14)))
+        bend = (rng.random() - 0.5) * dist * rng.uniform(0.2, 0.6)
+        nx, ny = -(target[1] - start[1]) / (dist or 1), (target[0] - start[0]) / (dist or 1)
+        c1 = (start[0] + (target[0] - start[0]) * 0.3 + nx * bend, start[1] + (target[1] - start[1]) * 0.3 + ny * bend)
+        c2 = (start[0] + (target[0] - start[0]) * 0.7 + nx * bend * 0.5, start[1] + (target[1] - start[1]) * 0.7 + ny * bend * 0.5)
+        for i in range(1, n + 1):
+            s = i / n
+            e = 2 * s * s if s < 0.5 else 1 - (-2 * s + 2) ** 2 / 2
+            u = 1 - e
+            points.append((u ** 3 * start[0] + 3 * u * u * e * c1[0] + 3 * u * e * e * c2[0] + e ** 3 * target[0],
+                           u ** 3 * start[1] + 3 * u * u * e * c1[1] + 3 * u * e * e * c2[1] + e ** 3 * target[1]))
+        if rng.random() < 0.35:
+            points.append((target[0] + rng.gauss(0, 5), target[1] + rng.gauss(0, 5)))
+            points.append(target)
+    out = []
+    for index, (x, y) in enumerate(points):
+        s = (index + 1) / len(points)
+        dt = (frame + rng.gauss(0, 0.6)) if frame else 5 + 14 * abs(math.sin(math.pi * s - math.pi / 2)) + rng.random() * 6
+        out.append((x + rng.gauss(0, jitter), y + rng.gauss(0, jitter), max(1.0, dt)))
+    return out
+
+
+def generate_humanizer_bot_trajectory(kind: str = "bezier_jitter", n_targets: int = None, seed=None) -> list:
+    """Normalised move records of a humanizer bot visiting several targets, with pauses and a click."""
+    rng = random.Random(seed)
+    width, height = rng.choice(_VIEWPORTS)
+    at = (width * rng.uniform(0.3, 0.7), height * rng.uniform(0.3, 0.7))
+    t, records = 0.0, []
+    for _ in range(n_targets or rng.randint(3, 8)):
+        target = (rng.uniform(40, width - 40), rng.uniform(60, height - 60))
+        for x, y, dt in _humanizer_stroke(kind, at, target, rng):
+            t += dt
+            records.append({"time": round(t), "type": "move",
+                            "x": round(min(1.0, max(0.0, x / width)), 5), "y": round(min(1.0, max(0.0, y / height)), 5)})
+        at = target
+        t += rng.uniform(80, 1200)
+        if rng.random() < 0.4:
+            records.append({"time": round(t), "type": "click", "x": records[-1]["x"], "y": records[-1]["y"]})
+            t += rng.uniform(50, 300)
+    return records
+
+
+def _human_like_environment():
+    """The fingerprint and BotD view of an ordinary desktop browser (synthetic)."""
+    fp = {
+        "userAgent": random.choice([
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+        ]),
+        "platform": random.choice(["Win32", "MacIntel"]),
+        "language": random.choice(["vi-VN", "en-US", "ja"]),
+        "languages": random.choice([["vi-VN", "vi", "en-US", "en"], ["en-US", "en"], ["ja", "en-US", "en"]]),
+        "hardwareConcurrency": random.choice([4, 8, 12, 16]),
+        "deviceMemory": random.choice([8, 16, 32]),
+        "maxTouchPoints": 0,
+        "screenResolution": random.choice(["1920x1080", "1536x864", "2560x1440", "1366x768"]),
+        "colorDepth": 24,
+        "pixelRatio": random.choice([1.0, 1.25, 1.5, 2.0]),
+        "pluginsLength": random.randint(3, 5),
+        "webglVendor": "Google Inc. (NVIDIA)",
+        "webglRenderer": random.choice([
+            "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        ]),
+        "canvasHash": f"a{random.randint(1000, 9999)}",
+        "audioHash": f"35.{random.randint(10000, 99999)}",
+        "fontsCount": random.randint(5, 13),
+    }
+    botd = {
+        "isBot": False, "heuristicScore": 0.0, "flaggedCount": 0,
+        "detectors": {name: False for name in (
+            "webdriver", "distinctiveProperties", "virtualGpu", "pluginsInconsistency", "languagesInconsistency",
+            "windowSize", "errorTrace", "hasProcess", "platformMismatch", "headlessUa")},
+        "reasons": [],
+    }
+    return fp, botd
+
+
+def generate_humanizer_telemetry(kind: str = "bezier_jitter") -> dict:
+    """A humanizer bot in a clean browser: only its mouse can give it away (policy 41)."""
+    records = generate_humanizer_bot_trajectory(kind, seed=random.random())
+    fp, botd = _human_like_environment()
+    return {
+        "sessionId": f"sess_{random.randint(100000, 999999)}",
+        "visitorId": f"fp_{random.randint(1000, 9999)}",
+        "timestamp": 1725800000000,
+        "pageUrl": "https://silkmoon.vn/products/silk-scarf",
+        "fingerprint": fp,
+        "botd": botd,
+        "mouse": {"records": records, "chunks": records_to_chunks(records, chunk_size=24, stride=12)},
+    }
+
+
 def generate_synthetic_telemetry(is_bot: bool = False, bot_level: str = "moderate") -> dict:
     """
     Creates a full realistic telemetry payload for training & testing.

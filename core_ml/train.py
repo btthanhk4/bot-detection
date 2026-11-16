@@ -52,7 +52,9 @@ from core_ml.dataset.field_captures import (
     load_bot_captures,
 )
 from core_ml.dataset.loader import (
+    HUMANIZER_TRAIN_KINDS,
     RealMouseSession,
+    generate_humanizer_telemetry,
     generate_synthetic_telemetry,
     load_real_dataset,
     records_to_chunks,
@@ -109,6 +111,11 @@ if torch.cuda.is_available():
 MOUSE_STAT_FEATURE_NAMES = list(STATISTICAL_FEATURE_NAMES)
 PRODUCTION_DECISION_THRESHOLD = 0.96
 PRODUCTION_SUSPECT_THRESHOLD = 0.45
+# Synthetic training data: legacy (a synthetic "human" class) or policy 41's humanizer bots.
+LEGACY_SYNTHETIC_PROFILE = "legacy_v1"
+HUMANIZER_SYNTHETIC_PROFILE = "humanizer_v1"
+MIXED_SYNTHETIC_PROFILE = "humanizer_mixed_v1"  # experiment: keeps the synthetic humans as well
+
 def resolve_training_device(requested: str = "auto") -> torch.device:
     """Resolve an explicit training device without silently ignoring CUDA requests."""
     normalized = str(requested or "auto").strip().lower()
@@ -890,7 +897,7 @@ def validate_captured_bot_holdout(report):
 def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_dir=None,
          early_augmentation=True, diagnostic_only=False, capture_dir=None,
          capture_holdout_families=(), tabular_only=False, base_weights_dir=None,
-         manual_export_dir=None, manual_train_groups=()):
+         manual_export_dir=None, manual_train_groups=(), synthetic_profile=None):
     training_device = resolve_training_device(device)
     print("=" * 60)
     print("  BOT DETECTION CORE — TRAINING PIPELINE v2")
@@ -976,7 +983,10 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
 
     n_synthetic = 150 if real_sessions else 300
 
-    for sample_idx in range(n_synthetic):
+    # Policy 41 (humanizer_v1): the synthetic "human" generator draws a humanizer's path, so it is
+    # dropped (real people train the human class) and humanizer bots in a clean browser join the bots.
+    humanizer = synthetic_profile in (HUMANIZER_SYNTHETIC_PROFILE, MIXED_SYNTHETIC_PROFILE)
+    for sample_idx in range(0 if synthetic_profile == HUMANIZER_SYNTHETIC_PROFILE else n_synthetic):
         t = generate_synthetic_telemetry(is_bot=False)
         t["sessionId"] = f"synthetic_human_{sample_idx}"
         all_telemetries.append(t)
@@ -987,6 +997,13 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
         level = random.choice(["naive", "moderate", "advanced"])
         t = generate_synthetic_telemetry(is_bot=True, bot_level=level)
         t["sessionId"] = f"synthetic_bot_{sample_idx}"
+        all_telemetries.append(t)
+        all_labels.append(1)
+        all_splits.append("train")
+
+    for sample_idx in range(n_synthetic if humanizer else 0):
+        t = generate_humanizer_telemetry(HUMANIZER_TRAIN_KINDS[sample_idx % len(HUMANIZER_TRAIN_KINDS)])
+        t["sessionId"] = f"synthetic_humanizer_{sample_idx}"
         all_telemetries.append(t)
         all_labels.append(1)
         all_splits.append("train")
@@ -1463,6 +1480,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "train_full_trajectory_windows": bool(real_sessions and early_augmentation),
             "train_full_trajectory_checkpoints": TRAIN_FULL_TRAJECTORY_CHECKPOINTS,
             "lstm_aggregation": "mean_p75_disagreement_v2",
+            "synthetic_profile": synthetic_profile or LEGACY_SYNTHETIC_PROFILE,
             # Policy 40: chunk and window scores of a whole session (core_ml.features.session_mouse).
             "session_mouse_aggregation": SESSION_MOUSE_VERSION,
             "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
@@ -1533,6 +1551,8 @@ if __name__ == "__main__":
     parser.add_argument("--base-weights-dir", default="", help="Bundle supplying the frozen BiLSTM")
     parser.add_argument("--manual-export-dir", default="", help="Verified research export with independent manual labels")
     parser.add_argument("--manual-train-group", action="append", default=[], help="Explicit train-only group; repeatable")
+    parser.add_argument("--synthetic-profile", choices=(LEGACY_SYNTHETIC_PROFILE, HUMANIZER_SYNTHETIC_PROFILE, MIXED_SYNTHETIC_PROFILE),
+                        default=None, help="Synthetic training data (policy 41: humanizer_v1)")
     args = parser.parse_args()
     main(
         dataset_root=args.dataset_root,
@@ -1547,4 +1567,5 @@ if __name__ == "__main__":
         base_weights_dir=args.base_weights_dir or None,
         manual_export_dir=args.manual_export_dir or None,
         manual_train_groups=args.manual_train_group,
+        synthetic_profile=args.synthetic_profile,
     )

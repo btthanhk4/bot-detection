@@ -875,9 +875,11 @@ def get_total_count(site_filter: Optional[dict] = None) -> Optional[int]:
 
 
 def _forget_session_mouse(db, query: dict) -> None:
-    """Policy 40: a deleted session's mouse-model scores go too (they expire after two days anyway)."""
+    """A deleted session's mouse-model scores (policy 40) and trajectory signatures (policy 41) go too;
+    both expire on their own anyway. ``query`` selects by ``_id`` (the session id)."""
     try:
         db["session_mouse"].delete_many(query)
+        db["trajectory_signatures"].delete_many({"s": query["_id"]} if "_id" in query else {})
     except Exception as e:
         logger.warning(f"[DB] Session mouse evidence could not be deleted: {e}")
 
