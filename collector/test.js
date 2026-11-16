@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.16.1');
+    assert.strictEqual(sent.collector.sdkVersion, '1.17.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -896,11 +896,82 @@ async function testOversizedPagehideRetainsMouseAndMobileDomain() {
     assert.match(payload.fingerprint.userAgent, /mobile/i);
     assert.strictEqual(payload.fingerprint.maxTouchPoints, 5);
     assert.ok(payload.mouse.records.filter((record) => record.type === 'move').length >= 25);
+    // 1.17: the trimmed export still says which frame move it starts at.
+    const keptMoves = payload.mouse.records.filter((record) => record.type === 'move').length;
+    assert.strictEqual(payload.mouse.moveBase, payload.mouse.frameMoves - keptMoves);
+    assert.ok(payload.mouse.moveBase >= 0);
   } finally {
     collector.destroy();
     if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
     else delete global.navigator;
   }
+}
+
+async function testExportCoversEveryMoveSinceTheLastAcknowledgedSnapshot() {
+  const sent = [];
+  let ok = true;
+  global.fetch = async (_url, options) => {
+    sent.push(JSON.parse(options.body));
+    return { ok };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, maxRetryAttempts: 0 });
+  collector.cachedFingerprint = { visitorId: 'v', components: {} };
+  collector.cachedBotd = {};
+  const recorder = collector.mouseRecorder;
+  const moves = (data) => data.records.filter((record) => record.type === 'move').length;
+  for (let i = 0; i < 150; i++) recorder.recordPoint('move', i, 10, 'mouse');
+  let data = recorder.exportData(collector.ackedMovesInFrame());
+  assert.strictEqual(data.frameMoves, 150);
+  assert.strictEqual(data.moveBase, 0, 'nothing acknowledged yet: the whole frame');
+  assert.strictEqual(moves(data), 150);
+  assert.deepStrictEqual(Object.keys(data.records[0]).sort(), ['source', 'time', 'type', 'x', 'y'],
+    'records carry only what the API reads');
+
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(sent[sent.length - 1].mouse.moveBase, 0);
+  assert.deepStrictEqual(collector.ackedMouse, { frame: recorder.recordingId, moves: 150 });
+  for (let i = 0; i < 30; i++) recorder.recordPoint('move', 200 + i, 20, 'mouse');
+  data = recorder.exportData(collector.ackedMovesInFrame());
+  assert.strictEqual(moves(data), 130, '30 new moves and 100 of context');
+  assert.strictEqual(data.moveBase, 50);
+
+  ok = false;
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), false);
+  assert.strictEqual(collector.ackedMouse.moves, 150, 'a failed send acknowledges nothing');
+  collector.clearPendingRetry();
+
+  for (let i = 0; i < 900; i++) recorder.recordPoint('move', i % 500, 30, 'mouse');
+  data = recorder.exportData(collector.ackedMovesInFrame());
+  assert.strictEqual(moves(data), 600, 'at most 600 moves, the newest');
+  assert.strictEqual(data.moveBase, 1080 - 600);
+
+  recorder.clear();
+  recorder.recordPoint('move', 1, 1, 'mouse');
+  data = recorder.exportData(collector.ackedMovesInFrame());
+  assert.strictEqual(data.frameMoves, 1, 'a new coordinate frame counts from zero');
+  assert.strictEqual(data.moveBase, 0);
+  collector.destroy();
+}
+
+async function testMouseBacklogSendsEarly() {
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts++;
+    return { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0 });
+  collector.cachedFingerprint = { visitorId: 'v', components: {} };
+  collector.cachedBotd = {};
+  collector.timer = setInterval(() => {}, 60000); // heartbeats running
+  for (let i = 0; i < 449; i++) collector.mouseRecorder.recordPoint('move', i, 5, 'mouse');
+  assert.strictEqual(attempts, 0);
+  collector.mouseRecorder.recordPoint('move', 1, 6, 'mouse');
+  await waitFor(() => attempts === 1);
+  await waitFor(() => collector.sendPromise === null);
+  assert.strictEqual(collector.ackedMouse.moves, 450);
+  for (let i = 0; i < 100; i++) collector.mouseRecorder.recordPoint('move', i, 7, 'mouse');
+  assert.strictEqual(attempts, 1, 'not again until the next backlog');
+  collector.destroy();
 }
 
 async function testPagehideFetchFallbackAvoidsCorsPreflight() {
@@ -978,7 +1049,10 @@ async function testClickBurstRetainsMouseEvidenceAndLongUrlIsBounded() {
   ];
   const records = collector.mouseRecorder.exportData().records;
   assert.strictEqual(records.filter((record) => record.type === 'move').length, 25);
-  assert.ok(records.length <= 100);
+  // 1.17: the other events of the exported span travel too (bounded); the API takes the
+  // trained 100-record window from them.
+  assert.ok(records.length <= 25 + 200);
+  assert.strictEqual(records.filter((record) => record.type === 'click').length, 80);
 
   const previousWindow = global.window;
   const previousDocument = global.document;
@@ -1231,6 +1305,8 @@ testRestartDuringFingerprinting()
   .then(testPagehideBeaconUsesCorsSafelistedContentType)
   .then(testPagehideUsesUtf8ByteLengthAndSequenceWraps)
   .then(testOversizedPagehideRetainsMouseAndMobileDomain)
+  .then(testExportCoversEveryMoveSinceTheLastAcknowledgedSnapshot)
+  .then(testMouseBacklogSendsEarly)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
   .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)
   .then(testActivitySignatureIncludesEarlierPoints)

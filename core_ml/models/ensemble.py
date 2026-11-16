@@ -63,6 +63,18 @@ from core_ml.features.profile_policy import (
     corroborated_profile_evidence,
 )
 from core_ml.features.server_context import server_context_codes, timezone_mismatch
+from core_ml.features.session_mouse import (
+    MIN_SESSION_CHUNKS,
+    MIN_SESSION_WINDOWS,
+    SESSION_MOUSE_VERSION,
+    aggregate,
+    collector_window,
+    export_frame,
+    is_extended_export,
+    legacy_keys,
+    prior_evidence,
+    session_pieces,
+)
 from core_ml.features.touch import AUTOCLICK_RULE, analyze_touch
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.tabular_classifier import TabularBotClassifier
@@ -77,7 +89,9 @@ from core_ml.models.touch_shadow import score_touch
 # Policy 38: a cohort is inert when people would interact that little with probability under 0.1%.
 # Policy 39: emulated motion needs the gravity channel to jitter too (a real low-end phone lying
 # level read tilt 0.0 at 9.80 m/s^2 in a controlled test, its gravity channel still).
-DECISION_POLICY_VERSION = "39"
+# Policy 40: the mouse models judge every window of a desktop session (collector 1.17 exports every move
+# since the previous snapshot); below BOT the session decides, a single snapshot's BOT still counts.
+DECISION_POLICY_VERSION = "40"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -126,6 +140,35 @@ class EnsembleBotDetector:
             raise RuntimeError(f"{name} returned an invalid probability")
         return numeric
 
+    def _session_mouse(self, payload, export_records, chunks, valid_mouse_records, env_vec, snapshot_tabular):
+        """Policy 40: this snapshot's chunk and window scores merged with its session's stored ones."""
+        if export_frame(payload)[0] is None:
+            # An older collector: its export is the snapshot window itself.
+            moves = [record for record in valid_mouse_records if record["type"] == "move"]
+            preds = self.lstm_model.predict_chunk_scores(extract_sequential_chunks(chunks))
+            if len(preds) != len(chunks):
+                return None
+            chunk_keys, window_key = legacy_keys(payload, moves, len(preds))
+            chunk_scores = dict(zip(chunk_keys, preds))
+            window_scores = {window_key: snapshot_tabular}
+        else:
+            pieces = session_pieces(payload, export_records)
+            chunk_scores, window_scores = {}, {}
+            for start in range(0, len(pieces["chunks"]), 50):
+                batch = pieces["chunks"][start:start + 50]
+                preds = self.lstm_model.predict_chunk_scores(extract_sequential_chunks([rows for _, rows in batch]))
+                if len(preds) != len(batch):
+                    return None
+                chunk_scores.update((key, pred) for (key, _), pred in zip(batch, preds))
+            for key, window in pieces["windows"]:
+                stats = compute_statistical_features(window)
+                window_scores[key] = self._require_model_probability(
+                    self.tabular_model.predict_proba(np.concatenate([env_vec, extract_mouse_stat_vector(stats)])),
+                    "Tabular model")
+        for name, value in chunk_scores.items():
+            chunk_scores[name] = self._require_model_probability(value, "LSTM chunk")
+        return aggregate(prior_evidence(payload), chunk_scores, window_scores)
+
     def predict(self, telemetry_payload: dict, *, profile_candidate: bool = False) -> dict:
         """
         Takes raw telemetry JSON payload from collector and outputs unified decision.
@@ -140,6 +183,14 @@ class EnsembleBotDetector:
 
         raw_records = mouse.get("records") or mouse.get("trajectory")
         records = raw_records if isinstance(raw_records, list) else []
+        # Policy 40: a collector 1.17 export reaches back to the previous snapshot. Everything judged
+        # per snapshot still reads the trained 100-record window; the whole export feeds the session.
+        export_records = records
+        if is_extended_export(payload):
+            records = collector_window(records)
+            mouse = {key: value for key, value in mouse.items() if key != "trajectory"}
+            mouse["records"] = records
+            payload = {**payload, "mouse": mouse}
         touch_record_count = sum(
             isinstance(record, dict) and record.get("source") == "touch"
             for record in records
@@ -298,11 +349,10 @@ class EnsembleBotDetector:
                     self.lstm_model.predict_session_proba(chunks_tensor), "LSTM"
                 )
                 lstm_tail_score = lstm_score
-            if lstm_score > 0.70 or lstm_tail_score > 0.70:
-                reasons.append("Elevated mouse-behavior model evidence")
 
         # 3. Tabular model evaluation (Canonical single source of truth vector)
         tabular_score = 0.5
+        env_vec = None
         if self.tabular_available and not explicit_automation:
             env_vec = extract_env_vector(fingerprint, botd)
             mouse_stat_vec = extract_mouse_stat_vector(mouse_stats)
@@ -311,6 +361,17 @@ class EnsembleBotDetector:
                 self.tabular_model.predict_proba(combined_tabular_vec), "Tabular model"
             )
 
+        # Policy 40: the same models over every window of the session, not only the newest.
+        snapshot_scores = {"lstm": round(lstm_score, 4), "lstm_tail": round(lstm_tail_score, 4),
+                           "tabular": round(tabular_score, 4)}
+        session = None
+        # The API marks a live snapshot with ``_session_mouse`` (None for a session's first); offline
+        # replays of single payloads skip the session entirely and stay exactly policy 39.
+        if ((export_frame(payload)[0] is not None or "_session_mouse" in payload)
+                and not explicit_automation and has_enough_mouse_data and self.lstm_available
+                and not unsupported_mobile and not legacy_touch_ambiguous
+                and self.tabular_available and env_vec is not None and hasattr(self.lstm_model, "predict_chunk_scores")):
+            session = self._session_mouse(payload, export_records, chunks, valid_mouse_records, env_vec, tabular_score)
         heuristic_score = self._sanitize_probability(heuristic_score, 0.0)
 
         # BotD is positive evidence only. Its absence cannot dilute strong ML evidence.
@@ -321,20 +382,43 @@ class EnsembleBotDetector:
             self.tabular_available and not explicit_automation
         ) else 0.0
         ml_total = w_l + w_t
-        baseline = (w_l * lstm_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
-        tail_baseline = (w_l * lstm_tail_score + w_t * tabular_score) / ml_total if ml_total > 0 else 0.5
         heuristic_weight = 0.0 if explicit_automation else min(
             1.0, max(0.0, self.w_heuristic) * heuristic_score
         )
-        final_proba = baseline + (1.0 - baseline) * heuristic_weight
-        suspicion_score = tail_baseline + (1.0 - tail_baseline) * heuristic_weight
-        # Strong within-session behavioral evidence warrants abstention when
-        # the tabular model disagrees, even if the blended score is low.
-        behavioral_disagreement = (
-            not explicit_automation and self.lstm_available and self.tabular_available and has_enough_mouse_data
-            and lstm_score >= 0.425 and lstm_tail_score >= 0.70
-            and tabular_score < self.suspect_threshold
-        )
+
+        def fuse(lstm_mean, lstm_tail, tabular):
+            baseline = (w_l * lstm_mean + w_t * tabular) / ml_total if ml_total > 0 else 0.5
+            tail_baseline = (w_l * lstm_tail + w_t * tabular) / ml_total if ml_total > 0 else 0.5
+            return {
+                "baseline": baseline, "tail_baseline": tail_baseline,
+                "final": baseline + (1.0 - baseline) * heuristic_weight,
+                "suspicion": tail_baseline + (1.0 - tail_baseline) * heuristic_weight,
+                # Strong within-session behavioral evidence warrants abstention when
+                # the tabular model disagrees, even if the blended score is low.
+                "disagreement": (
+                    not explicit_automation and self.lstm_available and self.tabular_available
+                    and has_enough_mouse_data and lstm_mean >= 0.425 and lstm_tail >= 0.70
+                    and tabular < self.suspect_threshold
+                ),
+            }
+
+        fused = fuse(lstm_score, lstm_tail_score, tabular_score)
+        # Policy 40: once a session holds several windows, it decides between HUMAN and SUSPECT (and
+        # may reach BOT); BOT evidence of a single snapshot still counts, and two such snapshots lock.
+        session_applied = False
+        if session and session["chunks"] >= MIN_SESSION_CHUNKS and session["windows"] >= MIN_SESSION_WINDOWS:
+            session_fused = fuse(session["lstm_mean"], session["lstm_p75"], session["tabular"])
+            if not (fused["final"] >= self.threshold and session_fused["final"] < self.threshold):
+                session_applied = True
+                fused = session_fused
+                lstm_score, lstm_tail_score, tabular_score = (
+                    session["lstm_mean"], session["lstm_p75"], session["tabular"])
+        baseline = fused["baseline"]
+        final_proba, suspicion_score = fused["final"], fused["suspicion"]
+        behavioral_disagreement = fused["disagreement"]
+        if not explicit_automation and has_enough_mouse_data and self.lstm_available and (
+                lstm_score > 0.70 or lstm_tail_score > 0.70):
+            reasons.append("Elevated mouse-behavior model evidence")
 
         # The mouse models are not validated for partial trajectories. Only
         # the explicit automation rule may make a decision outside this gate.
@@ -589,7 +673,20 @@ class EnsembleBotDetector:
 
         confidence = abs(final_proba - 0.5) * 2.0  # Score margin, not calibrated confidence.
 
+        session_report = None
+        if session:
+            session_report = {
+                "analysis_version": SESSION_MOUSE_VERSION, "applied": session_applied,
+                "chunks": session["chunks"], "windows": session["windows"],
+                "lstm_mean": round(session["lstm_mean"], 4) if session["lstm_mean"] is not None else None,
+                "lstm_p75": round(session["lstm_p75"], 4) if session["lstm_p75"] is not None else None,
+                "tabular": round(session["tabular"], 4) if session["tabular"] is not None else None,
+                "snapshot": snapshot_scores,
+            }
+
         return {
+            # Policy 40: the API stores these with the session and pops them before persisting.
+            "_session_mouse_new": session["new"] if session else None,
             "is_bot": is_bot,
             "verdict": verdict,
             "bot_probability": round(final_proba, 4),
@@ -618,6 +715,7 @@ class EnsembleBotDetector:
                 "client_forgery": {"analysis_version": CLIENT_FORGERY_VERSION, "codes": forgery,
                                    "contradictions": browser_contradictions, "evidence": deferred_evidence},
                 "automation_evidence": automation_evidence,
+                "session_mouse": session_report,
                 "behavioral_lstm_score": None if explicit_automation else round(lstm_score, 4),
                 "behavioral_lstm_tail_score": None if explicit_automation else round(lstm_tail_score, 4),
                 "tabular_score": None if explicit_automation else round(tabular_score, 4),

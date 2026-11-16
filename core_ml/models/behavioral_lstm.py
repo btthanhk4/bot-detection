@@ -164,6 +164,11 @@ class MouseTrajectoryLSTM(nn.Module):
             return max(weighted_mean, p75)
         return weighted_mean
 
+    def predict_chunk_scores(self, chunks_tensor: torch.Tensor) -> list[float]:
+        """Bot probability of every chunk (policy 40 keeps them per session)."""
+        preds = self._predict_chunk_outputs(chunks_tensor)
+        return [] if preds is None else [float(value) for value in preds.view(-1).tolist()]
+
     def predict_session_scores(self, chunks_tensor: torch.Tensor) -> tuple[float, float]:
         """Return monotonic mean and upper-quartile evidence for policy v9."""
         preds = self._predict_chunk_outputs(chunks_tensor)

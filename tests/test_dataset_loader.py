@@ -113,12 +113,13 @@ const BotCollector = require('./collector/dist/bot-collector.js');
 const collector = new BotCollector({autoSendInterval: 0});
 collector.cachedFingerprint = {visitorId: 'visitor', components: {}};
 collector.cachedBotd = {};
-collector.mouseRecorder.records = Array.from({length: 500}, (_, i) => ({
-  time: i * 16, x: i / 500, y: i / 1000, type: 'move'
+collector.mouseRecorder.records = Array.from({length: 900}, (_, i) => ({
+  time: i * 16, x: i / 900, y: i / 1800, type: 'move'
 }));
 collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
   hasChunks: Object.prototype.hasOwnProperty.call(payload.mouse, 'chunks'),
   recordCount: payload.mouse.records.length,
+  moveBase: payload.mouse.moveBase,
   payloadBytes: Buffer.byteLength(JSON.stringify(payload))
 })));
 """
@@ -127,7 +128,9 @@ collector.getPayload().then(payload => process.stdout.write(JSON.stringify({
         ).stdout)
 
         assert result["hasChunks"] is False
-        assert result["recordCount"] == 100
+        # Collector 1.17 (policy 40): every unacknowledged move, at most 600, with its frame index.
+        assert result["recordCount"] == 600
+        assert result["moveBase"] == 300
         assert result["payloadBytes"] < 262144
 
     def test_parsers_clamp_negative_coordinates(self):

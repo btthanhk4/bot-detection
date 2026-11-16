@@ -1,0 +1,157 @@
+{
+ "val": {
+  "final": {
+   "cur": {
+    "human": {
+     "HUMAN": 14
+    },
+    "bot": {
+     "BOT": 46
+    }
+   },
+   "p40": {
+    "human": {
+     "HUMAN": 14
+    },
+    "bot": {
+     "BOT": 46
+    }
+   }
+  },
+  "snapshots": {
+   "cur": {
+    "human": {
+     "HUMAN": 2828,
+     "SUSPECT": 183
+    },
+    "bot": {
+     "BOT": 6342,
+     "SUSPECT": 1114
+    }
+   },
+   "p40": {
+    "human": {
+     "HUMAN": 3011
+    },
+    "bot": {
+     "BOT": 7122,
+     "SUSPECT": 334
+    }
+   }
+  },
+  "ever": {
+   "cur_suspect": {
+    "human": {
+     "True": 9,
+     "False": 5
+    },
+    "bot": {
+     "True": 46
+    }
+   },
+   "p40_suspect": {
+    "human": {
+     "False": 14
+    },
+    "bot": {
+     "False": 19,
+     "True": 27
+    }
+   },
+   "cur_human": {
+    "human": {
+     "True": 14
+    },
+    "bot": {
+     "False": 46
+    }
+   },
+   "p40_human": {
+    "human": {
+     "True": 14
+    },
+    "bot": {
+     "False": 46
+    }
+   }
+  }
+ },
+ "test": {
+  "final": {
+   "cur": {
+    "human": {
+     "HUMAN": 24
+    },
+    "bot": {
+     "BOT": 66
+    }
+   },
+   "p40": {
+    "human": {
+     "HUMAN": 24
+    },
+    "bot": {
+     "BOT": 66
+    }
+   }
+  },
+  "snapshots": {
+   "cur": {
+    "human": {
+     "HUMAN": 4328,
+     "SUSPECT": 269
+    },
+    "bot": {
+     "BOT": 7990,
+     "SUSPECT": 1269
+    }
+   },
+   "p40": {
+    "human": {
+     "HUMAN": 4597
+    },
+    "bot": {
+     "BOT": 8853,
+     "SUSPECT": 406
+    }
+   }
+  },
+  "ever": {
+   "cur_suspect": {
+    "human": {
+     "True": 19,
+     "False": 5
+    },
+    "bot": {
+     "True": 66
+    }
+   },
+   "p40_suspect": {
+    "human": {
+     "False": 24
+    },
+    "bot": {
+     "True": 36,
+     "False": 30
+    }
+   },
+   "cur_human": {
+    "human": {
+     "True": 24
+    },
+    "bot": {
+     "False": 66
+    }
+   },
+   "p40_human": {
+    "human": {
+     "True": 24
+    },
+    "bot": {
+     "False": 66
+    }
+   }
+  }
+ },
+ "protocol": "held-out web_bot_detection_dataset sessions (assign_real_session_splits), full replay, a snapshot every 50 moves; cur = policy 39 (each snapshot on its collector window, final = last, two BOT snapshots lock); p40 = collector 1.17 exports + emulated session store; bundle 0bece0e6"
+}

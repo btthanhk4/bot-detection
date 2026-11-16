@@ -44,6 +44,7 @@ from api_service import (
     page_tokens,
     reference,
     sensor_fleet,
+    session_mouse_store,
     sites,
 )
 from api_service.capture import build_capture
@@ -428,6 +429,35 @@ def _sensor_db():
     return db
 
 
+_session_mouse_indexes_ready = False
+
+
+def _session_mouse_db():
+    """The database of per-session mouse-model scores (policy 40), with its TTL index (best effort)."""
+    global _session_mouse_indexes_ready
+    from api_service.database import get_db
+    db = get_db()
+    if db is not None and not _session_mouse_indexes_ready:
+        try:
+            session_mouse_store.ensure_indexes(db)
+            _session_mouse_indexes_ready = True
+        except Exception:
+            logger.exception("Session mouse index could not be created")
+    return db
+
+
+def _session_mouse_prior(data: dict):
+    """The session's stored mouse-model scores for a snapshot that carries mouse movement."""
+    if not session_mouse_store.has_mouse_moves(data):
+        return None
+    return session_mouse_store.load(_session_mouse_db(), data.get("sessionId"))
+
+
+def _session_mouse_save(session_id, new) -> None:
+    if new and (new.get("chunks") or new.get("windows")):
+        session_mouse_store.save(_session_mouse_db(), session_id, new)
+
+
 def _account_unmonitored_page_views() -> int:
     return gateway.account_unmonitored(
         _gateway_db(), after_seconds=settings.NO_TELEMETRY_AFTER_SECONDS,
@@ -717,6 +747,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 if capture is None and not isinstance(analysis, dict):
                     try:
                         analysis = ensemble_detector.predict(data)
+                        analysis.pop("_session_mouse_new", None)
                         _attach_model_metadata(analysis)
                     except Exception:
                         retry_count = int(data.get("_replay_attempts", 0)) + 1
@@ -1209,6 +1240,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
     start_t = time.perf_counter()
     try:
         result = await run_in_threadpool(ensemble_detector.predict, data)
+        result.pop("_session_mouse_new", None)
     except Exception as exc:
         logger.exception("Detection inference failed")
         raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
@@ -1404,13 +1436,18 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
     if capture is not None:
         capture_status = await run_in_threadpool(_persist_capture, capture)
 
+    session_mouse_new = None
     try:
         _require_inference_models()
+        # Policy 40: the session's stored mouse-model scores join this snapshot's (never client data).
+        data["_session_mouse"] = await run_in_threadpool(_session_mouse_prior, data)
         started_at = time.perf_counter()
         analysis = await run_in_threadpool(ensemble_detector.predict, data)
         _record_inference_latency(started_at)
+        session_mouse_new = analysis.pop("_session_mouse_new", None)
         _attach_model_metadata(analysis)
     except Exception as exc:
+        data.pop("_session_mouse", None)
         logger.exception("Telemetry inference failed")
         if capture_status is not None:
             if capture_status["persisted"]:
@@ -1423,6 +1460,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(status_code=503, detail="Inference temporarily unavailable") from exc
+    data.pop("_session_mouse", None)
 
     if capture is not None:
         # Attach the decision actually made for this snapshot, never a later
@@ -1447,6 +1485,7 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         persistence_failed = True
     if persisted:
         await run_in_threadpool(_record_reference, data)
+        await run_in_threadpool(_session_mouse_save, data.get("sessionId"), session_mouse_new)
 
     # Keep a best-effort copy only during a real database outage. Rejected
     # tombstoned/stale events must not reappear from this fallback buffer.

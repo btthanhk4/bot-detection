@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "8d85dd4c45c869dfb957059da162d6d05529a3cadc74e7f011a0c8fe4ae14751",
+    "behavioral_lstm.pt": "17703bd4b57eeb41ad994e642cf2ce55bf958913db4da4a6eba4d972a2d67413",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "0bece0e6ca714172aa51f3f4bc709e05",
-  "created_at": "2026-11-16T05:00:19.613225+00:00",
+  "bundle_id": "654c2e7038724ff0a9ff6903e0e5a6af",
+  "created_at": "2026-11-16T09:28:29.930307+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -870,7 +870,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "39",
+    "decision_policy_version": "40",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1092,6 +1092,7 @@
     "rolling_checkpoints": 1000,
     "rolling_full_replay": true,
     "seed": 42,
+    "session_mouse_aggregation": "session_windows_v1",
     "synthetic_device_rule_gate": {
       "fixture_fingerprint": "e1cedede36e8d36ef0d176bd19c0d85ad69e9d074218ad4b686cdbf264394224",
       "negative_cases": 11,

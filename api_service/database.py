@@ -874,6 +874,14 @@ def get_total_count(site_filter: Optional[dict] = None) -> Optional[int]:
         return None
 
 
+def _forget_session_mouse(db, query: dict) -> None:
+    """Policy 40: a deleted session's mouse-model scores go too (they expire after two days anyway)."""
+    try:
+        db["session_mouse"].delete_many(query)
+    except Exception as e:
+        logger.warning(f"[DB] Session mouse evidence could not be deleted: {e}")
+
+
 def delete_session(session_id: str) -> Optional[bool]:
     """Delete a specific session by sessionId and blacklist it."""
     db = get_db()
@@ -889,6 +897,7 @@ def delete_session(session_id: str) -> Optional[bool]:
         result = db["detection_results"].delete_one({"sessionId": session_id})
         captures = db["telemetry_captures"].delete_many({"sessionId": session_id})
         touches = db["touch_samples"].delete_many({"sessionId": session_id})
+        _forget_session_mouse(db, {"_id": session_id})
         with _touch_written_lock:
             _touch_written.clear()
         return result.deleted_count > 0 or captures.deleted_count > 0 or touches.deleted_count > 0
@@ -917,6 +926,7 @@ def delete_site_sessions(site_filter: dict) -> Optional[List[str]]:
             db["detection_results"].delete_many({"sessionId": {"$in": chunk}})
             db["telemetry_captures"].delete_many({"sessionId": {"$in": chunk}})
             db["touch_samples"].delete_many({"sessionId": {"$in": chunk}})
+            _forget_session_mouse(db, {"_id": {"$in": chunk}})
         with _touch_written_lock:
             _touch_written.clear()
         return ids
@@ -941,6 +951,7 @@ def delete_all_sessions() -> Optional[int]:
         db["deleted_sessions"].delete_many({})
         result = db["detection_results"].delete_many({})
         db["telemetry_captures"].delete_many({})
+        _forget_session_mouse(db, {})
         db["service_control"].update_one(
             {"_id": "ingestion"},
             # Give the API process time to clear its replay buffer before

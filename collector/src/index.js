@@ -7,10 +7,12 @@ import { getFingerprintComponents } from './fingerprint.js';
 import { runBotDetectors } from './botd.js';
 import { collectBrowserProfile } from './profile.js';
 import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsistency } from './automation.js';
-import { MouseRecorder } from './mouse.js';
+import { EXPORT_CONTEXT_MOVES, EXPORT_MAX_MOVES, MouseRecorder } from './mouse.js';
 import { PagePresence } from './presence.js';
 
-export const COLLECTOR_VERSION = '1.16.1';
+export const COLLECTOR_VERSION = '1.17.0';
+// Send early once this many unacknowledged moves pile up, before an export would drop any.
+const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -90,6 +92,10 @@ export class BotCollector {
       Number(options.idleHeartbeatInterval ?? 60000) || 60000,
     );
     this.mouseRecorder = new MouseRecorder();
+    // 1.17: the frame's move count the API last acknowledged; the next export starts there.
+    this.ackedMouse = null;
+    this.lastBacklogSendAt = 0;
+    this.mouseRecorder.onMove = (count, frame) => this.handleMouseBacklog(count, frame);
     this.presence = new PagePresence();
     this.cachedFingerprint = null;
     this.cachedBotd = null;
@@ -395,7 +401,7 @@ export class BotCollector {
       }
     }
 
-    const mouseData = this.mouseRecorder.exportData();
+    const mouseData = this.mouseRecorder.exportData(this.ackedMovesInFrame());
     // The API rebuilds canonical chunks from raw records. Sending overlapping
     // windows can push a mature session beyond the request-size limit.
     delete mouseData.chunks;
@@ -428,9 +434,43 @@ export class BotCollector {
     };
   }
 
+  ackedMovesInFrame() {
+    const frame = this.mouseRecorder.recordingId;
+    return this.ackedMouse && this.ackedMouse.frame === frame ? this.ackedMouse.moves : null;
+  }
+
+  mouseAckMark(payload) {
+    const mouse = payload && payload.mouse ? payload.mouse : null;
+    if (!mouse || !Number.isInteger(mouse.frameMoves) || !mouse.coordinateFrame) return null;
+    return { frame: mouse.coordinateFrame.id, moves: mouse.frameMoves };
+  }
+
+  noteMouseAck(mark) {
+    if (!mark) return;
+    const acked = this.ackedMouse;
+    if (!acked || acked.frame !== mark.frame || mark.moves > acked.moves) this.ackedMouse = mark;
+  }
+
+  // Continuous movement would outrun one export between heartbeats: send early instead (1.17).
+  handleMouseBacklog(count, frame) {
+    if (!this.timer || this.destroyed || this.refused || this.sendPromise || !this.cachedFingerprint) return;
+    const acked = this.ackedMouse && this.ackedMouse.frame === frame ? this.ackedMouse.moves : 0;
+    if (count - acked < BACKLOG_MOVES) return;
+    const now = Date.now();
+    if (now - this.lastBacklogSendAt < 3000 || now < this.retryNotBefore || this.pendingRetry) return;
+    this.lastBacklogSendAt = now;
+    this.sendTelemetry('heartbeat').catch(() => false);
+  }
+
   getActivitySignature(payload) {
     const mouse = payload && payload.mouse ? payload.mouse : {};
     const records = Array.isArray(mouse.records) ? mouse.records : [];
+    // 1.17: the export shrinks back to its context once acknowledged; only new records are activity.
+    const pointer = Number.isInteger(mouse.frameMoves) ? [
+      mouse.coordinateFrame ? mouse.coordinateFrame.id : null,
+      mouse.frameMoves,
+      records.length ? records[records.length - 1].time : null,
+    ] : records;
     const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
     // Typing and clicks are activity too, even when the pointer does not move.
     const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
@@ -439,7 +479,7 @@ export class BotCollector {
     const scrolls = mouse.presence && Number.isFinite(mouse.presence.scrolls) ? mouse.presence.scrolls : 0;
     // A reference event id that arrives later is news worth one heartbeat even without activity.
     const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
-    return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
+    return JSON.stringify([payload.pageUrl || '', pointer, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
   }
 
   /**
@@ -480,7 +520,7 @@ export class BotCollector {
     this.pendingRetry = null;
   }
 
-  scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null) {
+  scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null, ackMark = null) {
     if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return;
     if (attempt > this.maxRetryAttempts) {
       this.clearPendingRetry();
@@ -488,7 +528,7 @@ export class BotCollector {
     }
 
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature };
+    this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature, ackMark };
     const delay = Math.max(
       this.retryBaseDelay * Math.pow(2, attempt - 1),
       this.retryAfterMs,
@@ -502,7 +542,9 @@ export class BotCollector {
 
       const sentBody = pending.body;
       const sentSignature = pending.activitySignature;
+      const sentMark = pending.ackMark;
       const sent = await this.transmitTelemetry(sentBody, 'retry');
+      if (sent) this.noteMouseAck(sentMark);
       // A heartbeat may have installed a newer snapshot while this request was
       // in flight. The older completion must not clear or replace that retry.
       if (this.pendingRetry !== pending) return;
@@ -512,10 +554,11 @@ export class BotCollector {
         if (pending.body === sentBody) {
           this.pendingRetry = null;
         } else {
-          this.scheduleRetry(pending.body, pending.lifecycleVersion, 1, pending.activitySignature);
+          this.scheduleRetry(pending.body, pending.lifecycleVersion, 1, pending.activitySignature, pending.ackMark);
         }
       } else {
-        this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1, pending.activitySignature);
+        this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1, pending.activitySignature,
+          pending.ackMark);
       }
     }, delay);
   }
@@ -562,6 +605,8 @@ export class BotCollector {
               // The session was deleted on the server; continue under a fresh id (and token).
               this.sessionId = this.generateSessionId();
               this.touchSession();
+              // The new session holds no mouse evidence yet: its first export starts the frame over.
+              this.ackedMouse = null;
               this.pageToken = null;
               this.tokenPromise = this.fetchPageToken();
             }
@@ -618,17 +663,21 @@ export class BotCollector {
         && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
       if (unchangedHeartbeat) return true;
       if (action === 'heartbeat' && !this.pendingRetry && Date.now() < this.retryNotBefore) return false;
+      const ackMark = this.mouseAckMark(payload);
       let body = JSON.stringify(payload);
 
-      // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
-      if (action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse) {
+      // Browsers commonly cap beacon/keepalive request bodies around 64 KiB. Keep the newest moves
+      // (first 200, then 40) and say where they start in the frame (1.17 moveBase).
+      for (const keepMoves of [200, 40]) {
+        if (!(action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse)) break;
         const records = Array.isArray(payload.mouse.records) ? payload.mouse.records : [];
         const retained = records.map((record, index) => ({ record, index }));
-        const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-40);
+        const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-keepMoves);
         const other = retained.filter(({ record }) => !record || record.type !== 'move' || record.source === 'touch').slice(-10);
         payload.mouse.records = [...moves, ...other]
           .sort((left, right) => left.index - right.index)
           .map(({ record }) => record);
+        if (Number.isInteger(payload.mouse.frameMoves)) payload.mouse.moveBase = payload.mouse.frameMoves - moves.length;
         delete payload.mouse.chunks;
         payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
         if (payload.mouse.touch && Array.isArray(payload.mouse.touch.gestures)) {
@@ -655,12 +704,14 @@ export class BotCollector {
         if (activitySignature !== this.pendingRetry.activitySignature) {
           this.pendingRetry.body = body;
           this.pendingRetry.activitySignature = activitySignature;
+          this.pendingRetry.ackMark = ackMark;
         }
         return false;
       }
 
       this.touchSession();
       const sent = await this.transmitTelemetry(body, action);
+      if (sent) this.noteMouseAck(ackMark);
       if (sent && action !== 'pagehide') {
         this.lastSentActivitySignature = activitySignature;
         this.lastSuccessfulSendAt = Date.now();
@@ -668,7 +719,7 @@ export class BotCollector {
       } else if (!sent && action !== 'pagehide') {
         // Heartbeats are cumulative snapshots. Keeping only the latest failed
         // body bounds memory while allowing transient network failures to heal.
-        this.scheduleRetry(body, lifecycleVersion, 1, activitySignature);
+        this.scheduleRetry(body, lifecycleVersion, 1, activitySignature, ackMark);
       }
       return sent;
     } catch (e) {

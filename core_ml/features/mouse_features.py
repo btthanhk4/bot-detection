@@ -330,13 +330,17 @@ def compute_statistical_features(records: list) -> dict:
     return stats
 
 
-def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12) -> list:
-    """Build canonical LSTM transition windows from server-validated move events."""
+def records_to_chunks(records: list, chunk_size: int = 24, stride: int = 12,
+                      max_records: int = MAX_MOUSE_RECORDS) -> list:
+    """Build canonical LSTM transition windows from server-validated move events.
+
+    ``max_records`` keeps the trained 100-record window by default; policy 40 chunks a longer
+    collector export (``core_ml.features.session_mouse``)."""
     if chunk_size <= 0 or stride <= 0:
         return []
 
     moves = [
-        record for record in sanitize_mouse_records(records, max_records=MAX_MOUSE_RECORDS)
+        record for record in sanitize_mouse_records(records, max_records=max_records)
         if record["type"] == "move"
     ]
     if len(moves) < chunk_size + 1:

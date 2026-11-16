@@ -2787,6 +2787,19 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     explainText = 'Điểm rủi ro nằm trong vùng ranh giới.';
   }
   document.getElementById('dVerdictExplain').innerHTML = explainText;
+  // Policy 40: on a desktop the mouse scores cover the whole session, not only its newest snapshot.
+  const sessionMouse = bd.session_mouse;
+  if (sessionMouse && sessionMouse.applied === true && Number.isFinite(Number(sessionMouse.chunks))) {
+    const snap = sessionMouse.snapshot || {};
+    const note = document.createElement('div');
+    note.className = 'muted';
+    note.textContent = `Điểm chuột tính trên toàn phiên: ${Number(sessionMouse.chunks)} đoạn 24 điểm, `
+      + `${Number(sessionMouse.windows)} cửa sổ 100 bản ghi`
+      + (Number.isFinite(Number(snap.lstm)) && Number.isFinite(Number(snap.tabular))
+        ? ` (riêng lần gửi mới nhất: BiLSTM ${fmtPct(Number(snap.lstm) * 100)}, XGBoost ${fmtPct(Number(snap.tabular) * 100)})`
+        : '') + '.';
+    document.getElementById('dVerdictExplain').appendChild(note);
+  }
 
   // 3. Model Breakdown & Fusion
   const lstmScore = (bd.behavioral_lstm_score !== undefined) ? bd.behavioral_lstm_score : 0;

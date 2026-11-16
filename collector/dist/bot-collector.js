@@ -956,12 +956,21 @@
   // The 25th percentile is reported: page-load jank only lengthens frames.
   const FRAME_PROBE_FRAMES = 60;
   const LISTEN_OPTIONS = { capture: true, passive: true };
+  // 1.17: every snapshot carries the mouse moves since the last acknowledged one plus this many moves
+  // of context, so the API can judge every 100-record window of the session, not only the newest
+  // (policy 40). At most EXPORT_MAX_MOVES moves per snapshot (about 10 s of continuous movement).
+  const EXPORT_CONTEXT_MOVES = 100;
+  const EXPORT_MAX_MOVES = 600;
+  const EXPORT_MAX_OTHER = 200;
 
   class MouseRecorder {
     constructor(options = {}) {
-      this.maxRecords = options.maxRecords || 500;
+      this.maxRecords = options.maxRecords || 2000;
       this.chunkSize = options.chunkSize || 24;
       this.records = [];
+      // Mouse moves recorded in the current coordinate frame; the API keys chunks by it (1.17).
+      this.moveCount = 0;
+      this.onMove = null;
       this.chunks = [];
       this.lastMoveRecord = null;
       this.scrollEvents = [];  // separate scroll tracking
@@ -1107,6 +1116,7 @@
       this.records = [];
       this.chunks = [];
       this.lastMoveRecord = null;
+      this.moveCount = 0;
       this.scrollEvents = [];
       this.coordinateWidth = null;
       this.coordinateHeight = null;
@@ -1193,6 +1203,12 @@
       // Efficient truncation: splice from front in batch instead of shift() one-by-one
       if (this.records.length > this.maxRecords + 50) {
         this.records = this.records.slice(-this.maxRecords);
+      }
+      if (type === 'move' && source !== 'touch') {
+        this.moveCount++;
+        if (typeof this.onMove === 'function') {
+          try { this.onMove(this.moveCount, this.recordingId); } catch (e) { /* never break the page */ }
+        }
       }
     }
 
@@ -1544,16 +1560,32 @@
       };
     }
 
-    exportData() {
-      const recentOtherEvents = this.records.filter((record) =>
-        record.type !== 'move' || record.source === 'touch',
-      ).slice(-20);
-      const recentMouseMoves = this.records.filter((record) =>
-        record.type === 'move' && record.source !== 'touch',
-      ).slice(-(100 - recentOtherEvents.length));
+    /**
+     * ``sinceMoves``: the frame's move count the API last acknowledged (null: nothing yet). The export
+     * holds every move after it plus EXPORT_CONTEXT_MOVES before, the other events in that span and the
+     * 20 newest ones (the 1.16 window), and ``moveBase``, the frame index of its first move. Records carry
+     * only what the API reads: time, type, source and normalised position.
+     */
+    exportData(sinceMoves = null) {
+      const moves = this.records.filter((record) => record.type === 'move' && record.source !== 'touch');
+      // Never fewer than the moves still held (records restored or injected by an embedder).
+      const frameMoves = Math.max(this.moveCount, moves.length);
+      const since = Number.isInteger(sinceMoves) && sinceMoves >= 0 && sinceMoves <= frameMoves ? sinceMoves : 0;
+      const wanted = Math.min(EXPORT_MAX_MOVES, frameMoves - since + EXPORT_CONTEXT_MOVES);
+      const exportedMoves = moves.slice(-wanted);
+      const firstTime = exportedMoves.length ? exportedMoves[0].time : Infinity;
+      const others = this.records.filter((record) => record.type !== 'move' || record.source === 'touch');
+      const newest = new Set(others.slice(-20));
+      const exportedOthers = others
+        .filter((record) => newest.has(record) || record.time >= firstTime)
+        .slice(-EXPORT_MAX_OTHER);
+      const compact = ({ time, type, source, x, y }) => ({ time, type, source, x, y });
       return {
-        records: [...recentMouseMoves, ...recentOtherEvents]
-          .sort((a, b) => a.time - b.time),
+        records: [...exportedMoves, ...exportedOthers]
+          .sort((a, b) => a.time - b.time)
+          .map(compact),
+        moveBase: frameMoves - exportedMoves.length,
+        frameMoves,
         stats: this.getStats(),
         scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
         clickEvents: this.clickEvents.slice(-30),
@@ -1820,7 +1852,9 @@
 
 
 
-  const COLLECTOR_VERSION = '1.16.1';
+  const COLLECTOR_VERSION = '1.17.0';
+  // Send early once this many unacknowledged moves pile up, before an export would drop any.
+  const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
 
   const SESSION_STORAGE_KEY = 'datacat_session';
   // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -1900,6 +1934,10 @@
         Number(options.idleHeartbeatInterval ?? 60000) || 60000,
       );
       this.mouseRecorder = new MouseRecorder();
+      // 1.17: the frame's move count the API last acknowledged; the next export starts there.
+      this.ackedMouse = null;
+      this.lastBacklogSendAt = 0;
+      this.mouseRecorder.onMove = (count, frame) => this.handleMouseBacklog(count, frame);
       this.presence = new PagePresence();
       this.cachedFingerprint = null;
       this.cachedBotd = null;
@@ -2205,7 +2243,7 @@
         }
       }
 
-      const mouseData = this.mouseRecorder.exportData();
+      const mouseData = this.mouseRecorder.exportData(this.ackedMovesInFrame());
       // The API rebuilds canonical chunks from raw records. Sending overlapping
       // windows can push a mature session beyond the request-size limit.
       delete mouseData.chunks;
@@ -2238,9 +2276,43 @@
       };
     }
 
+    ackedMovesInFrame() {
+      const frame = this.mouseRecorder.recordingId;
+      return this.ackedMouse && this.ackedMouse.frame === frame ? this.ackedMouse.moves : null;
+    }
+
+    mouseAckMark(payload) {
+      const mouse = payload && payload.mouse ? payload.mouse : null;
+      if (!mouse || !Number.isInteger(mouse.frameMoves) || !mouse.coordinateFrame) return null;
+      return { frame: mouse.coordinateFrame.id, moves: mouse.frameMoves };
+    }
+
+    noteMouseAck(mark) {
+      if (!mark) return;
+      const acked = this.ackedMouse;
+      if (!acked || acked.frame !== mark.frame || mark.moves > acked.moves) this.ackedMouse = mark;
+    }
+
+    // Continuous movement would outrun one export between heartbeats: send early instead (1.17).
+    handleMouseBacklog(count, frame) {
+      if (!this.timer || this.destroyed || this.refused || this.sendPromise || !this.cachedFingerprint) return;
+      const acked = this.ackedMouse && this.ackedMouse.frame === frame ? this.ackedMouse.moves : 0;
+      if (count - acked < BACKLOG_MOVES) return;
+      const now = Date.now();
+      if (now - this.lastBacklogSendAt < 3000 || now < this.retryNotBefore || this.pendingRetry) return;
+      this.lastBacklogSendAt = now;
+      this.sendTelemetry('heartbeat').catch(() => false);
+    }
+
     getActivitySignature(payload) {
       const mouse = payload && payload.mouse ? payload.mouse : {};
       const records = Array.isArray(mouse.records) ? mouse.records : [];
+      // 1.17: the export shrinks back to its context once acknowledged; only new records are activity.
+      const pointer = Number.isInteger(mouse.frameMoves) ? [
+        mouse.coordinateFrame ? mouse.coordinateFrame.id : null,
+        mouse.frameMoves,
+        records.length ? records[records.length - 1].time : null,
+      ] : records;
       const scrollEvents = Array.isArray(mouse.scrollEvents) ? mouse.scrollEvents : [];
       // Typing and clicks are activity too, even when the pointer does not move.
       const keystrokes = mouse.keyboard && Array.isArray(mouse.keyboard.keystrokes) ? mouse.keyboard.keystrokes.length : 0;
@@ -2249,7 +2321,7 @@
       const scrolls = mouse.presence && Number.isFinite(mouse.presence.scrolls) ? mouse.presence.scrolls : 0;
       // A reference event id that arrives later is news worth one heartbeat even without activity.
       const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
-      return JSON.stringify([payload.pageUrl || '', records, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
+      return JSON.stringify([payload.pageUrl || '', pointer, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
     }
 
     /**
@@ -2290,7 +2362,7 @@
       this.pendingRetry = null;
     }
 
-    scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null) {
+    scheduleRetry(body, lifecycleVersion, attempt = 1, activitySignature = null, ackMark = null) {
       if (this.destroyed || lifecycleVersion !== this.lifecycleVersion) return;
       if (attempt > this.maxRetryAttempts) {
         this.clearPendingRetry();
@@ -2298,7 +2370,7 @@
       }
 
       if (this.retryTimer) clearTimeout(this.retryTimer);
-      this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature };
+      this.pendingRetry = { body, lifecycleVersion, attempt, activitySignature, ackMark };
       const delay = Math.max(
         this.retryBaseDelay * Math.pow(2, attempt - 1),
         this.retryAfterMs,
@@ -2312,7 +2384,9 @@
 
         const sentBody = pending.body;
         const sentSignature = pending.activitySignature;
+        const sentMark = pending.ackMark;
         const sent = await this.transmitTelemetry(sentBody, 'retry');
+        if (sent) this.noteMouseAck(sentMark);
         // A heartbeat may have installed a newer snapshot while this request was
         // in flight. The older completion must not clear or replace that retry.
         if (this.pendingRetry !== pending) return;
@@ -2322,10 +2396,11 @@
           if (pending.body === sentBody) {
             this.pendingRetry = null;
           } else {
-            this.scheduleRetry(pending.body, pending.lifecycleVersion, 1, pending.activitySignature);
+            this.scheduleRetry(pending.body, pending.lifecycleVersion, 1, pending.activitySignature, pending.ackMark);
           }
         } else {
-          this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1, pending.activitySignature);
+          this.scheduleRetry(pending.body, pending.lifecycleVersion, pending.attempt + 1, pending.activitySignature,
+            pending.ackMark);
         }
       }, delay);
     }
@@ -2372,6 +2447,8 @@
                 // The session was deleted on the server; continue under a fresh id (and token).
                 this.sessionId = this.generateSessionId();
                 this.touchSession();
+                // The new session holds no mouse evidence yet: its first export starts the frame over.
+                this.ackedMouse = null;
                 this.pageToken = null;
                 this.tokenPromise = this.fetchPageToken();
               }
@@ -2428,17 +2505,21 @@
           && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
         if (unchangedHeartbeat) return true;
         if (action === 'heartbeat' && !this.pendingRetry && Date.now() < this.retryNotBefore) return false;
+        const ackMark = this.mouseAckMark(payload);
         let body = JSON.stringify(payload);
 
-        // Browsers commonly cap beacon/keepalive request bodies around 64 KiB.
-        if (action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse) {
+        // Browsers commonly cap beacon/keepalive request bodies around 64 KiB. Keep the newest moves
+        // (first 200, then 40) and say where they start in the frame (1.17 moveBase).
+        for (const keepMoves of [200, 40]) {
+          if (!(action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse)) break;
           const records = Array.isArray(payload.mouse.records) ? payload.mouse.records : [];
           const retained = records.map((record, index) => ({ record, index }));
-          const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-40);
+          const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-keepMoves);
           const other = retained.filter(({ record }) => !record || record.type !== 'move' || record.source === 'touch').slice(-10);
           payload.mouse.records = [...moves, ...other]
             .sort((left, right) => left.index - right.index)
             .map(({ record }) => record);
+          if (Number.isInteger(payload.mouse.frameMoves)) payload.mouse.moveBase = payload.mouse.frameMoves - moves.length;
           delete payload.mouse.chunks;
           payload.mouse.scrollEvents = (payload.mouse.scrollEvents || []).slice(-20);
           if (payload.mouse.touch && Array.isArray(payload.mouse.touch.gestures)) {
@@ -2465,12 +2546,14 @@
           if (activitySignature !== this.pendingRetry.activitySignature) {
             this.pendingRetry.body = body;
             this.pendingRetry.activitySignature = activitySignature;
+            this.pendingRetry.ackMark = ackMark;
           }
           return false;
         }
 
         this.touchSession();
         const sent = await this.transmitTelemetry(body, action);
+        if (sent) this.noteMouseAck(ackMark);
         if (sent && action !== 'pagehide') {
           this.lastSentActivitySignature = activitySignature;
           this.lastSuccessfulSendAt = Date.now();
@@ -2478,7 +2561,7 @@
         } else if (!sent && action !== 'pagehide') {
           // Heartbeats are cumulative snapshots. Keeping only the latest failed
           // body bounds memory while allowing transient network failures to heal.
-          this.scheduleRetry(body, lifecycleVersion, 1, activitySignature);
+          this.scheduleRetry(body, lifecycleVersion, 1, activitySignature, ackMark);
         }
         return sent;
       } catch (e) {

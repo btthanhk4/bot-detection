@@ -14,12 +14,21 @@ const TOUCH_COMPAT_WINDOW_MS = 800;
 // The 25th percentile is reported: page-load jank only lengthens frames.
 const FRAME_PROBE_FRAMES = 60;
 const LISTEN_OPTIONS = { capture: true, passive: true };
+// 1.17: every snapshot carries the mouse moves since the last acknowledged one plus this many moves
+// of context, so the API can judge every 100-record window of the session, not only the newest
+// (policy 40). At most EXPORT_MAX_MOVES moves per snapshot (about 10 s of continuous movement).
+export const EXPORT_CONTEXT_MOVES = 100;
+export const EXPORT_MAX_MOVES = 600;
+const EXPORT_MAX_OTHER = 200;
 
 export class MouseRecorder {
   constructor(options = {}) {
-    this.maxRecords = options.maxRecords || 500;
+    this.maxRecords = options.maxRecords || 2000;
     this.chunkSize = options.chunkSize || 24;
     this.records = [];
+    // Mouse moves recorded in the current coordinate frame; the API keys chunks by it (1.17).
+    this.moveCount = 0;
+    this.onMove = null;
     this.chunks = [];
     this.lastMoveRecord = null;
     this.scrollEvents = [];  // separate scroll tracking
@@ -165,6 +174,7 @@ export class MouseRecorder {
     this.records = [];
     this.chunks = [];
     this.lastMoveRecord = null;
+    this.moveCount = 0;
     this.scrollEvents = [];
     this.coordinateWidth = null;
     this.coordinateHeight = null;
@@ -251,6 +261,12 @@ export class MouseRecorder {
     // Efficient truncation: splice from front in batch instead of shift() one-by-one
     if (this.records.length > this.maxRecords + 50) {
       this.records = this.records.slice(-this.maxRecords);
+    }
+    if (type === 'move' && source !== 'touch') {
+      this.moveCount++;
+      if (typeof this.onMove === 'function') {
+        try { this.onMove(this.moveCount, this.recordingId); } catch (e) { /* never break the page */ }
+      }
     }
   }
 
@@ -602,16 +618,32 @@ export class MouseRecorder {
     };
   }
 
-  exportData() {
-    const recentOtherEvents = this.records.filter((record) =>
-      record.type !== 'move' || record.source === 'touch',
-    ).slice(-20);
-    const recentMouseMoves = this.records.filter((record) =>
-      record.type === 'move' && record.source !== 'touch',
-    ).slice(-(100 - recentOtherEvents.length));
+  /**
+   * ``sinceMoves``: the frame's move count the API last acknowledged (null: nothing yet). The export
+   * holds every move after it plus EXPORT_CONTEXT_MOVES before, the other events in that span and the
+   * 20 newest ones (the 1.16 window), and ``moveBase``, the frame index of its first move. Records carry
+   * only what the API reads: time, type, source and normalised position.
+   */
+  exportData(sinceMoves = null) {
+    const moves = this.records.filter((record) => record.type === 'move' && record.source !== 'touch');
+    // Never fewer than the moves still held (records restored or injected by an embedder).
+    const frameMoves = Math.max(this.moveCount, moves.length);
+    const since = Number.isInteger(sinceMoves) && sinceMoves >= 0 && sinceMoves <= frameMoves ? sinceMoves : 0;
+    const wanted = Math.min(EXPORT_MAX_MOVES, frameMoves - since + EXPORT_CONTEXT_MOVES);
+    const exportedMoves = moves.slice(-wanted);
+    const firstTime = exportedMoves.length ? exportedMoves[0].time : Infinity;
+    const others = this.records.filter((record) => record.type !== 'move' || record.source === 'touch');
+    const newest = new Set(others.slice(-20));
+    const exportedOthers = others
+      .filter((record) => newest.has(record) || record.time >= firstTime)
+      .slice(-EXPORT_MAX_OTHER);
+    const compact = ({ time, type, source, x, y }) => ({ time, type, source, x, y });
     return {
-      records: [...recentMouseMoves, ...recentOtherEvents]
-        .sort((a, b) => a.time - b.time),
+      records: [...exportedMoves, ...exportedOthers]
+        .sort((a, b) => a.time - b.time)
+        .map(compact),
+      moveBase: frameMoves - exportedMoves.length,
+      frameMoves,
       stats: this.getStats(),
       scrollEvents: this.scrollEvents.slice(-50), // last 50 scroll events
       clickEvents: this.clickEvents.slice(-30),

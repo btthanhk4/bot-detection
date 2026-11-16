@@ -65,6 +65,7 @@ from core_ml.features.mouse_features import (
     extract_sequential_chunks,
     prefix_through_moves,
 )
+from core_ml.features.session_mouse import SESSION_MOUSE_VERSION
 from core_ml.model_bundle import (
     RELEASE_EARLY_MINIMUM_METRICS,
     RELEASE_MAXIMUM_METRICS,
@@ -1462,6 +1463,8 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "train_full_trajectory_windows": bool(real_sessions and early_augmentation),
             "train_full_trajectory_checkpoints": TRAIN_FULL_TRAJECTORY_CHECKPOINTS,
             "lstm_aggregation": "mean_p75_disagreement_v2",
+            # Policy 40: chunk and window scores of a whole session (core_ml.features.session_mouse).
+            "session_mouse_aggregation": SESSION_MOUSE_VERSION,
             "regression_case_fingerprint": REGRESSION_CASE_FINGERPRINT,
             "explicit_automation_rule_gate": explicit_automation_rule_gate,
             "synthetic_input_rule_gate": synthetic_input_rule_gate,
