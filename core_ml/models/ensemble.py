@@ -54,8 +54,10 @@ from core_ml.features.mouse_features import (
 )
 from core_ml.features.presence import (
     EMULATED_PHONE_RULE,
+    SENSORLESS_PHONE_RULE,
     analyze_presence,
     emulated_phone_fires,
+    sensorless_phone_fires,
 )
 from core_ml.features.profile_consistency import analyze_profile_consistency
 from core_ml.features.profile_policy import (
@@ -101,7 +103,9 @@ from core_ml.models.touch_shadow import score_touch
 # withholds HUMAN from 4 shared signatures and convicts from 8 (replayed_trajectory_v1).
 # Policy 42: on Android a worker disagreeing with the page about both platform and GPU is one
 # contradiction, not two: it withholds HUMAN but no longer convicts alone (Samsung Internet).
-DECISION_POLICY_VERSION = "42"
+# Policy 43: an untouched phone held in a hand is a HUMAN of the lowest confidence; motion sensors that do
+# not stream together with a novel audio stack convict a phone (sensorless_phone_v1).
+DECISION_POLICY_VERSION = "43"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -338,6 +342,9 @@ class EnsembleBotDetector:
         elif emulated_phone_fires(presence_report["codes"], server_context_codes(payload), browser_contradictions):
             # Policy 36: emulated motion sensors, and an independent channel says the same.
             automation_rule = EMULATED_PHONE_RULE
+        elif sensorless_phone_fires(presence_report["research_flags"], server_context_codes(payload)):
+            # Policy 43: motion sensors that do not stream, and an audio stack no other phone has.
+            automation_rule = SENSORLESS_PHONE_RULE
         elif webview_webdriver_fires(payload, forgery):
             # Policy 30: no extension runs in a WebView; its app hid the automation flag.
             automation_rule = WEBVIEW_WEBDRIVER_RULE
@@ -453,7 +460,8 @@ class EnsembleBotDetector:
         )
         # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
         mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags,
-                                            presence_report["codes"])
+                                            presence_report["codes"],
+                                            held_device="HELD_DEVICE" in presence_report["research_flags"])
         mobile_human_decision = (
             mouse_evidence_deferred and not explicit_automation and mobile_human["eligible"]
             and self.lstm_available and self.tabular_available
@@ -463,11 +471,17 @@ class EnsembleBotDetector:
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
             and mobile_human["light_eligible"] and self.lstm_available and self.tabular_available
         )
+        # Policy 43: no touch, but a hand holds the phone and nothing speaks against it: the lowest HUMAN.
+        mobile_held_decision = (
+            mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
+            and not mobile_light_decision and mobile_human["held_eligible"] and not deferred_evidence
+            and self.lstm_available and self.tabular_available
+        )
         # Policy 19: a phone judged on enough gestures with evidence against it is a final SUSPECT.
         # Policy 33: however few its gestures (a forged browser keeps its own basis, policy 26).
         mobile_risk_decision = (
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
-            and not mobile_light_decision and bool(mobile_human["risk"])
+            and not mobile_light_decision and not mobile_held_decision and bool(mobile_human["risk"])
             and (mobile_human["gestures"] >= MOBILE_HUMAN_MIN_GESTURES or not deferred_evidence)
             and self.lstm_available and self.tabular_available
         )
@@ -475,13 +489,15 @@ class EnsembleBotDetector:
         # Policy 27: so does a pointer jumping at random over 10-24 moves.
         forgery_decision = (
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
-            and not mobile_light_decision and not mobile_risk_decision and bool(deferred_evidence)
+            and not mobile_light_decision and not mobile_held_decision and not mobile_risk_decision
+            and bool(deferred_evidence)
             and self.lstm_available
             and self.tabular_available
         )
         decision_deferred = (
             mouse_evidence_deferred and not explicit_automation and not mobile_human_decision
-            and not mobile_light_decision and not mobile_risk_decision and not forgery_decision
+            and not mobile_light_decision and not mobile_held_decision and not mobile_risk_decision
+            and not forgery_decision
         )
         tabular_score_in_domain = bool(
             self.tabular_available and not explicit_automation and has_enough_mouse_data and usable_trajectory
@@ -498,6 +514,12 @@ class EnsembleBotDetector:
                 f"Phone/tablet ({mobile_human['device']}) with {mobile_human['gestures']} trusted touch "
                 f"gesture{'s' if mobile_human['gestures'] > 1 else ''} with real finger contact and no automation, "
                 "emulator, cloud or environment evidence; fewer than three gestures, so a HUMAN of lower confidence"
+            )
+        elif mobile_held_decision:
+            reasons.append(
+                f"Phone/tablet ({mobile_human['device']}) not touched, but its motion sensor shows a hand holding it "
+                "(tilted, trembling and turning) and there is no automation, emulator, cloud or environment "
+                "evidence; a HUMAN of the lowest confidence"
             )
         elif mobile_risk_decision:
             reasons.append(
@@ -602,6 +624,12 @@ class EnsembleBotDetector:
                     + ", ".join(browser_contradictions).lower().replace("_", " ")
                     + "); no person on the live site carried even one"
                 )
+            elif automation_rule == SENSORLESS_PHONE_RULE:
+                reasons.append(
+                    "Phone without working motion sensors: a handful of motion events and no gravity over a page "
+                    "shown for 10 s or more (a real accelerometer streams about 60 readings a second at 9.8 m/s^2), "
+                    "and independently an audio fingerprint no other phone reported (noise injection)"
+                )
             elif automation_rule == EMULATED_PHONE_RULE:
                 second = [code.lower().replace("_", " ") for code in ("AUDIO_NOVEL", "TIMEZONE_MISMATCH")
                           if code in server_context_codes(payload)]
@@ -638,7 +666,7 @@ class EnsembleBotDetector:
                     "Experimental policy: client-reported HeadlessChrome is corroborated across "
                     "browser contexts or by an explicit automation marker"
                 )
-        elif mobile_human_decision or mobile_light_decision:
+        elif mobile_human_decision or mobile_light_decision or mobile_held_decision:
             verdict = "HUMAN"
         elif mobile_risk_decision:
             verdict = "SUSPECT"
@@ -758,11 +786,13 @@ class EnsembleBotDetector:
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
                     else "forged_browser" if automation_rule == FORGED_BROWSER_RULE
                     else "emulated_phone" if automation_rule == EMULATED_PHONE_RULE
+                    else "sensorless_phone" if automation_rule == SENSORLESS_PHONE_RULE
                     else "replayed_trajectory" if automation_rule == REPLAYED_TRAJECTORY_RULE
                     else "webview_automation" if automation_rule == WEBVIEW_WEBDRIVER_RULE
                     else "synthetic_touch" if automation_rule == APPLE_SYNTHETIC_TOUCH_RULE
                     else "mobile_clean_environment" if mobile_human_decision
                     else "mobile_light_touch" if mobile_light_decision
+                    else "mobile_held_device" if mobile_held_decision
                     else "mobile_risk" if mobile_risk_decision
                     else "client_forgery" if forgery_decision
                     else "desktop_risk" if desktop_risk_decision

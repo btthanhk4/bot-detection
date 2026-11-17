@@ -32,7 +32,7 @@ def test_it_can_never_convict_even_with_every_second_channel():
 
 
 def test_fixtures():
-    ours = MOBILE_RULE_CASES[52:]
+    ours = MOBILE_RULE_CASES[52:55]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("HUMAN", "FINAL", "mobile_light_touch"), ("SUSPECT", "INSUFFICIENT_EVIDENCE", None),
         ("SUSPECT", "FINAL", "mobile_risk")]
@@ -48,4 +48,4 @@ def test_with_audio_novel_and_another_country_it_stays_suspect_not_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("39", "40", "41", "42")
+    assert DECISION_POLICY_VERSION in ("39", "40", "41", "42", "43")

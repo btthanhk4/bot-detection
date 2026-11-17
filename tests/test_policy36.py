@@ -182,4 +182,4 @@ def test_emulated_motion_alone_is_never_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("36", "37", "38", "39", "40", "41", "42")
+    assert DECISION_POLICY_VERSION in ("36", "37", "38", "39", "40", "41", "42", "43")

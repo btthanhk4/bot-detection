@@ -35,7 +35,7 @@ def test_older_collectors_report_nothing():
 
 def test_seen_page_held_phone():
     report = analyze_presence(_payload(_seen()), android=True)
-    assert report["codes"] == [] and report["research_flags"] == ["HELD_IN_HAND"]
+    assert report["codes"] == [] and report["research_flags"] == ["HELD_IN_HAND", "HELD_DEVICE"]
     assert report["first_touch_ms"] == 800 and report["motion"]["tilt_deg"] == 42.0
 
 

@@ -513,12 +513,13 @@ _ANDROID_SAMSUNG = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTM
                     "SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36")
 
 
-def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None, motion=None):
+def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None, motion=None,
+          visible_ms=8000):
     """Policy 33 context: page presence (collector 1.16), Client Hints, time zone and IP country
     (policy 35: and the device motion summary)."""
     payload["mouse"]["presence"] = {
         "prerendered": not shown, "initialVisibility": "visible" if shown else "prerender",
-        "firstVisibleMs": 0 if shown else None, "visibleMs": 8000 if shown else 0, "hiddenCount": 0,
+        "firstVisibleMs": 0 if shown else None, "visibleMs": visible_ms if shown else 0, "hiddenCount": 0,
         "firstTouchMs": first_touch_ms if shown else None, "scrolls": 2, "maxScrollRatio": 0.6,
         "motion": motion or {"status": "unsupported"},
     }
@@ -540,6 +541,9 @@ _HAND_MOTION = {"status": "ok", "events": 400, "intervalMs": 17.8, "gravity": 9.
 _EMULATED_MOTION = {"status": "ok", "events": 400, "intervalMs": 16.7, "gravity": 9.8, "tiltDeg": 0.0,
                     "linearSd": 0.072, "gravitySd": 0.072, "rotationMean": 0.112, "rotationSd": 0.049}
 _S23 = {"model": "SM-S918B", "architecture": "", "platformVersion": "14.0.0", "mobile": True}
+# Policy 43: the Spin farm's sensor (one event without gravity over 30-60 s of a visible page).
+_SENSORLESS_MOTION = {"status": "ok", "events": 1, "intervalMs": None, "gravity": 0.0, "tiltDeg": None,
+                      "linearSd": None, "gravitySd": None, "rotationMean": None, "rotationSd": None}
 # Policy 39: a Redmi (220333QAG) lying on a desk in a controlled test (16 Nov 2026): perfectly level at
 # 9.80 m/s^2 like the emulator, but its gravity channel still and no gyroscope.
 _LEVEL_LOW_END_MOTION = {"status": "ok", "events": 120, "intervalMs": 80.0, "gravity": 9.8, "tiltDeg": 0.0,
@@ -694,6 +698,36 @@ MOBILE_RULE_CASES = (
     ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
                                               first_touch_ms=None, motion=_LEVEL_LOW_END_MOTION,
                                               timezone="America/New_York", country="VN")),
+    # Policy 43: an untouched phone held in a hand, nothing against it, is a HUMAN of the lowest
+    # confidence; lying on a table it stays insufficient; held, but with a time zone of another country
+    # or a page nobody saw, it is not a HUMAN.
+    ("HUMAN", "FINAL", "mobile_held_device", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                          cores=8), first_touch_ms=None, motion=_HAND_MOTION)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8), first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8),
+                                              first_touch_ms=None, motion=_HAND_MOTION,
+                                              timezone="America/New_York", country="VN")),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8), shown=False, motion=_HAND_MOTION)),
+    # Policy 43: motion sensors that do not stream and an audio stack nobody else reported convict, with
+    # the farm's single tap or without; either alone does not.
+    ("BOT", "FINAL", "sensorless_phone", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                      memory=4, cores=8, headers={"audio_hash_sessions": 0}),
+                                               first_touch_ms=31000, motion=_SENSORLESS_MOTION, visible_ms=40000)),
+    ("BOT", "FINAL", "sensorless_phone", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                                      headers={"audio_hash_sessions": 0}),
+                                               first_touch_ms=None, motion=_SENSORLESS_MOTION, visible_ms=40000)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8, headers={"audio_hash_sessions": 0}),
+                                              first_touch_ms=31000, motion=_HAND_MOTION, visible_ms=40000)),
+    ("HUMAN", "FINAL", "mobile_light_touch", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                          memory=4, cores=8, headers={"audio_hash_sessions": 4}),
+                                                   first_touch_ms=31000, motion=_SENSORLESS_MOTION,
+                                                   visible_ms=40000)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
+                                                     memory=4, cores=8, headers={"audio_hash_sessions": 0}),
+                                              first_touch_ms=3000, motion=_SENSORLESS_MOTION, visible_ms=6000)),
 )
 
 # Frozen gate of policies 19-23.
@@ -760,10 +794,20 @@ MOBILE_RULE_GATE_V38 = {
     "fixture_fingerprint": "4ea7b23cbc9300289ccdab4fda2fb79bac5379ca7d1124bd332960578f032e3e",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policies 39-42.
+MOBILE_RULE_GATE_V42 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2"],
+    "human_cases": 15, "suspect_cases": 32, "bot_cases": 8, "passed": 55,
+    "fixture_fingerprint": "cf82c9c9084f954a98ac4d7921c42167fead192cd9e8ec11df641bed38b892dc",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v1",
+              "sensorless_phone_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),

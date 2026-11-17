@@ -2318,7 +2318,8 @@ const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation
   mobile_emulation: 'Máy tính giả điện thoại', touch_automation: 'Autoclick trên điện thoại',
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
   forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập',
-  emulated_phone: 'Điện thoại giả lập', replayed_trajectory: 'Phát lại quỹ đạo chuột' };
+  emulated_phone: 'Điện thoại giả lập', replayed_trajectory: 'Phát lại quỹ đạo chuột',
+  sensorless_phone: 'Điện thoại không có cảm biến thật', mobile_held_device: 'Điện thoại cầm trên tay, không chạm' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2739,6 +2740,10 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
       explainText = `Click giả lập: ${provenance.clicks_centred} lần trúng tâm nút, ${provenance.instant_releases} lần nhả dưới 5 ms.`;
     } else if (bd.decision_basis === 'emulated_phone') {
       explainText = 'Điện thoại giả lập: cảm biến báo máy nằm phẳng tuyệt đối mà gia tốc vẫn rung đều (trọng lực lý tưởng của trình giả lập cộng nhiễu; điện thoại thật nằm trên bàn luôn nghiêng vài độ), và một kênh độc lập cũng cho thấy điều đó (mã âm thanh chưa máy nào khác có, múi giờ khác nước của IP, hoặc trình duyệt tự mâu thuẫn).';
+    } else if (bd.decision_basis === 'sensorless_phone') {
+      explainText = 'Điện thoại không có cảm biến chuyển động thật: chỉ vài sự kiện, không có trọng lực, trong khi trang hiển thị từ 10 giây trở lên (gia tốc kế thật gửi khoảng 60 giá trị mỗi giây quanh 9,8 m/s²), và độc lập với đó là mã âm thanh chưa máy nào khác có (trình duyệt chèn nhiễu).';
+    } else if (bd.decision_basis === 'mobile_held_device') {
+      explainText = 'Điện thoại không chạm vào trang, nhưng cảm biến cho thấy máy đang được cầm trên tay (nghiêng, rung nhẹ và xoay) và không có dấu hiệu tự động hóa, giả lập hay môi trường bất thường. Đây là kết luận NGƯỜI ở mức tin cậy thấp nhất.';
     } else if (bd.decision_basis === 'replayed_trajectory') {
       explainText = 'Phát lại quỹ đạo chuột: nhiều đoạn đường đi của con trỏ trùng khớp với một phiên khác. Chữ ký được tính theo hướng đi sau khi lấy mẫu lại theo quãng đường, nên đổi tốc độ hay thời gian không che được; người thật không bao giờ vẽ lại y hệt một đường phức tạp.';
     } else if (bd.decision_basis === 'webview_automation') {

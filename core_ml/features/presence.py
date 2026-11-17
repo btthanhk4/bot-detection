@@ -41,8 +41,18 @@ Fingerprint flags stored with each label:
 import math
 import re
 
-PRESENCE_VERSION = "presence_v2"
+PRESENCE_VERSION = "presence_v3"
 EMULATED_PHONE_RULE = "emulated_phone_v1"
+SENSORLESS_PHONE_RULE = "sensorless_phone_v1"
+MOBILE_HELD_RULE = "mobile_held_device_v1"
+# Policy 43: an Android phone whose motion sensor fired at most a handful of events, without gravity,
+# while the page was visible for 10 s or more (a real accelerometer streams ~60 events a second at 9.8).
+SENSORLESS_MAX_EVENTS = 5
+SENSORLESS_MAX_GRAVITY = 1.0
+SENSORLESS_MIN_VISIBLE_MS = 10_000
+# Policy 43: a phone held in a hand: tilted, trembling and turning (gyroscope), over 30+ events.
+HELD_MIN_EVENTS = 30
+HELD_MIN_ROTATION_SD = 0.1
 INSTANT_TOUCH_MS = 120
 NOT_VIEWED_MS = 500
 STILL_SD = 0.005
@@ -123,6 +133,35 @@ def synthetic_motion(motion: dict) -> bool:
     )
 
 
+def sensors_unavailable(presence: dict) -> bool:
+    """Policy 43: the motion sensor reported a few events without gravity on a page visible 10 s+."""
+    motion = presence.get("motion") or {}
+    return bool(
+        motion.get("status") == "ok" and (motion.get("events") or 0) <= SENSORLESS_MAX_EVENTS
+        and (motion.get("gravity") is None or motion["gravity"] < SENSORLESS_MAX_GRAVITY)
+        and (presence.get("visible_ms") or 0) >= SENSORLESS_MIN_VISIBLE_MS
+    )
+
+
+def held_in_hand(motion: dict) -> bool:
+    """Policy 43: tilted 10-85 degrees, trembling (linear SD 0.02+) and turning (gyroscope SD above
+    0.1) over 30+ events: a phone in a person's hand (sanitized motion summary)."""
+    return bool(
+        motion.get("status") == "ok" and (motion.get("events") or 0) >= HELD_MIN_EVENTS
+        and motion.get("tilt_deg") is not None and 10 <= motion["tilt_deg"] <= 85
+        and (motion.get("linear_sd") or 0) >= HELD_MIN_SD
+        and (motion.get("rotation_sd") or 0) > HELD_MIN_ROTATION_SD
+    )
+
+
+def sensorless_phone_fires(research_flags, server_codes) -> bool:
+    """Policy 43 (``sensorless_phone_v1``): motion sensors that do not stream, and independently an audio
+    stack no other phone reported. On the replay of 17 Nov 2026 (3,674 captured sessions), 200 phones;
+    Fingerprint flagged 159 of 189 checked (84%) and the other 30 are the same farm: VPN 30/30, one tap
+    25-40 s after the page appeared 30/30. Each channel alone stays a SUSPECT at most."""
+    return "SENSORS_UNAVAILABLE" in set(research_flags or ()) and "AUDIO_NOVEL" in set(server_codes or ())
+
+
 def emulated_phone_fires(presence_codes, server_codes, browser_contradictions) -> bool:
     """Policy 36 (``emulated_phone_v1``): emulated motion sensors and, from an independent channel,
     an audio stack never seen on any other phone (noise injection), a time zone of another country
@@ -177,6 +216,10 @@ def analyze_presence(payload: dict, *, android: bool) -> dict:
                 research.append("HELD_IN_HAND")
         elif motion["status"] == "no_events" and android and (presence["visible_ms"] or 0) >= 3000:
             research.append("NO_MOTION")
+        if android and sensors_unavailable(presence):
+            research.append("SENSORS_UNAVAILABLE")
+        if held_in_hand(motion):
+            research.append("HELD_DEVICE")
     if android and ((hints["architecture"] or "").lower().startswith("x86") or _SDK_MODEL.search(hints["model"] or "")):
         codes.append("CH_EMULATOR")
     if android and hints["model"] == "" and hints["mobile"] is False:

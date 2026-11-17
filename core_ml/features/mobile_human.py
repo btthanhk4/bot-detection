@@ -38,6 +38,7 @@ without a single interaction (``INERT_COHORT``).
 import re
 
 from core_ml.features.client_forgery import forgery_codes
+from core_ml.features.presence import MOBILE_HELD_RULE
 from core_ml.features.server_context import server_context_codes
 
 MOBILE_HUMAN_RULE = "mobile_clean_environment_v1"
@@ -83,7 +84,7 @@ def _mobile_kind(fingerprint: dict) -> str:
 
 
 def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report: dict,
-                         client_flags: list, presence_codes=()) -> dict:
+                         client_flags: list, presence_codes=(), held_device: bool = False) -> dict:
     """Whether the phone-human rule applies, and what is missing when it does not."""
     payload = payload if isinstance(payload, dict) else {}
     fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
@@ -129,6 +130,13 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         and missing == ["FEW_GESTURES"]
         and not touch_report.get("zero_time_taps") and not touch_report.get("synthetic_contact_gestures")
     )
+    # Policy 43: no touch at all, but the motion sensor shows a hand holding the phone, and nothing
+    # else against it: a HUMAN of the lowest confidence. Fingerprint flagged 1 of 88 such phones on the
+    # replay of 17 Nov 2026 (phones judged HUMAN on their touches: 14 of 840).
+    held_eligible = (
+        bool(kind) and gestures == 0 and missing == ["FEW_GESTURES"] and bool(held_device)
+        and not touch_report.get("research_flags")
+    )
     if not kind:
         risk = []
     elif few:
@@ -143,6 +151,8 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         "eligible": not missing,
         "light_rule": MOBILE_LIGHT_RULE,
         "light_eligible": light_eligible,
+        "held_rule": MOBILE_HELD_RULE,
+        "held_eligible": held_eligible,
         "missing": missing,
         # Something speaks against the phone (policy 33: however few its gestures).
         "risk": risk,
