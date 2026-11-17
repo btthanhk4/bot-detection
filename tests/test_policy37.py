@@ -124,4 +124,4 @@ def test_inert_cohort_makes_an_untouched_phone_suspect_not_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("38", "39", "40", "41")
+    assert DECISION_POLICY_VERSION in ("38", "39", "40", "41", "42")

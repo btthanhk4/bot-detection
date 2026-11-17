@@ -99,7 +99,9 @@ from core_ml.models.touch_shadow import score_touch
 # since the previous snapshot); below BOT the session decides, a single snapshot's BOT still counts.
 # Policy 41: a mouse trajectory another session already drew (path signatures resampled by distance)
 # withholds HUMAN from 4 shared signatures and convicts from 8 (replayed_trajectory_v1).
-DECISION_POLICY_VERSION = "41"
+# Policy 42: on Android a worker disagreeing with the page about both platform and GPU is one
+# contradiction, not two: it withholds HUMAN but no longer convicts alone (Samsung Internet).
+DECISION_POLICY_VERSION = "42"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -315,7 +317,8 @@ class EnsembleBotDetector:
                                   if code not in deferred_evidence]
         # Policy 28: a headless, GPU or permission contradiction counts towards the two that
         # convict (alone it leaves a session without input insufficient, as since policy 12).
-        browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"])
+        browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"],
+                                                user_agent=str(fingerprint.get("userAgent") or ""))
         # Policy 18/33: page presence, motion and Client Hints (policy 36 reads them for a BOT rule too).
         presence_report = analyze_presence(payload, android="android" in str(fingerprint.get("userAgent") or "").lower())
         if explicit_automation:
@@ -328,7 +331,8 @@ class EnsembleBotDetector:
             automation_rule = SYNTHETIC_PATH_RULE
         elif replayed is not None and replayed >= REPLAY_BOT_OVERLAP:
             automation_rule = REPLAYED_TRAJECTORY_RULE
-        elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"]):
+        elif forged_browser_fires(forgery, automation_evidence, touch_report["research_flags"],
+                                  user_agent=str(fingerprint.get("userAgent") or "")):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
         elif emulated_phone_fires(presence_report["codes"], server_context_codes(payload), browser_contradictions):

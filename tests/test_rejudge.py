@@ -10,6 +10,8 @@ SAFARI9 = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/601.7.7 
            "Version/9.1.2 Safari/601.7.7")
 ANDROID = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
            "Chrome/150.0.0.0 Mobile Safari/537.36")
+IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+          "Version/18.6 Mobile/15E148 Safari/604.1")
 IPAD = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
         "Version/27.0.1 Safari/605.1.15")
 PATCHED = {"NATIVE_PATCH": ["signals.webdriverDeleted", "signals.webdriverPatched"]}
@@ -29,13 +31,16 @@ def test_rejudge_upgrades_what_the_new_rules_convict_and_nothing_else():
         session("webview", WEBVIEW, families=PATCHED, codes=["WEBDRIVER_TAMPERED"], webglRenderer="Mali-G52"),
         session("mac", SAFARI9, state="INSUFFICIENT_EVIDENCE", families={"NATIVE_PATCH": ["signals.webdriverPatched"]},
                 codes=["WEBDRIVER_TAMPERED"], deviceMemory=8, platform="MacIntel"),
-        session("spoof", ANDROID, state="INSUFFICIENT_EVIDENCE", platform="Linux armv8l",
+        session("spoof", IPHONE, state="INSUFFICIENT_EVIDENCE", platform="iPhone",
                 families={"CONTEXT": ["worker.platformMismatch"], "GPU": ["worker.rendererMismatch"]}),
         session("ipad", IPAD, platform="MacIntel", maxTouchPoints=5,
                 touch={"gestures": 6, "research_flags": ["SYNTHETIC_CONTACT"]}),
         # Not convicted: one contradiction only, a person, an older WebKit iPad.
         session("alone", ANDROID, codes=["WEBDRIVER_TAMPERED"], families={"NATIVE_PATCH": ["signals.webdriverPatched"]}),
         session("human", ANDROID, verdict="HUMAN"),
+        # Policy 42: on Android the worker's platform and renderer are one contradiction.
+        session("android-worker", ANDROID, state="INSUFFICIENT_EVIDENCE", platform="Linux armv8l",
+                families={"CONTEXT": ["worker.platformMismatch"], "GPU": ["worker.rendererMismatch"]}),
         session("ipad16", IPAD.replace("27.0.1", "16.5"), platform="MacIntel", maxTouchPoints=5,
                 touch={"gestures": 6, "research_flags": ["SYNTHETIC_CONTACT"]}),
         session("bot", ANDROID, verdict="BOT"),

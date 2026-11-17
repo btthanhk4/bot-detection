@@ -509,6 +509,8 @@ _SAME_BUTTON_TIMES = [1000, 1650, 2480, 3010, 3920, 4410]
 _AUTOCLICK = [_tap(180, 324, 40, radius=(0.3, 0.3), force=1.0) for _ in range(6)] + _ANDROID_HAND[:3]
 _REPLAY = [_finger(150, 640, radius=(11.5, 10.0), force=0.42, spread=0.3)] * 3 + _ANDROID_HAND[4:]
 _SPOOFED = {"platformMismatch": True}
+_ANDROID_SAMSUNG = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "SamsungBrowser/28.0 Chrome/130.0.0.0 Mobile Safari/537.36")
 
 
 def _seen(payload, first_touch_ms=900, shown=True, hints=None, timezone=None, country=None, motion=None):
@@ -1002,7 +1004,15 @@ CLIENT_FORGERY_CASES = (
     # page only). With the worker's WebGL renderer differing too, it convicts, with or without
     # touches: Spin's spoofed Android Chrome ("Linux armv8l") and fake iPhones (6 cores). Alone it
     # withholds HUMAN.
-    ("BOT", "FINAL", "forged_browser", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, [], memory=8,
+    # Policy 42: on Android the worker's platform and renderer are one observation: SUSPECT, not BOT
+    # (Samsung Internet on Snapdragon reports exactly this, and Fingerprint flagged none of it).
+    ("SUSPECT", "FINAL", "client_forgery", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, [], memory=8,
+                                                  worker={"platformMismatch": True, "rendererMismatch": True})),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID_SAMSUNG, "Linux armv8l", _ADRENO, _ANDROID_HAND, memory=8,
+                                               worker={"platformMismatch": True, "rendererMismatch": True})),
+    # A third, independent family still convicts (navigator.webdriver patched: environment tampering).
+    ("BOT", "FINAL", "environment_tampering", _phone(_ANDROID10, "Linux armv8l", _ANGLE_MALI, [], memory=8,
+                                              signals={"webdriverPatched": True},
                                               worker={"platformMismatch": True, "rendererMismatch": True})),
     ("BOT", "FINAL", "forged_browser", _phone(_IOS18, "iPhone", "Apple GPU", _IOS_HAND, cores=6,
                                               worker={"platformMismatch": True, "rendererMismatch": True,
@@ -1065,9 +1075,18 @@ CLIENT_FORGERY_RULE_GATE_V26 = {
     "fixture_fingerprint": "4674d61153c5788caf80980fa5c3196e3c91b20498a5e122672d5e52f74c48be",
 }
 
-CLIENT_FORGERY_RULE_GATE = {
+# Frozen gate of policies 34-41.
+CLIENT_FORGERY_RULE_GATE_V41 = {
     "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
               "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1"],
+    "final_cases": 37, "insufficient_cases": 11, "passed": 48,
+    "fixture_fingerprint": "e9475e17ae30a9b13eca8394c48bab4e35cc84efc1edb24e347a9efd1fb33233",
+}
+
+CLIENT_FORGERY_RULE_GATE = {
+    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
+              "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1",
+              "worker_one_channel_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

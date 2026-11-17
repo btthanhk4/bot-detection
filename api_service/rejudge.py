@@ -50,8 +50,9 @@ def judge(doc: dict):
     desktop = not any(token in str(fingerprint.get("userAgent") or "").lower() for token in _MOBILE_TOKENS)
     stored = (breakdown.get("client_forgery") or {}).get("codes") or []
     codes = sorted(set(stored) | set(forgery_codes(payload, evidence, desktop=desktop)))
-    found = contradictions(codes, evidence, touch.get("research_flags"))
-    if forged_browser_fires(codes, evidence, touch.get("research_flags")):
+    user_agent = str(fingerprint.get("userAgent") or "")
+    found = contradictions(codes, evidence, touch.get("research_flags"), user_agent=user_agent)
+    if forged_browser_fires(codes, evidence, touch.get("research_flags"), user_agent=user_agent):
         return FORGED_BROWSER_RULE, found, codes
     if webview_webdriver_fires(payload, codes):
         return WEBVIEW_WEBDRIVER_RULE, found, codes

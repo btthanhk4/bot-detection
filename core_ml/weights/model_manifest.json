@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "63982a7ea22d153b304a649cdccfa469c8c4d96d833556fef5e5d1d511128486",
+    "behavioral_lstm.pt": "3be6c93fdd19b58a320f9fb049fec7c1e975e79b39396921435f943852ca10a8",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "36b69d5f722442ea9e867e09055d8915",
-  "created_at": "2026-11-16T16:32:51.990677+00:00",
+  "bundle_id": "9dae95f77c6148cda6237b8c16c82bd7",
+  "created_at": "2026-11-17T16:23:14.302792+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -79,10 +79,10 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 37,
-      "fixture_fingerprint": "e9475e17ae30a9b13eca8394c48bab4e35cc84efc1edb24e347a9efd1fb33233",
+      "final_cases": 39,
+      "fixture_fingerprint": "d2f8d5ee45098302c883c7514e486281462fece3738f2f727404ea53dfe6bf42",
       "insufficient_cases": 11,
-      "passed": 48,
+      "passed": 50,
       "rules": [
         "client_forgery_v1",
         "forged_browser_v1",
@@ -91,7 +91,8 @@
         "ua_api_mismatch_v1",
         "platform_spoofed_v1",
         "desktop_fonts_v1",
-        "desktop_evidence_v1"
+        "desktop_evidence_v1",
+        "worker_one_channel_v1"
       ]
     },
     "collector_window_policy": "mouse_export_v1",
@@ -870,7 +871,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "41",
+    "decision_policy_version": "42",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,

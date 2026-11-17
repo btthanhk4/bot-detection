@@ -275,18 +275,37 @@ def environment_anchor(automation_evidence: dict) -> bool:
     return any(family in families for family in TAMPERING_ANCHOR_FAMILIES)
 
 
-def contradictions(forgery: list, automation_evidence: dict = None, touch_flags=None) -> list:
+def worker_only_android(forgery: list, automation_evidence: dict = None, user_agent: str = "") -> bool:
+    """Policy 42: an Android browser whose only anchor is a worker disagreeing with the page about
+    the GPU, besides the worker disagreeing about the platform (``PLATFORM_SPOOFED``).
+
+    Both come from one observation, a dedicated worker answering differently from the page, so they
+    count once. On 17 Nov 2026, of the 745 sessions convicted on that pair alone, Fingerprint flagged
+    94% of the "iPhones" (231 of 245; the Indonesian fakes of policy 32) but 34% of Android Chrome
+    (38 of 111) and none of Samsung Internet (0 of 21); 72 of these Android sessions had 3 or more
+    real touches. On Android it withholds HUMAN (SUSPECT) and no longer convicts on its own."""
+    if "Android" not in str(user_agent or "") or "PLATFORM_SPOOFED" not in (forgery or []):
+        return False
+    families = (automation_evidence or {}).get("families") or {}
+    anchors = {family: hits for family, hits in families.items() if family in TAMPERING_ANCHOR_FAMILIES}
+    return set(anchors) == {"GPU"} and set(anchors["GPU"] or []) <= {"worker.rendererMismatch"}
+
+
+def contradictions(forgery: list, automation_evidence: dict = None, touch_flags=None, user_agent: str = "") -> list:
     """Independent contradictions of the browser: the forgery codes, an environment anchor and
-    (policy 29) taps released the moment they landed."""
+    (policy 29) taps released the moment they landed. Policy 42: on Android a worker's GPU and
+    platform disagreeing with the page are one contradiction."""
     found = sorted(set(forgery or []))
-    found += ["ENVIRONMENT_EVIDENCE"] if environment_anchor(automation_evidence) else []
+    if environment_anchor(automation_evidence) and not worker_only_android(forgery, automation_evidence, user_agent):
+        found += ["ENVIRONMENT_EVIDENCE"]
     return found + (["ZERO_TIME_TAPS"] if "ZERO_TIME_TAPS" in (touch_flags or []) else [])
 
 
-def forged_browser_fires(forgery: list, automation_evidence: dict = None, touch_flags=None) -> bool:
+def forged_browser_fires(forgery: list, automation_evidence: dict = None, touch_flags=None,
+                         user_agent: str = "") -> bool:
     """Policy 27: two independent claims no genuine browser makes (policy 28: or one and an
     environment anchor; policy 29: or one and taps of 0 ms)."""
-    return len(contradictions(forgery, automation_evidence, touch_flags)) >= FORGED_BROWSER_MIN_CODES
+    return len(contradictions(forgery, automation_evidence, touch_flags, user_agent)) >= FORGED_BROWSER_MIN_CODES
 
 
 def _fingerprint(payload) -> dict:
