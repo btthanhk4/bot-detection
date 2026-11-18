@@ -75,7 +75,8 @@ def test_seen_untouched_clean_phone_gets_its_own_reason_code():
 
 
 def test_fixtures_cover_both_directions():
-    ours = [case for case in CLIENT_FORGERY_CASES
+    # Policy 45's fixtures (index 50 on) list no plugins too; they are tested in test_policy45.
+    ours = [case for case in CLIENT_FORGERY_CASES[:50]
             if "fontsCount" in case[3]["fingerprint"] or "pluginsLength" in case[3]["fingerprint"]]
     bases = [(v, s, b) for v, s, b, p in ours]
     assert bases == [("SUSPECT", "FINAL", "client_forgery"), ("BOT", "FINAL", "forged_browser"),

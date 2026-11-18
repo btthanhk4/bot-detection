@@ -975,6 +975,25 @@ def _deferred(**kwargs):
     return payload
 
 
+# Policy 45: what Downloader's US fleet reports (2026-11-18): Chrome 58-70 user agents over Windows 10,
+# navigator.userAgentData present with empty brands and platform (a user agent overridden without
+# client-hint metadata), no plugins, the legacy ANGLE renderer string, a worker disagreeing on GPU and cores.
+_CHROME70_WIN = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                 "Chrome/70.0.3538.102 Safari/537.36")
+_CHROME109_WIN7 = ("Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/109.0.0.0 Safari/537.36")
+_LEGACY_ANGLE = "ANGLE (Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0)"
+_OVERRIDDEN_HINTS = {"brands": [], "platform": "", "mobile": False, "fullVersionList": [], "model": "",
+                     "platformVersion": "", "architecture": "", "bitness": ""}
+
+
+def _with_ua_hints(payload, hints=None):
+    """The page exposed navigator.userAgentData (collector profile)."""
+    payload["botd"]["profile"] = {"schema": "browser-profile-v1",
+                                  "main": {"clientHints": dict(hints or _OVERRIDDEN_HINTS), "clientHintsStatus": "ok"}}
+    return payload
+
+
 # Policy 26 fixtures: (verdict, decision state, decision basis, payload). A session with
 # too little input stays insufficient, unless the browser contradicts itself: then it is
 # a final SUSPECT. A cloud address alone is not a contradiction.
@@ -1094,6 +1113,18 @@ CLIENT_FORGERY_CASES = (
                                                worker={"platformMismatch": True})),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _phone(_ANDROID10, "Linux armv81", _ANGLE_MALI, [], memory=8,
                                                       worker={"platformMismatch": False, "rendererMismatch": False})),
+    # Policy 45: Chrome 70 with navigator.userAgentData (Chrome 84+) and a worker on another GPU convicts;
+    # the API alone withholds HUMAN; Chrome 70 without the API, or Windows 7's Chrome 109 with it, is not
+    # anachronistic and stays as before.
+    ("BOT", "FINAL", "forged_browser", _with_ua_hints(_deferred(
+        ua=_CHROME70_WIN, renderer=_LEGACY_ANGLE, fingerprint={"pluginsLength": 0},
+        worker={"rendererMismatch": True, "cpuMismatch": True}))),
+    ("SUSPECT", "FINAL", "client_forgery", _with_ua_hints(_deferred(ua=_CHROME70_WIN, renderer=_LEGACY_ANGLE))),
+    ("SUSPECT", "FINAL", "client_forgery", _deferred(ua=_CHROME70_WIN, renderer=_LEGACY_ANGLE,
+                                                     fingerprint={"pluginsLength": 0},
+                                                     worker={"rendererMismatch": True, "cpuMismatch": True})),
+    ("SUSPECT", "FINAL", "client_forgery", _with_ua_hints(_deferred(
+        ua=_CHROME109_WIN7, fingerprint={"pluginsLength": 0}, worker={"rendererMismatch": True}))),
 )
 
 # Frozen gate of policy 33 (an environment family alone left a desktop without input insufficient).
@@ -1154,10 +1185,19 @@ CLIENT_FORGERY_RULE_GATE_V41 = {
     "fixture_fingerprint": "e9475e17ae30a9b13eca8394c48bab4e35cc84efc1edb24e347a9efd1fb33233",
 }
 
-CLIENT_FORGERY_RULE_GATE = {
+# Frozen gate of policies 42-44.
+CLIENT_FORGERY_RULE_GATE_V44 = {
     "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
               "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1",
               "worker_one_channel_v1"],
+    "final_cases": 39, "insufficient_cases": 11, "passed": 50,
+    "fixture_fingerprint": "d2f8d5ee45098302c883c7514e486281462fece3738f2f727404ea53dfe6bf42",
+}
+
+CLIENT_FORGERY_RULE_GATE = {
+    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
+              "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1",
+              "worker_one_channel_v1", "anachronistic_ua_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

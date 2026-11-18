@@ -186,7 +186,7 @@ def test_release_fixtures(index):
 def test_release_gate_counts():
     gate = validate_client_forgery_rules(detector())
     assert gate == CLIENT_FORGERY_RULE_GATE
-    assert (gate["final_cases"], gate["insufficient_cases"]) == (39, 11)  # policy 42: two worker-only Android cases
+    assert (gate["final_cases"], gate["insufficient_cases"]) == (43, 11)  # policy 45: four anachronistic-UA cases
 
 
 def test_two_contradictions_convict():

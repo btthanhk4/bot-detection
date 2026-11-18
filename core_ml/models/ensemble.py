@@ -105,7 +105,11 @@ from core_ml.models.touch_shadow import score_touch
 # contradiction, not two: it withholds HUMAN but no longer convicts alone (Samsung Internet).
 # Policy 43: an untouched phone held in a hand is a HUMAN of the lowest confidence; motion sensors that do
 # not stream together with a novel audio stack convict a phone (sensorless_phone_v1).
-DECISION_POLICY_VERSION = "44"
+# Policy 44: a phone held in a hand counts from 8 motion events (mobile_held_device_v2); collector 1.18
+# also sends the final snapshot when the page is hidden.
+# Policy 45: a desktop user agent claiming Chrome 83 or older on a page with navigator.userAgentData
+# (Chrome 84+) is one more contradiction (ANACHRONISTIC_UA); with another it convicts (forged_browser_v1).
+DECISION_POLICY_VERSION = "45"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 

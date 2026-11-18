@@ -112,6 +112,19 @@ Policy 35 (2026-11-14, 1,361 phone sessions with collector 1.16.1):
   19 reported 4, all from one fleet sharing sensor calibration across a dozen claimed models
   (see ``core_ml.features.presence``). The claimed model and the memory cannot both be true:
   one more contradiction.
+
+Policy 45 (2026-11-18, the 54,198 sessions backed up on 17 Nov and 3,674 raw captures):
+
+* ``ANACHRONISTIC_UA``: a desktop user agent claiming Chrome 83 or older, yet the page exposes
+  ``navigator.userAgentData``. Chrome introduced User-Agent Client Hints in version 84 (origin trial;
+  on by default from 89/90): no Chrome 58-83 has the API. 297 desktop sessions claimed Chrome 100 or
+  older (58, 64, 70, 79, 87, 94), 293 on Downloader and 295 from US addresses on a Vietnamese site,
+  none ever HUMAN; Fingerprint flagged only 23%. All 50 raw captures claiming Chrome 83 or older show
+  the API with empty brands and no platform, and none sent the ``Sec-CH-UA`` header that 890 of 892
+  current desktop Chrome sessions sent: Chromium's answer when its user agent is overridden (command
+  line or DevTools protocol) without client-hint metadata. Their worker also reports another WebGL
+  renderer (49 of 50), the second contradiction that convicts. Alone it withholds HUMAN. Brands and
+  headers are not separate contradictions: they are the same override.
 """
 
 import math
@@ -138,6 +151,8 @@ JUMP_MIN_PAIRS = 5
 JUMP_MIN_TURN_SHARE = 0.50
 SERVER_MIN_CORES = 64
 PHONE_MAX_FONTS = 8
+# Policy 45: navigator.userAgentData arrived with Chrome 84 (origin trial; on by default from 89/90).
+CHROME_UA_HINTS = 84
 # Policy 35: models never sold with less than 8 GB (Chrome caps deviceMemory at 8).
 FLAGSHIP_MIN_MEMORY = 8
 _FLAGSHIP_8GB = re.compile(r"^(?:SM-[SF]9\d\d|SM-F7\d\d|Pixel (?:(?:6|7|8|9|10)(?: Pro(?: XL| Fold)?)?|(?:7|8|9)a)\b)")
@@ -202,6 +217,22 @@ def _claims_engine_without_device_memory(user_agent: str) -> bool:
     return "Firefox/" in user_agent and not re.search(r"Chrome/|Edg/|OPR/", user_agent)
 
 
+def _claims_chrome_before_ua_hints(user_agent: str) -> bool:
+    """Policy 45: a desktop user agent of a Chrome that predates User-Agent Client Hints."""
+    if _PHONE_UA.search(user_agent) or "Mobile" in user_agent:
+        return False
+    chrome = _CHROME.search(user_agent)
+    return bool(chrome) and int(chrome.group(1)) < CHROME_UA_HINTS
+
+
+def page_exposes_ua_hints(payload: dict) -> bool:
+    """The page exposed navigator.userAgentData (the collector's profile records it only then)."""
+    botd = payload.get("botd") if isinstance(payload.get("botd"), dict) else {}
+    profile = botd.get("profile") if isinstance(botd.get("profile"), dict) else {}
+    main = profile.get("main") if isinstance(profile.get("main"), dict) else {}
+    return isinstance(main.get("clientHints"), dict)
+
+
 def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) -> list:
     """Contradictions a genuine browser does not produce; each only withholds a HUMAN verdict."""
     payload = payload if isinstance(payload, dict) else {}
@@ -228,6 +259,9 @@ def forgery_codes(payload: dict, automation_evidence: dict, *, desktop: bool) ->
         codes.append("DESKTOP_FONTS")
     if model_memory_mismatch(payload):
         codes.append("MODEL_MEMORY_MISMATCH")
+    if (desktop and _claims_chrome_before_ua_hints(str(fingerprint.get("userAgent") or ""))
+            and page_exposes_ua_hints(payload)):
+        codes.append("ANACHRONISTIC_UA")
     return codes
 
 
