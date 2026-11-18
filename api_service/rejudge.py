@@ -13,10 +13,20 @@ in what they stored) or HUMAN, as new sessions are; the previous state is record
 
     python -m api_service.manage three-verdicts            # count only
     python -m api_service.manage three-verdicts --apply    # write
+
+``rescore`` (19 Nov 2026): every stored session whose raw snapshots are still kept is scored again with the
+running detector and policy 48's three verdicts, snapshot after snapshot, under the same storage rules as the
+API (a locked BOT stays, a verdict mapped from too little evidence never replaces one the evidence made). Only a
+verdict that changes is written, with the previous one in ``rejudged``; a session updated in the last 30
+minutes is left to the live traffic.
+
+    python -m api_service.manage rescore            # count only
+    python -m api_service.manage rescore --apply    # write
 """
 
+import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from core_ml.features.client_forgery import (
     APPLE_SYNTHETIC_TOUCH_RULE,
@@ -148,3 +158,122 @@ def map_three_verdicts(db, apply: bool = False, now=None) -> dict:
         written += result.modified_count
     return {"mapped": sum(v for k, v in counts.items() if not k.startswith("anomaly")),
             "counts": dict(counts), "written": written, "applied": apply}
+
+
+RESCORE_VERSION = "rescore_v1"
+RESCORE_QUIET_MINUTES = 30
+_SNAPSHOT_FIELDS = {"payload_json": 1, "server_headers": 1, "server_user_agent": 1, "received_at": 1}
+
+
+def _verdict_class(verdict, state) -> str:
+    value = str(verdict or "").upper()
+    if value in ("BOT", "HUMAN"):
+        return value
+    return "INSUFFICIENT" if state == "INSUFFICIENT_EVIDENCE" else "SUSPECT"
+
+
+def _replaces(stored, result) -> bool:
+    """The rule api_service.database.save_detection_result applies: does a new result replace the stored one."""
+    if stored is None:
+        return True
+    if result.get("decision_state") != "FINAL":
+        return stored["decision_state"] != "FINAL"
+    if (result.get("breakdown") or {}).get("three_verdicts"):
+        return stored["decision_state"] != "FINAL" or stored["mapped"]
+    if str(result.get("verdict") or "").upper() != "BOT":
+        return not stored["is_bot"] or stored["decision_state"] != "FINAL" or not stored["locked"]
+    return True
+
+
+def score_session(detector, snapshots, map_result):
+    """Replay a session's raw snapshots in order, as the API scores and stores them: the session's mouse scores
+    carried from one snapshot to the next (policy 40), each result mapped (policy 48), the storage rules applied.
+    Returns the stored state the session ends with, or None when no snapshot could be scored."""
+    prior, stored, strikes = None, None, 0
+    for snapshot in snapshots:
+        try:
+            payload = json.loads(snapshot.get("payload_json") or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload["_server_headers"] = snapshot.get("server_headers") or {}
+        payload["_server_user_agent"] = snapshot.get("server_user_agent") or ""
+        payload["_session_mouse"] = prior
+        try:
+            result = detector.predict(payload)
+        except Exception:  # noqa: BLE001 - a snapshot the detector rejects is skipped, as live
+            continue
+        new = result.pop("_session_mouse_new", None) or {}
+        prior = {"chunks": {**((prior or {}).get("chunks") or {}), **(new.get("chunks") or {})},
+                 "windows": {**((prior or {}).get("windows") or {}), **(new.get("windows") or {})}}
+        result = map_result(result, payload)
+        verdict = str(result.get("verdict") or "").upper()
+        rule_locked = bool((result.get("breakdown") or {}).get("verdict_locked", verdict == "BOT"))
+        if _replaces(stored, result):
+            strikes += 1 if verdict == "BOT" and not rule_locked else 0
+            stored = {"result": result, "decision_state": result.get("decision_state"), "is_bot": verdict == "BOT",
+                      "locked": rule_locked or (verdict == "BOT" and strikes >= 2), "strikes": strikes,
+                      "mapped": bool((result.get("breakdown") or {}).get("three_verdicts"))}
+    return stored
+
+
+def rescore(db, detector=None, apply: bool = False, now=None, quiet_minutes: int = RESCORE_QUIET_MINUTES,
+            model_bundle_id: str = "") -> dict:
+    """Counts of the stored verdicts the running code changes, by transition; writes them if ``apply``."""
+    from api_service.database import _safe_probability, _sanitize_bson_value
+    from core_ml.three_verdicts import apply_three_verdicts
+
+    if detector is None:
+        from api_service import main
+
+        detector, model_bundle_id = main.ensemble_detector, main.model_bundle_id
+    now = now or datetime.now(timezone.utc)
+    quiet_before = now - timedelta(minutes=quiet_minutes)
+    results = db["detection_results"]
+    changes, written, scored, unscored, live = Counter(), 0, 0, 0, 0
+    for doc in results.find({}, {"sessionId": 1, "verdict": 1, "decision_state": 1, "policy_version": 1,
+                                 "updated_at": 1}).batch_size(200):
+        updated = doc.get("updated_at")
+        if isinstance(updated, datetime):
+            if (updated if updated.tzinfo else updated.replace(tzinfo=timezone.utc)) > quiet_before:
+                live += 1
+                continue
+        snapshots = {}
+        for name in ("telemetry_captures", "labeled_captures"):
+            for snapshot in db[name].find({"sessionId": doc["sessionId"]}, _SNAPSHOT_FIELDS):
+                snapshots[snapshot["_id"]] = snapshot
+        stored = score_session(detector, sorted(snapshots.values(), key=lambda s: s.get("received_at") or 0),
+                               apply_three_verdicts) if snapshots else None
+        if stored is None:
+            unscored += 1
+            continue
+        scored += 1
+        result = stored["result"]
+        old = _verdict_class(doc.get("verdict"), doc.get("decision_state"))
+        new = _verdict_class(result.get("verdict"), result.get("decision_state"))
+        if old == new:
+            continue
+        changes[f"{old} -> {new}"] += 1
+        if not apply:
+            continue
+        verdict = str(result.get("verdict") or "UNKNOWN").upper()
+        update = results.update_one({"_id": doc["_id"], "updated_at": updated}, {"$set": {
+            "verdict": verdict, "is_bot": verdict == "BOT",
+            "decision_state": str(result.get("decision_state") or "FINAL"),
+            "verdict_locked": stored["locked"], "bot_strikes": stored["strikes"],
+            "verdict_mapped": stored["mapped"],
+            "bot_probability": _safe_probability(result.get("bot_probability")),
+            "confidence": _safe_probability(result.get("confidence")),
+            "score_calibrated": result.get("score_calibrated") is True,
+            "policy_version": str(result.get("policy_version") or DECISION_POLICY_VERSION)[:32],
+            "model_bundle_id": str(model_bundle_id or result.get("model_bundle_id") or "")[:128],
+            "reasons": _sanitize_bson_value(list(result.get("reasons") or [])[:20]),
+            "breakdown": _sanitize_bson_value(result.get("breakdown") or {}),
+            "rejudged": {"from_verdict": doc.get("verdict"), "from_state": doc.get("decision_state"),
+                         "from_policy": doc.get("policy_version"), "rule": RESCORE_VERSION,
+                         "policy": DECISION_POLICY_VERSION, "at": now},
+        }})
+        written += update.modified_count
+    return {"scored": scored, "without_raw": unscored, "left_to_live_traffic": live,
+            "changed": sum(changes.values()), "changes": dict(changes), "written": written, "applied": apply}

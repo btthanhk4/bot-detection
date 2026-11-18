@@ -52,6 +52,8 @@ def main(argv=None) -> int:
     rejudge_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
     three_command = sub.add_parser("three-verdicts", help="Policy 48: map stored insufficient sessions to HUMAN/SUSPECT")
     three_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
+    rescore_command = sub.add_parser("rescore", help="Score stored sessions again from their raw snapshots")
+    rescore_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
     report_command = sub.add_parser("reference-report", help="DATACAT versus Fingerprint bot verdicts (read-only)")
     report_command.add_argument("--site", action="append", help="Limit to a site id (repeatable)")
     args = parser.parse_args(argv)
@@ -89,6 +91,17 @@ def main(argv=None) -> int:
             print("Không kết nối được MongoDB", file=sys.stderr)
             return 2
         print(map_three_verdicts(db, apply=args.apply))
+        return 0
+
+    if args.command == "rescore":
+        from api_service.database import get_db
+        from api_service.rejudge import rescore
+
+        db = get_db()
+        if db is None:
+            print("Không kết nối được MongoDB", file=sys.stderr)
+            return 2
+        print(rescore(db, apply=args.apply))
         return 0
 
     if auth.get_users_collection() is None:
