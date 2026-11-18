@@ -41,7 +41,7 @@ def test_release_fixtures(detector, index):
 def test_release_gate_counts(detector):
     gate = validate_mobile_rules(detector)
     assert gate == MOBILE_RULE_GATE
-    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (21, 44, 10)
+    assert (gate["human_cases"], gate["suspect_cases"], gate["bot_cases"]) == (23, 44, 11)
 
 
 def test_phone_human_is_not_locked_and_has_no_mouse_risk(detector):
@@ -86,7 +86,7 @@ def test_unverified_page_alone_still_waits_with_few_gestures(detector):
 def test_autoclick_is_locked_bot(detector):
     result = detector.predict(_case(20))
     assert result["verdict"] == "BOT" and result["breakdown"]["verdict_locked"] is True
-    assert result["breakdown"]["automation_rule"] == "autoclick_taps_v1"
+    assert result["breakdown"]["automation_rule"] == "autoclick_taps_v2"
     assert any("Autoclicker" in reason for reason in result["reasons"])
 
 

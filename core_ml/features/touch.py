@@ -17,7 +17,7 @@ ellipse of several pixels that changes during the stroke.
 import math
 import statistics
 
-TOUCH_ANALYSIS_VERSION = "touch_v2"
+TOUCH_ANALYSIS_VERSION = "touch_v3"
 # Policy 19. Autoclickers tap one point at a fixed rate; macro recorders replay a
 # swipe exactly. Measured on BrainRun (2,070 human devices, 283,742 windows of
 # 20 gestures; 3 scripted devices in the set removed): no human window has 5 taps
@@ -25,10 +25,19 @@ TOUCH_ANALYSIS_VERSION = "touch_v2"
 # 529 windows); 3 replayed swipes (>= 5 points, >= 30 px, same ends within 0.5 px,
 # duration within 3 ms) occur on one human device (6 windows), so replay is a
 # risk signal only. Touchalytics (37 people, 377 taps): never 2 taps at one point.
-AUTOCLICK_RULE = "autoclick_taps_v1"
+AUTOCLICK_RULE = "autoclick_taps_v2"
 AUTOCLICK_MIN_TAPS = 5
 AUTOCLICK_MAX_INTERVAL_CV = 0.10
 SAME_POINT_PX = 0.5
+# Policy 49 (autoclick_taps_v2): the group must also be pressed like a machine. All six convictions of v1 on
+# production (the Spin rewards page, 13-18 Nov 2026) were clean for Fingerprint, and five were people drumming
+# on its button: five taps within 0.5 px (a coarse touch panel) at a steady 4-5 Hz (people keep a rhythm to
+# 3-8%), yet the finger's contact size or pressure changed from tap to tap (3-6 distinct contacts), or presses
+# lasted 43-95 ms with a spread of 15-27%. Android autoclickers dispatch identical gestures: the same contact
+# geometry every time, pressed for a fixed time. The one conviction kept, an iPhone pressing for 4-13 ms with
+# the same contact, presses faster than a finger (the author's fastest taps: 47-80 ms).
+AUTOCLICK_MAX_PRESS_CV = 0.05
+AUTOCLICK_SHORT_PRESS_MS = 20.0
 REPLAY_MIN_SWIPES = 3
 REPLAY_MIN_POINTS = 5
 REPLAY_MIN_DISPLACEMENT_PX = 30.0
@@ -174,20 +183,39 @@ def _synthetic_contact(points) -> bool:
     return all(p[3] == 1 and p[4] == 1 and p[5] == 1 for p in points)
 
 
+def _contact(point) -> tuple:
+    return tuple(None if value is None else round(value, 2) for value in point[3:6])
+
+
+def _machine_presses(group) -> bool:
+    """Policy 49: one contact geometry on every tap, pressed for a fixed time or for under 20 ms."""
+    if len({_contact(point) for _, point, _ in group}) > 1:
+        return False
+    durations = [duration for _, _, duration in group]
+    mean = statistics.fmean(durations)
+    return (statistics.median(durations) < AUTOCLICK_SHORT_PRESS_MS
+            or (mean > 0 and statistics.pstdev(durations) / mean < AUTOCLICK_MAX_PRESS_CV))
+
+
 def _autoclick_group(gestures, features) -> tuple:
-    """Largest group of taps at one point, and whether it is metronomic."""
-    taps = [(g["t0"], g["points"][0][1], g["points"][0][2])
+    """Largest group of taps at one point, the largest metronomic one, and the largest metronomic one
+    pressed like a machine (policy 49)."""
+    taps = [(g["t0"], g["points"][0], f["duration_ms"])
             for g, f in zip(gestures, features) if f["kind"] == "tap" and g["t0"] is not None]
-    largest, metronomic = 0, 0
-    for _, x, y in taps:
-        times = sorted(t for t, bx, by in taps if abs(bx - x) <= SAME_POINT_PX and abs(by - y) <= SAME_POINT_PX)
+    largest, metronomic, machine = 0, 0, 0
+    for _, anchor, _ in taps:
+        group = sorted((tap for tap in taps if abs(tap[1][1] - anchor[1]) <= SAME_POINT_PX
+                        and abs(tap[1][2] - anchor[2]) <= SAME_POINT_PX), key=lambda tap: tap[0])
+        times = [tap[0] for tap in group]
         largest = max(largest, len(times))
         gaps = [b - a for a, b in zip(times, times[1:])]
         if len(times) >= AUTOCLICK_MIN_TAPS and min(gaps) > 0:
             mean = statistics.fmean(gaps)
             if statistics.pstdev(gaps) / mean < AUTOCLICK_MAX_INTERVAL_CV:
                 metronomic = max(metronomic, len(times))
-    return largest, metronomic
+                if _machine_presses(group):
+                    machine = max(machine, len(times))
+    return largest, metronomic, machine
 
 
 def _replayed_swipes(gestures, features) -> int:
@@ -218,7 +246,7 @@ def analyze_touch(touch) -> dict:
         and f["step_length_cv"] is not None and f["step_length_cv"] <= EVEN_STEP_MAX_CV
     ]
     synthetic_contact = [g for g in gestures if _synthetic_contact(g["points"])]
-    same_point_taps, autoclick_taps = _autoclick_group(gestures, features)
+    same_point_taps, metronomic_taps, autoclick_taps = _autoclick_group(gestures, features)
     replayed = _replayed_swipes(gestures, features)
     flags = []
     if gestures and len(synthetic_contact) == len(gestures):
@@ -242,6 +270,7 @@ def analyze_touch(touch) -> dict:
         "ruler_swipes": len(linear),
         "synthetic_contact_gestures": len(synthetic_contact),
         "same_point_taps": same_point_taps,
+        "metronomic_taps": metronomic_taps,
         "autoclick_taps": autoclick_taps,
         "replayed_swipes": replayed,
         "research_flags": flags,

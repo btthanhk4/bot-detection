@@ -564,6 +564,19 @@ _MALI = "ANGLE (ARM, Mali-G57, OpenGL ES 3.2)"
 _DESKTOP_SITE_HINTS = {"architecture": "x86", "bitness": "64", "mobile": False, "model": "", "platform": "Linux",
                        "platformVersion": ""}
 _LAPTOP_GPU = "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)"
+# Policy 49: someone drumming on the Spin page's button (a Mali-G52 phone, Nov 2026): six taps within 0.5 px at
+# a steady ~5 Hz, the finger's contact changing and presses of 87-150 ms; the same drumming on a phone that
+# reports no contact size or pressure, its presses spread like a person's; an iPhone pressing for 4-13 ms with
+# the same contact every time, at a fixed rate.
+_DRUMMING = [_tap(105.5 + dx, 408.0 + dy, ms, radius=(r, r), force=1.0) for dx, dy, ms, r in (
+    (0.0, -0.5, 97.0, 2.0), (0.5, -0.5, 97.1, 1.3), (0.5, -0.5, 95.5, 1.5), (0.0, 0.0, 86.7, 2.0),
+    (0.0, 0.5, 93.3, 2.3), (-0.5, 0.0, 150.3, 1.8))]
+_DRUMMING_TIMES = [9384, 9618, 9822, 10034, 10237, 10451]
+_DRUMMING_NO_SENSOR = [_tap(87.9, 417.9, ms, radius=(0.3, 0.3), force=1.0)
+                       for ms in (94.5, 61.2, 93.2, 124.4, 117.9, 107.6)]
+_IPHONE_AUTOCLICK = [_tap(302.0, 506.0, ms, radius=(26.7, 26.7), force=0.0) for ms in (8.0, 4.0, 5.0, 9.0, 7.0, 13.0)]
+_IPHONE_AUTOCLICK_TIMES = [1000, 1700, 2400, 3100, 3800, 4500]
+_MALI_G52 = "ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)"
 # Policy 43: the Spin farm's sensor (one event without gravity over 30-60 s of a visible page).
 _SENSORLESS_MOTION = {"status": "ok", "events": 1, "intervalMs": None, "gravity": 0.0, "tiltDeg": None,
                       "linearSd": None, "gravitySd": None, "rotationMean": None, "rotationSd": None}
@@ -791,6 +804,14 @@ MOBILE_RULE_CASES = (
                                                             _ANDROID_HAND, touch_points=10, memory=8, cores=8,
                                                             fingerprint_extra={"pluginsLength": 5}),
                                                      hints={**_DESKTOP_SITE_HINTS, "platformVersion": "6.8.0"})),
+    # Policy 49: drumming on one button is a person's, on a phone with or without contact sensors; an iPhone
+    # pressing for a few milliseconds with the same contact at a fixed rate is an autoclicker.
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_ANDROID10, "Linux armv81", _MALI_G52, _DRUMMING, memory=4,
+                                                          cores=8, times=_DRUMMING_TIMES)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_ANDROID10, "Linux armv81", _ADRENO, _DRUMMING_NO_SENSOR,
+                                                          memory=4, cores=8, times=_DRUMMING_TIMES)),
+    ("BOT", "FINAL", "touch_automation", _phone(_IOS18, "iPhone", "Apple GPU", _IPHONE_AUTOCLICK,
+                                                times=_IPHONE_AUTOCLICK_TIMES)),
 )
 
 # Frozen gate of policies 19-23.
@@ -896,8 +917,18 @@ MOBILE_RULE_GATE_V46 = {
     "fixture_fingerprint": "1bd630f697865c51bead06194bdbe58978ce831733ca7bc0950a88fc09e1f63c",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policies 47-48.
+MOBILE_RULE_GATE_V48 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
+              "sensorless_phone_v1", "android_desktop_site_v1"],
+    "human_cases": 21, "suspect_cases": 44, "bot_cases": 10, "passed": 75,
+    "fixture_fingerprint": "6dec96375cc873d2f992bcff8bb5417aa5b6ee504845a112c8c6dc11444a1db9",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v2",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
               "sensorless_phone_v1", "android_desktop_site_v1"],
