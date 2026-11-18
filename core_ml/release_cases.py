@@ -554,6 +554,16 @@ _NO_GYRO_HAND_MOTION = {"status": "ok", "events": 120, "intervalMs": 20.0, "grav
                         "linearSd": 0.08, "gravitySd": 0.12, "rotationMean": None, "rotationSd": None}
 _NO_GYRO_SHORT_MOTION = {**_NO_GYRO_HAND_MOTION, "events": 40}
 _NO_GYRO_STAND_MOTION = {**_NO_GYRO_HAND_MOTION, "tiltDeg": 62.0, "linearSd": 0.01, "gravitySd": 0.012}
+# Policy 47: a Samsung (Mali-G57) whose Chrome asks for desktop sites, as recorded in a controlled test
+# (18 Nov 2026): X11 Linux x86_64 user agent, navigator.platform "Linux armv81", 5 touch points, no plugins,
+# and Chrome's desktop Client Hints (x86, Linux, not mobile, no model). A touch-screen laptop has an x86
+# platform and a laptop GPU.
+_DESKTOP_SITE_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/157.0.0.0 Safari/537.36")
+_MALI = "ANGLE (ARM, Mali-G57, OpenGL ES 3.2)"
+_DESKTOP_SITE_HINTS = {"architecture": "x86", "bitness": "64", "mobile": False, "model": "", "platform": "Linux",
+                       "platformVersion": ""}
+_LAPTOP_GPU = "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6)"
 # Policy 43: the Spin farm's sensor (one event without gravity over 30-60 s of a visible page).
 _SENSORLESS_MOTION = {"status": "ok", "events": 1, "intervalMs": None, "gravity": 0.0, "tiltDeg": None,
                       "linearSd": None, "gravitySd": None, "rotationMean": None, "rotationSd": None}
@@ -759,6 +769,28 @@ MOBILE_RULE_CASES = (
                                                             cores=8), first_touch_ms=None, motion=_NO_GYRO_SHORT_MOTION)),
     ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
                                                             cores=8), first_touch_ms=None, motion=_NO_GYRO_STAND_MOTION)),
+    # Policy 47: a phone whose Chrome asks for desktop sites is judged as a phone: touched, HUMAN; held in a
+    # hand, HUMAN (the x86 Client Hint is Chrome's own); an emulator's model name still counts against it.
+    # Without a touch screen it is not one, and a touch-screen laptop stays a desktop without mouse input.
+    ("HUMAN", "FINAL", "mobile_clean_environment", _seen(_phone(_DESKTOP_SITE_UA, "Linux armv81", _MALI, _ANDROID_HAND,
+                                                                memory=2, cores=8,
+                                                                fingerprint_extra={"pluginsLength": 0}),
+                                                         hints=_DESKTOP_SITE_HINTS, motion=_HAND_MOTION)),
+    ("HUMAN", "FINAL", "mobile_held_device", _seen(_phone(_DESKTOP_SITE_UA, "Linux armv81", _MALI, [], memory=2,
+                                                          cores=8, fingerprint_extra={"pluginsLength": 0}),
+                                                   first_touch_ms=None, hints=_DESKTOP_SITE_HINTS,
+                                                   motion=_HAND_MOTION)),
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_DESKTOP_SITE_UA, "Linux armv81", _MALI, _ANDROID_HAND,
+                                                     memory=2, cores=8, fingerprint_extra={"pluginsLength": 0}),
+                                              hints={**_DESKTOP_SITE_HINTS, "model": "sdk_gphone64_arm64"},
+                                              motion=_HAND_MOTION)),
+    ("SUSPECT", "FINAL", "client_forgery", _seen(_phone(_DESKTOP_SITE_UA, "Linux armv81", _MALI, [], touch_points=0,
+                                                        memory=2, cores=8, fingerprint_extra={"pluginsLength": 0}),
+                                                 first_touch_ms=None, hints=_DESKTOP_SITE_HINTS)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_DESKTOP_SITE_UA, "Linux x86_64", _LAPTOP_GPU,
+                                                            _ANDROID_HAND, touch_points=10, memory=8, cores=8,
+                                                            fingerprint_extra={"pluginsLength": 5}),
+                                                     hints={**_DESKTOP_SITE_HINTS, "platformVersion": "6.8.0"})),
 )
 
 # Frozen gate of policies 19-23.
@@ -854,11 +886,21 @@ MOBILE_RULE_GATE_V45 = {
     "fixture_fingerprint": "540b5a72bb0a80b23259c670469d5fd7288db49ee0f9e1452de6b4f7b763814e",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 46.
+MOBILE_RULE_GATE_V46 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
               "sensorless_phone_v1"],
+    "human_cases": 19, "suspect_cases": 41, "bot_cases": 10, "passed": 70,
+    "fixture_fingerprint": "1bd630f697865c51bead06194bdbe58978ce831733ca7bc0950a88fc09e1f63c",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
+              "sensorless_phone_v1", "android_desktop_site_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),

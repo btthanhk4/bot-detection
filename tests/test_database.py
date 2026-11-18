@@ -473,10 +473,12 @@ class MemoryCollection:
         else:
             order_matches = bool(doc and doc.get("event_order", -1) <= incoming["event_order"])
         sticky = query.get("$and", [None, None, {}])[2] if len(query.get("$and", [])) > 2 else {}
+        owner = next((condition for condition in query.get("$and", []) if isinstance(condition, dict)
+                      and any("visitorId" in option for option in condition.get("$or", []))), {})
         matches = bool(
             doc
             and order_matches
-            and doc.get("visitorId", incoming.get("visitorId")) == incoming.get("visitorId")
+            and _match(doc, owner)
             and _match(doc, sticky)
         )
         if matches:
@@ -518,6 +520,31 @@ def test_save_rejects_stale_or_foreign_heartbeat(monkeypatch):
     assert detections.docs["s1"]["decision_state"] == "FINAL"
     assert detections.docs["s1"]["policy_version"] == "2"
     assert detections.docs["s1"]["score_calibrated"] is False
+
+
+def test_same_browser_keeps_its_session_when_its_visitor_id_changes(monkeypatch):
+    """Chrome's "desktop site" switched the user agent mid-session, so the visitorId changed and 11 snapshots
+    never reached the verdict (a Samsung test, 18 Nov 2026). The deviceToken of the same browser's
+    localStorage keeps the session; another device, or no token, stays rejected."""
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr("api_service.database.get_db", lambda: {
+        "detection_results": detections, "deleted_sessions": empty, "service_control": empty})
+    token = "a" * 32
+    pending = {"verdict": "SUSPECT", "decision_state": "INSUFFICIENT_EVIDENCE"}
+    human = {"verdict": "HUMAN", "decision_state": "FINAL"}
+    bot = {"verdict": "BOT", "decision_state": "FINAL"}
+
+    assert save_detection_result({"sessionId": "s1", "visitorId": "phone", "deviceToken": token,
+                                  "timestamp": 1000, "action": "pagehide"}, pending)
+    assert save_detection_result({"sessionId": "s1", "visitorId": "desktop-site", "deviceToken": token,
+                                  "timestamp": 2000, "action": "heartbeat"}, human)
+    assert detections.docs["s1"]["verdict"] == "HUMAN"
+    assert detections.docs["s1"]["last_action"] == "heartbeat"
+    assert save_detection_result({"sessionId": "s1", "visitorId": "other", "deviceToken": "b" * 32,
+                                  "timestamp": 3000}, bot) is None
+    assert save_detection_result({"sessionId": "s1", "visitorId": "other", "timestamp": 3000}, bot) is None
+    assert detections.docs["s1"]["verdict"] == "HUMAN"
 
 
 def test_saved_touch_records_keep_source_without_counting_as_mouse(monkeypatch):

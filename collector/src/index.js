@@ -10,7 +10,7 @@ import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsi
 import { EXPORT_CONTEXT_MOVES, EXPORT_MAX_MOVES, MouseRecorder } from './mouse.js';
 import { PagePresence } from './presence.js';
 
-export const COLLECTOR_VERSION = '1.19.0';
+export const COLLECTOR_VERSION = '1.19.1';
 // Send early once this many unacknowledged moves pile up, before an export would drop any.
 const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
 
@@ -721,6 +721,10 @@ export class BotCollector {
       // page fires both events with nothing new in between; a hidden page also skips a snapshot that
       // only repeats the last acknowledged one.
       if (unload && activitySignature === this.lastUnloadSignature) return true;
+      // 1.19.1: so does a heartbeat of a page still hidden that repeats what its unload beacon carried; sent,
+      // it told the API the visitor was back on the page (a Samsung's Chrome, 18 Nov 2026).
+      if (action === 'heartbeat' && !this.pendingRetry && activitySignature === this.lastUnloadSignature
+          && typeof document !== 'undefined' && document.visibilityState === 'hidden') return true;
       if (action === 'hidden' && !this.pendingRetry && activitySignature === this.lastSentActivitySignature) return true;
       if (action === 'heartbeat' && !this.pendingRetry && Date.now() < this.retryNotBefore) return false;
       const ackMark = this.mouseAckMark(payload);

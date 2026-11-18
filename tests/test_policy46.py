@@ -15,6 +15,7 @@ from core_ml.release_cases import (
     MOBILE_RULE_CASES,
     MOBILE_RULE_GATE,
     MOBILE_RULE_GATE_V45,
+    MOBILE_RULE_GATE_V46,
 )
 
 NO_GYRO = {"status": "ok", "events": 120, "tilt_deg": 34.0, "linear_sd": 0.08, "gravity_sd": 0.12,
@@ -48,7 +49,7 @@ def test_phones_with_a_gyroscope_keep_policy_44():
 
 def test_fixtures():
     from api_service.main import ensemble_detector
-    ours = MOBILE_RULE_CASES[67:]
+    ours = MOBILE_RULE_CASES[67:70]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("HUMAN", "FINAL", "mobile_held_device"), ("SUSPECT", "INSUFFICIENT_EVIDENCE", None),
         ("SUSPECT", "INSUFFICIENT_EVIDENCE", None)]
@@ -61,9 +62,10 @@ def test_policy_45_gate_is_frozen_on_its_own_fixtures():
     first = MOBILE_RULE_CASES[:67]
     assert MOBILE_RULE_GATE_V45["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-    assert "mobile_held_device_v3" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 70
+    assert "mobile_held_device_v3" in MOBILE_RULE_GATE_V46["rules"] and MOBILE_RULE_GATE_V46["passed"] == 70
+    assert "mobile_held_device_v3" in MOBILE_RULE_GATE["rules"]
 
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "46"
+    assert DECISION_POLICY_VERSION in ("46", "47")

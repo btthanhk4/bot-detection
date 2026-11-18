@@ -8,7 +8,8 @@ Policy 33 reads three of these:
   Visual reaction to a new page takes a few hundred milliseconds (simple visual reaction
   time is ~200-250 ms in adults), an injected tap does not wait.
 - ``CH_EMULATOR``: an Android user agent whose Client Hints report an x86 CPU or an SDK
-  emulator model (``sdk_gphone…``, ``Android SDK built for x86``).
+  emulator model (``sdk_gphone…``, ``Android SDK built for x86``). Policy 47: Chrome asking for
+  desktop sites reports x86 on every phone (its desktop override), so there only the model counts.
 
 Motion is summarised only and stays research evidence: whether a phone held in a hand
 (tilted, trembling; zkSENSE, BeCAPTCHA) can stand in for touches needs a validated
@@ -41,7 +42,7 @@ Fingerprint flags stored with each label:
 import math
 import re
 
-PRESENCE_VERSION = "presence_v5"
+PRESENCE_VERSION = "presence_v6"
 EMULATED_PHONE_RULE = "emulated_phone_v1"
 SENSORLESS_PHONE_RULE = "sensorless_phone_v1"
 MOBILE_HELD_RULE = "mobile_held_device_v3"
@@ -220,8 +221,9 @@ def sensor_signature(payload: dict):
     return (*signature, model) if signature and model else None
 
 
-def analyze_presence(payload: dict, *, android: bool) -> dict:
-    """Presence summary and the codes policy 33 reads (and the research-only ones)."""
+def analyze_presence(payload: dict, *, android: bool, desktop_site: bool = False) -> dict:
+    """Presence summary and the codes policy 33 reads (and the research-only ones). ``desktop_site``:
+    an Android phone whose Chrome asks for desktop sites (policy 47)."""
     payload = payload if isinstance(payload, dict) else {}
     mouse = payload.get("mouse") if isinstance(payload.get("mouse"), dict) else {}
     presence = sanitize_presence(mouse.get("presence"))
@@ -248,9 +250,11 @@ def analyze_presence(payload: dict, *, android: bool) -> dict:
             research.append("SENSORS_UNAVAILABLE")
         if held_in_hand(motion):
             research.append("HELD_DEVICE")
-    if android and ((hints["architecture"] or "").lower().startswith("x86") or _SDK_MODEL.search(hints["model"] or "")):
+    # Policy 47: Chrome's desktop-site override reports "x86", "Linux", not mobile and no model on any phone.
+    x86 = (hints["architecture"] or "").lower().startswith("x86") and not desktop_site
+    if android and (x86 or _SDK_MODEL.search(hints["model"] or "")):
         codes.append("CH_EMULATOR")
-    if android and hints["model"] == "" and hints["mobile"] is False:
+    if android and not desktop_site and hints["model"] == "" and hints["mobile"] is False:
         research.append("CH_DESKTOP_HINTS")
     return {"analysis_version": PRESENCE_VERSION, **presence, "client_hints": hints,
             "codes": codes, "research_flags": research}

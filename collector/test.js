@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.19.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.19.1');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -1163,6 +1163,46 @@ async function testDesktopPresenceKeepsHeartbeatsCoalesced() {
   collector.destroy();
 }
 
+async function testHiddenPageHeartbeatRepeatsNothing() {
+  // 1.19.1: a Samsung's Chrome sent a heartbeat 3 s after its hidden beacon, carrying the same snapshot, and
+  // the API took the visitor for back on the page (18 Nov 2026).
+  const beacons = [];
+  let fetches = 0;
+  global.fetch = async () => {
+    fetches++;
+    return { ok: true };
+  };
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: { sendBeacon: (_url, blob) => { beacons.push(blob); return true; } },
+  });
+  const previousDocument = global.document;
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, idleHeartbeatInterval: 60000 });
+  let presence = { visibleMs: 19000, motion: { status: 'ok', events: 400 } };
+  collector.presence.exportData = () => presence;
+  try {
+    collector.cachedFingerprint = { visitorId: 'v', components: {} };
+    collector.cachedBotd = {};
+    assert.strictEqual(await collector.sendTelemetry('init'), true);
+    assert.strictEqual(fetches, 1);
+    presence = { visibleMs: 31100, motion: { status: 'ok', events: 400 } };
+    global.document = { visibilityState: 'hidden' };
+    assert.strictEqual(await collector.sendTelemetry('hidden'), true);
+    assert.strictEqual(beacons.length, 1, 'the page crossed 30 s visible: one final beacon');
+    assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+    assert.strictEqual(fetches, 1, 'a hidden page repeats nothing its beacon carried');
+    global.document = { visibilityState: 'visible' };
+    assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+    assert.strictEqual(fetches, 2, 'back on the page, heartbeats as before');
+  } finally {
+    collector.destroy();
+    global.document = previousDocument;
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
+    else delete global.navigator;
+  }
+}
+
 async function testVisibilityListenerFollowsTheLifecycle() {
   const previousDocument = global.document;
   const calls = [];
@@ -1504,6 +1544,7 @@ testRestartDuringFingerprinting()
   .then(testMouseBacklogSendsEarly)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
   .then(testHiddenPageSendsItsFinalSnapshotOnce)
+  .then(testHiddenPageHeartbeatRepeatsNothing)
   .then(testDesktopPresenceKeepsHeartbeatsCoalesced)
   .then(testVisibilityListenerFollowsTheLifecycle)
   .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)

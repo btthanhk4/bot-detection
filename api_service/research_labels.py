@@ -1,5 +1,6 @@
 """Persistent session numbers and operator attestations, separate from model inputs."""
 
+import json
 import logging
 import threading
 import time
@@ -240,6 +241,22 @@ def traffic_page(limit=50, before_number=None, site_filter=None, verdict=None, c
             "next_before": rows[-1]["traffic_number"] if has_more else None}
 
 
+def _device_token(snapshot):
+    """The random deviceToken of the browser's localStorage that a raw snapshot carried (collector 1.11+)."""
+    try:
+        token = json.loads(snapshot.get("payload_json") or "{}").get("deviceToken")
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return token if isinstance(token, str) and token else None
+
+
+def _same_browser(snapshot, reference):
+    """One browser whose visitorId changed mid-session (Chrome's "desktop site" switches the user agent, a
+    Samsung test of 18 Nov 2026) still carries the deviceToken of its localStorage, as the API accepts it."""
+    token = _device_token(snapshot)
+    return token is not None and token == _device_token(reference)
+
+
 def _set_manual_label(session_id, annotation, expected_revision):
     """One atomic compare-and-swap writes the current label and audit history."""
     db = get_db()
@@ -259,8 +276,10 @@ def _set_manual_label(session_id, annotation, expected_revision):
         for snapshot in db["telemetry_captures"].find({
             "sessionId": session_id, "expires_at_ms": {"$gt": int(time.time() * 1000)},
         }):
-            if reference is not None and any(snapshot.get(key) != reference.get(key)
-                                             for key in ("visitorId", "study_id", "site_id")):
+            if reference is not None and (
+                    any(snapshot.get(key) != reference.get(key) for key in ("study_id", "site_id"))
+                    or (snapshot.get("visitorId") != reference.get("visitorId")
+                        and not _same_browser(snapshot, reference))):
                 raise ValueError("Session contains conflicting visitor/study/site identities; review before labeling")
             reference = reference or snapshot
             retained = {key: value for key, value in snapshot.items() if key != "expires_at"}

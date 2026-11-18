@@ -42,6 +42,7 @@ from core_ml.features.interaction_features import extract_interaction_features
 from core_ml.features.mobile_human import (
     MOBILE_HUMAN_MIN_GESTURES,
     analyze_mobile_human,
+    android_desktop_site,
 )
 from core_ml.features.mouse_features import (
     MAX_MOUSE_RECORDS,
@@ -111,7 +112,9 @@ from core_ml.models.touch_shadow import score_touch
 # (Chrome 84+) is one more contradiction (ANACHRONISTIC_UA); with another it convicts (forged_browser_v1).
 # Policy 46: a phone without a gyroscope counts as held from 50 motion events with a stronger tremor and a
 # moving gravity vector (mobile_held_device_v3).
-DECISION_POLICY_VERSION = "46"
+# Policy 47: an Android phone whose Chrome asks for desktop sites (X11 Linux x86_64 user agent, ARM platform,
+# touch screen, phone GPU) is judged as a phone (android_desktop_site); its x86 Client Hint is Chrome's own.
+DECISION_POLICY_VERSION = "47"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -230,7 +233,9 @@ class EnsembleBotDetector:
             and distinct_positions >= 5 and distinct_times >= 5
         )
         user_agent = str(fingerprint.get("userAgent") or "").lower()
-        unsupported_mobile = any(
+        # Policy 47: an Android phone asking for desktop sites is a phone behind a desktop user agent.
+        desktop_site = android_desktop_site(fingerprint)
+        unsupported_mobile = desktop_site or any(
             token in user_agent for token in ("mobile", "android", "iphone", "ipad", "ipod")
         )
         legacy_touch_ambiguous = (
@@ -330,7 +335,9 @@ class EnsembleBotDetector:
         browser_contradictions = contradictions(forgery, automation_evidence, touch_report["research_flags"],
                                                 user_agent=str(fingerprint.get("userAgent") or ""))
         # Policy 18/33: page presence, motion and Client Hints (policy 36 reads them for a BOT rule too).
-        presence_report = analyze_presence(payload, android="android" in str(fingerprint.get("userAgent") or "").lower())
+        presence_report = analyze_presence(
+            payload, android=desktop_site or "android" in str(fingerprint.get("userAgent") or "").lower(),
+            desktop_site=desktop_site)
         if explicit_automation:
             automation_rule = EXPLICIT_AUTOMATION_RULE
         elif automation_evidence["rule"]:

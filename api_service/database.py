@@ -629,9 +629,17 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             if verdict != "BOT"
             else {}
         )
+        # The browser that started the session owns it. Its visitorId is a hash of the user agent, screen,
+        # canvas and more, and one of them can change mid-session: Chrome's "desktop site" switches the user
+        # agent (a Samsung test, 18 Nov 2026: 11 snapshots with 46 touches never reached the verdict), a WebGL
+        # context can come back empty. The same browser still carries the random deviceToken of its
+        # localStorage; another device sharing a custom sessionId carries another one and stays rejected.
+        owner = [{"visitorId": visitor_id}, {"visitorId": None}]
+        if telemetry.get("deviceToken"):
+            owner.append({"device_token": telemetry["deviceToken"]})
         base_conditions = [
             event_order_filter,
-            {"$or": [{"visitorId": visitor_id}, {"visitorId": None}]},
+            {"$or": owner},
         ]
         update_filter = {"sessionId": session_id, "$and": [*base_conditions, sticky_filter]}
         collection = db["detection_results"]

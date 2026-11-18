@@ -2771,11 +2771,11 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     }
   } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_clean_environment') {
     const mh = bd.mobile_human || {};
-    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
+    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', android_desktop_site: 'Android (trang web cho máy tính)', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
     explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm thật, không có dấu hiệu bot.`;
   } else if (v === 'HUMAN' && bd.decision_basis === 'mobile_light_touch') {
     const mh = bd.mobile_human || {};
-    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
+    const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', android_desktop_site: 'Android (trang web cho máy tính)', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
     explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm có tiếp xúc ngón tay thật, môi trường sạch. Ít hơn 3 thao tác nên độ tin cậy thấp hơn.`;
   } else if (v === 'HUMAN') {
     explainText = 'Không có dấu hiệu bot.';

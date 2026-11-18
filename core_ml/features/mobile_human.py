@@ -33,6 +33,7 @@ models (``SHARED_SENSOR_SIGNATURE``) count against a phone, with or without touc
 Policy 36: so does an Android Chrome audio fingerprint no other phone reported (``AUDIO_NOVEL``).
 Policy 37: and, for a phone that did not interact itself, a device configuration seen 30+ times in a day
 without a single interaction (``INERT_COHORT``).
+Policy 47: an Android phone whose Chrome asks for desktop sites ("android_desktop_site") is a phone too.
 """
 
 import re
@@ -62,6 +63,27 @@ MOBILE_LIGHT_MIN_GESTURES = 1
 _TOLERATED_FAMILIES = {"HTTP", "CLIENT_HINTS", "CONTEXT", "NATIVE_PATCH"}
 _EMULATOR_RENDERER = re.compile(r"swiftshader|llvmpipe|softpipe|android emulator|virtualbox|vmware|bluestacks", re.I)
 _X86_PLATFORM = re.compile(r"x86|i686|i386|amd64", re.I)
+# Policy 47: Chrome on Android asking for desktop sites sends an X11 Linux x86_64 user agent, while
+# navigator.platform keeps Android's ARM value (Chrome freezes it at "Linux armv81", in workers too), the
+# screen stays a touch screen and the GPU a phone's. Measured on a Samsung (Mali-G57) in a controlled test
+# on 18 Nov 2026: only the user agent changed; Client Hints then say x86, Linux, not mobile, no model.
+# On production (14 days) 3 sessions arrived this way, all a final SUSPECT as desktops without a mouse.
+_DESKTOP_SITE_UA = re.compile(r"\(X11; Linux x86_64\) AppleWebKit/[\d.]+ \(KHTML, like Gecko\) (?:.* )?Chrome/\d+")
+_ANDROID_ARM_PLATFORM = re.compile(r"^Linux (armv81|armv8l|armv7l|aarch64)$")
+_PHONE_GPU = re.compile(r"\b(Mali|Adreno|Xclipse|PowerVR|Immortalis|Maleoon)\b", re.I)
+
+
+def android_desktop_site(fingerprint: dict) -> bool:
+    """Policy 47: an Android phone whose Chromium browser asks for desktop sites."""
+    fingerprint = fingerprint if isinstance(fingerprint, dict) else {}
+    ua = str(fingerprint.get("userAgent") or "")
+    touch = fingerprint.get("maxTouchPoints")
+    return bool(
+        _DESKTOP_SITE_UA.search(ua) and "Android" not in ua and "Mobile" not in ua
+        and _ANDROID_ARM_PLATFORM.match(str(fingerprint.get("platform") or ""))
+        and isinstance(touch, (int, float)) and not isinstance(touch, bool) and touch > 1
+        and _PHONE_GPU.search(str(fingerprint.get("webglRenderer") or ""))
+    )
 
 
 def _mobile_kind(fingerprint: dict) -> str:
@@ -78,6 +100,8 @@ def _mobile_kind(fingerprint: dict) -> str:
             and "Apple" in str(fingerprint.get("webglRenderer") or "")
             and isinstance(touch, (int, float)) and not isinstance(touch, bool) and touch > 1):
         return "ipad_desktop_mode"
+    if android_desktop_site(fingerprint):
+        return "android_desktop_site"
     if "mobile" in lower:
         return "other_mobile"
     return ""

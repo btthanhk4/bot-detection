@@ -1,4 +1,5 @@
 import copy
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -284,6 +285,31 @@ def test_mixed_visitor_snapshots_cannot_share_one_confirmed_label(db):
         research.set_manual_label("a", annotation(), 0)
     assert db["research_sessions"].docs["a"]["manual_label"] is None
     assert "foreign" not in db["labeled_captures"].docs
+
+
+def test_one_browser_whose_visitor_id_changed_keeps_one_label(db):
+    """Chrome's "desktop site" switched the user agent mid-session (18 Nov 2026): a new visitorId, the same
+    deviceToken. Its snapshots share the label; another browser's still cannot."""
+    research.register_traffic({"sessionId": "a"})
+    payload = {"sessionId": "a", "visitorId": "phone", "deviceToken": "a" * 32, "collector": {
+        "studyId": "study", "siteId": "site", "pageInstanceId": "page"}, "mouse": {"records": []}}
+    first = build_capture(payload, received_at=int(time.time() * 1000), client_ip="ip", user_agent="ua",
+                          bundle_id="frozen", policy_version="46", retention_days=7)
+    db["telemetry_captures"].docs[first["event_id"]] = {"_id": first["event_id"], **first}
+    desktop_site = {**payload, "visitorId": "desktop-site", "collector": {**payload["collector"], "pageInstanceId": "p2"}}
+    db["telemetry_captures"].docs["desktop-site"] = {
+        **first, "_id": "desktop-site", "visitorId": "desktop-site", "payload_json": json.dumps(desktop_site)}
+    research.set_manual_label("a", annotation(label="HUMAN", source="known_human"), 0)
+    assert db["research_sessions"].docs["a"]["manual_label"]["label"] == "HUMAN"
+    assert "desktop-site" in db["labeled_captures"].docs
+
+    research.register_traffic({"sessionId": "b"})
+    other = {**first, "_id": "b1", "sessionId": "b"}
+    db["telemetry_captures"].docs["b1"] = other
+    db["telemetry_captures"].docs["b2"] = {**other, "_id": "b2", "visitorId": "another",
+                                           "payload_json": json.dumps({**payload, "deviceToken": "b" * 32})}
+    with pytest.raises(ValueError, match="conflicting visitor"):
+        research.set_manual_label("b", annotation(), 0)
 
 
 def test_archived_data_survives_operational_ttl_but_explicit_delete_removes_it(db):
