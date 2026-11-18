@@ -1958,8 +1958,12 @@ function fingerprintView(session, f) {
     .filter(Boolean).join(' · ');
   const fetched = f.fetched_at ? new Date(typeof f.fetched_at === 'string' || typeof f.fetched_at === 'number'
     ? f.fetched_at : f.fetched_at.$date || f.fetched_at) : null;
+  // Strong flag = tampering or an anti-detect browser (18/11: the suspect score no longer counts),
+  // recomputed from the stored fields so older references read the same way.
+  const flagged = typeof f.tampering === 'boolean' || typeof f.anti_detect === 'boolean'
+    ? (f.tampering === true || f.anti_detect === true) : f.strong;
   return { ...base, label: 'Đã xác thực phía máy chủ', tone: 'ready', trusted: true,
-    verdict: (FP_BOT_LABEL[f.bot] || '--') + (f.strong === true ? ' · có cờ mạnh' : f.strong === false ? ' · không có cờ mạnh' : ''),
+    verdict: (FP_BOT_LABEL[f.bot] || '--') + (flagged === true ? ' · có cờ mạnh' : flagged === false ? ' · không có cờ mạnh' : ''),
     score: detail || '--',
     time: fetched && !Number.isNaN(fetched.getTime()) ? fetched.toLocaleString('vi-VN') : '--',
     comparison: fingerprintComparison(session, f.bot) };

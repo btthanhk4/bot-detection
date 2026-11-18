@@ -10,7 +10,7 @@ import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsi
 import { EXPORT_CONTEXT_MOVES, EXPORT_MAX_MOVES, MouseRecorder } from './mouse.js';
 import { PagePresence } from './presence.js';
 
-export const COLLECTOR_VERSION = '1.18.0';
+export const COLLECTOR_VERSION = '1.19.0';
 // Send early once this many unacknowledged moves pile up, before an export would drop any.
 const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
 
@@ -31,13 +31,22 @@ const VISIBLE_STEPS_MS = [500, 3000, 10000, 30000];
 // for 12 s (or 400 events) and its visible time crosses the steps above, with no finger moving.
 // Only readings count: desktop Chrome fires one empty event (no sensor; 90% of captured desktop
 // sessions), so a desktop, or a phone without readings, keeps one key and heartbeats as before.
+// 1.19: orientation readings count as well (where an in-app browser gives no motion events).
+function sensorReadings(summary) {
+  if (!summary || summary.status !== 'ok') return 0;
+  return Math.max(0, (Number(summary.events) || 0) - (Number(summary.nullEvents) || 0));
+}
+
 function presenceKey(presence) {
   const motion = presence && presence.motion ? presence.motion : null;
-  if (!motion) return '';
-  const readings = (Number(motion.events) || 0) - (Number(motion.nullEvents) || 0);
-  if (motion.status !== 'ok' || readings <= 0) return String(motion.status || '');
+  const orientation = presence && presence.orientation ? presence.orientation : null;
+  if (!motion && !orientation) return '';
+  const readings = [sensorReadings(motion), sensorReadings(orientation)];
+  if (readings[0] + readings[1] <= 0) {
+    return [motion, orientation].map((summary) => String((summary && summary.status) || '')).join('/');
+  }
   const visible = Number(presence.visibleMs) || 0;
-  return JSON.stringify([readings, VISIBLE_STEPS_MS.filter((step) => visible >= step).length]);
+  return JSON.stringify([...readings, VISIBLE_STEPS_MS.filter((step) => visible >= step).length]);
 }
 
 const SESSION_STORAGE_KEY = 'datacat_session';

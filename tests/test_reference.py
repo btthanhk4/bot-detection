@@ -86,6 +86,21 @@ def test_report_counts_agreement_and_kappa():
     assert result["crosstab"]["SUSPECT"] == {"bad": 1}
 
 
+def test_strong_flags_are_recomputed_for_stored_references():
+    mdb = mongomock.MongoClient(tz_aware=True)["t"]
+    # Stored with the old definition (strong from the suspect score alone), with tampering, without fields.
+    rows = [("h1", "HUMAN", {"strong": True, "tampering": False, "anti_detect": False, "suspect_score": 20}),
+            ("b1", "BOT", {"strong": True, "tampering": True, "anti_detect": False, "suspect_score": 26}),
+            ("b2", "BOT", {"bot": "not_detected"})]
+    for sid, verdict, fields in rows:
+        store(mdb, sid, verdict=verdict)
+        mdb["detection_results"].update_one({"sessionId": sid}, {"$set": {
+            "reference.fingerprint": {"status": "done", "bot": "not_detected", **fields}}})
+    strong = reference.report(mdb)["strong_by_verdict"]
+    assert strong["HUMAN"] == {"labelled": 1, "flagged": 0}
+    assert strong["BOT"] == {"labelled": 1, "flagged": 1}, "a reference without the fields is not counted"
+
+
 def test_served_collector_carries_the_key_only_when_enabled(api, enabled, monkeypatch):  # noqa: F811
     on = api.get("/bot-collector.js")
     assert "99VTEqzCIhwGMEQPP2yt" in on.text and "__DATACAT_FP_KEY__" not in on.text

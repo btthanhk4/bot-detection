@@ -29,8 +29,19 @@ MAX_ATTEMPTS = 6
 # The Server API allows 5 requests per second; the loop stays well below it.
 REQUEST_INTERVAL_SECONDS = 0.3
 BATCH = 40
-# Fingerprint suspect score from which a session counts as flagged (with tampering or an anti-detect browser).
-STRONG_SUSPECT_SCORE = 20
+# A session counts as flagged by Fingerprint when it reports tampering or an anti-detect browser
+# (``strong_flag``). Until 18 Nov 2026 a suspect score of 20 or more counted too; the suspect score
+# is Fingerprint's fraud-risk sum (VPN, rooted or modified OS, incognito...), not a bot label: the
+# author's own Redmi (custom ROM) scored exactly 20 in 3 of its 9 controlled sessions, and on the
+# replay of 3,674 sessions the score added a flag to 11 of 945 DATACAT BOTs and 2 of 411 people.
+
+
+def strong_flag(ref: dict) -> Optional[bool]:
+    """Tampering or an anti-detect browser; None for references stored before these fields existed."""
+    ref = ref if isinstance(ref, dict) else {}
+    if not isinstance(ref.get("tampering"), bool) and not isinstance(ref.get("anti_detect"), bool):
+        return None
+    return ref.get("tampering") is True or ref.get("anti_detect") is True
 
 
 def enabled() -> bool:
@@ -96,8 +107,9 @@ def _bot_fields(body: dict) -> dict:
     if linked is None:
         linked = (((body.get("products") or {}).get("identification") or {}).get("data") or {}).get("linkedId")
     # The signals that separate bots from people on production (2026-11-13: 68% of DATACAT's
-    # BOTs, 0.7% of its phone HUMANs) are tampering, an anti-detect browser and the suspect score;
-    # the bot field alone barely fires. Kept so evaluation needs no second Server API read.
+    # BOTs, 0.7% of its phone HUMANs) are tampering and an anti-detect browser; the bot field
+    # alone barely fires. The suspect score is kept for analysis but no longer flags (see
+    # ``strong_flag``). Kept so evaluation needs no second Server API read.
     details = body.get("tampering_details") if isinstance(body.get("tampering_details"), dict) else {}
     suspect = body.get("suspect_score")
     suspect = suspect if isinstance(suspect, (int, float)) and not isinstance(suspect, bool) else None
@@ -111,7 +123,7 @@ def _bot_fields(body: dict) -> dict:
         "bot_identity": info.get("identity"), "bot_confidence": info.get("confidence"),
         "tampering": tampering, "anti_detect": anti_detect, "suspect_score": suspect,
         "vpn": body.get("vpn") is True, "datacenter": ip_v4.get("datacenter_result") is True,
-        "strong": tampering or anti_detect or (suspect is not None and suspect >= STRONG_SUSPECT_SCORE),
+        "strong": tampering or anti_detect,
         "linked_id": linked,
     }
 
@@ -237,17 +249,19 @@ def report(db, site_ids=None, site_filter=None, since=None) -> dict:
         statuses[status] = statuses.get(status, 0) + 1
     strong: dict = {}
     for doc in db["detection_results"].find(query, {"verdict": 1, "decision_state": 1, FIELD + ".bot": 1,
-                                                     FIELD + ".strong": 1}):
+                                                     FIELD + ".tampering": 1, FIELD + ".anti_detect": 1}):
         ours = _datacat_class(doc)
         ref = (doc.get("reference") or {}).get("fingerprint") or {}
         theirs = ref.get("bot") or "unknown"
         crosstab.setdefault(ours, {}).setdefault(theirs, 0)
         crosstab[ours][theirs] += 1
-        # Strong flags are stored from 2026-11-13 on; older labels have none.
-        if isinstance(ref.get("strong"), bool):
+        # Recomputed from the stored fields (from 2026-11-13 on; older labels have none), so the
+        # 18 Nov definition applies to every stored reference alike.
+        flagged = strong_flag(ref)
+        if flagged is not None:
             row = strong.setdefault(ours, {"labelled": 0, "flagged": 0})
             row["labelled"] += 1
-            row["flagged"] += ref["strong"]
+            row["flagged"] += flagged
         # Binary view on decided sessions only: DATACAT BOT vs HUMAN, Fingerprint bad vs not bad.
         if ours in ("BOT", "HUMAN") and theirs in ("bad", "good", "not_detected"):
             key = (ours == "BOT", theirs == "bad")
@@ -264,6 +278,6 @@ def report(db, site_ids=None, site_filter=None, since=None) -> dict:
         "datacat_bot_only": binary.get((True, False), 0),
         "fingerprint_bot_only": binary.get((False, True), 0),
         "neither": binary.get((False, False), 0),
-        # Tampering, anti-detect browser or suspect score >= 20, by DATACAT verdict.
+        # Tampering or an anti-detect browser, by DATACAT verdict.
         "strong_by_verdict": strong,
     }

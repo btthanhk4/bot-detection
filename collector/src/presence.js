@@ -59,11 +59,18 @@ export class PagePresence {
       ax: motionStat(), ay: motionStat(), az: motionStat(), gx: motionStat(), gy: motionStat(), gz: motionStat(), rotation: motionStat(),
       lastAt: null, done: false,
     };
+    // 1.19: the orientation of the device (beta: front-back, gamma: left-right, in degrees).
+    this.orientation = {
+      supported: false, permissionGated: false, events: 0, nullEvents: 0, intervals: motionStat(),
+      beta: motionStat(), gamma: motionStat(), step: motionStat(), lastBeta: null, lastGamma: null,
+      lastAt: null, done: false,
+    };
     this.handleVisibility = this.handleVisibility.bind(this);
     this.handleActivation = this.handleActivation.bind(this);
     this.handleScroll = this.handleScroll.bind(this);
     this.handleTouch = this.handleTouch.bind(this);
     this.handleMotion = this.handleMotion.bind(this);
+    this.handleOrientation = this.handleOrientation.bind(this);
   }
 
   start() {
@@ -92,6 +99,14 @@ export class PagePresence {
     if (this.motion.supported) {
       window.addEventListener('devicemotion', this.handleMotion, { passive: true });
     }
+    // 1.19: the in-app browsers of Zalo and Messenger delivered no devicemotion at all in a controlled
+    // test (18 Nov 2026); deviceorientation is summarised beside it to learn whether it arrives there.
+    const Orientation = typeof DeviceOrientationEvent !== 'undefined' ? DeviceOrientationEvent : null;
+    this.orientation.supported = Boolean(Orientation) && window.isSecureContext === true;
+    this.orientation.permissionGated = Boolean(Orientation && typeof Orientation.requestPermission === 'function');
+    if (this.orientation.supported) {
+      window.addEventListener('deviceorientation', this.handleOrientation, { passive: true });
+    }
   }
 
   stop() {
@@ -103,6 +118,7 @@ export class PagePresence {
     window.removeEventListener('scroll', this.handleScroll, true);
     window.removeEventListener('touchstart', this.handleTouch, true);
     window.removeEventListener('devicemotion', this.handleMotion);
+    window.removeEventListener('deviceorientation', this.handleOrientation);
   }
 
   markVisible(at = presenceNow()) {
@@ -195,6 +211,50 @@ export class PagePresence {
     };
   }
 
+  handleOrientation(e) {
+    const o = this.orientation;
+    if (o.done || !e || e.isTrusted === false) return;
+    const t = presenceNow();
+    if (o.lastAt !== null) motionPush(o.intervals, t - o.lastAt);
+    o.lastAt = t;
+    o.events++;
+    const beta = typeof e.beta === 'number' && Number.isFinite(e.beta) ? e.beta : null;
+    const gamma = typeof e.gamma === 'number' && Number.isFinite(e.gamma) ? e.gamma : null;
+    if (beta === null || gamma === null) {
+      // Desktop Chrome fires one such event when no sensor exists.
+      o.nullEvents++;
+    } else {
+      motionPush(o.beta, beta);
+      motionPush(o.gamma, gamma);
+      // How far the device turned between two readings: a hand never keeps it perfectly still.
+      if (o.lastBeta !== null) motionPush(o.step, Math.hypot(beta - o.lastBeta, gamma - o.lastGamma));
+      o.lastBeta = beta;
+      o.lastGamma = gamma;
+    }
+    if (o.events >= MOTION_MAX_EVENTS || t - this.startedAt > MOTION_MAX_MS) {
+      o.done = true;
+      try { window.removeEventListener('deviceorientation', this.handleOrientation); } catch (err) { /* ignore */ }
+    }
+  }
+
+  orientationSummary() {
+    const o = this.orientation;
+    if (!o.supported) return { status: 'unsupported' };
+    if (!o.events) return { status: o.permissionGated ? 'permission_gated' : 'no_events' };
+    return {
+      status: 'ok',
+      events: o.events,
+      nullEvents: o.nullEvents,
+      intervalMs: presenceRound(o.intervals.n ? o.intervals.mean : null, 1),
+      betaMean: presenceRound(o.beta.n ? o.beta.mean : null, 1),
+      betaSd: presenceRound(motionSd(o.beta), 3),
+      gammaMean: presenceRound(o.gamma.n ? o.gamma.mean : null, 1),
+      gammaSd: presenceRound(motionSd(o.gamma), 3),
+      stepMean: presenceRound(o.step.n ? o.step.mean : null, 3),
+      stepSd: presenceRound(motionSd(o.step), 3),
+    };
+  }
+
   exportData() {
     const visible = this.visibleMs + (this.visibleSince !== null ? presenceNow() - this.visibleSince : 0);
     return {
@@ -207,6 +267,7 @@ export class PagePresence {
       scrolls: this.scrolls,
       maxScrollRatio: presenceRound(this.maxScrollRatio, 3),
       motion: this.motionSummary(),
+      orientation: this.orientationSummary(),
     };
   }
 }

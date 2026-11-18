@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.18.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.19.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -386,6 +386,77 @@ async function testPagePresenceAndMotionSummary() {
     global.document = saved.document;
     global.DeviceMotionEvent = saved.motion;
   }
+}
+
+// 1.19: deviceorientation is summarised beside devicemotion (in-app browsers gave no motion events).
+async function testOrientationSummary() {
+  const saved = { window: global.window, document: global.document, motion: global.DeviceMotionEvent,
+    orientation: global.DeviceOrientationEvent };
+  const make = ({ gated = false, orientation = true } = {}) => {
+    const handlers = {};
+    const listen = (type, fn) => { handlers[type] = fn; };
+    global.document = { visibilityState: 'visible', prerendering: false, addEventListener: listen, removeEventListener() {} };
+    global.window = { isSecureContext: true, addEventListener: listen, removeEventListener() {}, scrollY: 0, innerHeight: 800 };
+    global.DeviceMotionEvent = function DeviceMotionEvent() {};
+    global.DeviceMotionEvent.requestPermission = () => Promise.resolve('denied');
+    if (orientation) {
+      global.DeviceOrientationEvent = function DeviceOrientationEvent() {};
+      if (gated) global.DeviceOrientationEvent.requestPermission = () => Promise.resolve('denied');
+    } else {
+      delete global.DeviceOrientationEvent;
+    }
+    const presence = new (new BotCollector({ autoSendInterval: 0 }).presence.constructor)();
+    presence.start();
+    return { presence, handlers };
+  };
+  try {
+    // An in-app browser: no motion events, orientation readings of a hand.
+    const { presence, handlers } = make();
+    assert.strictEqual(presence.exportData().orientation.status, 'no_events');
+    handlers.deviceorientation({ isTrusted: false, alpha: 1, beta: 40, gamma: 3 });
+    handlers.deviceorientation({ isTrusted: true, alpha: null, beta: null, gamma: null });
+    for (let i = 0; i < 20; i++) {
+      handlers.deviceorientation({ isTrusted: true, alpha: 10, beta: 40 + (i % 3) * 0.4, gamma: 3 - (i % 2) * 0.3 });
+    }
+    const data = presence.exportData();
+    assert.strictEqual(data.motion.status, 'permission_gated');
+    assert.strictEqual(data.orientation.status, 'ok');
+    assert.strictEqual(data.orientation.events, 21, 'untrusted events are ignored');
+    assert.strictEqual(data.orientation.nullEvents, 1);
+    assert.ok(data.orientation.betaMean > 39 && data.orientation.betaMean < 41.5);
+    assert.ok(data.orientation.betaSd > 0 && data.orientation.gammaSd > 0 && data.orientation.stepMean > 0);
+    assert.ok(Object.keys(data.orientation).length <= 10, 'summary only');
+    presence.stop();
+    // iOS: permission required, nothing requested, nothing delivered.
+    assert.strictEqual(make({ gated: true }).presence.exportData().orientation.status, 'permission_gated');
+    assert.strictEqual(make({ orientation: false }).presence.exportData().orientation.status, 'unsupported');
+  } finally {
+    global.window = saved.window;
+    global.document = saved.document;
+    global.DeviceMotionEvent = saved.motion;
+    if (saved.orientation) global.DeviceOrientationEvent = saved.orientation;
+    else delete global.DeviceOrientationEvent;
+  }
+
+  // Orientation readings wake a heartbeat where motion gives none; empty events do not.
+  let fetches = 0;
+  global.fetch = async () => {
+    fetches++;
+    return { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, idleHeartbeatInterval: 60000 });
+  collector.cachedFingerprint = { visitorId: 'v', components: {} };
+  collector.cachedBotd = {};
+  let presence = { visibleMs: 2000, motion: { status: 'permission_gated' }, orientation: { status: 'ok', events: 1, nullEvents: 1 } };
+  collector.presence.exportData = () => presence;
+  assert.strictEqual(await collector.sendTelemetry('init'), true);
+  presence = { visibleMs: 2500, motion: { status: 'permission_gated' }, orientation: { status: 'ok', events: 1, nullEvents: 1 } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(fetches, 1, 'one empty orientation event is no news');
+  presence = { visibleMs: 9000, motion: { status: 'permission_gated' }, orientation: { status: 'ok', events: 140, nullEvents: 1 } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(fetches, 2, 'orientation readings are');
+  collector.destroy();
 }
 
 async function testKeyboardTimingAndPressPressure() {
@@ -1467,6 +1538,7 @@ testRestartDuringFingerprinting()
   .then(testRefusedThirdPartyPageCostsOneRequest)
   .then(testReferenceEventIsOptionalAndTravelsWithTelemetry)
   .then(testPagePresenceAndMotionSummary)
+  .then(testOrientationSummary)
   .then(() => {
     clearTimeout(testDeadline);
     console.log('collector lifecycle tests: OK');

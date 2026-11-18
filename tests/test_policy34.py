@@ -89,7 +89,20 @@ def test_strong_reference_flags_are_kept():
                           "suspect_score": 3, "vpn": True, "ip_info": {"v4": {"datacenter_result": False}},
                           "linked_id": "s"})
     assert fields["strong"] is True and fields["tampering"] is True and fields["vpn"] is True
-    assert _bot_fields({"bot": "not_detected", "suspect_score": 20})["strong"] is True
+    assert _bot_fields({"bot": "not_detected", "tampering_details": {"anti_detect_browser": True}})["strong"] is True
+    # 18 Nov 2026: the suspect score is kept but no longer flags (a person's custom-ROM phone scored 20).
+    scored = _bot_fields({"bot": "not_detected", "suspect_score": 20})
+    assert scored["strong"] is False and scored["suspect_score"] == 20
     clean = _bot_fields({"bot": "not_detected", "suspect_score": 19})
     assert clean["strong"] is False and clean["suspect_score"] == 19
     assert _bot_fields({"bot": "not_detected", "suspect_score": True})["suspect_score"] is None
+
+
+def test_stored_flags_are_recomputed_from_their_fields():
+    from api_service.reference import strong_flag
+    # Stored before 18 Nov with the old definition: strong because of the score alone.
+    assert strong_flag({"strong": True, "tampering": False, "anti_detect": False, "suspect_score": 20}) is False
+    assert strong_flag({"strong": True, "tampering": True, "anti_detect": False}) is True
+    assert strong_flag({"strong": False, "tampering": False, "anti_detect": True}) is True
+    assert strong_flag({"bot": "bad"}) is None, "references stored before 13 Nov carry no such fields"
+    assert strong_flag(None) is None
