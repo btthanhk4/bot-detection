@@ -41,10 +41,10 @@ Fingerprint flags stored with each label:
 import math
 import re
 
-PRESENCE_VERSION = "presence_v4"
+PRESENCE_VERSION = "presence_v5"
 EMULATED_PHONE_RULE = "emulated_phone_v1"
 SENSORLESS_PHONE_RULE = "sensorless_phone_v1"
-MOBILE_HELD_RULE = "mobile_held_device_v2"
+MOBILE_HELD_RULE = "mobile_held_device_v3"
 # Policy 43: an Android phone whose motion sensor fired at most a handful of events, without gravity,
 # while the page was visible for 10 s or more (a real accelerometer streams ~60 events a second at 9.8).
 SENSORLESS_MAX_EVENTS = 5
@@ -57,6 +57,14 @@ SENSORLESS_MIN_VISIBLE_MS = 10_000
 # flagged none of the 18 it had checked, and 1 of 645 BOT phones showed the pattern.
 HELD_MIN_EVENTS = 8
 HELD_MIN_ROTATION_SD = 0.1
+# Policy 46: a phone without a gyroscope (no rotation reading at all; 636 of the 2,102 Android phones with
+# motion on the replay of 18 Nov 2026) can never show turning. It counts as held from 50 events, with a
+# stronger tremor and a gravity vector that moves: 77 such phones with 3+ real touches matched (74 HUMAN),
+# 3 of 261 BOT phones without a gyroscope did; the 25 untouched sessions it turns HUMAN, Fingerprint
+# flagged none of the 17 it had checked.
+HELD_NO_GYRO_MIN_EVENTS = 50
+HELD_NO_GYRO_MIN_SD = 0.03
+HELD_NO_GYRO_MIN_GRAVITY_SD = 0.03
 INSTANT_TOUCH_MS = 120
 NOT_VIEWED_MS = 500
 STILL_SD = 0.005
@@ -147,13 +155,28 @@ def sensors_unavailable(presence: dict) -> bool:
     )
 
 
+def no_gyroscope(motion: dict) -> bool:
+    """Policy 46: motion readings without a single rotation reading (a phone without a gyroscope)."""
+    return bool(motion.get("status") == "ok" and motion.get("rotation_sd") is None
+                and motion.get("rotation_mean") is None)
+
+
 def held_in_hand(motion: dict) -> bool:
     """Policy 43: tilted 10-85 degrees, trembling (linear SD 0.02+) and turning (gyroscope SD above
     0.1): a phone in a person's hand (sanitized motion summary). Policy 44: over 8+ events (was 30).
-    An emulated sensor lies level (``SYNTHETIC_MOTION``, tilt at most 0.2) and does not turn."""
+    Policy 46: a phone without a gyroscope instead needs 50+ events, linear SD 0.03+ and a gravity
+    vector that moves (SD 0.03+). An emulated sensor lies level (``SYNTHETIC_MOTION``, tilt at most
+    0.2) and does not turn; a phone on a stand does not tremble."""
+    if motion.get("status") != "ok" or motion.get("tilt_deg") is None or not 10 <= motion["tilt_deg"] <= 85:
+        return False
+    if no_gyroscope(motion):
+        return bool(
+            (motion.get("events") or 0) >= HELD_NO_GYRO_MIN_EVENTS
+            and (motion.get("linear_sd") or 0) >= HELD_NO_GYRO_MIN_SD
+            and (motion.get("gravity_sd") or 0) >= HELD_NO_GYRO_MIN_GRAVITY_SD
+        )
     return bool(
-        motion.get("status") == "ok" and (motion.get("events") or 0) >= HELD_MIN_EVENTS
-        and motion.get("tilt_deg") is not None and 10 <= motion["tilt_deg"] <= 85
+        (motion.get("events") or 0) >= HELD_MIN_EVENTS
         and (motion.get("linear_sd") or 0) >= HELD_MIN_SD
         and (motion.get("rotation_sd") or 0) > HELD_MIN_ROTATION_SD
     )

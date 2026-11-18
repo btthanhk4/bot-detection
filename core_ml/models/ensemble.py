@@ -109,7 +109,9 @@ from core_ml.models.touch_shadow import score_touch
 # also sends the final snapshot when the page is hidden.
 # Policy 45: a desktop user agent claiming Chrome 83 or older on a page with navigator.userAgentData
 # (Chrome 84+) is one more contradiction (ANACHRONISTIC_UA); with another it convicts (forged_browser_v1).
-DECISION_POLICY_VERSION = "45"
+# Policy 46: a phone without a gyroscope counts as held from 50 motion events with a stronger tremor and a
+# moving gravity vector (mobile_held_device_v3).
+DECISION_POLICY_VERSION = "46"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
