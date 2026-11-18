@@ -36,7 +36,7 @@ def test_groups_by_region_and_counts_online_and_verdicts():
         _row(None, "SUSPECT"),
     ], now=NOW)
     assert view["sessions"] == 5 and view["online_now"] == 4
-    assert view["verdicts"] == {"human": 2, "bot": 1, "suspect": 1, "pending": 1}
+    assert view["verdicts"] == {"human": 2, "bot": 1, "suspect": 2}, "policy 48: no insufficient bucket"
     assert view["unlocated"] == 2
     hanoi = view["points"][0]
     assert (hanoi["region"], hanoi["sessions"], hanoi["online"], hanoi["human"], hanoi["bot"]) == ("Hanoi", 2, 1, 1, 1)

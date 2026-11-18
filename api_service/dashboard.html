@@ -1036,7 +1036,7 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
 .pr-head-title p { margin: 0.8mm 0 0; color: #4d4b46; font-size: 9pt; }
 .pr-section { margin-top: 7mm; }
 .pr-section > h2 { margin: 0 0 2.5mm; font-size: 11pt; font-weight: 700; break-after: avoid; }
-.pr-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3mm; margin-top: 6mm; }
+.pr-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 6mm; }
 .pr-kpi { padding: 2.5mm 3mm; border: 0.6pt solid #e2e0d9; border-radius: 1.2mm; }
 .pr-kpi span { display: flex; align-items: center; gap: 1.5mm; font-size: 8pt; color: #4d4b46; }
 .pr-kpi span i { width: 2.2mm; height: 2.2mm; border-radius: 50%; background: var(--k); }
@@ -1226,11 +1226,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
       <div class="kpi-value" id="kpiSuspectCount">0</div>
       <div class="kpi-extra" id="kpiSuspectRate">--</div>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label" title="Khách rời trang trước khi có đủ thao tác để đánh giá"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</div>
-      <div class="kpi-value" id="kpiPendingCount">0</div>
-      <div class="kpi-extra" id="kpiPendingRate">--</div>
-    </div>
   </div>
 
   <div class="mid-grid">
@@ -1260,7 +1255,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
           <button type="button" data-verdict="" aria-pressed="true">Tất cả</button>
           <button type="button" data-verdict="bot" aria-pressed="false"><span class="dot bot" aria-hidden="true"></span>Bot</button>
           <button type="button" data-verdict="suspect" aria-pressed="false"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</button>
-          <button type="button" data-verdict="pending" aria-pressed="false"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</button>
           <button type="button" data-verdict="human" aria-pressed="false"><span class="dot human" aria-hidden="true"></span>Người thật</button>
         </div>
         <span class="panel-meta" id="trafficCount">0 phiên</span>
@@ -1365,11 +1359,10 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
       <div class="kpi-card"><div class="kpi-label"><span class="dot human" aria-hidden="true"></span>Người thật</div><div class="kpi-value" id="repHuman">--</div><div class="kpi-extra" id="repHumanPct">--</div></div>
       <div class="kpi-card"><div class="kpi-label" title="Có bằng chứng tự động hóa rõ ràng"><span class="dot bot" aria-hidden="true"></span>Bot</div><div class="kpi-value" id="repBot">--</div><div class="kpi-extra" id="repBotPct">--</div></div>
       <div class="kpi-card"><div class="kpi-label" title="Có dấu hiệu bất thường nhưng chưa đủ để kết luận là bot"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</div><div class="kpi-value" id="repSuspect">--</div><div class="kpi-extra" id="repSuspectPct">--</div></div>
-      <div class="kpi-card"><div class="kpi-label" title="Khách rời trang trước khi có đủ thao tác để đánh giá"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</div><div class="kpi-value" id="repPending">--</div><div class="kpi-extra" id="repPendingPct">--</div></div>
     </div>
     <div class="panel">
       <div class="panel-header"><div class="panel-title"><span id="reportChartTitle">Lưu lượng theo ngày</span></div>
-        <div class="chart-legend"><span><i class="legend-square" style="--key: var(--v-human)"></i>Người thật</span><span><i class="legend-square" style="--key: var(--v-suspect)"></i>Nghi vấn</span><span><i class="legend-square" style="--key: var(--v-pending)"></i>Chưa đủ dữ liệu</span><span><i class="legend-square" style="--key: var(--v-bot)"></i>Bot</span></div></div>
+        <div class="chart-legend"><span><i class="legend-square" style="--key: var(--v-human)"></i>Người thật</span><span><i class="legend-square" style="--key: var(--v-suspect)"></i>Nghi vấn</span><span><i class="legend-square" style="--key: var(--v-bot)"></i>Bot</span></div></div>
       <div class="report-chart"><canvas id="reportChart" role="img" aria-label="Biểu đồ lưu lượng theo kết luận"></canvas></div>
     </div>
     <div class="report-grid">
@@ -1385,8 +1378,8 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
       </div>
       <div class="table-scroll report-ip-scroll" id="reportClickSourcesWrap">
         <table class="sites-table report-clicks">
-          <thead><tr><th>Token 1</th><th class="num">Phiên</th><th class="num">Bot</th><th class="num">Nghi vấn</th><th class="num">Người thật</th><th class="num">Chưa đủ dữ liệu</th><th>Tỉ lệ bot</th></tr></thead>
-          <tbody id="reportClickSources"><tr><td colspan="7" class="empty-state">Đang tải…</td></tr></tbody>
+          <thead><tr><th>Token 1</th><th class="num">Phiên</th><th class="num">Bot</th><th class="num">Nghi vấn</th><th class="num">Người thật</th><th>Tỉ lệ bot</th></tr></thead>
+          <tbody id="reportClickSources"><tr><td colspan="6" class="empty-state">Đang tải…</td></tr></tbody>
         </table>
       </div>
       <p class="click-hint" id="reportClickHint" hidden>Chưa có phiên nào mang mã click trong kỳ. Để theo dõi từng click, nhà mạng thêm vào URL trang đích <code>?clickid={clickid}&amp;t1={t1}</code>: <code>clickid</code> là Click ID, <code>t1</code> là Token 1 của nhà mạng. DATACAT chỉ ghi lại hai giá trị này, không tự tạo.</p>
@@ -1400,7 +1393,6 @@ body.must-change .nav-item:not([data-view="account"]), body.must-change .page-fi
             <button type="button" data-verdict="" aria-pressed="true">Tất cả</button>
             <button type="button" data-verdict="bot" aria-pressed="false"><span class="dot bot" aria-hidden="true"></span>Bot</button>
             <button type="button" data-verdict="suspect" aria-pressed="false"><span class="dot suspect" aria-hidden="true"></span>Nghi vấn</button>
-            <button type="button" data-verdict="insufficient" aria-pressed="false"><span class="dot pending" aria-hidden="true"></span>Chưa đủ dữ liệu</button>
             <button type="button" data-verdict="human" aria-pressed="false"><span class="dot human" aria-hidden="true"></span>Người thật</button>
           </div>
           <span class="panel-meta" id="clickListRange"></span>
@@ -1779,7 +1771,7 @@ let trafficBefore = null;
 let trafficNextCursor = null;
 let trafficRequestVersion = 0;
 const trafficPageHistory = [];
-const VERDICT_FILTERS = new Set(['bot', 'suspect', 'pending', 'human']);
+const VERDICT_FILTERS = new Set(['bot', 'suspect', 'human']);
 let selectedVerdict = '';
 let trafficLoading = false;
 try {
@@ -1933,10 +1925,9 @@ const FP_BOT_LABEL = { bad: 'Bot (bad)', good: 'Bot hợp lệ (good)', not_dete
 
 function fingerprintComparison(session, bot) {
   const ours = String(session.verdict || '').toUpperCase();
-  const decided = session.decision_state !== 'INSUFFICIENT_EVIDENCE' && session.breakdown?.decision_deferred !== true;
   if (bot === 'good') return ours === 'BOT' ? 'Cùng là bot; Fingerprint xác định là bot hợp lệ' : 'Fingerprint xác định là bot hợp lệ';
-  if (!decided || !['BOT', 'HUMAN'].includes(ours)) {
-    return bot === 'bad' ? 'Fingerprint thấy bot · DATACAT chưa kết luận' : 'Chưa thể đối chiếu';
+  if (!['BOT', 'HUMAN'].includes(ours)) {
+    return bot === 'bad' ? 'Fingerprint thấy bot · DATACAT nghi vấn' : 'Chưa thể đối chiếu';
   }
   if (ours === 'BOT') return bot === 'bad' ? 'Đồng thuận: bot' : 'Chỉ DATACAT kết tội · cần rà soát';
   return bot === 'bad' ? 'Bất đồng · cần rà soát' : 'Không mâu thuẫn';
@@ -2130,7 +2121,6 @@ async function fetchClassificationSummary() {
   if (![total, humans, bots, suspects].every(Number.isFinite)) return;
 
   classificationSummary = {
-    insufficient: Math.max(0, Number(data.insufficient) || 0),
     total: Math.max(0, total),
     humans: Math.max(0, humans),
     bots: Math.max(0, bots),
@@ -2167,16 +2157,10 @@ function updateClassificationKPIs() {
     });
   }
 
-  let total = classificationSummary
+  // Policy 48: three verdicts; every judged session is human, suspect or bot.
+  const total = classificationSummary
     ? classificationSummary.total
     : humans + bots + suspects;
-  // "suspects" from the summary includes the sessions still short of data; they get their own card.
-  let insufficient = classificationSummary ? Math.min(suspects, Number(classificationSummary.insufficient) || 0) : 0;
-  suspects -= insufficient;
-  if (classificationSummary && Number.isFinite(registeredTrafficTotal) && registeredTrafficTotal > total) {
-    insufficient += registeredTrafficTotal - total;
-    total = registeredTrafficTotal;
-  }
   const denominator = total || 1;
   animateValue(document.getElementById('kpiTotalSessions'), total);
   animateValue(document.getElementById('kpiHumanCount'), humans);
@@ -2185,8 +2169,6 @@ function updateClassificationKPIs() {
   setText('kpiBotRate', percentOf(bots, denominator));
   animateValue(document.getElementById('kpiSuspectCount'), suspects);
   setText('kpiSuspectRate', percentOf(suspects, denominator));
-  animateValue(document.getElementById('kpiPendingCount'), insufficient);
-  setText('kpiPendingRate', percentOf(insufficient, denominator));
 }
 
 // ──── Traffic Table (flicker-free) ────
@@ -2342,7 +2324,7 @@ function crawlerLabel(crawler) {
     : crawler.verified === false ? `Giả danh ${crawler.name}` : `Crawler ${crawler.name}`;
 }
 
-function shortReason(s, deferred) {
+function shortReason(s) {
   const bd = s.breakdown || {};
   const basis = bd.decision_basis;
   const crawler = crawlerLabel((bd.automation_evidence || {}).crawler);
@@ -2366,12 +2348,6 @@ function shortReason(s, deferred) {
   if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
   if (basis === 'mobile_light_touch') return `${(bd.mobile_human || {}).gestures || 0} lần chạm thật (độ tin cậy thấp hơn)`;
   if (basis === 'input_anomaly') return ((bd.three_verdicts || {}).anomalies || []).map(c => ANOMALY_LABELS[c] || c).join('; ') || 'Bất thường';
-  if (deferred) {
-    if ((bd.suspect_reason_codes || []).includes('NOT_VIEWED')) return 'Trang chưa từng hiển thị';
-    if ((bd.suspect_reason_codes || []).includes('NO_INTERACTION_CLEAN')) return 'Không thao tác, môi trường sạch';
-    if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) return 'Chưa đủ thao tác chạm';
-    return `Mới ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} lần di chuột`;
-  }
   const v = String(s.verdict || '').toUpperCase();
   return v === 'HUMAN' ? 'Di chuột tự nhiên' : v === 'BOT' ? 'Di chuột giống bot' : 'Di chuột vùng ranh giới';
 }
@@ -2396,12 +2372,9 @@ function hasApplicableRiskScore(session) {
 const VERDICT_LABELS = { HUMAN: 'Người thật', BOT: 'Bot', SUSPECT: 'Nghi vấn' };
 // Verdict for display: the label stays in ink, a coloured dot carries identity.
 function verdictView(session) {
-  const bd = session.breakdown || {};
-  const deferred = bd.decision_deferred === true || session.decision_state === 'INSUFFICIENT_EVIDENCE';
-  const v = deferred ? 'SUSPECT' : String(session.verdict || 'UNKNOWN').toUpperCase();
-  if (deferred) return { v, deferred, label: 'Chưa đủ dữ liệu', cls: 'verdict-pending', hero: 'pending' };
+  const v = String(session.verdict || 'UNKNOWN').toUpperCase();
   const key = v === 'HUMAN' ? 'human' : v === 'BOT' ? 'bot' : 'suspect';
-  return { v, deferred, label: VERDICT_LABELS[v] || 'Nghi vấn', cls: 'verdict-' + key, hero: key };
+  return { v, label: VERDICT_LABELS[v] || 'Nghi vấn', cls: 'verdict-' + key, hero: key };
 }
 
 function renderTrafficTable() {
@@ -2427,7 +2400,7 @@ function renderTrafficTable() {
     const risk = hasApplicableRiskScore(s) ? prob * 100 : null;
     const riskLevel = risk == null ? 'risk-none' : prob > 0.7 ? 'risk-high' : prob > 0.4 ? 'risk-mid' : 'risk-low';
     const device = describeDevice(s);
-    const reason = shortReason(s, verdict.deferred);
+    const reason = shortReason(s);
     // Which website, when the table shows all of them.
     const siteName = [!selectedSite && s.site_id ? siteLabel(s.site_id) : '',
       s.site_id && s.site_unverified ? 'nguồn chưa xác minh' : ''].filter(Boolean).join(' · ');
@@ -2435,7 +2408,7 @@ function renderTrafficTable() {
     const ip = s.client_ip || '--';
     const geoShort = [formatGeo(s.geo, false), s.geo && s.geo.isp ? shortIsp(s.geo.isp) : ''].filter(Boolean).join(' · ');
     const geoTitle = [formatGeo(s.geo, true), s.geo && s.geo.isp].filter(Boolean).join(' · ');
-    const rowClass = [verdict.v === 'BOT' && !verdict.deferred ? 'row-bot' : '', s.sessionId === selectedId ? 'is-selected' : '']
+    const rowClass = [verdict.v === 'BOT' ? 'row-bot' : '', s.sessionId === selectedId ? 'is-selected' : '']
       .filter(Boolean).join(' ');
 
     return `<tr class="${rowClass}" data-idx="${idx}" data-session="${escapeHtml(s.sessionId || '')}" onclick="selectSession(${idx})">
@@ -2445,7 +2418,7 @@ function renderTrafficTable() {
       <td><span class="cell-main"${device.kind ? ` title="${escapeHtml(device.kind)}"` : ''}>${escapeHtml(device.os)}</span>${device.kind === 'Máy tính bảng' && device.os !== 'iPad' ? '<span class="geo-text">Máy tính bảng</span>' : ''}</td>
       <td><span class="page-text" title="${escapeHtml(s.pageUrl || '')}">${escapeHtml(formatPageLabel(s.pageUrl))}</span>${siteName ? `<span class="geo-text">${escapeHtml(siteName)}</span>` : ''}</td>
       <td><span class="time-text">${escapeHtml(formatDuration(s))}</span></td>
-      <td><span class="verdict-badge ${verdict.cls}"${verdict.deferred ? ' title="Chưa đủ thao tác để chấm điểm (cần ít nhất 25 lần di chuột hoặc một dấu hiệu tự động hóa rõ ràng)"' : ''}>${verdict.label}</span></td>
+      <td><span class="verdict-badge ${verdict.cls}">${verdict.label}</span></td>
       <td><span class="reason-text" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span></td>
       <td><div class="risk-cell ${riskLevel}"><span class="risk-meter"><i style="width:${risk == null ? 0 : risk.toFixed(1)}%"></i></span><span class="risk-pct">${risk == null ? '--' : fmtPct(risk)}</span></div></td>
       <td><div class="row-actions">
@@ -2638,8 +2611,7 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
   const botdDetectors = botd.detectors || {};
   const mouseStats = dataObj.mouse_stats || s.mouse_stats || {};
 
-  const deferred = bd.decision_deferred === true || dataObj.decision_state === 'INSUFFICIENT_EVIDENCE';
-  const v = deferred ? 'SUSPECT' : (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
+  const v = (dataObj.verdict || s.verdict || 'UNKNOWN').toUpperCase();
   const riskAvailable = hasApplicableRiskScore({ breakdown: bd, decision_state: dataObj.decision_state });
   const ruleDecision = bd.decision_basis === 'explicit_automation';
   const syntheticDecision = bd.decision_basis === 'synthetic_input';
@@ -2791,17 +2763,6 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     explainText = 'Chưa có thao tác để đánh giá hành vi và không có dấu hiệu bot nào, nên tính là người (độ tin cậy thấp nhất).';
   } else if (v === 'HUMAN') {
     explainText = 'Không có dấu hiệu bot.';
-  } else if (deferred) {
-    if (bd.unsupported_mobile || bd.legacy_touch_ambiguous || (bd.touch_records_excluded > 0 && !bd.mouse_points)) {
-      const missing = ((bd.mobile_human || {}).missing || []).filter(c => c !== 'NOT_MOBILE').map(c => MOBILE_CODE_LABELS[c] || c);
-      explainText = missing.length ? `Chưa đủ điều kiện: ${escapeHtml(missing.join('; '))}.` : 'Chưa đủ dữ liệu để kết luận.';
-    } else if (bd.usable_trajectory === false && bd.has_enough_mouse_data) {
-      explainText = 'Quỹ đạo chuột chưa đủ biến thiên để đánh giá.';
-    } else if (bd.has_enough_mouse_data === false || Number(bd.mouse_points) < Number(bd.minimum_mouse_points || 25)) {
-      explainText = `Mới có ${Number(bd.mouse_points) || 0}/${Number(bd.minimum_mouse_points) || 25} điểm di chuột.`;
-    } else {
-      explainText = 'Chưa đủ dữ liệu để kết luận.';
-    }
   } else if (bd.decision_basis === 'input_anomaly') {
     explainText = `Chưa có thao tác để đánh giá hành vi, nhưng có điểm bất thường: ${escapeHtml(((bd.three_verdicts || {}).anomalies || []).map(c => ANOMALY_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'mobile_risk') {
@@ -3041,7 +3002,7 @@ function drawTrajectory(s, rawMouse) {
   }));
 
   const verdict = verdictView(s);
-  const tone = verdict.deferred ? '--fill-suspect' : verdict.v === 'BOT' ? '--fill-bot' : verdict.v === 'HUMAN' ? '--fill-human' : '--fill-suspect';
+  const tone = verdict.v === 'BOT' ? '--fill-bot' : verdict.v === 'HUMAN' ? '--fill-human' : '--fill-suspect';
   // The measured path exactly; smoothing would alter the observed trajectory.
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
@@ -3162,7 +3123,7 @@ function initTimelineChart() {
       labels: [],
       // Each dataset names its bucket field (key) and colour token (colorVar).
       datasets: [line('Người thật', '--fill-human', 'human'), line('Nghi vấn', '--fill-suspect', 'suspect'),
-                 line('Chưa đủ dữ liệu', '--fill-pending', 'insufficient'), line('Bot', '--fill-bot', 'bot')],
+                 line('Bot', '--fill-bot', 'bot')],
     },
     options: {
       responsive: true,
@@ -3587,9 +3548,9 @@ const LIVE_ONLINE_POLL_MS = 5000;
 const LIVE_POLL_MS = 30000;
 const LIVE_TOPOJSON = 'https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js';
 const LIVE_LAND_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json';
-const LIVE_KINDS = ['human', 'bot', 'suspect', 'pending'];
-const LIVE_LABELS = { human: 'Người thật', bot: 'Bot', suspect: 'Nghi vấn', pending: 'Chưa đủ dữ liệu' };
-const LIVE_FILL = { human: '--fill-human', bot: '--fill-bot', suspect: '--fill-suspect', pending: '--fill-pending' };
+const LIVE_KINDS = ['human', 'bot', 'suspect'];
+const LIVE_LABELS = { human: 'Người thật', bot: 'Bot', suspect: 'Nghi vấn' };
+const LIVE_FILL = { human: '--fill-human', bot: '--fill-bot', suspect: '--fill-suspect' };
 const DEG = Math.PI / 180;
 const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 let liveData = null;
@@ -3772,7 +3733,7 @@ function projectPoint(lonRad, sinLat, cosLat, view) {
 
 function dominantKind(point) {
   // Ties go to the more serious class.
-  return ['bot', 'suspect', 'pending', 'human'].reduce((best, kind) => (point[kind] > point[best] ? kind : best), 'bot');
+  return ['bot', 'suspect', 'human'].reduce((best, kind) => (point[kind] > point[best] ? kind : best), 'bot');
 }
 
 function placeLabel(point) {
@@ -4598,7 +4559,7 @@ function initReportChart() {
   reportChart = new Chart(document.getElementById('reportChart').getContext('2d'), {
     type: 'bar',
     data: { labels: [], datasets: [bar('Người thật', '--fill-human', 'human'), bar('Nghi vấn', '--fill-suspect', 'suspect'),
-                                   bar('Chưa đủ dữ liệu', '--fill-pending', 'insufficient'), bar('Bot', '--fill-bot', 'bot')] },
+                                   bar('Bot', '--fill-bot', 'bot')] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       scales: {
@@ -4633,8 +4594,8 @@ async function loadReportChart(version) {
     const hours = new Map();
     for (const b of buckets) {
       const start = Math.floor(b.start / 3600000) * 3600000;
-      const h = hours.get(start) || { start, human: 0, suspect: 0, insufficient: 0, bot: 0 };
-      h.human += b.human; h.suspect += b.suspect; h.insufficient += b.insufficient || 0; h.bot += b.bot;
+      const h = hours.get(start) || { start, human: 0, suspect: 0, bot: 0 };
+      h.human += b.human; h.suspect += b.suspect; h.bot += b.bot;
       hours.set(start, h);
     }
     buckets = [...hours.values()].slice(-24);
@@ -4665,7 +4626,6 @@ function renderReport(data) {
   setText('repHuman', fmtCount(t.human)); setText('repHumanPct', percentOf(t.human, t.sessions));
   setText('repBot', fmtCount(t.bot)); setText('repBotPct', percentOf(t.bot, t.sessions));
   setText('repSuspect', fmtCount(t.suspect)); setText('repSuspectPct', percentOf(t.suspect, t.sessions));
-  setText('repPending', fmtCount(t.insufficient)); setText('repPendingPct', percentOf(t.insufficient, t.sessions));
   const day = (ms) => new Date(ms).toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric', year: 'numeric' });
   const range = reportDays === 1 ? formatDateTime(data.period.from) + ' – ' + formatDateTime(data.period.to)
     : day(data.period.from) + ' – ' + day(data.period.to);
@@ -4699,12 +4659,12 @@ function renderReport(data) {
 }
 
 const CLICK_CATEGORY = { bot: ['verdict-bot', 'Bot'], suspect: ['verdict-suspect', 'Nghi vấn'],
-  human: ['verdict-human', 'Người thật'], insufficient: ['verdict-pending', 'Chưa đủ dữ liệu'] };
+  human: ['verdict-human', 'Người thật'] };
 
 function clickReason(row) {
   const code = row.code ? [row.code] : [];
   return shortReason({ verdict: row.verdict, breakdown: { decision_basis: row.decision_basis, automation_rule: row.automation_rule,
-    desktop_risk: { codes: code }, mobile_human: { risk: code }, client_forgery: { codes: code } } }, row.category === 'insufficient');
+    desktop_risk: { codes: code }, mobile_human: { risk: code }, client_forgery: { codes: code } } });
 }
 
 function renderReportClicks(data) {
@@ -4723,9 +4683,8 @@ function renderReportClicks(data) {
     return `<tr><td class="site-name click-source">${row.source ? escapeHtml(row.source) : '<span class="muted">Không có Token 1</span>'}</td>
       <td class="num" data-label="Phiên">${fmtCount(row.sessions)}</td><td class="num" data-label="Bot">${cell(row.bot)}</td>
       <td class="num" data-label="Nghi vấn">${cell(row.suspect)}</td><td class="num" data-label="Người thật">${cell(row.human)}</td>
-      <td class="num" data-label="Chưa đủ dữ liệu">${cell(row.insufficient)}</td>
       <td data-label="Tỉ lệ bot"><span class="rate-cell"><span class="rate-bar"><i style="width:${Math.round(rate * 100)}%"></i></span>${percentOf(row.bot, row.sessions)}</span></td></tr>`;
-  }).join('') || '<tr><td colspan="7" class="empty-state">Không có nguồn</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="empty-state">Không có nguồn</td></tr>';
   if (!none) { clickList.page = 1; loadClickList(); }
 }
 
@@ -4803,7 +4762,7 @@ async function loadReport() {
 
 const fpReview = { kind: 'fingerprint_only', data: null };
 const FP_ROWS = [['BOT', 'BOT', 'verdict-bot'], ['SUSPECT', 'Nghi vấn', 'verdict-suspect'],
-  ['PENDING', 'Chưa đủ dữ liệu', 'verdict-pending'], ['HUMAN', 'Người thật', 'verdict-human']];
+  ['HUMAN', 'Người thật', 'verdict-human']];
 const FP_DATACAT = Object.fromEntries(FP_ROWS.map(([key, label, cls]) => [key, [cls, label]]));
 
 async function loadFingerprintReference(version) {
@@ -4911,11 +4870,9 @@ async function exportClickCsv() {
     if (!data || !Array.isArray(data.sessions)) { label.textContent = 'Không tải được'; return; }
     const header = ['Click ID', 'Token 1', 'Kết luận', 'Lý do', 'Bắt đầu', 'Lần cuối', 'IP', 'Quốc gia', 'Nhà mạng', 'Thiết bị', 'Mã phiên'];
     const lines = data.sessions.filter(row => row.click_id || row.click_source).map(row => {
-      const bd = row.breakdown || {};
-      const deferred = bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE';
       const geo = row.geo || {};
-      return [row.click_id, row.click_source, deferred ? 'Chưa đủ dữ liệu' : (VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict),
-        shortReason(row, deferred), formatDateTime(row.created_at), formatDateTime(row.updated_at), row.client_ip,
+      return [row.click_id, row.click_source, VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict,
+        shortReason(row), formatDateTime(row.created_at), formatDateTime(row.updated_at), row.client_ip,
         geo.country, geo.isp, describeDevice(row).os, row.sessionId].map(csvCell).join(',');
     });
     // The BOM makes Excel read UTF-8 (Vietnamese) correctly.
@@ -4951,15 +4908,13 @@ async function exportReportCsv() {
     const header = ['Mã phiên', 'Bắt đầu', 'Lần cuối', 'Thời lượng (giây)', 'Trang', 'IP', 'Quốc gia', 'Thành phố', 'Nhà mạng',
       'Thiết bị', 'Loại thiết bị', 'Trang', 'Kết luận', 'Lý do', 'clickid', 't1'];
     const lines = data.sessions.map(row => {
-      const bd = row.breakdown || {};
-      const deferred = bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE';
       const device = describeDevice(row);
       const geo = row.geo || {};
       const seconds = row.created_at && row.updated_at ? Math.round((row.updated_at - row.created_at) / 1000) : '';
       return [row.sessionId, formatDateTime(row.created_at), formatDateTime(row.updated_at), seconds,
         row.site_id ? siteLabel(row.site_id) : '', row.client_ip, geo.country, geo.city, geo.isp, device.os, device.kind,
-        row.pageUrl, deferred ? 'Chưa đủ dữ liệu' : (VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict),
-        shortReason(row, deferred), row.click_id, row.click_source].map(csvCell).join(',');
+        row.pageUrl, VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict,
+        shortReason(row), row.click_id, row.click_source].map(csvCell).join(',');
     });
     // The BOM makes Excel read UTF-8 (Vietnamese) correctly.
     const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -4985,7 +4940,7 @@ async function exportReportCsv() {
 // organisation files a periodic report (document control, executive summary against the period
 // before, numbered tables and figures with their unit and source, method notes, sign-off).
 const PR_CATEGORIES = [['human', 'Người thật', '#2a78d6'], ['bot', 'Bot', '#d03b3b'],
-  ['suspect', 'Nghi vấn', '#e0a20f'], ['insufficient', 'Chưa đủ dữ liệu', '#a8a69f']];
+  ['suspect', 'Nghi vấn', '#e0a20f']];
 const PR_CRAWLER_CODES = { VERIFIED_CRAWLER: 'Bot tìm kiếm/AI đã xác minh (không nên chặn)', SPOOFED_CRAWLER: 'Giả danh bot tìm kiếm' };
 
 function prPct(part, total, digits = 1) {
@@ -5070,18 +5025,16 @@ async function reportSessions() {
 }
 
 function prCategory(row) {
-  const bd = row.breakdown || {};
-  if (bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE') return 'insufficient';
   return { HUMAN: 'human', BOT: 'bot' }[String(row.verdict || '').toUpperCase()] || 'suspect';
 }
-const PR_LABEL = { human: 'Người thật', bot: 'Bot', suspect: 'Nghi vấn', insufficient: 'Chưa đủ dữ liệu' };
+const PR_LABEL = { human: 'Người thật', bot: 'Bot', suspect: 'Nghi vấn' };
 
 // Counts by verdict per group (website, device), largest group first.
 function prGroups(rows, keyOf) {
   const groups = new Map();
   for (const row of rows) {
     const key = keyOf(row);
-    const g = groups.get(key) || { key, sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
+    const g = groups.get(key) || { key, sessions: 0, human: 0, bot: 0, suspect: 0 };
     g.sessions += 1;
     g[prCategory(row)] += 1;
     groups.set(key, g);
@@ -5120,7 +5073,7 @@ function prIpTable(rows) {
 }
 
 function buildPrintReport(data, sessions = null) {
-  const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
+  const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0 };
   const hourly = reportDays === 1;
   const flagged = t.bot + t.suspect;
   const period = hourly ? `${prDateTime(data.period.from)} – ${prDateTime(data.period.to)}`
@@ -5132,7 +5085,7 @@ function buildPrintReport(data, sessions = null) {
       + `<strong>${fmtCount(value)}</strong>${share ? `<small>${share}</small>` : ''}</div>`).join('');
 
   const compare = [['Tổng số phiên', 'sessions', null], ['Người thật', 'human', false], ['Bot', 'bot', true],
-    ['Nghi vấn', 'suspect', true], ['Chưa đủ dữ liệu', 'insufficient', null]].map(([label, key, badUp]) => {
+    ['Nghi vấn', 'suspect', true]].map(([label, key, badUp]) => {
     const change = prChange(t[key], p[key], badUp);
     return [label, [fmtCount(t[key]), 'n'], [fmtCount(p[key]), 'n'], [`<span class="${change.cls}">${change.text}</span>`, 'n']];
   });
@@ -5144,18 +5097,18 @@ function buildPrintReport(data, sessions = null) {
   sections.push(`<section class="pr-section"><h2>Lưu lượng ${hourly ? 'theo giờ' : 'theo ngày'}</h2>
     <figure class="pr-figure">${prChart(timeline, hourly)}
       <div class="pr-legend">${PR_CATEGORIES.map(([, l, c]) => `<span><i style="--k:${c}"></i>${l}</span>`).join('')}</div></figure>
-    ${prTable([hourly ? 'Giờ' : 'Ngày', ['Tổng', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+    ${prTable([hourly ? 'Giờ' : 'Ngày', ['Tổng', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Tỉ lệ bot', 'n']],
       timeline.map(b => [hourly ? new Date(b.start).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' ' + prDate(b.start) : prDate(b.start),
-        [fmtCount(b.sessions), 'n'], [fmtCount(b.human), 'n'], [fmtCount(b.bot), 'n'], [fmtCount(b.suspect), 'n'], [fmtCount(b.insufficient), 'n'],
+        [fmtCount(b.sessions), 'n'], [fmtCount(b.human), 'n'], [fmtCount(b.bot), 'n'], [fmtCount(b.suspect), 'n'],
         [b.sessions ? prPct(b.bot, b.sessions) : '', 'n']]),
       ['Cộng', [fmtCount(sum('sessions')), 'n'], [fmtCount(sum('human')), 'n'], [fmtCount(sum('bot')), 'n'], [fmtCount(sum('suspect')), 'n'],
-        [fmtCount(sum('insufficient')), 'n'], [prPct(sum('bot'), sum('sessions')), 'n']])}</section>`);
+        [prPct(sum('bot'), sum('sessions')), 'n']])}</section>`);
 
   const rows = sessions && Array.isArray(sessions.sessions) ? sessions.sessions : null;
   const groupTable = (title, head, groups) => `<section class="pr-section"><h2>${title}</h2>
-    ${prTable([head, ['Phiên', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+    ${prTable([head, ['Phiên', 'n'], ['Người thật', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Tỉ lệ bot', 'n']],
       groups.map(g => [escapeHtml(g.key), [fmtCount(g.sessions), 'n'], [fmtCount(g.human), 'n'], [fmtCount(g.bot), 'n'], [fmtCount(g.suspect), 'n'],
-        [fmtCount(g.insufficient), 'n'], [prPct(g.bot, g.sessions), 'n']]))}</section>`;
+        [prPct(g.bot, g.sessions), 'n']]))}</section>`;
   if (rows && !selectedSite) {
     const bySite = prGroups(rows, prSiteName);
     if (bySite.length > 1) sections.push(groupTable('Theo trang', 'Trang', bySite));
@@ -5185,11 +5138,11 @@ function buildPrintReport(data, sessions = null) {
   const clicks = data.clicks || {};
   if (clicks.sessions) {
     sections.push(`<section class="pr-section"><h2>Click theo Token 1</h2>
-      ${prTable(['Token 1', ['Phiên', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Người thật', 'n'], ['Chưa đủ dữ liệu', 'n'], ['Tỉ lệ bot', 'n']],
+      ${prTable(['Token 1', ['Phiên', 'n'], ['Bot', 'n'], ['Nghi vấn', 'n'], ['Người thật', 'n'], ['Tỉ lệ bot', 'n']],
         (data.click_sources || []).map(r => [[escapeHtml(r.source || '—'), 'mono'], [fmtCount(r.sessions), 'n'], [fmtCount(r.bot), 'n'],
-          [fmtCount(r.suspect), 'n'], [fmtCount(r.human), 'n'], [fmtCount(r.insufficient), 'n'], [prPct(r.bot, r.sessions), 'n']]),
+          [fmtCount(r.suspect), 'n'], [fmtCount(r.human), 'n'], [prPct(r.bot, r.sessions), 'n']]),
         ['Cộng', [fmtCount(clicks.sessions), 'n'], [fmtCount(clicks.bot), 'n'], [fmtCount(clicks.suspect), 'n'], [fmtCount(clicks.human), 'n'],
-          [fmtCount(clicks.insufficient), 'n'], [prPct(clicks.bot, clicks.sessions), 'n']])}</section>`);
+          [prPct(clicks.bot, clicks.sessions), 'n']])}</section>`);
   }
 
   if (rows) {
@@ -5205,14 +5158,14 @@ function buildPrintReport(data, sessions = null) {
       sections.push(`<section class="pr-section"><h2>Danh sách click</h2>
         ${prTable(['Thời gian', 'Click ID', 'Token 1', 'Kết luận', 'Lý do', 'IP'],
           clickRows.slice(0, PR_LIST_LIMIT).map(r => [prShortTime(r.created_at), [escapeHtml(r.click_id || ''), 'mono'], [escapeHtml(r.click_source || ''), 'mono'],
-            verdictCell(r), escapeHtml(shortReason(r, prCategory(r) === 'insufficient')), [escapeHtml(r.client_ip || ''), 'mono']]),
+            verdictCell(r), escapeHtml(shortReason(r)), [escapeHtml(r.client_ip || ''), 'mono']]),
           more(clickRows, 6), 'pr-list')}</section>`);
     }
     const flaggedRows = newest(rows.filter(r => ['bot', 'suspect'].includes(prCategory(r))));
     if (flaggedRows.length) {
       sections.push(`<section class="pr-section"><h2>Danh sách phiên bot và nghi vấn</h2>
         ${prTable(['Thời gian', 'Kết luận', 'Lý do', 'IP', 'Quốc gia', 'Nhà mạng', 'Thiết bị'],
-          flaggedRows.slice(0, PR_LIST_LIMIT).map(r => [prShortTime(r.created_at), verdictCell(r), escapeHtml(shortReason(r, false)),
+          flaggedRows.slice(0, PR_LIST_LIMIT).map(r => [prShortTime(r.created_at), verdictCell(r), escapeHtml(shortReason(r)),
             [escapeHtml(r.client_ip || ''), 'mono'], escapeHtml(r.geo && (r.geo.country_code || r.geo.country) ? countryName({ code: r.geo.country_code, name: r.geo.country }) : ''),
             escapeHtml((r.geo || {}).isp ? shortIsp(r.geo.isp) : ''),
             escapeHtml(describeDevice(r).os)]),
@@ -5353,7 +5306,7 @@ async function exportReportExcel() {
     const data = reportData;
     const [ExcelJS, sessions] = await Promise.all([loadExcelJs(), reportSessions()]);
     if (!data || !sessions || !Array.isArray(sessions.sessions)) { label.textContent = 'Không tải được'; return; }
-    const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0, insufficient: 0 };
+    const t = data.totals, p = data.previous_totals || { sessions: 0, human: 0, bot: 0, suspect: 0 };
     const code = prCode(data);
     const generated = data.generated_at ? new Date(data.generated_at).getTime() : Date.now();
     const meta = [`Mã báo cáo: ${code} · Phân loại: NỘI BỘ`, `Kỳ báo cáo: ${prDateTime(data.period.from)} – ${prDateTime(data.period.to)} (${prPeriodLabel()}) · Phạm vi: ${prScope()}`,
@@ -5369,7 +5322,7 @@ async function exportReportExcel() {
       [{ key: 'name', header: 'Chỉ tiêu', width: 26 }, { key: 'cur', header: 'Kỳ này', fmt: 'count' }, { key: 'curShare', header: 'Tỉ trọng', fmt: 'pct' },
         { key: 'prev', header: 'Kỳ trước', fmt: 'count' }, { key: 'prevShare', header: 'Tỉ trọng kỳ trước', fmt: 'pct', width: 16 },
         { key: 'change', header: 'Thay đổi', fmt: '+0.0%;-0.0%;0.0%' }],
-      [['Tổng số phiên', 'sessions'], ['Người thật', 'human'], ['Bot', 'bot'], ['Nghi vấn', 'suspect'], ['Chưa đủ dữ liệu', 'insufficient']].map(([name, key]) => ({
+      [['Tổng số phiên', 'sessions'], ['Người thật', 'human'], ['Bot', 'bot'], ['Nghi vấn', 'suspect']].map(([name, key]) => ({
         name, cur: t[key], curShare: ratio(t[key], t.sessions), prev: p[key], prevShare: ratio(p[key], p.sessions), change: change(t[key], p[key]) })),
       { filter: false });
 
@@ -5379,14 +5332,14 @@ async function exportReportExcel() {
     xlSheet(wb, hourly ? 'Theo giờ' : 'Theo ngày', hourly ? 'Số phiên theo giờ' : 'Số phiên theo ngày', meta,
       [{ key: 'start', header: hourly ? 'Giờ' : 'Ngày', fmt: hourly ? XL.date : 'dd/mm/yyyy', width: 18 }, { key: 'sessions', header: 'Tổng', fmt: 'count' },
         { key: 'human', header: 'Người thật', fmt: 'count' }, { key: 'bot', header: 'Bot', fmt: 'count' }, { key: 'suspect', header: 'Nghi vấn', fmt: 'count' },
-        { key: 'insufficient', header: 'Chưa đủ dữ liệu', fmt: 'count', width: 16 }, { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }],
+        { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }],
       timeline.map(b => ({ ...b, start: xlDate(b.start), rate: ratio(b.bot, b.sessions) })),
-      { total: { sessions: total('sessions'), human: total('human'), bot: total('bot'), suspect: total('suspect'), insufficient: total('insufficient'),
+      { total: { sessions: total('sessions'), human: total('human'), bot: total('bot'), suspect: total('suspect'),
         rate: ratio(total('bot'), total('sessions')) }, filter: false });
 
     const groupColumns = (head) => [{ key: 'key', header: head, width: 26 }, { key: 'sessions', header: 'Phiên', fmt: 'count' },
       { key: 'human', header: 'Người thật', fmt: 'count' }, { key: 'bot', header: 'Bot', fmt: 'count' }, { key: 'suspect', header: 'Nghi vấn', fmt: 'count' },
-      { key: 'insufficient', header: 'Chưa đủ dữ liệu', fmt: 'count', width: 16 }, { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }];
+      { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }];
     const withRate = (groups) => groups.map(g => ({ ...g, rate: ratio(g.bot, g.sessions) }));
     if (!selectedSite) xlSheet(wb, 'Theo trang', 'Số phiên theo trang', meta, groupColumns('Trang'), withRate(prGroups(sessions.sessions, prSiteName)), { filter: false });
     xlSheet(wb, 'Theo thiết bị', 'Số phiên theo thiết bị', meta, groupColumns('Thiết bị'), withRate(prGroups(sessions.sessions, r => describeDevice(r).os)), { filter: false });
@@ -5422,16 +5375,12 @@ async function exportReportExcel() {
       xlSheet(wb, 'Theo Token 1', 'Click quảng cáo theo Token 1', meta,
         [{ key: 'source', header: 'Token 1', width: 28, mono: true }, { key: 'sessions', header: 'Phiên', fmt: 'count' }, { key: 'bot', header: 'Bot', fmt: 'count' },
           { key: 'suspect', header: 'Nghi vấn', fmt: 'count' }, { key: 'human', header: 'Người thật', fmt: 'count' },
-          { key: 'insufficient', header: 'Chưa đủ dữ liệu', fmt: 'count', width: 16 }, { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }],
+          { key: 'rate', header: 'Tỉ lệ bot', fmt: 'pct' }],
         (data.click_sources || []).map(r => ({ ...r, source: r.source || 'Không có Token 1', rate: ratio(r.bot, r.sessions) })),
         { total: { sessions: data.clicks.sessions, bot: data.clicks.bot, suspect: data.clicks.suspect, human: data.clicks.human,
-          insufficient: data.clicks.insufficient, rate: ratio(data.clicks.bot, data.clicks.sessions) }, filter: false });
+          rate: ratio(data.clicks.bot, data.clicks.sessions) }, filter: false });
     }
-    const verdictOf = (row) => {
-      const bd = row.breakdown || {};
-      const deferred = bd.decision_deferred === true || row.decision_state === 'INSUFFICIENT_EVIDENCE';
-      return [deferred, deferred ? 'Chưa đủ dữ liệu' : (VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict)];
-    };
+    const verdictOf = (row) => VERDICT_TEXT[String(row.verdict || '').toUpperCase()] || row.verdict;
     if (clickRows.length) {
       xlSheet(wb, 'Danh sách click', 'Danh sách click trong kỳ', meta,
         [{ key: 'click', header: 'Click ID', width: 24, mono: true }, { key: 'token', header: 'Token 1', width: 24, mono: true },
@@ -5439,9 +5388,9 @@ async function exportReportExcel() {
           { key: 'ip', header: 'IP', width: 16, mono: true }, { key: 'country', header: 'Quốc gia', width: 16 }, { key: 'isp', header: 'Nhà mạng', width: 22 },
           { key: 'device', header: 'Thiết bị', width: 12 }, { key: 'session', header: 'Mã phiên', width: 30, mono: true }],
         clickRows.map(row => {
-          const [deferred, verdict] = verdictOf(row);
+          const verdict = verdictOf(row);
           const geo = row.geo || {};
-          return { click: row.click_id, token: row.click_source, verdict, reason: shortReason(row, deferred), start: xlDate(row.created_at), ip: row.client_ip,
+          return { click: row.click_id, token: row.click_source, verdict, reason: shortReason(row), start: xlDate(row.created_at), ip: row.client_ip,
             country: geo.country, isp: geo.isp, device: describeDevice(row).os, session: row.sessionId };
         }), { landscape: true });
     }
@@ -5453,13 +5402,13 @@ async function exportReportExcel() {
         { key: 'os', header: 'Thiết bị', width: 12 }, { key: 'kind', header: 'Loại thiết bị', width: 13 }, { key: 'verdict', header: 'Kết luận', width: 15 },
         { key: 'reason', header: 'Lý do', width: 34 }, { key: 'click', header: 'Click ID', width: 22, mono: true }, { key: 'token', header: 'Token 1', width: 22, mono: true }],
       sessions.sessions.map(row => {
-        const [deferred, verdict] = verdictOf(row);
+        const verdict = verdictOf(row);
         const geo = row.geo || {};
         const device = describeDevice(row);
         return { session: row.sessionId, start: xlDate(row.created_at), last: xlDate(row.updated_at),
           seconds: row.created_at && row.updated_at ? Math.round((row.updated_at - row.created_at) / 1000) : null,
           site: row.site_id ? siteLabel(row.site_id) : '', url: row.pageUrl, ip: row.client_ip, country: geo.country, city: geo.city, isp: geo.isp,
-          os: device.os, kind: device.kind, verdict, reason: shortReason(row, deferred), click: row.click_id, token: row.click_source };
+          os: device.os, kind: device.kind, verdict, reason: shortReason(row), click: row.click_id, token: row.click_source };
       }), { landscape: true, note: sessions.truncated ? `Chỉ gồm ${fmtCount(sessions.sessions.length)} phiên đầu của kỳ.` : undefined });
 
     const buffer = await wb.xlsx.writeBuffer();

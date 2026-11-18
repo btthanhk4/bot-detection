@@ -23,10 +23,10 @@ LEFT_ACTIONS = ("pagehide", "hidden")
 
 
 def _verdict_bucket(row):
-    if row.get("decision_state") == "INSUFFICIENT_EVIDENCE":
-        return "pending"
+    # Policy 48: three verdicts. A session stored as "insufficient evidence" before it keeps its stored
+    # verdict (SUSPECT), and so does anything unknown.
     verdict = str(row.get("verdict") or "").upper()
-    return {"HUMAN": "human", "BOT": "bot", "SUSPECT": "suspect"}.get(verdict, "pending")
+    return {"HUMAN": "human", "BOT": "bot"}.get(verdict, "suspect")
 
 
 def _as_utc(value):
@@ -84,7 +84,7 @@ def build_live_view(rows, now=None, window_minutes=1440):
                 "key": key,
                 "region": geo.get("region") or geo.get("city"), "country": geo.get("country"),
                 "country_code": geo.get("country_code"), "lat_sum": 0.0, "lon_sum": 0.0,
-                "sessions": 0, "online": 0, "human": 0, "bot": 0, "suspect": 0, "pending": 0,
+                "sessions": 0, "online": 0, "human": 0, "bot": 0, "suspect": 0,
             }
         place["lat_sum"] += geo["latitude"]
         place["lon_sum"] += geo["longitude"]
@@ -105,7 +105,7 @@ def build_live_view(rows, now=None, window_minutes=1440):
         "online_seconds": ONLINE_SECONDS,
         "online_now": online,
         "sessions": sum(totals.values()),
-        "verdicts": {key: totals[key] for key in ("human", "bot", "suspect", "pending")},
+        "verdicts": {key: totals[key] for key in ("human", "bot", "suspect")},
         "points": points,
         "top_locations": [
             {"label": ", ".join(dict.fromkeys(x for x in (p["region"], p["country"]) if x)),
