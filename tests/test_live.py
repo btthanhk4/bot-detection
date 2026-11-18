@@ -80,11 +80,12 @@ def test_online_means_recent_and_not_left():
     rows = [
         _row("42.113.160.186", minutes_ago=0.5),
         {**_row("27.72.100.1", minutes_ago=0.2), "last_action": "pagehide"},
+        {**_row("42.113.160.186", minutes_ago=0.1), "last_action": "hidden"},
         _row("35.240.1.1", minutes_ago=3),
         {**_row("42.113.160.186", minutes_ago=1.5), "last_action": "heartbeat"},
     ]
     view = live.build_online_view(rows, now=NOW)
-    assert view["online_now"] == 2, "closed tab and a session silent for 3 minutes are not online"
+    assert view["online_now"] == 2, "closed or hidden tabs and a session silent for 3 minutes are not online"
     assert view["places"] == {"VN|Hanoi": 2}
     assert live.build_live_view(rows, now=NOW)["points"][0]["key"] == "VN|Hanoi"
 

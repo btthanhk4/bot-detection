@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.17.0');
+    assert.strictEqual(sent.collector.sdkVersion, '1.18.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -1003,6 +1003,130 @@ async function testPagehideFetchFallbackAvoidsCorsPreflight() {
   }
 }
 
+// 1.18: a phone that leaves by switching apps fires no pagehide; the page becoming hidden sends.
+async function testHiddenPageSendsItsFinalSnapshotOnce() {
+  const beacons = [];
+  let fetches = 0;
+  global.fetch = async () => {
+    fetches++;
+    return { ok: true };
+  };
+  const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
+  Object.defineProperty(global, 'navigator', {
+    configurable: true,
+    value: { sendBeacon: (_url, blob) => { beacons.push(blob); return true; } },
+  });
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, idleHeartbeatInterval: 60000 });
+  let presence = { visibleMs: 2500, motion: { status: 'ok', events: 9 } };
+  collector.presence.exportData = () => presence;
+  const lastBeacon = async () => JSON.parse(await beacons[beacons.length - 1].text());
+  try {
+    assert.strictEqual(await collector.sendTelemetry('hidden'), false, 'still fingerprinting: the initial snapshot follows');
+    assert.strictEqual(beacons.length, 0);
+    collector.cachedFingerprint = { visitorId: 'v', components: {} };
+    collector.cachedBotd = {};
+    assert.strictEqual(await collector.sendTelemetry('init'), true);
+    assert.strictEqual(fetches, 1);
+    assert.strictEqual(await collector.sendTelemetry('hidden'), true);
+    assert.strictEqual(beacons.length, 0, 'nothing new since the acknowledged snapshot');
+
+    // An untouched phone: its motion summary grew and the page crossed 3 s visible.
+    presence = { visibleMs: 4200, motion: { status: 'ok', events: 120 } };
+    assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+    assert.strictEqual(fetches, 2, 'a grown motion summary is worth a heartbeat');
+    assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+    assert.strictEqual(fetches, 2, 'once');
+
+    for (let i = 0; i < 30; i++) collector.mouseRecorder.recordPoint('move', i, 10, 'mouse');
+    presence = { visibleMs: 6100, motion: { status: 'ok', events: 240 } };
+    const acked = collector.ackedMouse;
+    assert.strictEqual(await collector.sendTelemetry('hidden'), true);
+    assert.strictEqual(beacons.length, 1);
+    assert.strictEqual(beacons[0].type, 'text/plain;charset=utf-8');
+    let sent = await lastBeacon();
+    assert.strictEqual(sent.action, 'hidden');
+    assert.strictEqual(sent.mouse.presence.motion.events, 240);
+    assert.deepStrictEqual(collector.ackedMouse, acked, 'a page that may come back acknowledges nothing by beacon');
+    assert.strictEqual(fetches, 2);
+
+    // Hidden, then closed with nothing new: one beacon. Something new: pagehide sends as before.
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), true);
+    assert.strictEqual(beacons.length, 1, 'pagehide repeats nothing the hidden beacon carried');
+    collector.mouseRecorder.recordPoint('move', 99, 99, 'mouse');
+    assert.strictEqual(await collector.sendTelemetry('pagehide'), true);
+    assert.strictEqual(beacons.length, 2);
+    sent = await lastBeacon();
+    assert.strictEqual(sent.action, 'pagehide');
+    assert.strictEqual(collector.ackedMouse.moves, 31, 'pagehide still acknowledges its moves');
+  } finally {
+    collector.destroy();
+    if (originalNavigator) Object.defineProperty(global, 'navigator', originalNavigator);
+    else delete global.navigator;
+  }
+}
+
+async function testDesktopPresenceKeepsHeartbeatsCoalesced() {
+  let fetches = 0;
+  global.fetch = async () => {
+    fetches++;
+    return { ok: true };
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0, idleHeartbeatInterval: 60000 });
+  collector.cachedFingerprint = { visitorId: 'v', components: {} };
+  collector.cachedBotd = {};
+  let presence = { visibleMs: 1000, motion: { status: 'no_events' } };
+  collector.presence.exportData = () => presence;
+  assert.strictEqual(await collector.sendTelemetry('init'), true);
+  presence = { visibleMs: 45000, motion: { status: 'no_events' } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(fetches, 1, 'visible time alone does not wake a page without motion events');
+  // Desktop Chrome: one empty devicemotion event and no sensor behind it.
+  presence = { visibleMs: 45500, motion: { status: 'ok', events: 1, nullEvents: 1 } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  presence = { visibleMs: 52000, motion: { status: 'ok', events: 1, nullEvents: 1 } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(fetches, 2, 'an empty event is one change, not a clock that wakes every step');
+  presence = { visibleMs: 53000, motion: { status: 'ok', events: 3, nullEvents: 0 } };
+  assert.strictEqual(await collector.sendTelemetry('heartbeat'), true);
+  assert.strictEqual(fetches, 3, 'real readings do');
+  collector.destroy();
+}
+
+async function testVisibilityListenerFollowsTheLifecycle() {
+  const previousDocument = global.document;
+  const calls = [];
+  const doc = {
+    visibilityState: 'visible',
+    addEventListener: (type, fn) => calls.push(['add', type, fn]),
+    removeEventListener: (type, fn) => calls.push(['remove', type, fn]),
+  };
+  const collector = new BotCollector({ endpointUrl: '/telemetry', autoSendInterval: 0 });
+  const sent = [];
+  collector.sendTelemetry = (action) => {
+    sent.push(action);
+    return Promise.resolve(true);
+  };
+  const resolverIndex = digestResolvers.length;
+  global.document = doc;
+  const start = collector.start();
+  global.document = previousDocument;
+  assert.ok(calls.some(([op, type, fn]) => op === 'add' && type === 'visibilitychange' && fn === collector.handleVisibilityChange));
+  global.document = doc;
+  collector.handleVisibilityChange();
+  assert.deepStrictEqual(sent, [], 'a page becoming visible sends nothing');
+  doc.visibilityState = 'hidden';
+  collector.handleVisibilityChange();
+  assert.deepStrictEqual(sent, ['hidden']);
+  global.document = previousDocument;
+  await waitFor(() => digestResolvers.length > resolverIndex);
+  digestResolvers[resolverIndex]();
+  await start;
+  global.document = doc;
+  collector.destroy();
+  global.document = previousDocument;
+  assert.ok(calls.some(([op, type, fn]) => op === 'remove' && type === 'visibilitychange' && fn === collector.handleVisibilityChange));
+}
+
 async function testFailedHeartbeatRetriesLatestSnapshot() {
   let attempts = 0;
   global.fetch = async () => ({ ok: ++attempts >= 2 });
@@ -1308,6 +1432,9 @@ testRestartDuringFingerprinting()
   .then(testExportCoversEveryMoveSinceTheLastAcknowledgedSnapshot)
   .then(testMouseBacklogSendsEarly)
   .then(testPagehideFetchFallbackAvoidsCorsPreflight)
+  .then(testHiddenPageSendsItsFinalSnapshotOnce)
+  .then(testDesktopPresenceKeepsHeartbeatsCoalesced)
+  .then(testVisibilityListenerFollowsTheLifecycle)
   .then(testUnchangedHeartbeatIsCoalescedUntilIdleDeadline)
   .then(testActivitySignatureIncludesEarlierPoints)
   .then(testIntervalSendsHeartbeatOnlyWhenNeeded)

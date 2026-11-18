@@ -3,8 +3,9 @@
 Sessions seen in the window are located with the offline GeoIP lookup and
 grouped by region (DB-IP "cities" are often wards or districts, too fine for a
 world map). A session is online when it sent telemetry in the last
-ONLINE_SECONDS and its last event was not "pagehide" (tab closed or left). The
-collector sends on load, every 15 s while the visitor is active and at least
+ONLINE_SECONDS and its last event was not "pagehide" (tab closed or left) or
+"hidden" (collector 1.18: the page was hidden, usually an app switch on a phone).
+The collector sends on load, every 15 s while the visitor is active and at least
 every 60 s while idle, so two minutes covers an idle open tab; a closed tab
 drops out at once.
 """
@@ -17,6 +18,8 @@ from api_service import geoip
 ONLINE_SECONDS = 120
 MAX_POINTS = 500
 TOP_N = 6
+# Last snapshot actions of a visitor who left the page (collector 1.18 adds "hidden").
+LEFT_ACTIONS = ("pagehide", "hidden")
 
 
 def _verdict_bucket(row):
@@ -34,7 +37,7 @@ def _as_utc(value):
 
 def is_online(row, since):
     updated = _as_utc(row.get("updated_at"))
-    return bool(updated and updated >= since and row.get("last_action") != "pagehide")
+    return bool(updated and updated >= since and row.get("last_action") not in LEFT_ACTIONS)
 
 
 def _place_key(geo):

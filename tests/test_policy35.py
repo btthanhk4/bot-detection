@@ -70,7 +70,7 @@ def test_synthetic_motion_boundaries(change, fires):
 
 def test_synthetic_motion_is_a_presence_code():
     report = analyze_presence(_payload(_EMULATED_MOTION), android=True)
-    assert "SYNTHETIC_MOTION" in report["codes"] and report["analysis_version"] in ("presence_v2", "presence_v3")
+    assert "SYNTHETIC_MOTION" in report["codes"] and report["analysis_version"] in ("presence_v2", "presence_v3", "presence_v4")
     assert "SYNTHETIC_MOTION" not in analyze_presence(_payload(_TABLE_MOTION), android=True)["codes"]
 
 
@@ -254,4 +254,4 @@ def test_flagship_with_four_gigabytes_never_becomes_bot_alone():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38", "39", "40", "41", "42", "43")
+    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38", "39", "40", "41", "42", "43", "44")

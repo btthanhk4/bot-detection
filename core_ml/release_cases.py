@@ -541,6 +541,13 @@ _HAND_MOTION = {"status": "ok", "events": 400, "intervalMs": 17.8, "gravity": 9.
 _EMULATED_MOTION = {"status": "ok", "events": 400, "intervalMs": 16.7, "gravity": 9.8, "tiltDeg": 0.0,
                     "linearSd": 0.072, "gravitySd": 0.072, "rotationMean": 0.112, "rotationSd": 0.049}
 _S23 = {"model": "SM-S918B", "architecture": "", "platformVersion": "14.0.0", "mobile": True}
+# Policy 44: a short visit to a page with a phone in a hand, as collector 1.16-1.17 often reported it
+# (the first second only): 12 events, tilted, trembling and turning; 6 events of the same; 12 events
+# from a phone without a gyroscope.
+_GLANCE_HAND_MOTION = {"status": "ok", "events": 12, "intervalMs": 21.0, "gravity": 9.84, "tiltDeg": 38.0,
+                       "linearSd": 0.09, "gravitySd": 0.2, "rotationMean": 0.9, "rotationSd": 0.6}
+_GLANCE_FEW_MOTION = {**_GLANCE_HAND_MOTION, "events": 6}
+_GLANCE_NO_GYRO_MOTION = {**_GLANCE_HAND_MOTION, "rotationMean": None, "rotationSd": None}
 # Policy 43: the Spin farm's sensor (one event without gravity over 30-60 s of a visible page).
 _SENSORLESS_MOTION = {"status": "ok", "events": 1, "intervalMs": None, "gravity": 0.0, "tiltDeg": None,
                       "linearSd": None, "gravitySd": None, "rotationMean": None, "rotationSd": None}
@@ -728,6 +735,16 @@ MOBILE_RULE_CASES = (
     ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND[4:],
                                                      memory=4, cores=8, headers={"audio_hash_sessions": 0}),
                                               first_touch_ms=3000, motion=_SENSORLESS_MOTION, visible_ms=6000)),
+    # Policy 44: held in a hand over 8+ events is enough; 6 events, or no gyroscope, is not.
+    ("HUMAN", "FINAL", "mobile_held_device", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                          cores=8), first_touch_ms=None, motion=_GLANCE_HAND_MOTION,
+                                                   visible_ms=3500)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8), first_touch_ms=None, motion=_GLANCE_FEW_MOTION,
+                                                     visible_ms=3500)),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4,
+                                                            cores=8), first_touch_ms=None,
+                                                     motion=_GLANCE_NO_GYRO_MOTION, visible_ms=3500)),
 )
 
 # Frozen gate of policies 19-23.
@@ -803,10 +820,20 @@ MOBILE_RULE_GATE_V42 = {
     "fixture_fingerprint": "cf82c9c9084f954a98ac4d7921c42167fead192cd9e8ec11df641bed38b892dc",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 43.
+MOBILE_RULE_GATE_V43 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v1",
+              "sensorless_phone_v1"],
+    "human_cases": 17, "suspect_cases": 37, "bot_cases": 10, "passed": 64,
+    "fixture_fingerprint": "71a3af7f16a88ef7b9f461026cc28b7add1de7a131f4a0d79e0346768166b562",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v1",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v2",
               "sensorless_phone_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),

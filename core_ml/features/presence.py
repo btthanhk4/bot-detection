@@ -41,17 +41,21 @@ Fingerprint flags stored with each label:
 import math
 import re
 
-PRESENCE_VERSION = "presence_v3"
+PRESENCE_VERSION = "presence_v4"
 EMULATED_PHONE_RULE = "emulated_phone_v1"
 SENSORLESS_PHONE_RULE = "sensorless_phone_v1"
-MOBILE_HELD_RULE = "mobile_held_device_v1"
+MOBILE_HELD_RULE = "mobile_held_device_v2"
 # Policy 43: an Android phone whose motion sensor fired at most a handful of events, without gravity,
 # while the page was visible for 10 s or more (a real accelerometer streams ~60 events a second at 9.8).
 SENSORLESS_MAX_EVENTS = 5
 SENSORLESS_MAX_GRAVITY = 1.0
 SENSORLESS_MIN_VISIBLE_MS = 10_000
-# Policy 43: a phone held in a hand: tilted, trembling and turning (gyroscope), over 30+ events.
-HELD_MIN_EVENTS = 30
+# Policy 43: a phone held in a hand: tilted, trembling and turning (gyroscope).
+# Policy 44: over 8+ events instead of 30. Collector 1.16-1.17 often reported only the first
+# second of a short visit (the script starts late and the last snapshot is lost on an app switch):
+# on the replay of 18 Nov 2026, 59 untouched phones held in a hand had 8-29 events; Fingerprint
+# flagged none of the 18 it had checked, and 1 of 645 BOT phones showed the pattern.
+HELD_MIN_EVENTS = 8
 HELD_MIN_ROTATION_SD = 0.1
 INSTANT_TOUCH_MS = 120
 NOT_VIEWED_MS = 500
@@ -145,7 +149,8 @@ def sensors_unavailable(presence: dict) -> bool:
 
 def held_in_hand(motion: dict) -> bool:
     """Policy 43: tilted 10-85 degrees, trembling (linear SD 0.02+) and turning (gyroscope SD above
-    0.1) over 30+ events: a phone in a person's hand (sanitized motion summary)."""
+    0.1): a phone in a person's hand (sanitized motion summary). Policy 44: over 8+ events (was 30).
+    An emulated sensor lies level (``SYNTHETIC_MOTION``, tilt at most 0.2) and does not turn."""
     return bool(
         motion.get("status") == "ok" and (motion.get("events") or 0) >= HELD_MIN_EVENTS
         and motion.get("tilt_deg") is not None and 10 <= motion["tilt_deg"] <= 85

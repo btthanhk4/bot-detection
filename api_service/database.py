@@ -992,7 +992,8 @@ def get_online_sessions(since: datetime, limit: int = 5000,
         return None
     try:
         return list(db["detection_results"].find(
-            {"updated_at": {"$gte": since}, "last_action": {"$ne": "pagehide"}, **(site_filter or {})},
+            # Left the page: closed ("pagehide") or hidden (collector 1.18), as live.LEFT_ACTIONS.
+            {"updated_at": {"$gte": since}, "last_action": {"$nin": ["pagehide", "hidden"]}, **(site_filter or {})},
             {"_id": 0, "client_ip": 1, "verdict": 1, "decision_state": 1, "updated_at": 1, "last_action": 1},
         ).limit(limit))
     except Exception as e:

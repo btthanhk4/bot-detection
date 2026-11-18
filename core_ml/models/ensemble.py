@@ -105,7 +105,7 @@ from core_ml.models.touch_shadow import score_touch
 # contradiction, not two: it withholds HUMAN but no longer convicts alone (Samsung Internet).
 # Policy 43: an untouched phone held in a hand is a HUMAN of the lowest confidence; motion sensors that do
 # not stream together with a novel audio stack convict a phone (sensorless_phone_v1).
-DECISION_POLICY_VERSION = "43"
+DECISION_POLICY_VERSION = "44"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 

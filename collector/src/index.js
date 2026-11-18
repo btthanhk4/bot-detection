@@ -10,9 +10,35 @@ import { collectAutomationSignals, probeNotificationPermission, probeWorkerConsi
 import { EXPORT_CONTEXT_MOVES, EXPORT_MAX_MOVES, MouseRecorder } from './mouse.js';
 import { PagePresence } from './presence.js';
 
-export const COLLECTOR_VERSION = '1.17.0';
+export const COLLECTOR_VERSION = '1.18.0';
 // Send early once this many unacknowledged moves pile up, before an export would drop any.
 const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
+
+// Collector 1.18: a phone usually leaves a page by switching apps, and then often fires no
+// pagehide at all. A page becoming hidden is the last event it can rely on (Page Lifecycle API),
+// so the final snapshot also leaves then, as a beacon ("hidden"). On 17 Nov 2026, 28% of the
+// untouched phone sessions that stayed undecided had no pagehide snapshot (people: 4%).
+const UNLOAD_ACTIONS = new Set(['pagehide', 'hidden']);
+
+function isUnload(action) {
+  return UNLOAD_ACTIONS.has(action);
+}
+
+// Visible-time steps the API reads: not viewed (0.5 s), no motion (3 s), sensors unavailable (10 s).
+const VISIBLE_STEPS_MS = [500, 3000, 10000, 30000];
+
+// What a phone's presence adds to a snapshot after the first one: its motion summary keeps growing
+// for 12 s (or 400 events) and its visible time crosses the steps above, with no finger moving.
+// Only readings count: desktop Chrome fires one empty event (no sensor; 90% of captured desktop
+// sessions), so a desktop, or a phone without readings, keeps one key and heartbeats as before.
+function presenceKey(presence) {
+  const motion = presence && presence.motion ? presence.motion : null;
+  if (!motion) return '';
+  const readings = (Number(motion.events) || 0) - (Number(motion.nullEvents) || 0);
+  if (motion.status !== 'ok' || readings <= 0) return String(motion.status || '');
+  const visible = Number(presence.visibleMs) || 0;
+  return JSON.stringify([readings, VISIBLE_STEPS_MS.filter((step) => visible >= step).length]);
+}
 
 const SESSION_STORAGE_KEY = 'datacat_session';
 // A random id kept in this site's localStorage (collector 1.11). The API counts how many
@@ -115,6 +141,14 @@ export class BotCollector {
     this.maxRetryAttempts = Math.max(0, Number(options.maxRetryAttempts ?? 3) || 0);
     this.retryBaseDelay = Math.max(100, Number(options.retryBaseDelay ?? 500) || 500);
     this.handlePageHide = () => { this.sendTelemetry('pagehide'); };
+    // 1.18: the final snapshot also leaves when the page is hidden (see UNLOAD_ACTIONS).
+    this.handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        this.sendTelemetry('hidden').catch(() => false);
+      }
+    };
+    // What the last unload beacon carried: hiding and then closing a page sends it once.
+    this.lastUnloadSignature = null;
     // Gateway embeds (policy 24) greet the API before fingerprinting; see sendHello().
     this.helloEnabled = options.hello === true;
   }
@@ -315,6 +349,9 @@ export class BotCollector {
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', this.handlePageHide, { capture: true });
     }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', this.handleVisibilityChange, { capture: true });
+    }
     // Pre-warm fingerprint and heuristics
     let visitorId;
     let components;
@@ -362,6 +399,9 @@ export class BotCollector {
     if (typeof window !== 'undefined') {
       window.removeEventListener('pagehide', this.handlePageHide, { capture: true });
     }
+    if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange, { capture: true });
+    }
   }
 
   async collectProfile() {
@@ -396,7 +436,7 @@ export class BotCollector {
       const { visitorId, components } = await getFingerprintComponents();
       this.cachedFingerprint = { visitorId, components };
       this.cachedBotd = runBotDetectors(components);
-      if (action !== 'pagehide' && !this.destroyed) {
+      if (!isUnload(action) && !this.destroyed) {
         this.cachedBotd.profile = await this.collectProfile();
       }
     }
@@ -479,7 +519,9 @@ export class BotCollector {
     const scrolls = mouse.presence && Number.isFinite(mouse.presence.scrolls) ? mouse.presence.scrolls : 0;
     // A reference event id that arrives later is news worth one heartbeat even without activity.
     const reference = payload.collector && payload.collector.referenceEventId ? payload.collector.referenceEventId : '';
-    return JSON.stringify([payload.pageUrl || '', pointer, scrollEvents, keystrokes, clicks, gestures, scrolls, reference]);
+    // 1.18: a phone's grown motion summary or longer visible time is news as well (presenceKey).
+    return JSON.stringify([payload.pageUrl || '', pointer, scrollEvents, keystrokes, clicks, gestures, scrolls, reference,
+      presenceKey(mouse.presence)]);
   }
 
   /**
@@ -487,10 +529,11 @@ export class BotCollector {
    */
   async sendTelemetry(action = 'telemetry') {
     if (this.refused) return false;
-    if (this.sendPromise && action !== 'pagehide') return this.sendPromise;
+    // Unload snapshots never wait behind a queued send: the page may be gone a moment later.
+    if (this.sendPromise && !isUnload(action)) return this.sendPromise;
 
     const operation = this._sendTelemetry(action, this.lifecycleVersion);
-    if (action === 'pagehide') return operation;
+    if (isUnload(action)) return operation;
     const tracked = operation.finally(() => {
       if (this.sendPromise === tracked) this.sendPromise = null;
     });
@@ -566,7 +609,7 @@ export class BotCollector {
   async transmitTelemetry(body, action) {
     let delivery = null;
     try {
-      if (action === 'pagehide' && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      if (isUnload(action) && typeof navigator !== 'undefined' && navigator.sendBeacon) {
         // text/plain is CORS-safelisted, so a cross-origin unload beacon does
         // not depend on an asynchronous preflight that the browser may cancel.
         const blob = new Blob([body], { type: 'text/plain;charset=UTF-8' });
@@ -584,12 +627,12 @@ export class BotCollector {
         headers: {
           // Keep the unload fallback CORS-safelisted. A JSON content type can
           // trigger a preflight that the browser cancels while leaving a page.
-          'Content-Type': action === 'pagehide'
+          'Content-Type': isUnload(action)
             ? 'text/plain;charset=UTF-8'
             : 'application/json',
         },
         body,
-        keepalive: action === 'pagehide',
+        keepalive: isUnload(action),
       }, 10000, async (response) => {
         delivery.status = response.status ?? null;
         const stop = stopSignal(response);
@@ -647,13 +690,16 @@ export class BotCollector {
 
   async _sendTelemetry(action, lifecycleVersion) {
     try {
-      if (this.tokenPromise && action !== 'pagehide') {
+      const unload = isUnload(action);
+      // A page hidden while still fingerprinting sends nothing yet: its initial snapshot follows.
+      if (action === 'hidden' && (this.destroyed || !this.cachedFingerprint)) return false;
+      if (this.tokenPromise && !unload) {
         // Usually ready long before fingerprinting ends; never hold telemetry back for long.
         await Promise.race([this.tokenPromise, new Promise((resolve) => setTimeout(resolve, 2000))]);
         if (this.refused) return false;
       }
       const payload = await this.getPayload(action);
-      if (action !== 'pagehide' && (this.destroyed || lifecycleVersion !== this.lifecycleVersion)) {
+      if (!unload && (this.destroyed || lifecycleVersion !== this.lifecycleVersion)) {
         return false;
       }
       const activitySignature = this.getActivitySignature(payload);
@@ -662,6 +708,11 @@ export class BotCollector {
         && activitySignature === this.lastSentActivitySignature
         && Date.now() - this.lastSuccessfulSendAt < this.idleHeartbeatInterval;
       if (unchangedHeartbeat) return true;
+      // 1.18: an unload snapshot that repeats one already sent stays home. Hiding and then closing a
+      // page fires both events with nothing new in between; a hidden page also skips a snapshot that
+      // only repeats the last acknowledged one.
+      if (unload && activitySignature === this.lastUnloadSignature) return true;
+      if (action === 'hidden' && !this.pendingRetry && activitySignature === this.lastSentActivitySignature) return true;
       if (action === 'heartbeat' && !this.pendingRetry && Date.now() < this.retryNotBefore) return false;
       const ackMark = this.mouseAckMark(payload);
       let body = JSON.stringify(payload);
@@ -669,7 +720,7 @@ export class BotCollector {
       // Browsers commonly cap beacon/keepalive request bodies around 64 KiB. Keep the newest moves
       // (first 200, then 40) and say where they start in the frame (1.17 moveBase).
       for (const keepMoves of [200, 40]) {
-        if (!(action === 'pagehide' && new Blob([body]).size > 60000 && payload.mouse)) break;
+        if (!(unload && new Blob([body]).size > 60000 && payload.mouse)) break;
         const records = Array.isArray(payload.mouse.records) ? payload.mouse.records : [];
         const retained = records.map((record, index) => ({ record, index }));
         const moves = retained.filter(({ record }) => record && record.type === 'move' && record.source !== 'touch').slice(-keepMoves);
@@ -686,7 +737,7 @@ export class BotCollector {
         body = JSON.stringify(payload);
       }
       // Preserve model input-domain signals even when optional fingerprint data is oversized.
-      if (action === 'pagehide' && new Blob([body]).size > 60000) {
+      if (unload && new Blob([body]).size > 60000) {
         const fingerprint = payload.fingerprint || {};
         const userAgent = String(fingerprint.userAgent || '');
         const touchPoints = Number(fingerprint.maxTouchPoints);
@@ -711,12 +762,14 @@ export class BotCollector {
 
       this.touchSession();
       const sent = await this.transmitTelemetry(body, action);
-      if (sent) this.noteMouseAck(ackMark);
-      if (sent && action !== 'pagehide') {
+      // A beacon from a page that may come back confirms nothing: its moves go out again later.
+      if (sent && action !== 'hidden') this.noteMouseAck(ackMark);
+      if (sent && unload) this.lastUnloadSignature = activitySignature;
+      if (sent && !unload) {
         this.lastSentActivitySignature = activitySignature;
         this.lastSuccessfulSendAt = Date.now();
         this.clearPendingRetry();
-      } else if (!sent && action !== 'pagehide') {
+      } else if (!sent && !unload) {
         // Heartbeats are cumulative snapshots. Keeping only the latest failed
         // body bounds memory while allowing transient network failures to heal.
         this.scheduleRetry(body, lifecycleVersion, 1, activitySignature, ackMark);
