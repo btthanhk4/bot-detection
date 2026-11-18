@@ -86,4 +86,4 @@ def test_policy_46_gate_is_frozen_on_its_own_fixtures():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION == "47"
+    assert DECISION_POLICY_VERSION in ("47", "48")

@@ -65,4 +65,4 @@ def test_fixtures():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("43", "44", "45", "46", "47")
+    assert DECISION_POLICY_VERSION in ("43", "44", "45", "46", "47", "48")

@@ -70,6 +70,7 @@ from core_ml.model_bundle import (
 from core_ml.models.behavioral_lstm import MouseTrajectoryLSTM
 from core_ml.models.ensemble import DECISION_POLICY_VERSION, EnsembleBotDetector
 from core_ml.models.tabular_classifier import TabularBotClassifier
+from core_ml.three_verdicts import apply_three_verdicts
 
 logger = logging.getLogger("bot_detection.api")
 
@@ -771,7 +772,7 @@ def _flush_telemetry_buffer(max_events: Optional[int] = None):
                 register_traffic(capture if capture is not None else data)
                 if capture is None and not isinstance(analysis, dict):
                     try:
-                        analysis = ensemble_detector.predict(data)
+                        analysis = apply_three_verdicts(ensemble_detector.predict(data), data)
                         analysis.pop("_session_mouse_new", None)
                         _attach_model_metadata(analysis)
                     except Exception:
@@ -1264,7 +1265,7 @@ async def detect_bot(payload: TelemetryPayload, request: Request):
 
     start_t = time.perf_counter()
     try:
-        result = await run_in_threadpool(ensemble_detector.predict, data)
+        result = apply_three_verdicts(await run_in_threadpool(ensemble_detector.predict, data), data)
         result.pop("_session_mouse_new", None)
     except Exception as exc:
         logger.exception("Detection inference failed")
@@ -1467,7 +1468,8 @@ async def receive_telemetry(request: Request, background_tasks: BackgroundTasks)
         # Policy 40: the session's stored mouse-model scores join this snapshot's (never client data).
         data["_session_mouse"] = await run_in_threadpool(_session_mouse_prior, data)
         started_at = time.perf_counter()
-        analysis = await run_in_threadpool(ensemble_detector.predict, data)
+        # Policy 48: the product's three verdicts (an insufficient result becomes SUSPECT or HUMAN).
+        analysis = apply_three_verdicts(await run_in_threadpool(ensemble_detector.predict, data), data)
         _record_inference_latency(started_at)
         session_mouse_new = analysis.pop("_session_mouse_new", None)
         _attach_model_metadata(analysis)

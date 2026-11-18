@@ -2323,7 +2323,16 @@ const SHORT_BASIS = { explicit_automation: 'Trình duyệt headless', automation
   non_browser_client: 'Công cụ HTTP, không chạy JS', declared_crawler: 'Crawler tự khai', no_telemetry: 'Không chạy mã giám sát',
   forged_browser: 'Trình duyệt giả mạo', webview_automation: 'WebView giấu cờ webdriver', synthetic_touch: 'Chạm giả lập',
   emulated_phone: 'Điện thoại giả lập', replayed_trajectory: 'Phát lại quỹ đạo chuột',
-  sensorless_phone: 'Điện thoại không có cảm biến thật', mobile_held_device: 'Điện thoại cầm trên tay, không chạm' };
+  sensorless_phone: 'Điện thoại không có cảm biến thật', mobile_held_device: 'Điện thoại cầm trên tay, không chạm',
+  no_bot_evidence: 'Không có dấu hiệu bot' };
+// Policy 48: what made a session without enough input SUSPECT.
+const ANOMALY_LABELS = { UNVERIFIED_PAGE_LOAD: 'không có page token của trang', SENSORS_UNAVAILABLE: 'cảm biến chuyển động không trả số đo thật',
+  DESKTOP_IDLE: 'trang mở từ 10 giây mà gần như không di chuột', ENVIRONMENT_FAMILY: 'có dấu hiệu môi trường tự động hóa',
+  NOT_VIEWED: 'trang không bao giờ hiển thị', CLIENT_AUTOMATION_SIGNAL: 'bộ phát hiện phía trang báo tự động hóa',
+  HIGH_CLIENT_HEURISTIC_SCORE: 'điểm heuristic phía trang từ 0,8', MODEL_DISAGREEMENT: 'hai mô hình chuột bất đồng',
+  DEGENERATE_TRAJECTORY: 'nhiều lần di chuột nhưng không có biến thiên',
+  PROFILE_AUTOMATION: 'hồ sơ trình duyệt có dấu vết tự động hóa (HeadlessChrome, webdriver trong worker)',
+  NO_PAGE_PRESENCE: 'không có dấu hiệu trang từng được mở' };
 
 // One short phrase for the table; the drawer keeps the full explanation.
 // Policy 25: a declared crawler, verified by its operator's published addresses or not.
@@ -2356,6 +2365,7 @@ function shortReason(s, deferred) {
   if (basis === 'mobile_risk') return codes((bd.mobile_human || {}).risk, SHORT_MOBILE_CODES) || 'Rủi ro trên điện thoại';
   if (basis === 'mobile_clean_environment') return `${(bd.mobile_human || {}).gestures || 0} lần chạm tự nhiên`;
   if (basis === 'mobile_light_touch') return `${(bd.mobile_human || {}).gestures || 0} lần chạm thật (độ tin cậy thấp hơn)`;
+  if (basis === 'input_anomaly') return ((bd.three_verdicts || {}).anomalies || []).map(c => ANOMALY_LABELS[c] || c).join('; ') || 'Bất thường';
   if (deferred) {
     if ((bd.suspect_reason_codes || []).includes('NOT_VIEWED')) return 'Trang chưa từng hiển thị';
     if ((bd.suspect_reason_codes || []).includes('NO_INTERACTION_CLEAN')) return 'Không thao tác, môi trường sạch';
@@ -2777,6 +2787,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     const mh = bd.mobile_human || {};
     const DEVICE_LABELS = { ios: 'iPhone', android: 'Android', android_desktop_site: 'Android (trang web cho máy tính)', ipad_desktop_mode: 'iPad', other_mobile: 'Thiết bị di động' };
     explainText = `${DEVICE_LABELS[mh.device] || 'Thiết bị di động'}, ${mh.gestures} thao tác chạm có tiếp xúc ngón tay thật, môi trường sạch. Ít hơn 3 thao tác nên độ tin cậy thấp hơn.`;
+  } else if (v === 'HUMAN' && bd.decision_basis === 'no_bot_evidence') {
+    explainText = 'Chưa có thao tác để đánh giá hành vi và không có dấu hiệu bot nào, nên tính là người (độ tin cậy thấp nhất).';
   } else if (v === 'HUMAN') {
     explainText = 'Không có dấu hiệu bot.';
   } else if (deferred) {
@@ -2790,6 +2802,8 @@ async function openSessionDrawer(idx, preloadedMouse = null, sessionSnapshot = n
     } else {
       explainText = 'Chưa đủ dữ liệu để kết luận.';
     }
+  } else if (bd.decision_basis === 'input_anomaly') {
+    explainText = `Chưa có thao tác để đánh giá hành vi, nhưng có điểm bất thường: ${escapeHtml(((bd.three_verdicts || {}).anomalies || []).map(c => ANOMALY_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'mobile_risk') {
     explainText = `Bất thường: ${escapeHtml(((bd.mobile_human || {}).risk || []).map(c => MOBILE_CODE_LABELS[c] || c).join('; '))}.`;
   } else if (bd.decision_basis === 'client_forgery') {

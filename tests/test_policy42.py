@@ -37,4 +37,4 @@ def test_without_a_user_agent_the_old_reading_holds():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("42", "43", "44", "45", "46", "47")
+    assert DECISION_POLICY_VERSION in ("42", "43", "44", "45", "46", "47", "48")

@@ -12,6 +12,7 @@ Major improvements:
 """
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -97,6 +98,8 @@ from core_ml.release_cases import (
     SYNTHETIC_DEVICE_RULE_GATE,
     SYNTHETIC_INPUT_CASES,
     SYNTHETIC_INPUT_RULE_GATE,
+    THREE_VERDICT_CASES,
+    THREE_VERDICT_GATE,
 )
 
 # Reproducibility
@@ -815,6 +818,21 @@ def validate_desktop_risk_rules(detector) -> dict:
     return dict(DESKTOP_RISK_RULE_GATE)
 
 
+def validate_three_verdicts(detector) -> dict:
+    """Policy 48: the product's three verdicts. An insufficient result becomes HUMAN without an anomaly and
+    SUSPECT with one; results the evidence decided stay as they are."""
+    from core_ml.three_verdicts import apply_three_verdicts
+
+    for verdict, state, basis, anomalies, payload in THREE_VERDICT_CASES:
+        result = apply_three_verdicts(detector.predict(copy.deepcopy(payload)), payload)
+        mapped = result["breakdown"].get("three_verdicts")
+        if (result["verdict"], result["decision_state"], result["breakdown"]["decision_basis"]) != (verdict, state, basis):
+            raise RuntimeError("Three verdict release gate failed")
+        if (mapped or {}).get("anomalies") != anomalies:
+            raise RuntimeError("Three verdict metadata release gate failed")
+    return dict(THREE_VERDICT_GATE)
+
+
 def validate_client_forgery_rules(detector) -> dict:
     """Check the policy 26 fixtures: too little input stays insufficient unless the
     browser contradicts itself, which makes the session a final SUSPECT."""
@@ -1455,6 +1473,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
     mobile_rule_gate = validate_mobile_rules(production_detector)
     desktop_risk_rule_gate = validate_desktop_risk_rules(production_detector)
     client_forgery_rule_gate = validate_client_forgery_rules(production_detector)
+    three_verdict_gate = validate_three_verdicts(production_detector)
     publish_model_artifacts(
         tabular_model,
         lstm_model.cpu(),
@@ -1491,6 +1510,7 @@ def main(dataset_root=None, device="auto", allow_synthetic_only=False, weights_d
             "mobile_rule_gate": mobile_rule_gate,
             "desktop_risk_rule_gate": desktop_risk_rule_gate,
             "client_forgery_rule_gate": client_forgery_rule_gate,
+            "three_verdict_gate": three_verdict_gate,
             "lstm_p75_min_weighted_mean": lstm_model.p75_min_weighted_mean,
             "release_minimum_metrics": RELEASE_MINIMUM_METRICS,
             "release_early_minimum_metrics": RELEASE_EARLY_MINIMUM_METRICS,

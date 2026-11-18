@@ -1271,3 +1271,45 @@ CLIENT_FORGERY_RULE_GATE = {
         json.dumps(CLIENT_FORGERY_CASES, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest(),
 }
+
+
+# Policy 48: three verdicts. The detector's insufficient result becomes HUMAN without an anomaly (an untouched
+# iPhone, a phone page an in-app browser preloaded, a short desktop visit) and SUSPECT with one (no page token,
+# a sensor that reports nothing, a desktop page shown 10 s without the mouse moving, an automation family, a
+# desktop page never shown). Results the evidence decided stay as they are.
+_WINDOWS_DESKTOP = {"pluginsLength": 5, "platform": "Win32", "hardwareConcurrency": 8, "deviceMemory": 8}
+THREE_VERDICT_CASES = (
+    ("HUMAN", "FINAL", "no_bot_evidence", [],
+     _seen(_phone(_IOS18, "iPhone", "Apple GPU", []), first_touch_ms=None, motion={"status": "permission_gated"})),
+    ("HUMAN", "FINAL", "no_bot_evidence", [],
+     _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8), shown=False)),
+    ("SUSPECT", "FINAL", "input_anomaly", ["UNVERIFIED_PAGE_LOAD"],
+     _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8, headers={"page_view": "missing"}),
+           first_touch_ms=None, motion=_TABLE_MOTION)),
+    ("SUSPECT", "FINAL", "input_anomaly", ["SENSORS_UNAVAILABLE"],
+     _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8, headers={"audio_hash_sessions": 4}),
+           first_touch_ms=None, motion=_SENSORLESS_MOTION, visible_ms=40000)),
+    ("SUSPECT", "FINAL", "input_anomaly", ["DESKTOP_IDLE"],
+     _seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=20000)),
+    ("HUMAN", "FINAL", "no_bot_evidence", [],
+     _seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=2000)),
+    ("SUSPECT", "FINAL", "input_anomaly", ["ENVIRONMENT_FAMILY"],
+     _seen(_automation(signals=_PATCHED, fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=2000)),
+    ("SUSPECT", "FINAL", "input_anomaly", ["NOT_VIEWED"],
+     _seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), shown=False)),
+    ("HUMAN", "FINAL", "mobile_clean_environment", None,
+     _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND, memory=4, cores=8), motion=_HAND_MOTION)),
+    ("BOT", "FINAL", "automation_marker", None,
+     _automation(browser_ua=_HEADLESS_UA, http_ua=_HEADLESS_UA, fingerprint=dict(_WINDOWS_DESKTOP))),
+)
+
+THREE_VERDICT_GATE = {
+    "rules": ["three_verdicts_v1"],
+    "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _, _ in THREE_VERDICT_CASES),
+    "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _, _ in THREE_VERDICT_CASES),
+    "bot_cases": sum(verdict == "BOT" for verdict, _, _, _, _ in THREE_VERDICT_CASES),
+    "passed": len(THREE_VERDICT_CASES),
+    "fixture_fingerprint": hashlib.sha256(
+        json.dumps(THREE_VERDICT_CASES, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest(),
+}

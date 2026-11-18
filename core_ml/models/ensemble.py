@@ -114,7 +114,9 @@ from core_ml.models.touch_shadow import score_touch
 # moving gravity vector (mobile_held_device_v3).
 # Policy 47: an Android phone whose Chrome asks for desktop sites (X11 Linux x86_64 user agent, ARM platform,
 # touch screen, phone GPU) is judged as a phone (android_desktop_site); its x86 Client Hint is Chrome's own.
-DECISION_POLICY_VERSION = "47"
+# Policy 48: three verdicts for the product. This detector still says when it has too little evidence; the API
+# maps that to SUSPECT (an anomaly) or HUMAN (no bot evidence) with core_ml.three_verdicts.
+DECISION_POLICY_VERSION = "48"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 

@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "22d6867e452d17fb264f922ac421cb1ddfaf3decd22b4a0f753626bd7719e106",
+    "behavioral_lstm.pt": "de2b966a140e2dd80040782c3a5908ee954858036447cbcd4f3d90a8378a8e41",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "98c35e7285224b4e8ad553e7cae37db6",
-  "created_at": "2026-11-18T16:27:13.549719+00:00",
+  "bundle_id": "e859087be1df4e6e996e57e01dbfc06e",
+  "created_at": "2026-11-18T17:18:00.568442+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -872,7 +872,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "47",
+    "decision_policy_version": "48",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1117,6 +1117,16 @@
       "rule": "synthetic_click_v1"
     },
     "synthetic_profile": "legacy_v1",
+    "three_verdict_gate": {
+      "bot_cases": 1,
+      "fixture_fingerprint": "e91da1aa310c0ad3838248ad3ece7773ac0b1b9cd29d8834b4d6c220ddf1c1af",
+      "human_cases": 4,
+      "passed": 10,
+      "rules": [
+        "three_verdicts_v1"
+      ],
+      "suspect_cases": 5
+    },
     "train_full_trajectory_checkpoints": 32,
     "train_full_trajectory_windows": true,
     "training_device": "cpu"

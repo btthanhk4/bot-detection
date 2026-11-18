@@ -7,6 +7,12 @@ moved the other way, and the previous verdict is recorded in ``rejudged``.
 
     python -m api_service.manage rejudge            # count only
     python -m api_service.manage rejudge --apply    # write
+
+Policy 48 (``map_three_verdicts``): stored sessions the detector left insufficient become SUSPECT (an anomaly
+in what they stored) or HUMAN, as new sessions are; the previous state is recorded in ``rejudged``.
+
+    python -m api_service.manage three-verdicts            # count only
+    python -m api_service.manage three-verdicts --apply    # write
 """
 
 from collections import Counter
@@ -93,3 +99,52 @@ def rejudge(db, apply: bool = False, now=None) -> dict:
         changed += result.modified_count
     return {"convicted": sum(by_rule.values()), "by_rule": dict(by_rule), "by_previous_state": dict(by_state),
             "written": changed, "applied": apply}
+
+
+def map_three_verdicts(db, apply: bool = False, now=None) -> dict:
+    """Policy 48 on stored sessions: counts of the insufficient ones by the verdict they map to; writes if
+    ``apply``. Only what a session stored is read (its presence, phone report, environment families and mouse
+    count), so a desktop stored without page presence (collector before 1.16) cannot show DESKTOP_IDLE."""
+    from core_ml.three_verdicts import (
+        INPUT_ANOMALY_BASIS,
+        NO_BOT_EVIDENCE_BASIS,
+        THREE_VERDICTS_VERSION,
+        input_anomalies,
+    )
+
+    now = now or datetime.now(timezone.utc)
+    collection = db["detection_results"]
+    counts, written = Counter(), 0
+    for doc in collection.find({"decision_state": "INSUFFICIENT_EVIDENCE"},
+                               {"breakdown": 1, "verdict": 1, "decision_state": 1, "policy_version": 1,
+                                "reasons": 1}).batch_size(500):
+        breakdown = doc.get("breakdown") or {}
+        anomalies = input_anomalies(breakdown, stored=True)
+        verdict = "SUSPECT" if anomalies else "HUMAN"
+        phone = bool((breakdown.get("mobile_human") or {}).get("device") or breakdown.get("unsupported_mobile"))
+        counts[f"{'phone' if phone else 'desktop'} {verdict}"] += 1
+        for code in anomalies:
+            counts[f"anomaly {code}"] += 1
+        if not apply:
+            continue
+        reason = (f"Policy {DECISION_POLICY_VERSION}: too little input, and an anomaly: "
+                  + ", ".join(anomalies).lower().replace("_", " ") if anomalies else
+                  f"Policy {DECISION_POLICY_VERSION}: too little input and no bot evidence: a HUMAN of the lowest confidence")
+        result = collection.update_one({"_id": doc["_id"], "decision_state": "INSUFFICIENT_EVIDENCE"}, {"$set": {
+            "verdict": verdict, "is_bot": False, "decision_state": "FINAL", "verdict_locked": False,
+            "verdict_mapped": True, "policy_version": DECISION_POLICY_VERSION,
+            "reasons": [reason] + list(doc.get("reasons") or [])[:19],
+            "breakdown.decision_basis": INPUT_ANOMALY_BASIS if anomalies else NO_BOT_EVIDENCE_BASIS,
+            "breakdown.decision_deferred": False, "breakdown.verdict_locked": False,
+            "breakdown.suspect_reason_codes": anomalies,
+            "breakdown.three_verdicts": {
+                "version": THREE_VERDICTS_VERSION, "from_state": "INSUFFICIENT_EVIDENCE",
+                "from_basis": breakdown.get("decision_basis"),
+                "from_codes": list(breakdown.get("suspect_reason_codes") or []), "anomalies": anomalies},
+            "rejudged": {"from_verdict": doc.get("verdict"), "from_state": doc.get("decision_state"),
+                         "from_policy": doc.get("policy_version"), "rule": THREE_VERDICTS_VERSION,
+                         "policy": DECISION_POLICY_VERSION, "at": now},
+        }})
+        written += result.modified_count
+    return {"mapped": sum(v for k, v in counts.items() if not k.startswith("anomaly")),
+            "counts": dict(counts), "written": written, "applied": apply}

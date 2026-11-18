@@ -618,8 +618,12 @@ def test_telemetry_persists_suspect_diagnostic_codes(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["persisted"] is True
-    assert captured["verdict"] == "SUSPECT"
-    assert captured["breakdown"]["suspect_reason_codes"] == [
+    # Policy 48: too little input with an anomaly (the page's own detector scored 0.95, and a bare post that
+    # never says a page was shown) is a final SUSPECT; the detector's own codes stay with it.
+    assert captured["verdict"] == "SUSPECT" and captured["decision_state"] == "FINAL"
+    assert captured["breakdown"]["decision_basis"] == "input_anomaly"
+    assert captured["breakdown"]["suspect_reason_codes"] == ["HIGH_CLIENT_HEURISTIC_SCORE", "NO_PAGE_PRESENCE"]
+    assert captured["breakdown"]["three_verdicts"]["from_codes"] == [
         "INSUFFICIENT_MOUSE", "HIGH_CLIENT_HEURISTIC_SCORE",
     ]
 

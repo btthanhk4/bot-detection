@@ -584,6 +584,8 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
             "event_sequence": sequence,
             "updated_at": now,
             "page_view_id": telemetry.get("_page_view_id"),
+            # Policy 48: a verdict mapped from too little evidence (core_ml.three_verdicts).
+            "verdict_mapped": bool((analysis.get("breakdown") or {}).get("three_verdicts")),
         }
         # The website of the landing page: from the Origin the browser sent (the page URL picks
         # among sites sharing a domain), or unverified from a matching Referer and page. Written
@@ -621,9 +623,14 @@ def save_detection_result(telemetry: dict, analysis: dict) -> Optional[str]:
         # decision: a short page without enough evidence keeps the earlier FINAL
         # verdict, and a locked FINAL BOT stays BOT (release gates count "ever
         # BOT"). Only verdicts marked unlocked (idle cloud browser) may be overturned.
+        # Policy 48: a verdict mapped from too little evidence replaces another mapped one (a desktop page that
+        # stays idle turns SUSPECT) or an old insufficient one, never one the evidence made: an untouched later
+        # page does not erase what an earlier page showed.
         sticky_filter = (
             {"decision_state": {"$ne": "FINAL"}}
             if doc["decision_state"] != "FINAL"
+            else {"$or": [{"decision_state": {"$ne": "FINAL"}}, {"verdict_mapped": True}]}
+            if doc["verdict_mapped"]
             else {"$or": [{"is_bot": {"$ne": True}}, {"decision_state": {"$ne": "FINAL"}},
                           {"verdict_locked": False}]}
             if verdict != "BOT"

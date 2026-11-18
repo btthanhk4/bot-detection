@@ -547,6 +547,30 @@ def test_same_browser_keeps_its_session_when_its_visitor_id_changes(monkeypatch)
     assert detections.docs["s1"]["verdict"] == "HUMAN"
 
 
+def test_a_mapped_verdict_never_replaces_one_the_evidence_made(monkeypatch):
+    """Policy 48: a verdict mapped from too little evidence replaces another mapped one, never one the evidence
+    made (an untouched later page does not erase what an earlier page showed)."""
+    detections = MemoryCollection()
+    empty = MemoryCollection()
+    monkeypatch.setattr("api_service.database.get_db", lambda: {
+        "detection_results": detections, "deleted_sessions": empty, "service_control": empty})
+    mapped_human = {"verdict": "HUMAN", "decision_state": "FINAL", "breakdown": {"three_verdicts": {"anomalies": []}}}
+    mapped_suspect = {"verdict": "SUSPECT", "decision_state": "FINAL",
+                      "breakdown": {"three_verdicts": {"anomalies": ["DESKTOP_IDLE"]}}}
+    evidence_suspect = {"verdict": "SUSPECT", "decision_state": "FINAL", "breakdown": {"decision_basis": "mobile_risk"}}
+
+    assert save_detection_result({"sessionId": "s", "visitorId": "v", "timestamp": 1000}, mapped_human)
+    assert detections.docs["s"]["verdict_mapped"] is True
+    assert save_detection_result({"sessionId": "s", "visitorId": "v", "timestamp": 2000}, mapped_suspect)
+    assert detections.docs["s"]["verdict"] == "SUSPECT"
+    assert save_detection_result({"sessionId": "s", "visitorId": "v", "timestamp": 3000}, evidence_suspect)
+    assert detections.docs["s"]["verdict_mapped"] is False
+    assert save_detection_result({"sessionId": "s", "visitorId": "v", "timestamp": 4000, "action": "pagehide"},
+                                 mapped_human)
+    assert detections.docs["s"]["verdict"] == "SUSPECT" and detections.docs["s"]["verdict_mapped"] is False
+    assert detections.docs["s"]["last_action"] == "pagehide", "the session still shows as active"
+
+
 def test_saved_touch_records_keep_source_without_counting_as_mouse(monkeypatch):
     detections = MemoryCollection()
     empty = MemoryCollection()
