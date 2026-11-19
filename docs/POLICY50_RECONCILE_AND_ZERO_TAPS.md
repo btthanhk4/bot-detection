@@ -6,17 +6,20 @@ Ngày 19/11/2026. `DECISION_POLICY_VERSION = "50"`, collector `1.20.0`.
 
 Sau khi khôi phục dữ liệu 10–16/11, production có 55.581 phiên. Tỉ lệ kết luận lệch mạnh giữa hai trang:
 
-| Nhóm | Phiên | Người | Nghi vấn | BOT | Fingerprint gắn cờ |
+| Nhóm (trước policy 50) | Phiên | Người | Nghi vấn | BOT | Fingerprint gắn cờ |
 | --- | --- | --- | --- | --- | --- |
-| Downloader, máy tính, 10–16/11 | 14.295 | 2,6% | 7,1% | 90,3% | 75,4% |
-| Downloader, máy tính, từ 17/11 | 2.195 | 72,2% | 25,6% | 2,2% | 27,9% |
-| Spin, điện thoại, 10–16/11 | 20.055 | 77,1% | 6,6% | 16,3% | 15,3% |
+| Downloader, máy tính | 16.490 | 11,9% | 9,6% | 78,5% | 64,2% |
+| Downloader, điện thoại | 3.232 | 4,8% | 2,4% | 92,8% | 75,0% |
+| Spin, điện thoại | 35.655 | 86,1% | 4,1% | 9,8% | 12,0% |
 
 "Fingerprint gắn cờ" = `bot = bad`, hoặc tampering, hoặc anti-detect, trên các phiên có tham chiếu.
 
-Độ lệch chủ yếu đến từ lưu lượng: Downloader máy tính bị Fingerprint gắn cờ 75%, Spin điện thoại 15%. Tỉ lệ BOT của
-DATACAT bám theo con số đó trên cả hai trang, và giảm theo ngày khi chiến dịch bot ở Downloader dừng. Khi bỏ qua Nghi
-vấn, mức đồng thuận với Fingerprint là 95,9% (κ ≈ 0,87): điện thoại 96,1%, máy tính 94,5%.
+Độ lệch chủ yếu đến từ lưu lượng: Fingerprint gắn cờ 64–75% phiên của Downloader nhưng chỉ 12% phiên Spin, và tỉ lệ
+BOT của DATACAT bám theo mức đó trên từng trang. Tỉ lệ BOT còn thay đổi theo từng đợt chiến dịch: trên máy tính của
+Downloader, tỉ lệ BOT theo ngày dao động 38–92% trong 10–16/11; sau 17/11 trang gần như không có phiên máy tính mới.
+(Một nhóm 2.195 phiên Downloader máy tính chỉ có 2,2% BOT là các phiên được chấm lại hoặc ánh xạ theo policy 49,
+vốn phần lớn là "chưa đủ dữ liệu", không phải lưu lượng sau 17/11.) Khi bỏ qua Nghi vấn, mức đồng thuận với
+Fingerprint là 95,9% (κ ≈ 0,87): điện thoại 96,1%, máy tính 94,5%.
 
 Rà các nhóm hai bên không đồng ý (script đọc, chỉ in số tổng hợp) cho ra ba lỗi có nguyên nhân rõ:
 
@@ -67,7 +70,7 @@ Lần trả lời đầu tiên vẫn mở khoá lời chào như trước, và c
 - collector đã bị huỷ;
 - phiên đã đổi.
 
-## Ước tính trên production (dry-run 19/11)
+## Kết quả trên production (19/11)
 
 | Thay đổi | Phiên | Fingerprint gắn cờ |
 | --- | --- | --- |
@@ -76,6 +79,8 @@ Lần trả lời đầu tiên vẫn mở khoá lời chào như trước, và c
 | chạm 0 ms lẫn trong lần ấn → Người | 123 | 1,2% (86) |
 
 Mọi thay đổi đều ở Spin. Downloader không đổi: các BOT `forged_browser` ở đó vẫn thoả luật hiện hành.
+
+Đã áp (`reconcile --apply`): 481 phiên ghi, chạy lại 0. Sau đó, trên 21.259 phiên có kết luận dứt khoát và có tham chiếu, mức trùng với Fingerprint là 96,4% (κ = 0,88; điện thoại 96,6%, máy tính 94,5%), BOT điện thoại bị Fingerprint gắn cờ 77,3% → 80,4%. Tập có nhãn thật không đổi: 76/79. Sao lưu trước khi ghi: `/root/backups/detection_results-20261119-pre-reconcile50.archive.gz`.
 
 ## Không làm
 
