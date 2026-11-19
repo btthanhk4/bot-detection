@@ -75,3 +75,20 @@ Hai thay đổi cùng được áp cho phiên không còn dữ liệu thô, ch�
 - Chạm do công cụ bơm lệnh trên máy thật (ADB, accessibility) có thời gian ấn hợp lý vẫn qua.
 - Telemetry dựng sẵn với token lấy hợp lệ qua proxy dân dụng. Kênh độc lập có giá trị nhất là vân tay TLS (JA4)
   của request gửi tới `api.datacat.io.vn`.
+
+## Kết quả trên production (20/11/2026)
+
+Deploy commit 496fd21, bundle `34644e1e` (tensor giống policy 50). Sao lưu trước khi ghi:
+`/root/backups/detection_results-20261120-pre-reconcile51.archive.gz` (55.743 phiên, sha256 `2d3f0905…`).
+
+| Thay đổi (`reconcile --apply`) | Phiên | Fingerprint gắn cờ |
+| --- | --- | --- |
+| Máy tính di chuột thưa → NGHI VẤN | 33 | 13/14 |
+| Điện thoại có chạm, cảm biến câm → NGHI VẤN | 13 | 8/9 |
+
+Có 33 phiên di chuột thưa, ít hơn con số 55 ước tính, vì có thêm điều kiện ít nhất 3 vị trí. Chạy lại lần hai: 0.
+
+Sau khi áp:
+- Phiên HUMAN bị Fingerprint gắn cờ giảm từ 184 xuống 164 (1,08% → 0,96%).
+- Mức trùng trên phiên đã quyết định là 96,5%, κ = 0,884.
+- Tập có nhãn không đổi: 50/52 người là HUMAN, 28/30 bot là BOT, không có lỗi nghiêm trọng.
