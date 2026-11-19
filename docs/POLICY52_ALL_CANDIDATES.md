@@ -54,3 +54,22 @@ Release gate: đóng băng `CLIENT_FORGERY_RULE_GATE_V51`; thêm 5 fixture (2 BO
 - **Gateway:** nginx (`silkmoon-gateway`) gửi `X-DC-TLS-Ciphers`, `X-DC-TLS-Curves`, `X-DC-TLS-Proto` (`$ssl_ciphers`, `$ssl_curves`, `$ssl_protocol`) cho `api.datacat.io.vn` và đường telemetry của SilkMoon. Nginx tự đặt các header này, ghi đè header cùng tên mà máy khách gửi lên. Sao lưu cấu hình: `/var/www/silkmoon/nginx/nginx.conf.bak-20261120-tls`.
 - **API:** `tls_client()` lọc GREASE, tính chữ ký 16 ký tự và lưu kèm danh sách. Chưa luật nào đọc dữ liệu này.
 - **Bước tiếp theo:** khi có vài trăm phiên, so chữ ký TLS với trình duyệt mà trang tự khai (Chrome, Safari, Firefox). Một User-Agent Chrome đi qua TLS của Python, Node hay curl là mâu thuẫn mà JavaScript không che được.
+
+## Kết quả trên production (20/11/2026)
+
+Deploy commit 18b5aca, bundle `f00152cd` (tensor giống policy 51). Sao lưu trước khi ghi:
+`/root/backups/detection_results-20261120-pre-rejudge52.archive.gz` (55.796 phiên, sha256 `f11443f7…`).
+
+`manage rejudge --apply`: 149 phiên NGHI VẤN → BOT, tất cả theo `ua_hints_anchor_v1`, không phiên HUMAN nào bị đổi.
+Chạy lại lần hai: 0.
+
+| Chỉ số (phiên có tham chiếu Fingerprint) | Trước | Sau |
+| --- | --- | --- |
+| Tỷ lệ có kết luận dứt khoát | 91,4% | 91,6% |
+| Trùng với Fingerprint (phần đã quyết định) | 96,49% | 96,50% |
+| κ | 0,884 | 0,885 |
+| HUMAN bị Fingerprint gắn cờ | 164/17.112 | 164/17.112 |
+| Tập có nhãn (52 người / 30 bot) | 50 HUMAN, 2 NGHI VẤN / 28 BOT, 2 NGHI VẤN | không đổi |
+
+Không chỉ số nào giảm, nên giữ luật. Dấu vết TLS đã có trong telemetry mới (TLS 1.3, 15 cipher, curve gồm
+X25519MLKEM768 của Chrome mới).
