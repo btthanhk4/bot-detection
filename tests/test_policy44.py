@@ -52,4 +52,4 @@ def test_a_hidden_page_has_left():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("44", "45", "46", "47", "48", "49")
+    assert DECISION_POLICY_VERSION in ("44", "45", "46", "47", "48", "49", "50")

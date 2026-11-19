@@ -577,6 +577,14 @@ _DRUMMING_NO_SENSOR = [_tap(87.9, 417.9, ms, radius=(0.3, 0.3), force=1.0)
 _IPHONE_AUTOCLICK = [_tap(302.0, 506.0, ms, radius=(26.7, 26.7), force=0.0) for ms in (8.0, 4.0, 5.0, 9.0, 7.0, 13.0)]
 _IPHONE_AUTOCLICK_TIMES = [1000, 1700, 2400, 3100, 3800, 4500]
 _MALI_G52 = "ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)"
+# Policy 50: production phones (Nov 2026) with a few taps reported at 0 ms among presses of 30-150 ms.
+_QUIRK_ZERO_TAPS = [_tap(x, y, ms, radius=(11.5, 10.0), force=0.42) for x, y, ms in (
+    (120.0, 300.0, 84.0), (212.5, 455.0, 0.0), (180.0, 610.5, 112.0), (95.5, 402.0, 67.0), (240.0, 520.0, 0.0),
+    (150.5, 350.0, 96.0))]
+_MOSTLY_ZERO_TAPS = [_tap(x, y, ms, radius=(11.5, 10.0), force=0.42) for x, y, ms in (
+    (120.0, 300.0, 0.0), (212.5, 455.0, 0.0), (180.0, 610.5, 112.0), (95.5, 402.0, 0.0), (240.0, 520.0, 0.0),
+    (150.5, 350.0, 96.0))]
+_QUIRK_TIMES = [1200, 2950, 4100, 6400, 7350, 9800]
 # Policy 43: the Spin farm's sensor (one event without gravity over 30-60 s of a visible page).
 _SENSORLESS_MOTION = {"status": "ok", "events": 1, "intervalMs": None, "gravity": 0.0, "tiltDeg": None,
                       "linearSd": None, "gravitySd": None, "rotationMean": None, "rotationSd": None}
@@ -812,6 +820,12 @@ MOBILE_RULE_CASES = (
                                                           memory=4, cores=8, times=_DRUMMING_TIMES)),
     ("BOT", "FINAL", "touch_automation", _phone(_IOS18, "iPhone", "Apple GPU", _IPHONE_AUTOCLICK,
                                                 times=_IPHONE_AUTOCLICK_TIMES)),
+    # Policy 50: two taps reported at 0 ms among four real presses are a touch screen's quirk (HUMAN); taps at
+    # 0 ms most of the time remain evidence against a clean phone (SUSPECT).
+    ("HUMAN", "FINAL", "mobile_clean_environment", _phone(_ANDROID10, "Linux armv81", _ADRENO, _QUIRK_ZERO_TAPS,
+                                                          memory=4, cores=8, times=_QUIRK_TIMES)),
+    ("SUSPECT", "FINAL", "mobile_risk", _phone(_ANDROID10, "Linux armv81", _ADRENO, _MOSTLY_ZERO_TAPS,
+                                               memory=4, cores=8, times=_QUIRK_TIMES)),
 )
 
 # Frozen gate of policies 19-23.
@@ -927,11 +941,21 @@ MOBILE_RULE_GATE_V48 = {
     "fixture_fingerprint": "6dec96375cc873d2f992bcff8bb5417aa5b6ee504845a112c8c6dc11444a1db9",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 49.
+MOBILE_RULE_GATE_V49 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v2",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
               "sensorless_phone_v1", "android_desktop_site_v1"],
+    "human_cases": 23, "suspect_cases": 44, "bot_cases": 11, "passed": 78,
+    "fixture_fingerprint": "515cefc045d50c31787d620619d84e0301b3b72c066260eb0fbc659c1a69a0c1",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v2",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
+              "sensorless_phone_v1", "android_desktop_site_v1", "zero_time_taps_among_presses_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),

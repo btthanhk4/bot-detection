@@ -54,6 +54,8 @@ def main(argv=None) -> int:
     three_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
     rescore_command = sub.add_parser("rescore", help="Score stored sessions again from their raw snapshots")
     rescore_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
+    reconcile_command = sub.add_parser("reconcile", help="Policy 50: bring stored verdicts without raw snapshots in line with the running rules")
+    reconcile_command.add_argument("--apply", action="store_true", help="Write (without it: count only)")
     report_command = sub.add_parser("reference-report", help="DATACAT versus Fingerprint bot verdicts (read-only)")
     report_command.add_argument("--site", action="append", help="Limit to a site id (repeatable)")
     args = parser.parse_args(argv)
@@ -102,6 +104,17 @@ def main(argv=None) -> int:
             print("Không kết nối được MongoDB", file=sys.stderr)
             return 2
         print(rescore(db, apply=args.apply))
+        return 0
+
+    if args.command == "reconcile":
+        from api_service.database import get_db
+        from api_service.rejudge import reconcile
+
+        db = get_db()
+        if db is None:
+            print("Không kết nối được MongoDB", file=sys.stderr)
+            return 2
+        print(reconcile(db, apply=args.apply))
         return 0
 
     if auth.get_users_collection() is None:

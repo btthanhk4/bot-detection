@@ -59,7 +59,7 @@ async function testPageTokenTravelsWithTelemetry() {
     assert.ok(calls[0].url.startsWith('https://api.example.test/api/v1/visit?sid=' + encodeURIComponent(collector.sessionId)));
     const sent = JSON.parse(calls.find((call) => call.method === 'POST').body);
     assert.strictEqual(sent.collector.pageToken, 'tok.sig', 'telemetry carries the session token');
-    assert.strictEqual(sent.collector.sdkVersion, '1.19.1');
+    assert.strictEqual(sent.collector.sdkVersion, '1.20.0');
     collector.destroy();
 
     // A same-origin or gateway endpoint asks for no token.
@@ -231,6 +231,56 @@ async function testRefusedThirdPartyPageCostsOneRequest() {
     assert.deepStrictEqual(urls.map((u) => u.split('?')[0]), ['https://api.test/api/v1/visit'],
       'the greeting waits for the token answer and is not sent once refused');
     assert.strictEqual(collector.refused, true);
+  } finally {
+    global.fetch = previousFetch;
+  }
+}
+
+// 1.20.0: a token request lost to the network is asked again in the background; one the API answered is not.
+async function testLostTokenRequestIsAskedAgain() {
+  const previousFetch = global.fetch;
+  const urls = [];
+  let failures = 2;
+  global.fetch = async (url) => {
+    urls.push(String(url));
+    if (failures > 0) {
+      failures--;
+      throw new TypeError('Failed to fetch');
+    }
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ token: 'late.sig' }) };
+  };
+  try {
+    const collector = new BotCollector({ autoSendInterval: 0, endpointUrl: 'https://api.test/api/v1/telemetry',
+      tokenRetryDelays: [5, 5] });
+    assert.strictEqual(await collector.fetchPageToken(), null, 'the first answer releases the greeting');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.strictEqual(collector.pageToken, 'late.sig');
+    assert.strictEqual(urls.length, 3);
+    assert.strictEqual(collector.tokenSessionId, collector.sessionId);
+
+    // A server that answered (quota, refused, no website) is not asked again; three failures at most.
+    urls.length = 0;
+    global.fetch = async (url) => { urls.push(String(url)); return { ok: false, status: 429, headers: { get: () => null } }; };
+    const quota = new BotCollector({ autoSendInterval: 0, endpointUrl: 'https://api.test/api/v1/telemetry',
+      tokenRetryDelays: [5, 5] });
+    await quota.fetchPageToken();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.strictEqual(urls.length, 1);
+    urls.length = 0;
+    global.fetch = async (url) => { urls.push(String(url)); throw new TypeError('offline'); };
+    const offline = new BotCollector({ autoSendInterval: 0, endpointUrl: 'https://api.test/api/v1/telemetry',
+      tokenRetryDelays: [5, 5] });
+    await offline.fetchPageToken();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    assert.strictEqual(urls.length, 3);
+    // A destroyed collector stops asking.
+    urls.length = 0;
+    const gone = new BotCollector({ autoSendInterval: 0, endpointUrl: 'https://api.test/api/v1/telemetry',
+      tokenRetryDelays: [20] });
+    await gone.fetchPageToken();
+    gone.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.strictEqual(urls.length, 1);
   } finally {
     global.fetch = previousFetch;
   }
@@ -1577,6 +1627,7 @@ testRestartDuringFingerprinting()
   .then(testRegistryEpochVoidsOlderRefusal)
   .then(testRefusalFallsBackToSessionStorage)
   .then(testRefusedThirdPartyPageCostsOneRequest)
+  .then(testLostTokenRequestIsAskedAgain)
   .then(testReferenceEventIsOptionalAndTravelsWithTelemetry)
   .then(testPagePresenceAndMotionSummary)
   .then(testOrientationSummary)

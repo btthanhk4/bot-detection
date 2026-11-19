@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "4d5a7eabfaa7813aac14dfdaade88c53d3017336d595741f1172ed519a7f754f",
+    "behavioral_lstm.pt": "f642274a3af516a4881435d8ba7395f672b9f9637a3dc912a3c7b82c59a4afd6",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "f7549550b7ea431393cb4cc12be4a7fe",
-  "created_at": "2026-11-18T18:31:44.961198+00:00",
+  "bundle_id": "aceed3a1205b446cb07f35bfb845f83a",
+  "created_at": "2026-11-19T13:10:50.041260+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -872,7 +872,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "49",
+    "decision_policy_version": "50",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1057,9 +1057,9 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 11,
-      "fixture_fingerprint": "515cefc045d50c31787d620619d84e0301b3b72c066260eb0fbc659c1a69a0c1",
-      "human_cases": 23,
-      "passed": 78,
+      "fixture_fingerprint": "8f609948e473ed9cffe2de8b22e1aff07ab238f9be0e6bb24853c12d666a3da8",
+      "human_cases": 24,
+      "passed": 80,
       "rules": [
         "mobile_clean_environment_v1",
         "mobile_light_touch_v1",
@@ -1074,9 +1074,10 @@
         "inert_cohort_v2",
         "mobile_held_device_v3",
         "sensorless_phone_v1",
-        "android_desktop_site_v1"
+        "android_desktop_site_v1",
+        "zero_time_taps_among_presses_v1"
       ],
-      "suspect_cases": 44
+      "suspect_cases": 45
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,

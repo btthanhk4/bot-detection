@@ -118,7 +118,9 @@ from core_ml.models.touch_shadow import score_touch
 # maps that to SUSPECT (an anomaly) or HUMAN (no bot evidence) with core_ml.three_verdicts.
 # Policy 49: metronomic taps at one point convict only when pressed like a machine (the same contact geometry
 # every time, a fixed press time or one under 20 ms; autoclick_taps_v2).
-DECISION_POLICY_VERSION = "49"
+# Policy 50: a few taps reported at 0 ms among three or more real presses no longer withhold a phone's HUMAN
+# verdict (zero_time_taps_among_presses); ZERO_TIME_TAPS still counts as a contradiction (policy 29).
+DECISION_POLICY_VERSION = "50"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 

@@ -191,4 +191,4 @@ def test_stored_insufficient_sessions_map_on_request():
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION in ("48", "49")
+    assert DECISION_POLICY_VERSION in ("48", "49", "50")

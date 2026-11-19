@@ -81,9 +81,9 @@ def test_policy_46_gate_is_frozen_on_its_own_fixtures():
     first = MOBILE_RULE_CASES[:70]
     assert MOBILE_RULE_GATE_V46["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-    assert "android_desktop_site_v1" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 78
+    assert "android_desktop_site_v1" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 80
 
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("47", "48", "49")
+    assert DECISION_POLICY_VERSION in ("47", "48", "49", "50")

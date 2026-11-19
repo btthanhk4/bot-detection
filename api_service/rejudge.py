@@ -22,6 +22,15 @@ minutes is left to the live traffic.
 
     python -m api_service.manage rescore            # count only
     python -m api_service.manage rescore --apply    # write
+
+``reconcile`` (policy 50): sessions whose raw snapshots are gone keep the verdict of the policy that judged them.
+Three later changes are applied from what they stored: a phone convicted as a forged browser on a worker's GPU and
+platform alone (one contradiction since policy 42) becomes SUSPECT; a phone convicted by ``autoclick_taps_v1``,
+whose presses can no longer be checked (policy 49), becomes SUSPECT; a phone held back only by a few taps at 0 ms
+among its real presses (policy 50) becomes HUMAN. The previous verdict is recorded in ``rejudged``.
+
+    python -m api_service.manage reconcile            # count only
+    python -m api_service.manage reconcile --apply    # write
 """
 
 import json
@@ -277,3 +286,80 @@ def rescore(db, detector=None, apply: bool = False, now=None, quiet_minutes: int
         written += update.modified_count
     return {"scored": scored, "without_raw": unscored, "left_to_live_traffic": live,
             "changed": sum(changes.values()), "changes": dict(changes), "written": written, "applied": apply}
+
+
+RECONCILE_VERSION = "reconcile_v1"
+_RECONCILE_FIELDS = {**_FIELDS, "breakdown.decision_basis": 1, "breakdown.automation_rule": 1,
+                     "breakdown.mobile_human": 1, "breakdown.suspect_reason_codes": 1, "updated_at": 1}
+
+
+def reconcile_change(doc: dict):
+    """(new verdict, basis, reason, change) for a stored session the running rules judge differently, or None."""
+    from core_ml.features.mobile_human import zero_time_taps_among_presses
+
+    breakdown = doc.get("breakdown") or {}
+    verdict = str(doc.get("verdict") or "").upper()
+    basis = breakdown.get("decision_basis")
+    rule = str(breakdown.get("automation_rule") or "")
+    touch = breakdown.get("touch") or {}
+    user_agent = str((doc.get("fingerprint") or {}).get("userAgent") or "")
+    phone = any(token in user_agent.lower() for token in _MOBILE_TOKENS)
+    if verdict == "BOT" and basis == "forged_browser" and phone and judge(doc) is None:
+        return ("SUSPECT", "client_forgery", "the browser contradicts itself once only (a worker's GPU and platform "
+                "count as one on Android since policy 42)", "forged_browser -> SUSPECT")
+    if verdict == "BOT" and basis == "touch_automation" and rule.startswith("autoclick_taps_v1"):
+        return ("SUSPECT", "mobile_risk", "metronomic taps at one point, whose presses can no longer be checked "
+                "against autoclick_taps_v2 (policy 49)", "autoclick_v1 -> SUSPECT")
+    mobile = breakdown.get("mobile_human") or {}
+    if (verdict not in ("BOT", "HUMAN") and doc.get("decision_state") == "FINAL" and basis == "mobile_risk"
+            and phone and list(mobile.get("missing") or []) == ["TOUCH_FLAGS"]
+            and list(touch.get("research_flags") or []) == ["ZERO_TIME_TAPS"]
+            and int(mobile.get("gestures") or 0) >= 3 and zero_time_taps_among_presses(touch)
+            and set((breakdown.get("client_forgery") or {}).get("contradictions") or []) <= {"ZERO_TIME_TAPS"}):
+        return ("HUMAN", "mobile_clean_environment", "a few taps reported at 0 ms among real presses, and nothing "
+                "else against the phone (policy 50)", "zero-time quirk -> HUMAN")
+    return None
+
+
+def reconcile(db, apply: bool = False, now=None, quiet_minutes: int = RESCORE_QUIET_MINUTES) -> dict:
+    """Counts of the stored sessions ``reconcile_change`` moves, by change; writes them if ``apply``."""
+    now = now or datetime.now(timezone.utc)
+    quiet_before = now - timedelta(minutes=quiet_minutes)
+    collection = db["detection_results"]
+    changes, written, live = Counter(), 0, 0
+    query = {"$or": [{"verdict": "BOT", "breakdown.decision_basis": {"$in": ["forged_browser", "touch_automation"]}},
+                     {"breakdown.decision_basis": "mobile_risk", "breakdown.touch.research_flags": "ZERO_TIME_TAPS"}]}
+    for doc in collection.find(query, _RECONCILE_FIELDS).batch_size(500):
+        found = reconcile_change(doc)
+        if not found:
+            continue
+        updated = doc.get("updated_at")
+        if isinstance(updated, datetime) and (updated if updated.tzinfo else updated.replace(
+                tzinfo=timezone.utc)) > quiet_before:
+            live += 1
+            continue
+        verdict, basis, why, change = found
+        changes[change] += 1
+        if not apply:
+            continue
+        human = verdict == "HUMAN"
+        update = {
+            "verdict": verdict, "is_bot": False, "decision_state": "FINAL", "verdict_locked": False,
+            "policy_version": DECISION_POLICY_VERSION,
+            "reasons": [f"Policy {DECISION_POLICY_VERSION}: {why}"] + list(doc.get("reasons") or [])[:19],
+            "breakdown.decision_basis": basis, "breakdown.verdict_locked": False,
+            "breakdown.automation_rule": None,
+            "breakdown.suspect_reason_codes": [] if human else ["CLIENT_FORGERY" if basis == "client_forgery"
+                                                                 else "MOBILE_RISK"],
+            "rejudged": {"from_verdict": doc.get("verdict"), "from_state": doc.get("decision_state"),
+                         "from_policy": doc.get("policy_version"), "rule": RECONCILE_VERSION,
+                         "change": change, "policy": DECISION_POLICY_VERSION, "at": now},
+        }
+        if human:
+            update.update({"breakdown.mobile_human.eligible": True, "breakdown.mobile_human.missing": [],
+                           "breakdown.mobile_human.risk": []})
+        result = collection.update_one({"_id": doc["_id"], "verdict": doc.get("verdict"), "updated_at": updated},
+                                       {"$set": update})
+        written += result.modified_count
+    return {"changed": sum(changes.values()), "changes": dict(changes), "left_to_live_traffic": live,
+            "written": written, "applied": apply}

@@ -60,7 +60,7 @@ def test_machines_still_convict():
 def test_fixtures():
     from api_service.main import ensemble_detector
 
-    ours = MOBILE_RULE_CASES[75:]
+    ours = MOBILE_RULE_CASES[75:78]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("HUMAN", "FINAL", "mobile_clean_environment"), ("HUMAN", "FINAL", "mobile_clean_environment"),
         ("BOT", "FINAL", "touch_automation")]
@@ -74,10 +74,10 @@ def test_policy_48_gate_is_frozen_on_its_own_fixtures():
     first = MOBILE_RULE_CASES[:75]
     assert MOBILE_RULE_GATE_V48["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-    assert "autoclick_taps_v2" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 78
+    assert "autoclick_taps_v2" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 80
 
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION == "49"
+    assert DECISION_POLICY_VERSION in ("49", "50")

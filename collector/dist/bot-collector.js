@@ -1913,7 +1913,7 @@
 
 
 
-  const COLLECTOR_VERSION = '1.19.1';
+  const COLLECTOR_VERSION = '1.20.0';
   // Send early once this many unacknowledged moves pile up, before an export would drop any.
   const BACKLOG_MOVES = EXPORT_MAX_MOVES - EXPORT_CONTEXT_MOVES - 50;
 
@@ -2009,6 +2009,8 @@
           ? endpointPath.replace(/\/api\/v1\/telemetry$/, '/api/v1/visit') : null);
       this.pageToken = null;
       this.tokenSessionId = null;
+      // 1.20.0: a token request lost to a slow network is asked again in the background (seconds after it).
+      this.tokenRetryDelays = Array.isArray(options.tokenRetryDelays) ? options.tokenRetryDelays : [3000, 10000];
       this.referenceEventId = null;
       this.referenceSessionId = null;
       this.tokenPromise = null;
@@ -2160,9 +2162,14 @@
     }
 
     // The page-view token of the current session; telemetry goes without it if this fails.
-    async fetchPageToken() {
+    // 1.20.0: on production (12-17 Nov 2026) 171 phones with three or more real touches had no token in any
+    // snapshot, almost all clean for Fingerprint: one request on a slow mobile network, never asked again. A
+    // request without an answer (a timeout, a network error) or a server error is now asked again after
+    // ``tokenRetryDelays``; the first answer still releases the greeting, later snapshots carry the token.
+    async fetchPageToken(attempt = 0) {
       if (!this.visitUrl || typeof fetch !== 'function' || this.refused) return null;
       const sessionId = this.sessionId;
+      let retry = false;
       try {
         const page = typeof window !== 'undefined' && window.location ? boundedUrl(window.location.href) : '';
         const url = this.visitUrl + (this.visitUrl.includes('?') ? '&' : '?') + 'sid=' + encodeURIComponent(sessionId)
@@ -2180,7 +2187,21 @@
             this.tokenSessionId = sessionId;
           }
         }
-      } catch (e) { /* judged as an unverified page load, never blocks telemetry */ }
+        retry = !res || (typeof res.status === 'number' && res.status >= 500);
+      } catch (e) {
+        retry = true; /* judged as an unverified page load, never blocks telemetry */
+      }
+      const delays = this.tokenRetryDelays;
+      if (retry && !this.pageToken && attempt < delays.length && !this.destroyed && typeof setTimeout === 'function') {
+        const timer = setTimeout(() => {
+          this.tokenRetryTimer = null;
+          if (!this.pageToken && !this.refused && !this.destroyed && sessionId === this.sessionId) {
+            this.fetchPageToken(attempt + 1);
+          }
+        }, delays[attempt]);
+        if (timer && typeof timer.unref === 'function') timer.unref();
+        this.tokenRetryTimer = timer;
+      }
       return this.pageToken;
     }
 
@@ -2297,6 +2318,8 @@
     destroy() {
       this.destroyed = true;
       this.lifecycleVersion++;
+      if (this.tokenRetryTimer) clearTimeout(this.tokenRetryTimer);
+      this.tokenRetryTimer = null;
       this.mouseRecorder.stop();
       try { this.presence.stop(); } catch (e) { /* optional evidence */ }
       if (this.timer) clearInterval(this.timer);

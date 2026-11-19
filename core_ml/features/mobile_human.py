@@ -58,6 +58,9 @@ _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios
                    "ios_touch_without_contact"}
 MOBILE_HUMAN_MIN_GESTURES = 3
 MOBILE_LIGHT_MIN_GESTURES = 1
+# Policy 50: zero-time taps tolerated when at least three other taps were pressed and they are at most half.
+ZERO_TAP_MIN_PRESSES = 3
+ZERO_TAP_MAX_SHARE = 0.5
 # Families an ordinary phone can trip on its own (header quirks of in-app
 # browsers, Client Hints gaps). One is tolerated; anchors never are.
 _TOLERATED_FAMILIES = {"HTTP", "CLIENT_HINTS", "CONTEXT", "NATIVE_PATCH"}
@@ -107,6 +110,27 @@ def _mobile_kind(fingerprint: dict) -> str:
     return ""
 
 
+def zero_time_taps_among_presses(touch_report: dict) -> bool:
+    """Policy 50: a few taps released the moment they landed, among real presses of the same session.
+
+    On production (10-19 Nov 2026) 172 phones with three or more gestures were a SUSPECT for this flag alone;
+    Fingerprint flagged 1 of the 102 it saw. Their zero-time taps were a minority (2 of 5-19 taps, the other
+    presses lasting 30-150 ms like a finger's): a touch screen that now and then reports both ends of a tap
+    at one time. The farms of policy 29 tap at 0 ms every time, as does ``adb input tap``."""
+    taps = int((touch_report or {}).get("taps") or 0)
+    zero = int((touch_report or {}).get("zero_time_taps") or 0)
+    return bool(zero and taps - zero >= ZERO_TAP_MIN_PRESSES and zero <= taps * ZERO_TAP_MAX_SHARE)
+
+
+def touch_flags_against(touch_report: dict) -> list:
+    """The touch research flags that withhold a phone's HUMAN verdict (policy 50: not a few zero-time taps
+    among real presses). The flags themselves, and ZERO_TIME_TAPS as a contradiction (policy 29), are unchanged."""
+    flags = list((touch_report or {}).get("research_flags") or [])
+    if "ZERO_TIME_TAPS" in flags and zero_time_taps_among_presses(touch_report):
+        flags.remove("ZERO_TIME_TAPS")
+    return flags
+
+
 def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report: dict,
                          client_flags: list, presence_codes=(), held_device: bool = False) -> dict:
     """Whether the phone-human rule applies, and what is missing when it does not."""
@@ -122,7 +146,7 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
         missing.append("NOT_MOBILE")
     if gestures < MOBILE_HUMAN_MIN_GESTURES:
         missing.append("FEW_GESTURES")
-    if touch_report.get("research_flags"):
+    if touch_flags_against(touch_report):
         missing.append("TOUCH_FLAGS")
     emulation = set(automation_evidence.get("mobile_emulation") or ())
     presence_codes = set(presence_codes or ())
