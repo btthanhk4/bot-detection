@@ -21,6 +21,7 @@ from core_ml.features.client_forgery import (
     CLIENT_FORGERY_VERSION,
     FORGED_BROWSER_RULE,
     SYNTHETIC_PATH_RULE,
+    UA_HINTS_ANCHOR_RULE,
     WEBVIEW_WEBDRIVER_RULE,
     apple_synthetic_touch_fires,
     contradictions,
@@ -28,6 +29,8 @@ from core_ml.features.client_forgery import (
     forged_browser_fires,
     forgery_codes,
     synthetic_path_fires,
+    ua_hints_anchor_fires,
+    ua_independent_anchors,
     webview_webdriver_fires,
 )
 from core_ml.features.desktop_risk import analyze_desktop_risk
@@ -123,7 +126,9 @@ from core_ml.models.touch_shadow import score_touch
 # Policy 51: a desktop pointer travelling over 10-24 moves at 45 ms or more between moves is an anomaly in the
 # three-verdict layer (SPARSE_POINTER): ten moves of any shape no longer turn an idle page into a HUMAN. A phone
 # that touched the page while its motion sensor stayed silent 10 s+ (SENSORS_UNAVAILABLE) is no longer a HUMAN.
-DECISION_POLICY_VERSION = "51"
+# Policy 52: a desktop user agent its own Client Hints contradict, with a headless, GPU or permission anchor,
+# convicts (ua_hints_anchor_v1).
+DECISION_POLICY_VERSION = "52"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -361,6 +366,9 @@ class EnsembleBotDetector:
                                   user_agent=str(fingerprint.get("userAgent") or "")):
             # Policy 27: two independent claims no genuine browser makes.
             automation_rule = FORGED_BROWSER_RULE
+        elif ua_hints_anchor_fires(automation_evidence, desktop=not unsupported_mobile):
+            # Policy 52: a user agent its own Client Hints contradict, and an environment anchor.
+            automation_rule = UA_HINTS_ANCHOR_RULE
         elif emulated_phone_fires(presence_report["codes"], server_context_codes(payload), browser_contradictions):
             # Policy 36: emulated motion sensors, and an independent channel says the same.
             automation_rule = EMULATED_PHONE_RULE
@@ -647,6 +655,12 @@ class EnsembleBotDetector:
                     + ", ".join(browser_contradictions).lower().replace("_", " ")
                     + "); no person on the live site carried even one"
                 )
+            elif automation_rule == UA_HINTS_ANCHOR_RULE:
+                anchors = ua_independent_anchors(automation_evidence)
+                reasons.append(
+                    "Forged browser: the user agent contradicts the browser's own Client Hints, and independently "
+                    "the environment does too (" + ", ".join(anchors).lower().replace("_", " ") + ")"
+                )
             elif automation_rule == SENSORLESS_PHONE_RULE:
                 reasons.append(
                     "Phone without working motion sensors: a handful of motion events and no gravity over a page "
@@ -807,7 +821,7 @@ class EnsembleBotDetector:
                     else "mobile_emulation" if automation_rule == MOBILE_EMULATION_RULE
                     else "synthetic_input" if automation_rule in SYNTHETIC_INPUT_RULES
                     else "touch_automation" if automation_rule == AUTOCLICK_RULE
-                    else "forged_browser" if automation_rule == FORGED_BROWSER_RULE
+                    else "forged_browser" if automation_rule in (FORGED_BROWSER_RULE, UA_HINTS_ANCHOR_RULE)
                     else "emulated_phone" if automation_rule == EMULATED_PHONE_RULE
                     else "sensorless_phone" if automation_rule == SENSORLESS_PHONE_RULE
                     else "replayed_trajectory" if automation_rule == REPLAYED_TRAJECTORY_RULE

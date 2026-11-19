@@ -1,4 +1,4 @@
-"""Apply the browser-contradiction rules of policies 30-32 to sessions judged before them.
+"""Apply the browser-contradiction rules of policies 30-32 (and 52) to sessions judged before them.
 
 Raw telemetry is kept for days only, so old sessions cannot be scored again. These rules,
 though, read only what every stored session keeps: the fingerprint, the environment families,
@@ -43,21 +43,27 @@ from datetime import datetime, timedelta, timezone
 from core_ml.features.client_forgery import (
     APPLE_SYNTHETIC_TOUCH_RULE,
     FORGED_BROWSER_RULE,
+    UA_HINTS_ANCHOR_RULE,
     WEBVIEW_WEBDRIVER_RULE,
     apple_synthetic_touch_fires,
     contradictions,
     forged_browser_fires,
     forgery_codes,
+    ua_hints_anchor_fires,
+    ua_independent_anchors,
     webview_webdriver_fires,
 )
 from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
 _MOBILE_TOKENS = ("mobile", "android", "iphone", "ipad", "ipod")
-_BASIS = {FORGED_BROWSER_RULE: "forged_browser", WEBVIEW_WEBDRIVER_RULE: "webview_automation",
+_BASIS = {FORGED_BROWSER_RULE: "forged_browser", UA_HINTS_ANCHOR_RULE: "forged_browser",
+          WEBVIEW_WEBDRIVER_RULE: "webview_automation",
           APPLE_SYNTHETIC_TOUCH_RULE: "synthetic_touch"}
 _REASON = {
     FORGED_BROWSER_RULE: "Forged browser: two independent claims no genuine browser makes ({}); applied to the "
                          "stored analysis by policy {}",
+    UA_HINTS_ANCHOR_RULE: "Forged browser: the user agent contradicts the browser's own Client Hints, and "
+                          "independently the environment does too ({0}); applied to the stored analysis by policy {1}",
     WEBVIEW_WEBDRIVER_RULE: "Android WebView with navigator.webdriver hidden: a WebView runs no browser extensions, "
                             "so the app hosting it hid its own automation flag (applied to the stored analysis by "
                             "policy {1})",
@@ -82,6 +88,8 @@ def judge(doc: dict):
     found = contradictions(codes, evidence, touch.get("research_flags"), user_agent=user_agent)
     if forged_browser_fires(codes, evidence, touch.get("research_flags"), user_agent=user_agent):
         return FORGED_BROWSER_RULE, found, codes
+    if ua_hints_anchor_fires(evidence, desktop=desktop):
+        return UA_HINTS_ANCHOR_RULE, ["CLIENT_HINTS", *ua_independent_anchors(evidence)], codes
     if webview_webdriver_fires(payload, codes):
         return WEBVIEW_WEBDRIVER_RULE, found, codes
     if apple_synthetic_touch_fires(payload, touch):

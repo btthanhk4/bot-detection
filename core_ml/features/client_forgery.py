@@ -136,6 +136,7 @@ from core_ml.features.presence import client_hints
 
 SYNTHETIC_PATH_RULE = "synthetic_pointer_path_v1"
 FORGED_BROWSER_RULE = "forged_browser_v1"
+UA_HINTS_ANCHOR_RULE = "ua_hints_anchor_v1"
 WEBVIEW_WEBDRIVER_RULE = "webview_webdriver_v1"
 APPLE_SYNTHETIC_TOUCH_RULE = "apple_synthetic_touch_v1"
 APPLE_TOUCH_MIN_GESTURES = 2
@@ -333,6 +334,34 @@ def contradictions(forgery: list, automation_evidence: dict = None, touch_flags=
     if environment_anchor(automation_evidence) and not worker_only_android(forgery, automation_evidence, user_agent):
         found += ["ENVIRONMENT_EVIDENCE"]
     return found + (["ZERO_TIME_TAPS"] if "ZERO_TIME_TAPS" in (touch_flags or []) else [])
+
+
+def ua_hints_anchor_fires(automation_evidence: dict, desktop: bool) -> bool:
+    """Policy 52: a desktop whose user agent contradicts its own Client Hints (the version Chrome reports in
+    navigator.userAgentData, or the HTTP User-Agent header) and, independently, a headless, GPU or permission
+    contradiction. Each alone only withholds HUMAN: a person with a user-agent switcher shows the first (with a
+    patched getter and a worker that disagrees, never an anchor family), a virtual machine the second.
+
+    Production (10-19 Nov 2026): 149 desktops had exactly this pair and were a SUSPECT; Fingerprint flagged all 39
+    it saw (all through a software renderer, rtt 0 or a headless screen), and no known person had either signal.
+    The anchor must not come from the user agent string itself. A user agent lie is counted once: a Client Hints mismatch is not
+    paired with UA_API_MISMATCH or ANACHRONISTIC_UA (the same lie seen elsewhere), nor with PLATFORM_SPOOFED, which
+    a switcher can also cause; those keep the rules they had."""
+    return bool(desktop and ((automation_evidence or {}).get("families") or {}).get("CLIENT_HINTS")
+                and ua_independent_anchors(automation_evidence))
+
+
+# An anchor read from the user agent string itself ("HeadlessChrome" in navigator.userAgent) is the same lie as a
+# user agent that differs from the HTTP header: the policy 20 release gate keeps a UA declaring HeadlessChrome on one
+# side only a SUSPECT.
+_UA_DERIVED_ANCHOR_HITS = {"detectors.headlessUa"}
+
+
+def ua_independent_anchors(automation_evidence: dict) -> list:
+    """Environment anchor families with at least one hit that does not come from the user agent string."""
+    families = (automation_evidence or {}).get("families") or {}
+    return sorted(family for family in TAMPERING_ANCHOR_FAMILIES
+                  if set(families.get(family) or []) - _UA_DERIVED_ANCHOR_HITS)
 
 
 def forged_browser_fires(forgery: list, automation_evidence: dict = None, touch_flags=None,

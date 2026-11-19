@@ -522,6 +522,25 @@ def _request_host(request: Request) -> str:
     return (request.headers.get("host") or "").split(":")[0].lower()
 
 
+_TLS_GREASE = re.compile(r"^0x[0-9a-f]a[0-9a-f]a$", re.IGNORECASE)
+
+
+def tls_client(request_headers) -> Optional[dict]:
+    """The client's TLS cipher and curve lists, as the gateway reports them (nginx ``$ssl_ciphers``,
+    ``$ssl_curves``, ``$ssl_protocol``); nginx sets these headers itself, overriding any the client sends."""
+    ciphers = str(request_headers.get("x-dc-tls-ciphers") or "")[:4000]
+    if not ciphers or ciphers == "-":
+        return None
+    curves = str(request_headers.get("x-dc-tls-curves") or "")[:1000]
+    protocol = str(request_headers.get("x-dc-tls-proto") or "")[:32]
+    cipher_list = [c for c in ciphers.split(":") if c and not _TLS_GREASE.match(c)]
+    curve_list = [c for c in curves.split(":") if c and not _TLS_GREASE.match(c)]
+    signature = hashlib.sha256(
+        ("|".join(cipher_list) + "#" + "|".join(curve_list) + "#" + protocol).encode("utf-8")).hexdigest()[:16]
+    return {"ciphers": ":".join(cipher_list)[:2000], "curves": ":".join(curve_list)[:500], "protocol": protocol,
+            "signature": signature}
+
+
 def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
     """Facts only the server sees: was the page served by the gateway, how busy is this device."""
     page_view_id = request.cookies.get(gateway.PAGE_VIEW_COOKIE)
@@ -576,6 +595,11 @@ def _attach_server_context(request: Request, data: dict, *, link: bool) -> None:
     # A website without the gateway proves its page loads with a page-view token instead.
     if headers["page_view"] == "untracked" and data.get("_page_token"):
         headers["page_view"] = data["_page_token"]
+    # Research, read by no rule yet: the TLS ClientHello the gateway saw (its cipher and curve lists, GREASE removed),
+    # to compare the browser a page claims with the TLS stack that carried its telemetry.
+    tls = tls_client(request.headers)
+    if tls:
+        headers["tls_client"] = tls
 
 
 def _page_token_state(data: dict, site: Optional[dict]) -> Optional[str]:

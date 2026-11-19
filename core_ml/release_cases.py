@@ -1272,6 +1272,19 @@ CLIENT_FORGERY_CASES = (
                                                      worker={"rendererMismatch": True, "cpuMismatch": True})),
     ("SUSPECT", "FINAL", "client_forgery", _with_ua_hints(_deferred(
         ua=_CHROME109_WIN7, fingerprint={"pluginsLength": 0}, worker={"rendererMismatch": True}))),
+    # Policy 52: a user agent its own Client Hints contradict and a GPU or permission anchor convict a desktop;
+    # a user-agent switcher (hints, patched getter, worker), the mismatch with a person's mouse, and the same pair
+    # on a phone do not.
+    ("BOT", "FINAL", "forged_browser", _automation(signals={"uaHintsMismatch": True}, worker={"rendererMismatch": True},
+                                                   fingerprint={"pluginsLength": 5, "platform": "Win32"})),
+    ("BOT", "FINAL", "forged_browser", _automation(signals={"uaHintsMismatch": True}, permission=True,
+                                                   fingerprint={"pluginsLength": 5, "platform": "Win32"})),
+    ("SUSPECT", "INSUFFICIENT_EVIDENCE", None, _automation(
+        signals={"uaHintsMismatch": True, "navigatorGetterPatched": True}, worker={"uaMismatch": True},
+        fingerprint={"pluginsLength": 5, "platform": "Win32"})),
+    ("HUMAN", "FINAL", None, _desktop(signals={"uaHintsMismatch": True})),
+    ("SUSPECT", "FINAL", None, _phone(_ANDROID10, "Linux armv81", _ADRENO, [], memory=4, cores=8,
+                                      signals={"uaHintsMismatch": True}, worker={"rendererMismatch": True})),
 )
 
 # Frozen gate of policy 33 (an environment family alone left a desktop without input insufficient).
@@ -1341,10 +1354,19 @@ CLIENT_FORGERY_RULE_GATE_V44 = {
     "fixture_fingerprint": "d2f8d5ee45098302c883c7514e486281462fece3738f2f727404ea53dfe6bf42",
 }
 
-CLIENT_FORGERY_RULE_GATE = {
+# Frozen gate of policies 45-51.
+CLIENT_FORGERY_RULE_GATE_V51 = {
     "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
               "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1",
               "worker_one_channel_v1", "anachronistic_ua_v1"],
+    "final_cases": 43, "insufficient_cases": 11, "passed": 54,
+    "fixture_fingerprint": "e4641fe12e4294ce93cf3510cc50898dbc78666f640f4606f1aca90983ef3f35",
+}
+
+CLIENT_FORGERY_RULE_GATE = {
+    "rules": ["client_forgery_v1", "forged_browser_v1", "webview_webdriver_v1", "apple_synthetic_touch_v1",
+              "ua_api_mismatch_v1", "platform_spoofed_v1", "desktop_fonts_v1", "desktop_evidence_v1",
+              "worker_one_channel_v1", "anachronistic_ua_v1", "ua_hints_anchor_v1"],
     "final_cases": sum(state == "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "insufficient_cases": sum(state != "FINAL" for _, state, _, _ in CLIENT_FORGERY_CASES),
     "passed": len(CLIENT_FORGERY_CASES),

@@ -53,7 +53,7 @@ def test_ua_hints_presence_reads_the_profile():
 
 def test_fixtures():
     from api_service.main import ensemble_detector
-    ours = CLIENT_FORGERY_CASES[50:]
+    ours = CLIENT_FORGERY_CASES[50:54]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("BOT", "FINAL", "forged_browser"), ("SUSPECT", "FINAL", "client_forgery"),
         ("SUSPECT", "FINAL", "client_forgery"), ("SUSPECT", "FINAL", "client_forgery")]
@@ -72,4 +72,4 @@ def test_policy_44_gate_is_frozen_on_its_own_fixtures():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("45", "46", "47", "48", "49", "50", "51")
+    assert DECISION_POLICY_VERSION in ("45", "46", "47", "48", "49", "50", "51", "52")

@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "4563e3445ec0d7fd9408897c65904ab28e5de0b654d3986679f23d77edb03ae9",
+    "behavioral_lstm.pt": "0bb790b661d432c777f8ab610496ac5f638435451cf92b1bc4aa12799e18eb18",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "34644e1e7e4a4ee4a165a7e3de23ab57",
-  "created_at": "2026-11-19T15:22:20.558375+00:00",
+  "bundle_id": "f00152cdf86b491f8ec6fccc69c4dde5",
+  "created_at": "2026-11-19T18:10:14.425592+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -79,10 +79,10 @@
     "capture_train_families": [],
     "captured_bot_holdout": null,
     "client_forgery_rule_gate": {
-      "final_cases": 43,
-      "fixture_fingerprint": "e4641fe12e4294ce93cf3510cc50898dbc78666f640f4606f1aca90983ef3f35",
-      "insufficient_cases": 11,
-      "passed": 54,
+      "final_cases": 47,
+      "fixture_fingerprint": "4543b6ae74d2633d5dc8f93c9c30479c3f0ed5bdc1e5828afe3f9b0cdb3fc707",
+      "insufficient_cases": 12,
+      "passed": 59,
       "rules": [
         "client_forgery_v1",
         "forged_browser_v1",
@@ -93,7 +93,8 @@
         "desktop_fonts_v1",
         "desktop_evidence_v1",
         "worker_one_channel_v1",
-        "anachronistic_ua_v1"
+        "anachronistic_ua_v1",
+        "ua_hints_anchor_v1"
       ]
     },
     "collector_window_policy": "mouse_export_v1",
@@ -872,7 +873,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "51",
+    "decision_policy_version": "52",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,

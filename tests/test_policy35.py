@@ -254,4 +254,4 @@ def test_flagship_with_four_gigabytes_never_becomes_bot_alone():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51")
+    assert DECISION_POLICY_VERSION in ("35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52")

@@ -90,7 +90,7 @@ def test_reconcile_sparse_pointer():
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION == "51"
+    assert DECISION_POLICY_VERSION in ("51", "52")
 
 
 ANDROID = ("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 "

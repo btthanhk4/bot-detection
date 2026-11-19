@@ -137,4 +137,4 @@ def test_reconcile_counts_then_writes_and_keeps_the_previous_verdict():
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION in ("50", "51")
+    assert DECISION_POLICY_VERSION in ("50", "51", "52")
