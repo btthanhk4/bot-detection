@@ -120,7 +120,10 @@ from core_ml.models.touch_shadow import score_touch
 # every time, a fixed press time or one under 20 ms; autoclick_taps_v2).
 # Policy 50: a few taps reported at 0 ms among three or more real presses no longer withhold a phone's HUMAN
 # verdict (zero_time_taps_among_presses); ZERO_TIME_TAPS still counts as a contradiction (policy 29).
-DECISION_POLICY_VERSION = "50"
+# Policy 51: a desktop pointer travelling over 10-24 moves at 45 ms or more between moves is an anomaly in the
+# three-verdict layer (SPARSE_POINTER): ten moves of any shape no longer turn an idle page into a HUMAN. A phone
+# that touched the page while its motion sensor stayed silent 10 s+ (SENSORS_UNAVAILABLE) is no longer a HUMAN.
+DECISION_POLICY_VERSION = "51"
 EXPLICIT_AUTOMATION_RULE = "headless_ua_and_framework_v1"
 SYNTHETIC_INPUT_RULES = (SYNTHETIC_CLICK_RULE, SYNTHETIC_TYPING_RULE, SYNTHETIC_POINTER_RULE, SYNTHETIC_PATH_RULE)
 
@@ -480,7 +483,8 @@ class EnsembleBotDetector:
         # Policy 18: a phone with real finger input and no bot evidence is HUMAN.
         mobile_human = analyze_mobile_human(payload, automation_evidence, touch_report, critical_flags,
                                             presence_report["codes"],
-                                            held_device="HELD_DEVICE" in presence_report["research_flags"])
+                                            held_device="HELD_DEVICE" in presence_report["research_flags"],
+                                            sensors_unavailable="SENSORS_UNAVAILABLE" in presence_report["research_flags"])
         mobile_human_decision = (
             mouse_evidence_deferred and not explicit_automation and mobile_human["eligible"]
             and self.lstm_available and self.tabular_available

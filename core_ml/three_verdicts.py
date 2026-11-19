@@ -18,7 +18,8 @@ reference; "flagged": Fingerprint bot "bad", tampering or anti-detect), among th
 * Desktops (99, 79% flagged). Four anomalies make them SUSPECT:
   ``DESKTOP_IDLE``, a page shown 10 s or more with fewer than 10 mouse moves (38 of 44 flagged);
   an automation evidence family (15 of 15); no page token (2 of 2); a page never shown (5 of 7).
-  Short visits and visits with some mouse input become HUMAN.
+  Short visits and visits with some mouse input become HUMAN. Policy 51 adds ``SPARSE_POINTER``: 10 or more
+  moves over 3+ positions at a median interval of 45 ms or more (see ``sparse_pointer``).
 * Any device: what the detector itself raised (``CORE_ANOMALIES``), automation the profile diagnostics saw
   (``PROFILE_AUTOMATION``), and no sign that a page was ever shown (``NO_PAGE_PRESENCE``: no page presence
   and no page age, a bare telemetry post). None of the replay's undecided sessions showed them.
@@ -29,6 +30,9 @@ NO_BOT_EVIDENCE_BASIS = "no_bot_evidence"
 INPUT_ANOMALY_BASIS = "input_anomaly"
 DESKTOP_IDLE_MS = 10_000
 DESKTOP_IDLE_MAX_MOVES = 10
+# Policy 51 (sparse_pointer_v1): see sparse_pointer.
+SPARSE_POINTER_MS = 45.0
+SPARSE_POINTER_MIN_POSITIONS = 3
 # What the detector itself raised on a session it could not judge: the page's own bot detectors (critical
 # flags, a heuristic score of 0.8+), mouse models that disagree, or 25+ moves without spatial or temporal
 # variation. Each is an anomaly, on any device.
@@ -89,7 +93,26 @@ def input_anomalies(breakdown: dict, payload: dict = None, *, stored: bool = Fal
         found.append("ENVIRONMENT_FAMILY")
     if shown is not None and shown >= DESKTOP_IDLE_MS and (_number(breakdown.get("mouse_points")) or 0) < DESKTOP_IDLE_MAX_MOVES:
         found.append("DESKTOP_IDLE")
+    if sparse_pointer(breakdown):
+        found.append("SPARSE_POINTER")
     return found
+
+
+def sparse_pointer(breakdown: dict) -> bool:
+    """Policy 51: a desktop pointer that travelled over too few moves for the mouse models, each move far apart in
+    time. A mouse reports a move every frame while it travels (17 ms at 60 Hz, 33 ms when Chrome's energy saver
+    halves the frame rate); a script that sleeps between the moves it dispatches does not. Ten moves were enough
+    to turn a page shown without the mouse (DESKTOP_IDLE) into a HUMAN, whatever their shape.
+
+    Production (10-19 Nov 2026), desktop sessions let through as HUMAN with 10-24 moves: a median interval of
+    45 ms or more in 55 of 173, Fingerprint flagged 14 of the 17 it saw (10 of 52 below it); every known human's
+    desktop session moved at 17 ms, one scrolling at 33 ms. Scrolling under a still pointer also fires moves, at
+    the wheel's pace and at one position: the pointer must have reached 3 positions."""
+    moves = _number(breakdown.get("mouse_points")) or 0
+    features = (breakdown.get("interaction_shadow") or {}).get("features") or {}
+    interval = _number(features.get("move_interval_median_ms"))
+    return bool(moves >= DESKTOP_IDLE_MAX_MOVES and interval is not None and interval >= SPARSE_POINTER_MS
+                and (_number(breakdown.get("distinct_positions")) or 0) >= SPARSE_POINTER_MIN_POSITIONS)
 
 
 def apply_three_verdicts(result: dict, payload: dict = None) -> dict:

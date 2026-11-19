@@ -13,6 +13,7 @@ from core_ml.features.presence import (
 )
 from core_ml.release_cases import (
     MOBILE_RULE_CASES,
+    MOBILE_RULE_CASES_V50,
     MOBILE_RULE_GATE,
     MOBILE_RULE_GATE_V45,
     MOBILE_RULE_GATE_V46,
@@ -59,7 +60,7 @@ def test_fixtures():
 
 
 def test_policy_45_gate_is_frozen_on_its_own_fixtures():
-    first = MOBILE_RULE_CASES[:67]
+    first = MOBILE_RULE_CASES_V50[:67]
     assert MOBILE_RULE_GATE_V45["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     assert "mobile_held_device_v3" in MOBILE_RULE_GATE_V46["rules"] and MOBILE_RULE_GATE_V46["passed"] == 70
@@ -68,4 +69,4 @@ def test_policy_45_gate_is_frozen_on_its_own_fixtures():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("46", "47", "48", "49", "50")
+    assert DECISION_POLICY_VERSION in ("46", "47", "48", "49", "50", "51")

@@ -27,7 +27,10 @@ minutes is left to the live traffic.
 Three later changes are applied from what they stored: a phone convicted as a forged browser on a worker's GPU and
 platform alone (one contradiction since policy 42) becomes SUSPECT; a phone convicted by ``autoclick_taps_v1``,
 whose presses can no longer be checked (policy 49), becomes SUSPECT; a phone held back only by a few taps at 0 ms
-among its real presses (policy 50) becomes HUMAN. The previous verdict is recorded in ``rejudged``.
+among its real presses (policy 50) becomes HUMAN; a desktop let through as HUMAN without enough mouse input whose
+pointer travelled at 45 ms or more between moves (policy 51, SPARSE_POINTER) becomes SUSPECT, and so does a phone
+let through as HUMAN on its touches while its motion sensor stayed silent (policy 51, SENSORS_UNAVAILABLE). The previous verdict
+is recorded in ``rejudged``.
 
     python -m api_service.manage reconcile            # count only
     python -m api_service.manage reconcile --apply    # write
@@ -289,13 +292,26 @@ def rescore(db, detector=None, apply: bool = False, now=None, quiet_minutes: int
 
 
 RECONCILE_VERSION = "reconcile_v1"
+
+
+def breakdown_of(doc: dict) -> dict:
+    return doc.get("breakdown") if isinstance(doc.get("breakdown"), dict) else {}
 _RECONCILE_FIELDS = {**_FIELDS, "breakdown.decision_basis": 1, "breakdown.automation_rule": 1,
-                     "breakdown.mobile_human": 1, "breakdown.suspect_reason_codes": 1, "updated_at": 1}
+                     "breakdown.mobile_human": 1, "breakdown.suspect_reason_codes": 1, "updated_at": 1,
+                     "breakdown.three_verdicts": 1, "breakdown.interaction_shadow.features": 1,
+                     "breakdown.distinct_positions": 1, "breakdown.mouse_points": 1, "breakdown.presence": 1}
+_SPARSE_CHANGE = "sparse pointer -> SUSPECT"
+_SILENT_CHANGE = "silent sensor with touches -> SUSPECT"
 
 
 def reconcile_change(doc: dict):
     """(new verdict, basis, reason, change) for a stored session the running rules judge differently, or None."""
     from core_ml.features.mobile_human import zero_time_taps_among_presses
+    from core_ml.three_verdicts import (
+        INPUT_ANOMALY_BASIS,
+        NO_BOT_EVIDENCE_BASIS,
+        sparse_pointer,
+    )
 
     breakdown = doc.get("breakdown") or {}
     verdict = str(doc.get("verdict") or "").upper()
@@ -318,6 +334,15 @@ def reconcile_change(doc: dict):
             and set((breakdown.get("client_forgery") or {}).get("contradictions") or []) <= {"ZERO_TIME_TAPS"}):
         return ("HUMAN", "mobile_clean_environment", "a few taps reported at 0 ms among real presses, and nothing "
                 "else against the phone (policy 50)", "zero-time quirk -> HUMAN")
+    if (verdict == "HUMAN" and basis == NO_BOT_EVIDENCE_BASIS and breakdown.get("three_verdicts") and not phone
+            and sparse_pointer(breakdown)):
+        return ("SUSPECT", INPUT_ANOMALY_BASIS, "too little input to judge the behaviour, and an anomaly: a pointer "
+                "travelling at 45 ms or more between moves (policy 51)", _SPARSE_CHANGE)
+    presence = breakdown.get("presence") or {}
+    if (verdict == "HUMAN" and phone and basis in ("mobile_light_touch", "mobile_clean_environment")
+            and "SENSORS_UNAVAILABLE" in (presence.get("research_flags") or [])):
+        return ("SUSPECT", "mobile_risk", "touched the page while its motion sensor stayed silent for 10 s or more "
+                "(policy 51)", _SILENT_CHANGE)
     return None
 
 
@@ -328,7 +353,10 @@ def reconcile(db, apply: bool = False, now=None, quiet_minutes: int = RESCORE_QU
     collection = db["detection_results"]
     changes, written, live = Counter(), 0, 0
     query = {"$or": [{"verdict": "BOT", "breakdown.decision_basis": {"$in": ["forged_browser", "touch_automation"]}},
-                     {"breakdown.decision_basis": "mobile_risk", "breakdown.touch.research_flags": "ZERO_TIME_TAPS"}]}
+                     {"breakdown.decision_basis": "mobile_risk", "breakdown.touch.research_flags": "ZERO_TIME_TAPS"},
+                     {"verdict": "HUMAN", "breakdown.decision_basis": "no_bot_evidence",
+                      "breakdown.mouse_points": {"$gte": 10}},
+                     {"verdict": "HUMAN", "breakdown.presence.research_flags": "SENSORS_UNAVAILABLE"}]}
     for doc in collection.find(query, _RECONCILE_FIELDS).batch_size(500):
         found = reconcile_change(doc)
         if not found:
@@ -349,8 +377,8 @@ def reconcile(db, apply: bool = False, now=None, quiet_minutes: int = RESCORE_QU
             "reasons": [f"Policy {DECISION_POLICY_VERSION}: {why}"] + list(doc.get("reasons") or [])[:19],
             "breakdown.decision_basis": basis, "breakdown.verdict_locked": False,
             "breakdown.automation_rule": None,
-            "breakdown.suspect_reason_codes": [] if human else ["CLIENT_FORGERY" if basis == "client_forgery"
-                                                                 else "MOBILE_RISK"],
+            "breakdown.suspect_reason_codes": [] if human else ["SPARSE_POINTER"] if change == _SPARSE_CHANGE
+            else ["CLIENT_FORGERY" if basis == "client_forgery" else "MOBILE_RISK"],
             "rejudged": {"from_verdict": doc.get("verdict"), "from_state": doc.get("decision_state"),
                          "from_policy": doc.get("policy_version"), "rule": RECONCILE_VERSION,
                          "change": change, "policy": DECISION_POLICY_VERSION, "at": now},
@@ -358,6 +386,13 @@ def reconcile(db, apply: bool = False, now=None, quiet_minutes: int = RESCORE_QU
         if human:
             update.update({"breakdown.mobile_human.eligible": True, "breakdown.mobile_human.missing": [],
                            "breakdown.mobile_human.risk": []})
+        if change == _SPARSE_CHANGE:
+            update["breakdown.three_verdicts.anomalies"] = ["SPARSE_POINTER"]
+        if change == _SILENT_CHANGE:
+            mobile = breakdown_of(doc).get("mobile_human") or {}
+            update.update({"breakdown.mobile_human.eligible": False, "breakdown.mobile_human.light_eligible": False,
+                           "breakdown.mobile_human.missing": list(mobile.get("missing") or []) + ["SENSORS_UNAVAILABLE"],
+                           "breakdown.mobile_human.risk": list(mobile.get("risk") or []) + ["SENSORS_UNAVAILABLE"]})
         result = collection.update_one({"_id": doc["_id"], "verdict": doc.get("verdict"), "updated_at": updated},
                                        {"$set": update})
         written += result.modified_count

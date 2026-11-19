@@ -9,7 +9,7 @@ from core_ml.features.presence import (
     sensorless_phone_fires,
     sensors_unavailable,
 )
-from core_ml.release_cases import MOBILE_RULE_CASES
+from core_ml.release_cases import MOBILE_RULE_CASES_V50
 
 HAND = {"status": "ok", "events": 400, "tilt_deg": 41.0, "linear_sd": 0.21, "rotation_sd": 4.3}
 
@@ -49,7 +49,7 @@ def test_sensorless_flag_is_android_only():
 
 def test_fixtures():
     from api_service.main import ensemble_detector
-    ours = MOBILE_RULE_CASES[55:64]
+    ours = MOBILE_RULE_CASES_V50[55:64]
     assert [(v, s, b) for v, s, b, _ in ours] == [
         ("HUMAN", "FINAL", "mobile_held_device"), ("SUSPECT", "INSUFFICIENT_EVIDENCE", None),
         ("SUSPECT", "FINAL", "mobile_risk"), ("SUSPECT", "INSUFFICIENT_EVIDENCE", None),
@@ -65,4 +65,4 @@ def test_fixtures():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("43", "44", "45", "46", "47", "48", "49", "50")
+    assert DECISION_POLICY_VERSION in ("43", "44", "45", "46", "47", "48", "49", "50", "51")

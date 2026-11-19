@@ -14,6 +14,7 @@ from core_ml.features.touch import (
 )
 from core_ml.release_cases import (
     MOBILE_RULE_CASES,
+    MOBILE_RULE_CASES_V50,
     MOBILE_RULE_GATE,
     MOBILE_RULE_GATE_V48,
 )
@@ -71,13 +72,13 @@ def test_fixtures():
 
 
 def test_policy_48_gate_is_frozen_on_its_own_fixtures():
-    first = MOBILE_RULE_CASES[:75]
+    first = MOBILE_RULE_CASES_V50[:75]
     assert MOBILE_RULE_GATE_V48["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
-    assert "autoclick_taps_v2" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 80
+    assert "autoclick_taps_v2" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 81
 
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION in ("49", "50")
+    assert DECISION_POLICY_VERSION in ("49", "50", "51")

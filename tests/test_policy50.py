@@ -15,6 +15,7 @@ from core_ml.features.mobile_human import (
 )
 from core_ml.release_cases import (
     MOBILE_RULE_CASES,
+    MOBILE_RULE_CASES_V50,
     MOBILE_RULE_GATE,
     MOBILE_RULE_GATE_V49,
 )
@@ -43,7 +44,7 @@ def test_zero_time_taps_among_presses():
 def test_fixtures():
     from api_service.main import ensemble_detector
 
-    ours = MOBILE_RULE_CASES[78:]
+    ours = MOBILE_RULE_CASES[78:80]
     assert [(v, s, b) for v, s, b, _ in ours] == [("HUMAN", "FINAL", "mobile_clean_environment"),
                                                  ("SUSPECT", "FINAL", "mobile_risk")]
     for verdict, _, basis, payload in ours:
@@ -54,8 +55,8 @@ def test_fixtures():
 
 def test_policy_49_gate_is_frozen_on_its_own_fixtures():
     assert MOBILE_RULE_GATE_V49["fixture_fingerprint"] == hashlib.sha256(
-        json.dumps(MOBILE_RULE_CASES[:78], sort_keys=True, default=str).encode("utf-8")).hexdigest()
-    assert "zero_time_taps_among_presses_v1" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 80
+        json.dumps(MOBILE_RULE_CASES_V50[:78], sort_keys=True, default=str).encode("utf-8")).hexdigest()
+    assert "zero_time_taps_among_presses_v1" in MOBILE_RULE_GATE["rules"] and MOBILE_RULE_GATE["passed"] == 81
 
 
 def test_forged_browser_still_convicts_with_zero_time_taps():
@@ -136,4 +137,4 @@ def test_reconcile_counts_then_writes_and_keeps_the_previous_verdict():
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION == "50"
+    assert DECISION_POLICY_VERSION in ("50", "51")

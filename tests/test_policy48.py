@@ -128,7 +128,7 @@ def test_release_gate():
 
     assert validate_three_verdicts(ensemble_detector) == THREE_VERDICT_GATE
     assert (THREE_VERDICT_GATE["human_cases"], THREE_VERDICT_GATE["suspect_cases"],
-            THREE_VERDICT_GATE["bot_cases"]) == (4, 5, 1)
+            THREE_VERDICT_GATE["bot_cases"]) == (6, 6, 1)
     # The detector itself still says when it has too little evidence.
     for _, _, _, anomalies, payload in THREE_VERDICT_CASES:
         core = ensemble_detector.predict(copy.deepcopy(payload))
@@ -191,4 +191,4 @@ def test_stored_insufficient_sessions_map_on_request():
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
 
-    assert DECISION_POLICY_VERSION in ("48", "49", "50")
+    assert DECISION_POLICY_VERSION in ("48", "49", "50", "51")

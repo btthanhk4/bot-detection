@@ -1,10 +1,10 @@
 {
   "artifacts": {
-    "behavioral_lstm.pt": "f642274a3af516a4881435d8ba7395f672b9f9637a3dc912a3c7b82c59a4afd6",
+    "behavioral_lstm.pt": "4563e3445ec0d7fd9408897c65904ab28e5de0b654d3986679f23d77edb03ae9",
     "tabular_model.joblib": "e6b3497b010d1dbf7695972e7c42bf568a7bf90a530b0eb9d06fda8c83bff015"
   },
-  "bundle_id": "aceed3a1205b446cb07f35bfb845f83a",
-  "created_at": "2026-11-19T13:10:50.041260+00:00",
+  "bundle_id": "34644e1e7e4a4ee4a165a7e3de23ab57",
+  "created_at": "2026-11-19T15:22:20.558375+00:00",
   "feature_names": [
     "heuristic_score",
     "flagged_count",
@@ -872,7 +872,7 @@
       },
       "unique_trajectory_count": 749
     },
-    "decision_policy_version": "50",
+    "decision_policy_version": "51",
     "desktop_risk_rule_gate": {
       "fixture_fingerprint": "d913bea204872a7f088ac8f72cb5ccfb178f8bdd444aaebdabaebdf355efa18c",
       "human_cases": 20,
@@ -1057,9 +1057,9 @@
     "minimum_mouse_points_for_bot": 25,
     "mobile_rule_gate": {
       "bot_cases": 11,
-      "fixture_fingerprint": "8f609948e473ed9cffe2de8b22e1aff07ab238f9be0e6bb24853c12d666a3da8",
-      "human_cases": 24,
-      "passed": 80,
+      "fixture_fingerprint": "a99cb378f9895da610bb6a04a361c81b507591fbcd9cab9d2e77225b112cc133",
+      "human_cases": 23,
+      "passed": 81,
       "rules": [
         "mobile_clean_environment_v1",
         "mobile_light_touch_v1",
@@ -1075,9 +1075,10 @@
         "mobile_held_device_v3",
         "sensorless_phone_v1",
         "android_desktop_site_v1",
-        "zero_time_taps_among_presses_v1"
+        "zero_time_taps_among_presses_v1",
+        "sensors_unavailable_touch_v1"
       ],
-      "suspect_cases": 45
+      "suspect_cases": 47
     },
     "production_decision_threshold": 0.96,
     "production_suspect_threshold": 0.45,
@@ -1120,13 +1121,14 @@
     "synthetic_profile": "legacy_v1",
     "three_verdict_gate": {
       "bot_cases": 1,
-      "fixture_fingerprint": "e91da1aa310c0ad3838248ad3ece7773ac0b1b9cd29d8834b4d6c220ddf1c1af",
-      "human_cases": 4,
-      "passed": 10,
+      "fixture_fingerprint": "d6d97d2ee2201941e4b1961e8ec4e394919501ad481b9bb9103ba32c6ab44cbc",
+      "human_cases": 6,
+      "passed": 13,
       "rules": [
-        "three_verdicts_v1"
+        "three_verdicts_v1",
+        "sparse_pointer_v1"
       ],
-      "suspect_cases": 5
+      "suspect_cases": 6
     },
     "train_full_trajectory_checkpoints": 32,
     "train_full_trajectory_windows": true,

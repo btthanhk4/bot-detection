@@ -9,6 +9,7 @@ from api_service import live
 from core_ml.features.presence import HELD_MIN_EVENTS, MOBILE_HELD_RULE, held_in_hand
 from core_ml.release_cases import (
     MOBILE_RULE_CASES,
+    MOBILE_RULE_CASES_V50,
     MOBILE_RULE_GATE_V43,
     MOBILE_RULE_GATE_V45,
 )
@@ -37,7 +38,7 @@ def test_fixtures():
 
 
 def test_policy_43_gate_is_frozen_on_its_own_fixtures():
-    first = MOBILE_RULE_CASES[:64]
+    first = MOBILE_RULE_CASES_V50[:64]
     assert MOBILE_RULE_GATE_V43["fixture_fingerprint"] == hashlib.sha256(
         json.dumps(first, sort_keys=True, default=str).encode("utf-8")).hexdigest()
     assert (MOBILE_RULE_GATE_V43["human_cases"], MOBILE_RULE_GATE_V43["suspect_cases"],
@@ -52,4 +53,4 @@ def test_a_hidden_page_has_left():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("44", "45", "46", "47", "48", "49", "50")
+    assert DECISION_POLICY_VERSION in ("44", "45", "46", "47", "48", "49", "50", "51")

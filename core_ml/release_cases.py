@@ -599,7 +599,7 @@ _LEVEL_LOW_END_MOTION = {"status": "ok", "events": 120, "intervalMs": 80.0, "gra
 # release 0. Stealth bots measured the same day: Playwright WebKit (iPhone, iPad)
 # and Chromium (Pixel 7) with navigator.platform/webdriver/maxTouchPoints patched
 # and CDP touches with finger-like contact.
-MOBILE_RULE_CASES = (
+MOBILE_RULE_CASES_V50 = (
     # People: iPhone (old and current UA), Android flagship and low-end, iPad in
     # desktop mode, iOS 16 without contact radius (not judged), and someone tapping
     # one button six times (the finger never lands twice on the same point).
@@ -828,6 +828,21 @@ MOBILE_RULE_CASES = (
                                                memory=4, cores=8, times=_QUIRK_TIMES)),
 )
 
+# Policy 51: a phone touching the page while its motion sensor stays silent for 40 s (the farm of policy 43 without
+# its novel audio hash) is no longer a HUMAN. The policy 43 fixture of one late touch (index 62, HUMAN through
+# policy 50) becomes a final SUSPECT; three touches too. The cases through policy 50 stay as they were in
+# MOBILE_RULE_CASES_V50, which the frozen gates were computed on.
+MOBILE_RULE_CASES = tuple(
+    ("SUSPECT", "FINAL", "mobile_risk", case[3]) if index == 62 else case
+    for index, case in enumerate(MOBILE_RULE_CASES_V50)
+) + (
+    ("SUSPECT", "FINAL", "mobile_risk", _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO,
+                                                     [_tap(120, 300), _tap(212, 455, 96.0), _tap(180, 610, 71.0)],
+                                                     memory=4, cores=8, headers={"audio_hash_sessions": 4},
+                                                     times=[25000, 28000, 33000]),
+                                              first_touch_ms=25000, motion=_SENSORLESS_MOTION, visible_ms=40000)),
+)
+
 # Frozen gate of policies 19-23.
 MOBILE_RULE_GATE_V19 = {
     "rules": ["mobile_clean_environment_v1", "mobile_risk_v1", "autoclick_taps_v1", "mobile_emulation_v1"],
@@ -951,11 +966,22 @@ MOBILE_RULE_GATE_V49 = {
     "fixture_fingerprint": "515cefc045d50c31787d620619d84e0301b3b72c066260eb0fbc659c1a69a0c1",
 }
 
-MOBILE_RULE_GATE = {
+# Frozen gate of policy 50.
+MOBILE_RULE_GATE_V50 = {
     "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v2",
               "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
               "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
               "sensorless_phone_v1", "android_desktop_site_v1", "zero_time_taps_among_presses_v1"],
+    "human_cases": 24, "suspect_cases": 45, "bot_cases": 11, "passed": 80,
+    "fixture_fingerprint": "8f609948e473ed9cffe2de8b22e1aff07ab238f9be0e6bb24853c12d666a3da8",
+}
+
+MOBILE_RULE_GATE = {
+    "rules": ["mobile_clean_environment_v1", "mobile_light_touch_v1", "mobile_risk_v1", "autoclick_taps_v2",
+              "mobile_emulation_v1", "synthetic_motion_v2", "model_memory_mismatch_v1", "shared_sensor_signature_v1",
+              "emulated_phone_v1", "audio_novel_v1", "inert_cohort_v2", "mobile_held_device_v3",
+              "sensorless_phone_v1", "android_desktop_site_v1", "zero_time_taps_among_presses_v1",
+              "sensors_unavailable_touch_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _ in MOBILE_RULE_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _ in MOBILE_RULE_CASES),
@@ -1333,6 +1359,18 @@ CLIENT_FORGERY_RULE_GATE = {
 # a sensor that reports nothing, a desktop page shown 10 s without the mouse moving, an automation family, a
 # desktop page never shown). Results the evidence decided stay as they are.
 _WINDOWS_DESKTOP = {"pluginsLength": 5, "platform": "Win32", "hardwareConcurrency": 8, "deviceMemory": 8}
+
+
+def _moves(n, dt, step=14.0):
+    """``n`` mouse moves ``dt`` ms apart, travelling ``step`` px each along a gently curving path."""
+    return [{"time": 1000 + i * dt, "x": round(300 + step * i, 1), "y": round(400 + 0.02 * step * i * i, 1),
+             "type": "move", "source": "mouse"} for i in range(n)]
+
+
+def _with_moves(payload, records):
+    payload["mouse"]["records"] = records
+    payload["mouse"]["counters"] = {"mousemove": len(records), "mousedown": 0, "click": 0, "wheel": 0}
+    return payload
 THREE_VERDICT_CASES = (
     ("HUMAN", "FINAL", "no_bot_evidence", [],
      _seen(_phone(_IOS18, "iPhone", "Apple GPU", []), first_touch_ms=None, motion={"status": "permission_gated"})),
@@ -1356,10 +1394,27 @@ THREE_VERDICT_CASES = (
      _seen(_phone(_ANDROID10, "Linux armv81", _ADRENO, _ANDROID_HAND, memory=4, cores=8), motion=_HAND_MOTION)),
     ("BOT", "FINAL", "automation_marker", None,
      _automation(browser_ua=_HEADLESS_UA, http_ua=_HEADLESS_UA, fingerprint=dict(_WINDOWS_DESKTOP))),
+    # Policy 51: 15 moves travelling at 60 ms intervals (a script sleeping between moves) are an anomaly; the same
+    # 15 moves at a mouse's 17 ms, and 18 moves fired by scrolling under a still pointer, are not.
+    ("SUSPECT", "FINAL", "input_anomaly", ["SPARSE_POINTER"],
+     _with_moves(_seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=8000),
+                 _moves(15, 60))),
+    ("HUMAN", "FINAL", "no_bot_evidence", [],
+     _with_moves(_seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=8000),
+                 _moves(15, 17))),
+    ("HUMAN", "FINAL", "no_bot_evidence", [],
+     _with_moves(_seen(_automation(fingerprint=dict(_WINDOWS_DESKTOP)), first_touch_ms=None, visible_ms=29000),
+                 _moves(18, 60, step=0.0))),
 )
 
+# Frozen gate of policies 48-50.
+THREE_VERDICT_GATE_V50 = {
+    "rules": ["three_verdicts_v1"], "human_cases": 4, "suspect_cases": 5, "bot_cases": 1, "passed": 10,
+    "fixture_fingerprint": "e91da1aa310c0ad3838248ad3ece7773ac0b1b9cd29d8834b4d6c220ddf1c1af",
+}
+
 THREE_VERDICT_GATE = {
-    "rules": ["three_verdicts_v1"],
+    "rules": ["three_verdicts_v1", "sparse_pointer_v1"],
     "human_cases": sum(verdict == "HUMAN" for verdict, _, _, _, _ in THREE_VERDICT_CASES),
     "suspect_cases": sum(verdict == "SUSPECT" for verdict, _, _, _, _ in THREE_VERDICT_CASES),
     "bot_cases": sum(verdict == "BOT" for verdict, _, _, _, _ in THREE_VERDICT_CASES),

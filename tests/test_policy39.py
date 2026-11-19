@@ -48,4 +48,4 @@ def test_with_audio_novel_and_another_country_it_stays_suspect_not_bot():
 
 def test_policy_version():
     from core_ml.models.ensemble import DECISION_POLICY_VERSION
-    assert DECISION_POLICY_VERSION in ("39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50")
+    assert DECISION_POLICY_VERSION in ("39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51")

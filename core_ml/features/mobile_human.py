@@ -51,7 +51,7 @@ RISK_CODES = ("TOUCH_FLAGS", "EMULATOR", "PLATFORM_CONTRADICTION", "HARDWARE", "
               "WEBDRIVER_TAMPERED", "UA_POINTER_MISMATCH", "UA_API_MISMATCH",
               "PLATFORM_SPOOFED", "TIMEZONE_MISMATCH", "INSTANT_TOUCH", "DESKTOP_FONTS",
               "SYNTHETIC_MOTION", "MODEL_MEMORY_MISMATCH", "SHARED_SENSOR_SIGNATURE",
-              "AUDIO_NOVEL", "INERT_COHORT")
+              "AUDIO_NOVEL", "INERT_COHORT", "SENSORS_UNAVAILABLE")
 # With fewer than three gestures, these still wait (page tokens are not everywhere yet).
 _FEW_GESTURE_EXEMPT = {"UNVERIFIED_PAGE_LOAD"}
 _PLATFORM_CODES = {"platform_mismatch", "spoofed_platform", "chromium_api_on_ios", "no_touch",
@@ -132,7 +132,8 @@ def touch_flags_against(touch_report: dict) -> list:
 
 
 def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report: dict,
-                         client_flags: list, presence_codes=(), held_device: bool = False) -> dict:
+                         client_flags: list, presence_codes=(), held_device: bool = False,
+                         sensors_unavailable: bool = False) -> dict:
     """Whether the phone-human rule applies, and what is missing when it does not."""
     payload = payload if isinstance(payload, dict) else {}
     fingerprint = payload.get("fingerprint") if isinstance(payload.get("fingerprint"), dict) else {}
@@ -172,6 +173,12 @@ def analyze_mobile_human(payload: dict, automation_evidence: dict, touch_report:
     missing += [code for code in ("NOT_VIEWED", "INSTANT_TOUCH") if code in presence_codes]
     # Policy 35: sensors that only an emulator produces.
     missing += [code for code in ("SYNTHETIC_MOTION",) if code in presence_codes]
+    # Policy 51: a phone that touched the page while its motion sensor stayed silent for 10 s or more (policy 43's
+    # SENSORS_UNAVAILABLE; without a touch it is the three-verdict layer's anomaly). On production (10-19 Nov
+    # 2026) 13 such phones were let through as HUMAN on 1-3 touches, Fingerprint flagged 7 of the 8 it saw, and
+    # none of the 52 known people's sessions shows it (in-app browsers that block the sensor report no event).
+    if sensors_unavailable and gestures:
+        missing.append("SENSORS_UNAVAILABLE")
     few = "FEW_GESTURES" in missing
     light_eligible = (
         bool(kind) and few and MOBILE_LIGHT_MIN_GESTURES <= gestures < MOBILE_HUMAN_MIN_GESTURES
